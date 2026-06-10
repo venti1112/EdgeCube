@@ -126,6 +126,18 @@ class FileService {
     return target;
   }
 
+  /// 以 UTF-8 读取文本文件内容。
+  ///
+  /// 内容不是合法 UTF-8（例如二进制文件）时会抛出异常，交由调用方提示用户。
+  Future<String> readText(String path) {
+    return File(path).readAsString();
+  }
+
+  /// 以 UTF-8 将 [content] 覆盖写入文件，并在返回前刷新到磁盘。
+  Future<void> writeText(String path, String content) async {
+    await File(path).writeAsString(content, flush: true);
+  }
+
   // —— 内部工具 ——
 
   Future<bool> _exists(String path) async =>

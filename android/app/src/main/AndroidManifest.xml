@@ -10,6 +10,8 @@
     <!-- 前台 Service 保活：让后台运行的服务端进程不被系统轻易回收。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 申请加入电池优化白名单（忽略电池优化），降低后台/锁屏时服务端被系统回收的概率。 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Android 13+ 显示前台通知需此运行时权限。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application

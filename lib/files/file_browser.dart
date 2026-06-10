@@ -8,8 +8,21 @@ import 'file_service.dart';
 import 'folder_picker.dart';
 import 'storage_permission.dart';
 import 'system_picker.dart';
+import 'text_editor_page.dart';
 
-enum _FileAction { rename, move, copy, export, delete }
+enum _FileAction { edit, rename, move, copy, export, delete }
+
+/// 可用内置编辑器打开的文本文件扩展名（小写，含点）。
+const _textExtensions = <String>{
+  '.txt', '.text', '.md', '.markdown', '.log',
+  '.properties', '.conf', '.cfg', '.ini', '.toml', '.env', '.list',
+  '.yml', '.yaml', '.json', '.json5', '.xml', '.html', '.htm', '.css',
+  '.js', '.ts', '.sh', '.bat', '.cmd', '.py', '.lua',
+  '.csv', '.tsv', '.lang', '.mcmeta', '.snbt',
+};
+
+/// 超过该大小的文件不在内置编辑器中打开，避免一次性载入内存造成卡顿。
+const _maxEditableBytes = 2 * 1024 * 1024; // 2 MiB
 
 /// 浏览并管理单个实例文件夹内的文件。
 ///
@@ -69,6 +82,27 @@ class _FileBrowserState extends State<FileBrowser> {
     _load();
   }
 
+  /// 是否为可用内置编辑器打开的文本文件（按扩展名判断）。
+  bool _isEditableText(FileEntry entry) {
+    if (entry.isDirectory) return false;
+    return _textExtensions.contains(p.extension(entry.name).toLowerCase());
+  }
+
+  /// 在内置文本编辑器中打开 [entry]；过大文件拒绝打开。返回后刷新列表以更新大小。
+  Future<void> _openEditor(FileEntry entry) async {
+    if (entry.isDirectory) return;
+    if (entry.size > _maxEditableBytes) {
+      _showError('文件过大，无法在内置编辑器中打开（上限 2 MB）。');
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TextEditorPage(path: entry.path, name: entry.name),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
   void _goUp() {
     if (_atRoot) return;
     _current = Directory(p.dirname(_current.path));
@@ -104,6 +138,8 @@ class _FileBrowserState extends State<FileBrowser> {
 
   Future<void> _onAction(_FileAction action, FileEntry entry) async {
     switch (action) {
+      case _FileAction.edit:
+        await _openEditor(entry);
       case _FileAction.rename:
         await _rename(entry);
       case _FileAction.move:
@@ -263,27 +299,36 @@ class _FileBrowserState extends State<FileBrowser> {
                                 : Icons.insert_drive_file_outlined),
                             title: Text(entry.name),
                             subtitle: Text(_subtitle(entry)),
-                            onTap: entry.isDirectory ? () => _enter(entry) : null,
+                            onTap: entry.isDirectory
+                                ? () => _enter(entry)
+                                : _isEditableText(entry)
+                                    ? () => _openEditor(entry)
+                                    : null,
                             trailing: PopupMenuButton<_FileAction>(
                               onSelected: (a) => _onAction(a, entry),
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(
+                              itemBuilder: (_) => [
+                                if (!entry.isDirectory)
+                                  const PopupMenuItem(
+                                    value: _FileAction.edit,
+                                    child: Text('编辑'),
+                                  ),
+                                const PopupMenuItem(
                                   value: _FileAction.rename,
                                   child: Text('重命名'),
                                 ),
-                                PopupMenuItem(
+                                const PopupMenuItem(
                                   value: _FileAction.move,
                                   child: Text('移动'),
                                 ),
-                                PopupMenuItem(
+                                const PopupMenuItem(
                                   value: _FileAction.copy,
                                   child: Text('复制'),
                                 ),
-                                PopupMenuItem(
+                                const PopupMenuItem(
                                   value: _FileAction.export,
                                   child: Text('导出'),
                                 ),
-                                PopupMenuItem(
+                                const PopupMenuItem(
                                   value: _FileAction.delete,
                                   child: Text('删除'),
                                 ),

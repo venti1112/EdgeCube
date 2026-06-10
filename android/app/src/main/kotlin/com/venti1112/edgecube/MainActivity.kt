@@ -1,11 +1,14 @@
 package com.venti1112.edgecube
 
+import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.annotation.NonNull
 import com.venti1112.edgecube.server.RuntimeInstaller
@@ -19,10 +22,12 @@ import kotlin.concurrent.thread
 /**
  * 平台通道宿主：
  *  - storage：「管理全部文件」权限查询/申请。
+ *  - power：电池优化白名单状态查询与申请。
  *  - server / server_events：服务端 JVM 进程的启动、停止、命令输入与日志/状态回传。
  */
 class MainActivity : FlutterActivity() {
     private val storageChannel = "com.venti1112.edgecube/storage"
+    private val powerChannel = "com.venti1112.edgecube/power"
     private val serverChannel = "com.venti1112.edgecube/server"
     private val serverEventChannel = "com.venti1112.edgecube/server_events"
 
@@ -52,6 +57,18 @@ class MainActivity : FlutterActivity() {
                 }
                 "externalStorageRoot" ->
                     result.success(Environment.getExternalStorageDirectory()?.absolutePath)
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(messenger, powerChannel).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isIgnoringBatteryOptimizations" ->
+                    result.success(isIgnoringBatteryOptimizations())
+                "requestIgnoreBatteryOptimizations" -> {
+                    requestIgnoreBatteryOptimizations()
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -155,6 +172,32 @@ class MainActivity : FlutterActivity() {
             startActivity(intent)
         } catch (e: Exception) {
             startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+        }
+    }
+
+    /** 本应用是否已被加入电池优化白名单。低于 Android 6.0 无此机制，视为已忽略。 */
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    /** 弹出系统对话框申请加入电池优化白名单；个别 ROM 不支持时退回到电池优化设置页。 */
+    @SuppressLint("BatteryLife")
+    private fun requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        if (isIgnoringBatteryOptimizations()) return
+        try {
+            val intent = Intent(
+                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:$packageName"),
+            )
+            startActivity(intent)
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (_: Exception) {
+            }
         }
     }
 }
