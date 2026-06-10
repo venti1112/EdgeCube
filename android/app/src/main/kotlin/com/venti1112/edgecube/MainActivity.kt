@@ -1,39 +1,138 @@
 package com.venti1112.edgecube
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import androidx.annotation.NonNull
+import com.venti1112.edgecube.server.RuntimeInstaller
+import com.venti1112.edgecube.server.ServerProcessManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import kotlin.concurrent.thread
 
 /**
- * 在应用模块内直接实现「管理全部文件」权限的查询与申请。
- *
- * 用 MethodChannel 而非第三方插件，避免依赖会触发旧版 Kotlin Gradle Plugin
- * 的库——这些库在 Flutter 内置 Kotlin 下无法构建。
+ * 平台通道宿主：
+ *  - storage：「管理全部文件」权限查询/申请。
+ *  - server / server_events：服务端 JVM 进程的启动、停止、命令输入与日志/状态回传。
  */
 class MainActivity : FlutterActivity() {
-    private val channel = "com.venti1112.edgecube/storage"
+    private val storageChannel = "com.venti1112.edgecube/storage"
+    private val serverChannel = "com.venti1112.edgecube/server"
+    private val serverEventChannel = "com.venti1112.edgecube/server_events"
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Android 13+ 显示前台 Service 通知需要运行时授权；未授权也不影响保活，仅不显示通知。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+            }
+        }
+    }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channel)
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "isGranted" -> result.success(isGranted())
-                    "request" -> {
-                        requestAccess()
-                        result.success(null)
-                    }
-                    "externalStorageRoot" ->
-                        result.success(Environment.getExternalStorageDirectory()?.absolutePath)
-                    else -> result.notImplemented()
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
+        val serverManager = ServerProcessManager.getInstance(applicationContext)
+
+        MethodChannel(messenger, storageChannel).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isGranted" -> result.success(isGranted())
+                "request" -> {
+                    requestAccess()
+                    result.success(null)
                 }
+                "externalStorageRoot" ->
+                    result.success(Environment.getExternalStorageDirectory()?.absolutePath)
+                else -> result.notImplemented()
             }
+        }
+
+        MethodChannel(messenger, serverChannel).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "availableVersions" ->
+                    result.success(RuntimeInstaller.availableVersions(applicationContext))
+
+                "isRuntimeReady" -> {
+                    val version = call.argument<String>("version")
+                    if (version == null) {
+                        result.error("BAD_ARGS", "缺少 version", null)
+                    } else {
+                        result.success(RuntimeInstaller.isInstalled(applicationContext, version))
+                    }
+                }
+
+                "isRunning" -> result.success(serverManager.isRunning)
+
+                "activeInstanceId" -> result.success(serverManager.activeInstanceId)
+
+                "start" -> {
+                    val instanceId = call.argument<String>("instanceId")
+                    val workingDir = call.argument<String>("workingDir")
+                    val version = call.argument<String>("version")
+                    val jvmArgs = call.argument<List<String>>("jvmArgs") ?: emptyList()
+                    val programArgs = call.argument<List<String>>("programArgs") ?: emptyList()
+                    if (instanceId == null || workingDir == null || version == null) {
+                        result.error("BAD_ARGS", "缺少 instanceId/workingDir/version", null)
+                    } else {
+                        val instanceName = call.argument<String>("instanceName") ?: instanceId
+                        // 含解压，放后台线程；完成后回主线程返回结果。
+                        thread {
+                            try {
+                                serverManager.start(
+                                    instanceId, instanceName, workingDir, version, jvmArgs, programArgs,
+                                )
+                                runOnUiThread { result.success(true) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("START_FAILED", e.message, null) }
+                            }
+                        }
+                    }
+                }
+
+                "sendCommand" -> {
+                    serverManager.sendCommand(call.argument<String>("line") ?: "")
+                    result.success(null)
+                }
+
+                "stop" -> {
+                    serverManager.stop()
+                    result.success(null)
+                }
+
+                "forceStop" -> {
+                    serverManager.forceStop()
+                    result.success(null)
+                }
+
+                "clearLog" -> {
+                    serverManager.clearLog()
+                    result.success(null)
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+
+        EventChannel(messenger, serverEventChannel).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    serverManager.setEventSink(events)
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    serverManager.setEventSink(null)
+                }
+            },
+        )
     }
 
     private fun isGranted(): Boolean {
