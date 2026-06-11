@@ -45,6 +45,21 @@
 #include <unistd.h>
 #include <android/log.h>
 
+/* ARM64 Tagged Pointers (TBI) 修复：
+ *
+ * Android 11+ (API 31+) 默认启用堆指针标签。JVM 内部会改写指针高位字节作为
+ * 元数据区，释放时标签校验失败导致 SIGABRT（退出码 134）。
+ *
+ * 正确做法：在 JVM 启动前用 mallopt(M_BIONIC_SET_HEAP_TAGGING_LEVEL, 0)
+ * 通知 bionic 分配器「不再给新分配的内存打标签」。这样已有堆指针不受影响，
+ * JVM 后续分配没有标签，改写高位字节不被拦截。
+ *
+ * 注意：不能用 prctl(PR_SET_TAGGED_ADDR_CTRL, 0) 关闭内核 TBI，
+ * 否则 bionic 内部带标签的指针直接损坏。
+ *
+ * mallopt/M_BIONIC_SET_HEAP_TAGGING_LEVEL 在某些 NDK 版本的头文件里
+ * 未声明，故用 dlopen + dlsym 运行时调用以兼容所有 NDK。
+ */
 #define TAG "EdgeCubeLaunch"
 
 #define LOGE(...)                                               \
@@ -55,6 +70,18 @@
         fflush(stderr);                                         \
     } while (0)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+
+/* Android 15+ (MTE 硬件) 的堆标签兼容方案 */
+static void disable_heap_tagging(void) {
+    int (*mallopt_ptr)(int, int) = dlsym(RTLD_DEFAULT, "mallopt");
+    if (mallopt_ptr) {
+        int r = mallopt_ptr(55, 0);
+        LOGI("disable_heap_tagging: mallopt(55,0) returned %d", r);
+        if (r) return;
+    }
+    bool (*android_mp)(int, void*, size_t) = dlsym(RTLD_DEFAULT, "android_mallopt");
+    if (android_mp) { int lv = 0; android_mp(8, &lv, sizeof(lv)); }
+}
 
 /*
  * JLI_Launch —— libjli.so 里真正的入口，和 bin/java 调用的完全一致。
@@ -123,6 +150,10 @@ static void preload_jre_libs(const char *java_home) {
 }
 
 int main(int argc, char **argv) {
+    /* Android 11+ (API 31+)：关闭堆指针标签，防止 JVM 改写指针高位字节
+     * 触发 SIGABRT。必须在任何 JVM 内存分配之前调用。 */
+    disable_heap_tagging();
+
     const char *java_home = getenv("JAVA_HOME");
     if (java_home == NULL || java_home[0] == '\0') {
         LOGE("JAVA_HOME 未设置，无法定位 JRE。");

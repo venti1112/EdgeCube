@@ -4,7 +4,7 @@ project("edgecube_launch" C)
 
 set(CMAKE_C_STANDARD 11)
 
-# 这是一个可执行文件（有 main、PIE），不是共享库。
+# 这是一个可执行文件
 add_executable(launch launcher.c)
 
 # 关键技巧：把可执行文件的产物命名为 "liblaunch.so"。
@@ -22,3 +22,7 @@ target_link_options(launch PRIVATE -fPIE -pie)
 
 # dl：dlopen/dlsym；log：__android_log_print（方便用 logcat 看启动器日志）。
 target_link_libraries(launch dl log)
+
+# LD_PRELOAD 标签修复库：拦截 malloc/free 以恢复 Android 堆指针标签
+add_library(tagfix SHARED tagfix.c)
+target_link_libraries(tagfix dl log)

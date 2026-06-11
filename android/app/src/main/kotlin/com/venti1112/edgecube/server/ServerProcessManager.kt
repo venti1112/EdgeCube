@@ -130,6 +130,9 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         pb.directory(work)
         pb.redirectErrorStream(true) // stderr 合并进 stdout，统一一条日志流
         val env = pb.environment()
+        // LD_PRELOAD 标签修复库：拦截 malloc/free 恢复指针标签再释放，解决 Android 15+ MTE 崩溃
+        val tagfixLib = "${appContext.applicationInfo.nativeLibraryDir}/libtagfix.so"
+        env["LD_PRELOAD"] = tagfixLib
         env["JAVA_HOME"] = jreDir.absolutePath
         env["EC_LIBJLI"] = resolved.libjli.absolutePath
         env["LD_LIBRARY_PATH"] = resolved.ldLibraryPath
