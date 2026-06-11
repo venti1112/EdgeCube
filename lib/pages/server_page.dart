@@ -77,6 +77,7 @@ class _ServerControlPanel extends StatefulWidget {
 
 class _ServerControlPanelState extends State<_ServerControlPanel> {
   late final TextEditingController _memController;
+  late final TextEditingController _jvmArgsController;
   String _version = 'jre21';
   String? _selectedJar;
   Future<_LaunchContext>? _ctxFuture;
@@ -86,6 +87,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     super.initState();
     _memController = TextEditingController(
       text: (widget.instance.maxMemory ?? 2048).toString(),
+    );
+    _jvmArgsController = TextEditingController(
+      text: widget.instance.customJvmArgs ?? '',
     );
     _version = widget.instance.javaVersion ?? 'jre21';
     _selectedJar = widget.instance.selectedJar;
@@ -101,17 +105,21 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   @override
   void dispose() {
     _memController.dispose();
+    _jvmArgsController.dispose();
     super.dispose();
   }
 
   /// 把当前表单值持久化到实例。
   void _persistConfig() {
     final controller = InstanceScope.of(context);
+    final argsText = _jvmArgsController.text.trim();
     controller.updateConfig(
       widget.instance.id,
       maxMemory: int.tryParse(_memController.text.trim()),
       javaVersion: _version,
       selectedJar: _selectedJar,
+      customJvmArgs: argsText.isEmpty ? null : argsText,
+      clearCustomJvmArgs: argsText.isEmpty,
     );
   }
 
@@ -198,6 +206,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     final mem = int.tryParse(_memController.text.trim());
     final jvmArgs = <String>[
       if (mem != null && mem > 0) '-Xmx${mem}M',
+      // 追加用户自定义 JVM 参数（以空白符/换行分隔）。
+      ..._parseCustomJvmArgs(widget.instance.customJvmArgs),
     ];
     // 启动前自动确保 eula=true
     await _ensureEula(ctx.workingDir);
@@ -209,6 +219,15 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       jvmArgs: jvmArgs,
       programArgs: ['-jar', jar, 'nogui'],
     );
+  }
+
+  /// 解析自定义 JVM 参数文本（每行或空格分隔）为参数列表。
+  static List<String> _parseCustomJvmArgs(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return const [];
+    return raw
+        .split(RegExp(r'\s+'))
+        .where((s) => s.isNotEmpty)
+        .toList();
   }
 
   @override
@@ -335,6 +354,23 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                     ),
                     const SizedBox(height: 16),
                     _jarField(dialogContext, ctx),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _jvmArgsController,
+                      maxLines: 4,
+                      minLines: 2,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: '自定义 JVM 参数',
+                        hintText: '每行或空格分隔一个参数，例如：\n-Dfml.ignoreInvalidMinecraftCertificates=true\n-XX:+UseG1GC',
+                        alignLabelWithHint: true,
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
                   ],
                 ),
               ),

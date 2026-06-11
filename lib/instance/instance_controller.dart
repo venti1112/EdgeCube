@@ -121,12 +121,14 @@ class InstanceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 更新指定实例的启动配置（内存、Java 版本、服务端 jar）。
+  /// 更新指定实例的启动配置（内存、Java 版本、服务端 jar、自定义 JVM 参数）。
   Future<void> updateConfig(
     String id, {
     int? maxMemory,
     String? javaVersion,
     String? selectedJar,
+    String? customJvmArgs,
+    bool clearCustomJvmArgs = false,
   }) async {
     _instances = [
       for (final instance in _instances)
@@ -135,6 +137,8 @@ class InstanceController extends ChangeNotifier {
             maxMemory: maxMemory,
             javaVersion: javaVersion,
             selectedJar: selectedJar,
+            customJvmArgs: customJvmArgs,
+            clearCustomJvmArgs: clearCustomJvmArgs,
           )
         else
           instance,
