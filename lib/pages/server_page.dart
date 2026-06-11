@@ -8,6 +8,7 @@ import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
+import '../server/system_monitor_scope.dart';
 import '../widgets/placeholder_page.dart';
 
 /// 各内置 JRE 版本的展示名。
@@ -109,7 +110,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   void initState() {
     super.initState();
     _memController = TextEditingController(
-      text: (widget.instance.maxMemory ?? 1024).toString(),
+      text: (widget.instance.maxMemory ?? 2048).toString(),
     );
     _version = widget.instance.javaVersion ?? 'jre21';
     _selectedJar = widget.instance.selectedJar;
@@ -195,13 +196,36 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     return _LaunchContext(workingDir: dir.path, jars: jars, versions: versions);
   }
 
-  void _start(ServerController server, _LaunchContext ctx) {
+  /// 启动前自动检查并写入 eula.txt，确保 eula=true。
+  Future<void> _ensureEula(String workingDir) async {
+    final eulaFile = File(p.join(workingDir, 'eula.txt'));
+    bool needWrite = false;
+    if (await eulaFile.exists()) {
+      final content = await eulaFile.readAsString();
+      // 检查是否有 eula=true（不区分大小写）
+      if (!RegExp(r'eula\s*=\s*true', caseSensitive: false).hasMatch(content)) {
+        needWrite = true;
+      }
+    } else {
+      needWrite = true;
+    }
+    if (needWrite) {
+      await eulaFile.writeAsString(
+        '#By changing the setting below to TRUE you are indicating your agreement to our EULA (https://aka.ms/MinecraftEULA).\n'
+        'eula=true\n',
+      );
+    }
+  }
+
+  void _start(ServerController server, _LaunchContext ctx) async {
     final jar = _selectedJar;
     if (jar == null) return;
     final mem = int.tryParse(_memController.text.trim());
     final jvmArgs = <String>[
       if (mem != null && mem > 0) '-Xmx${mem}M',
     ];
+    // 启动前自动确保 eula=true
+    await _ensureEula(ctx.workingDir);
     server.start(
       instanceId: widget.instance.id,
       instanceName: widget.instance.name,
@@ -226,20 +250,18 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _statusCard(context, status, active ? server.lastExitCode : null),
+            _statusCard(context, ctx, status, active ? server.lastExitCode : null),
             const SizedBox(height: 16),
-            if (status == ServerStatus.stopped) ...[
-              _configCard(context, ctx),
-              const SizedBox(height: 16),
-            ],
             _actions(context, server, ctx, status),
+            const SizedBox(height: 16),
+            _MonitorCard(maxMemoryMb: widget.instance.maxMemory ?? 2048),
           ],
         );
       },
     );
   }
 
-  Widget _statusCard(BuildContext context, ServerStatus status, int? exitCode) {
+  Widget _statusCard(BuildContext context, _LaunchContext? ctx, ServerStatus status, int? exitCode) {
     final theme = Theme.of(context);
     final (IconData icon, Color color, String text) = switch (status) {
       ServerStatus.stopped => (Icons.stop_circle_outlined,
@@ -270,41 +292,33 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                 ],
               ),
             ),
+            IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: '启动配置',
+              onPressed: () => _openSettings(context, ctx),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _configCard(BuildContext context, _LaunchContext? ctx) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('启动配置', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 12),
-            if (ctx == null)
-              const Row(
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  SizedBox(width: 12),
-                  Text('正在扫描实例目录…'),
-                ],
-              )
-            else ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue:
-                          ctx.versions.contains(_version) ? _version : null,
+  /// 打开启动配置对话框。
+  Future<void> _openSettings(BuildContext context, _LaunchContext? ctx) async {
+    if (ctx == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (ctx2, setDialogState) {
+            return AlertDialog(
+              title: const Text('启动配置'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: ctx.versions.contains(_version) ? _version : null,
                       decoration: const InputDecoration(
                         labelText: 'Java 版本',
                         border: OutlineInputBorder(),
@@ -318,15 +332,11 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                           ),
                       ],
                       onChanged: (v) {
-                        setState(() => _version = v ?? _version);
-                        _persistConfig();
+                        setDialogState(() => _version = v ?? _version);
                       },
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    width: 120,
-                    child: TextField(
+                    const SizedBox(height: 16),
+                    TextField(
                       controller: _memController,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
@@ -335,17 +345,25 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
-                      onEditingComplete: _persistConfig,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    _jarField(dialogContext, ctx),
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
-              _jarField(context, ctx),
-            ],
-          ],
-        ),
-      ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    _persistConfig();
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text('保存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -390,8 +408,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           ),
       ],
       onChanged: (v) {
-        setState(() => _selectedJar = v);
-        _persistConfig();
+        _selectedJar = v;
       },
     );
   }
@@ -463,14 +480,6 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
             ),
           ),
         ],
-        const SizedBox(height: 8),
-        Text(
-          '提示：启动后到「控制台」查看日志并输入命令。首次启动 vanilla 服务端会生成 eula.txt，'
-          '需将其中改为 eula=true 后再次启动。',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
       ],
     );
   }
@@ -648,4 +657,211 @@ Future<String?> _promptName(
   textController.dispose();
   if (result == null || result.isEmpty) return null;
   return result;
+}
+
+/// 系统监控数据面板：设备内存、CPU 使用率，以及服务端内存（运行时显示）。
+class _MonitorCard extends StatelessWidget {
+  const _MonitorCard({required this.maxMemoryMb});
+
+  /// 用户配置的 JVM 最大堆内存（MB）。
+  final int maxMemoryMb;
+
+  @override
+  Widget build(BuildContext context) {
+    final monitor = SystemMonitorScope.of(context);
+    final info = monitor.info;
+    final theme = Theme.of(context);
+
+    final server = ServerScope.of(context);
+    final serverRunning = server.status == ServerStatus.running;
+
+    final memPercent = info.usedMemPercent;
+    final cpuPercent = info.cpuUsage >= 0 ? info.cpuUsage : 0.0;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('系统状态', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 12),
+
+            // 设备内存
+            _MonitorRow(
+              icon: Icons.memory,
+              label: '设备内存',
+              value: '${info.usedMemMb} MB / ${info.totalMemMb} MB',
+              percent: memPercent,
+              color: _colorForPercent(memPercent, theme),
+            ),
+            const SizedBox(height: 12),
+
+            // CPU 使用率
+            _MonitorRow(
+              icon: Icons.speed,
+              label: 'CPU 使用率',
+              value: info.cpuUsage >= 0
+                  ? '${info.cpuUsage.toStringAsFixed(1)}%'
+                  : '不可用',
+              percent: cpuPercent,
+              color: _colorForPercent(cpuPercent, theme),
+            ),
+
+            // 服务端内存（仅运行时显示）
+            if (serverRunning && info.serverMemMb != null) ...[
+              const SizedBox(height: 12),
+              _ServerMemRow(memMb: info.serverMemMb!, maxMemMb: maxMemoryMb),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static Color _colorForPercent(double percent, ThemeData theme) {
+    if (percent >= 85) return theme.colorScheme.error;
+    if (percent >= 65) return Colors.orange;
+    return theme.colorScheme.primary;
+  }
+}
+
+/// 单项监控行：图标 + 标签 + 数值 + 进度条。
+class _MonitorRow extends StatelessWidget {
+  const _MonitorRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.percent,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final double percent;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text(label, style: theme.textTheme.bodyMedium),
+            const Spacer(),
+            Text(
+              value,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        _AnimatedProgressBar(
+          percent: percent,
+          color: color,
+          theme: theme,
+        ),
+      ],
+    );
+  }
+}
+
+/// 服务端内存行：当前 VmRSS / 用户设置最大值 + 进度条。
+class _ServerMemRow extends StatelessWidget {
+  const _ServerMemRow({required this.memMb, required this.maxMemMb});
+
+  final int memMb;
+  final int maxMemMb;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final percent = maxMemMb > 0 ? (memMb / maxMemMb) * 100.0 : 0.0;
+    final color = _MonitorCard._colorForPercent(percent, theme);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.dns, size: 18, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text('服务端内存', style: theme.textTheme.bodyMedium),
+            const Spacer(),
+            Text(
+              '$memMb MB / $maxMemMb MB',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        _AnimatedProgressBar(
+          percent: percent,
+          color: color,
+          theme: theme,
+        ),
+      ],
+    );
+  }
+}
+
+/// 带平滑过渡动画的进度条。
+/// 使用 TweenAnimationBuilder 在 percent 变化时平滑插值宽度。
+class _AnimatedProgressBar extends StatelessWidget {
+  const _AnimatedProgressBar({
+    required this.percent,
+    required this.color,
+    required this.theme,
+  });
+
+  final double percent;
+  final Color color;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(
+        begin: (percent.clamp(0.0, 100.0)) / 100.0,
+        end: (percent.clamp(0.0, 100.0)) / 100.0,
+      ),
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOut,
+      builder: (context, v, _) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: SizedBox(
+            height: 6,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: ColoredBox(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                  ),
+                ),
+                FractionallySizedBox(
+                  widthFactor: v.clamp(0.0, 1.0),
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox.expand(
+                    child: ColoredBox(color: color),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 }

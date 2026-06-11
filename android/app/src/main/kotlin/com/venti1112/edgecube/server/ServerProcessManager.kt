@@ -49,6 +49,19 @@ class ServerProcessManager private constructor(private val appContext: Context) 
     val isRunning: Boolean get() = process?.isAlive == true
     val activeInstanceId: String? get() = runningInstanceId
 
+    /** 子进程 PID；未运行时返回 -1。 */
+    val pid: Int get() {
+        val p = process ?: return -1
+        return try {
+            // Android Process 对象在 JVM 层持有 pid 字段，反射取之。
+            val field = p.javaClass.getDeclaredField("pid")
+            field.isAccessible = true
+            field.getInt(p)
+        } catch (_: Exception) {
+            -1
+        }
+    }
+
     /**
      * 设置/解除事件接收端。设置时回放历史日志与当前状态，使重建的界面能恢复（含正在运行的实例）。
      */

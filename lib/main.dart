@@ -5,6 +5,8 @@ import 'instance/instance_controller.dart';
 import 'instance/instance_scope.dart';
 import 'server/server_controller.dart';
 import 'server/server_scope.dart';
+import 'server/system_monitor_controller.dart';
+import 'server/system_monitor_scope.dart';
 import 'theme/theme_scope.dart';
 import 'theme/theme_store.dart';
 
@@ -14,10 +16,12 @@ Future<void> main() async {
   final instanceController = InstanceController();
   await instanceController.init();
   final serverController = ServerController();
+  final systemMonitorController = SystemMonitorController();
   runApp(EdgeCubeApp(
     initialThemeMode: initialThemeMode,
     instanceController: instanceController,
     serverController: serverController,
+    systemMonitorController: systemMonitorController,
   ));
 }
 
@@ -27,11 +31,13 @@ class EdgeCubeApp extends StatefulWidget {
     this.initialThemeMode = ThemeMode.system,
     required this.instanceController,
     required this.serverController,
+    required this.systemMonitorController,
   });
 
   final ThemeMode initialThemeMode;
   final InstanceController instanceController;
   final ServerController serverController;
+  final SystemMonitorController systemMonitorController;
 
   @override
   State<EdgeCubeApp> createState() => _EdgeCubeAppState();
@@ -55,19 +61,22 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
         controller: widget.instanceController,
         child: ServerScope(
           controller: widget.serverController,
-          child: MaterialApp(
-            title: 'EdgeCube',
-            theme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
-            ),
-            darkTheme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.green,
-                brightness: Brightness.dark,
+          child: SystemMonitorScope(
+            controller: widget.systemMonitorController,
+            child: MaterialApp(
+              title: 'EdgeCube',
+              theme: ThemeData(
+                colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
               ),
+              darkTheme: ThemeData(
+                colorScheme: ColorScheme.fromSeed(
+                  seedColor: Colors.green,
+                  brightness: Brightness.dark,
+                ),
+              ),
+              themeMode: _themeMode,
+              home: const HomeShell(),
             ),
-            themeMode: _themeMode,
-            home: const HomeShell(),
           ),
         ),
       ),
