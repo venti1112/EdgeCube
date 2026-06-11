@@ -25,6 +25,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
   bool _saving = false;
   Object? _error;
 
+  /// 上次加载或保存时的文本快照，用于与当前文本对比判断是否有实际修改。
+  String _savedText = '';
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +45,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
       final text = await _service.readText(widget.path);
       if (!mounted) return;
       _controller.text = text;
+      _savedText = text;
       // 在写入初值之后再监听，避免初始化即标记为已修改。
       _controller.addListener(_onChanged);
       setState(() => _loading = false);
@@ -55,7 +59,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   void _onChanged() {
-    if (!_dirty) setState(() => _dirty = true);
+    final isDirty = _controller.text != _savedText;
+    if (isDirty != _dirty) setState(() => _dirty = isDirty);
   }
 
   Future<void> _save() async {
@@ -64,6 +69,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     try {
       await _service.writeText(widget.path, _controller.text);
       if (!mounted) return;
+      _savedText = _controller.text;
       setState(() {
         _dirty = false;
         _saving = false;
@@ -76,26 +82,40 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
   }
 
+  /// 弹出三选一对话框：保存、不保存、取消。
+  /// 返回 true 表示允许退出，false 表示取消退出。
   Future<bool> _confirmDiscard() async {
     if (!_dirty) return true;
-    final discard = await showDialog<bool>(
+    final choice = await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('放弃修改？'),
-        content: const Text('有未保存的更改，确定要退出吗？'),
+        title: const Text('保存修改？'),
+        content: const Text('文件有未保存的更改。'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            onPressed: () => Navigator.pop(ctx, 0),
+            child: const Text('不保存'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('放弃'),
+            onPressed: () => Navigator.pop(ctx, 1),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 2),
+            child: const Text('保存'),
           ),
         ],
       ),
     );
-    return discard ?? false;
+    switch (choice) {
+      case 2:
+        await _save();
+        return !_dirty; // 保存成功则允许退出
+      case 0:
+        return true; // 不保存，直接退出
+      default:
+        return false; // 取消退出
+    }
   }
 
   @override

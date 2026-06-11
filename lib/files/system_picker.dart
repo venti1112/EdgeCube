@@ -72,10 +72,10 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
     }
   }
 
-  bool get _canGoUp {
-    final parent = p.dirname(_current.path);
-    return parent != _current.path;
-  }
+  /// 是否已到达内部存储根目录（不允许再返回上级）。
+  bool get _atRoot => p.equals(_current.path, widget.startDir.path);
+
+  bool get _canGoUp => !_atRoot;
 
   void _enter(FileEntry entry) {
     _current = Directory(entry.path);
@@ -115,7 +115,7 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
               onPressed: _canGoUp ? _goUp : null,
             ),
             title: Text(
-              _current.path,
+              _atRoot ? '内部存储' : _current.path,
               style: theme.textTheme.bodySmall,
               overflow: TextOverflow.ellipsis,
             ),

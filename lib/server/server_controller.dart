@@ -116,10 +116,15 @@ class ServerController extends ChangeNotifier {
     await _service.forceStop();
   }
 
-  /// 发送一行控制台命令（仅运行中有效）。
+  /// 发送一行控制台命令（启动中、运行中、停止中均有效，便于排查异常）。
   Future<void> sendCommand(String line) async {
     final cmd = line.trim();
-    if (cmd.isEmpty || _status != ServerStatus.running) return;
+    if (cmd.isEmpty) return;
+    if (_status != ServerStatus.starting &&
+        _status != ServerStatus.running &&
+        _status != ServerStatus.stopping) {
+      return;
+    }
     _appendLine('> $cmd');
     notifyListeners();
     await _service.sendCommand(cmd);

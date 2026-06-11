@@ -78,6 +78,10 @@ class _ConsolePageState extends State<ConsolePage> {
     final theme = Theme.of(context);
     final log = server.log;
     final running = server.isRunning;
+    // 启动中、运行中、停止中均允许发送命令。
+    final canSend = server.status == ServerStatus.starting ||
+        server.status == ServerStatus.running ||
+        server.status == ServerStatus.stopping;
 
     _scheduleAutoScroll();
 
@@ -170,7 +174,7 @@ class _ConsolePageState extends State<ConsolePage> {
               ],
             ),
           ),
-          _inputBar(context, server, running),
+          _inputBar(context, server, canSend),
         ],
       ),
     );
@@ -188,7 +192,7 @@ class _ConsolePageState extends State<ConsolePage> {
     };
   }
 
-  Widget _inputBar(BuildContext context, ServerController server, bool running) {
+  Widget _inputBar(BuildContext context, ServerController server, bool canSend) {
     final theme = Theme.of(context);
     return Material(
       elevation: 2,
@@ -202,15 +206,15 @@ class _ConsolePageState extends State<ConsolePage> {
                 child: TextField(
                   controller: _cmd,
                   focusNode: _focus,
-                  enabled: running,
+                  enabled: canSend,
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => _send(server),
                   style: const TextStyle(fontFamily: 'monospace'),
                   decoration: InputDecoration(
                     isDense: true,
-                    hintText: running
+                    hintText: canSend
                         ? '输入命令，回车发送（如 list、say hi、op <玩家>）'
-                        : '服务器未运行',
+                        : '服务器已停止',
                     border: const OutlineInputBorder(),
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -220,7 +224,7 @@ class _ConsolePageState extends State<ConsolePage> {
               IconButton(
                 icon: const Icon(Icons.send),
                 color: theme.colorScheme.primary,
-                onPressed: running ? () => _send(server) : null,
+                onPressed: canSend ? () => _send(server) : null,
               ),
             ],
           ),

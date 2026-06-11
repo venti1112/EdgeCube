@@ -678,14 +678,10 @@ class _InstanceListSheet extends StatelessWidget {
                       trailing: IconButton(
                         icon: Icon(
                           Icons.delete_outline,
-                          color: server.isActive(instance.id)
-                              ? theme.colorScheme.outline
-                              : theme.colorScheme.error,
+                          color: theme.colorScheme.error,
                         ),
                         tooltip: '删除实例',
-                        onPressed: server.isActive(instance.id)
-                            ? null
-                            : () => _confirmDelete(context, instance, theme),
+                        onPressed: () => _confirmDelete(context, instance, theme),
                       ),
                     ),
                 ],
@@ -737,12 +733,17 @@ class _InstanceListSheet extends StatelessWidget {
     ThemeData theme,
   ) async {
     final navigator = Navigator.of(context);
+    final running = server.isActive(instance.id);
     // 第一次确认
     final first = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('确认删除'),
-        content: Text('确定要删除实例「${instance.name}」吗？'),
+        content: Text(
+          running
+              ? '实例「${instance.name}」正在运行，删除前将自动停止服务。确定删除吗？'
+              : '确定要删除实例「${instance.name}」吗？',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -785,6 +786,11 @@ class _InstanceListSheet extends StatelessWidget {
       ),
     );
     if (second != true) return;
+
+    // 若该实例正在运行，先强制停止
+    if (running) {
+      await server.forceStop();
+    }
 
     await controller.deleteInstance(instance.id);
     if (navigator.canPop()) navigator.pop();

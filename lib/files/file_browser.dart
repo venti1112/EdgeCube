@@ -32,12 +32,21 @@ class FileBrowser extends StatefulWidget {
 
   final Directory rootDir;
 
+  /// 当前文件浏览器是否不在根目录（供返回键处理使用）。
+  static bool get canNavigateUp => _FileBrowserState._active?.canGoUp ?? false;
+
+  /// 让当前文件浏览器返回上一级目录（供返回键处理使用）。
+  static void navigateUp() => _FileBrowserState._active?.goUp();
+
   @override
   State<FileBrowser> createState() => _FileBrowserState();
 }
 
 class _FileBrowserState extends State<FileBrowser> {
   static const _service = FileService();
+
+  /// 当前活跃的 FileBrowser 实例引用，供 HomeShell 处理系统返回键时查询。
+  static _FileBrowserState? _active;
 
   late Directory _current = widget.rootDir;
   List<FileEntry> _entries = [];
@@ -46,7 +55,14 @@ class _FileBrowserState extends State<FileBrowser> {
   @override
   void initState() {
     super.initState();
+    _active = this;
     _load();
+  }
+
+  @override
+  void dispose() {
+    if (_active == this) _active = null;
+    super.dispose();
   }
 
   @override
@@ -102,6 +118,12 @@ class _FileBrowserState extends State<FileBrowser> {
     );
     if (mounted) await _load();
   }
+
+  /// 是否已回到实例根目录（供外部返回键处理使用）。
+  bool get canGoUp => !p.equals(_current.path, widget.rootDir.path);
+
+  /// 返回上一级目录（供外部返回键处理使用）。
+  void goUp() => _goUp();
 
   void _goUp() {
     if (_atRoot) return;
