@@ -109,7 +109,7 @@ class _ConsolePageState extends State<ConsolePage> {
                   },
           ),
           IconButton(
-            icon: const Icon(Icons.clear_all),
+            icon: const Icon(Icons.delete_outline),
             tooltip: '清空日志',
             onPressed: log.isEmpty ? null : server.clearLog,
           ),

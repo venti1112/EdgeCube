@@ -4,6 +4,12 @@ import 'package:flutter/foundation.dart';
 
 import 'server_service.dart';
 
+/// 匹配 Minecraft 服务端日志中玩家加入/离开的正则。
+final _reJoin = RegExp(r'(\w{1,16})\[/[\d.:]+\] logged in');
+final _reLeave = RegExp(r'(\w{1,16}) left the game');
+final _reListResp = RegExp(r'online(?:\s*:\s*|\s+)(.*)');
+
+
 /// 服务端进程的运行状态。
 ///
 /// - [stopped]：进程未运行。
@@ -34,6 +40,7 @@ class ServerController extends ChangeNotifier {
   String? _instanceName;
   int? _lastExitCode;
   final List<String> _log = [];
+  final Set<String> _onlinePlayers = {};
 
   ServerStatus get status => _status;
   bool get isRunning => _status == ServerStatus.running;
@@ -45,6 +52,7 @@ class ServerController extends ChangeNotifier {
   String? get runningInstanceName => _instanceName;
   int? get lastExitCode => _lastExitCode;
   List<String> get log => List.unmodifiable(_log);
+  Set<String> get onlinePlayers => Set.unmodifiable(_onlinePlayers);
 
   /// 是否正有某个“其它”实例在运行（用于禁用对当前实例的启动）。
   bool isOtherRunning(String instanceId) =>
@@ -130,6 +138,7 @@ class ServerController extends ChangeNotifier {
     switch (event) {
       case ServerLogEvent(:final line):
         _appendLine(line);
+        _parsePlayerEvent(line);
         notifyListeners();
       case ServerStateEvent(
           :final status,
@@ -151,12 +160,39 @@ class ServerController extends ChangeNotifier {
         } else {
           _status = ServerStatus.stopped;
           _lastExitCode = exitCode;
+          _onlinePlayers.clear();
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
           if (exitCode != null) {
             _appendLine('[EdgeCube] 服务端已退出（退出码 $exitCode）');
           }
         }
         notifyListeners();
+    }
+  }
+
+  /// 解析日志中的玩家加入/离开/list 响应，维护在线玩家集合。
+  void _parsePlayerEvent(String line) {
+    final joinMatch = _reJoin.firstMatch(line);
+    if (joinMatch != null) {
+      _onlinePlayers.add(joinMatch.group(1)!);
+      return;
+    }
+    final leaveMatch = _reLeave.firstMatch(line);
+    if (leaveMatch != null) {
+      _onlinePlayers.remove(leaveMatch.group(1)!);
+      return;
+    }
+    // 解析 list 命令响应：There are X of Y players online: name1, name2
+    final listMatch = _reListResp.firstMatch(line);
+    if (listMatch != null) {
+      final names = listMatch.group(1)!.trim();
+      if (names.isNotEmpty) {
+        _onlinePlayers
+          ..clear()
+          ..addAll(names.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty));
+      } else {
+        _onlinePlayers.clear();
+      }
     }
   }
 
