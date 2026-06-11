@@ -100,11 +100,20 @@ class _ServerControlPanel extends StatefulWidget {
 }
 
 class _ServerControlPanelState extends State<_ServerControlPanel> {
-  final TextEditingController _memController =
-      TextEditingController(text: '1024');
+  late final TextEditingController _memController;
   String _version = 'jre21';
   String? _selectedJar;
   Future<_LaunchContext>? _ctxFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _memController = TextEditingController(
+      text: (widget.instance.maxMemory ?? 1024).toString(),
+    );
+    _version = widget.instance.javaVersion ?? 'jre21';
+    _selectedJar = widget.instance.selectedJar;
+  }
 
   @override
   void didChangeDependencies() {
@@ -119,6 +128,17 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     super.dispose();
   }
 
+  /// 把当前表单值持久化到实例。
+  void _persistConfig() {
+    final controller = InstanceScope.of(context);
+    controller.updateConfig(
+      widget.instance.id,
+      maxMemory: int.tryParse(_memController.text.trim()),
+      javaVersion: _version,
+      selectedJar: _selectedJar,
+    );
+  }
+
   Future<_LaunchContext> _loadContext() {
     final instances = InstanceScope.of(context);
     final server = ServerScope.of(context);
@@ -126,8 +146,10 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     future.then((ctx) {
       if (!mounted) return;
       setState(() {
-        _selectedJar = ctx.jars.isNotEmpty ? ctx.jars.first : null;
-        // 选定一个该架构可用的默认版本，避免下拉值落在 items 之外。
+        // 优先保留已持久化的 jar 和版本，若无效则回退到扫描结果。
+        if (_selectedJar == null || !ctx.jars.contains(_selectedJar)) {
+          _selectedJar = ctx.jars.isNotEmpty ? ctx.jars.first : null;
+        }
         if (!ctx.versions.contains(_version) && ctx.versions.isNotEmpty) {
           _version =
               ctx.versions.contains('jre21') ? 'jre21' : ctx.versions.first;
@@ -295,7 +317,10 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                             child: Text(_kVersionLabels[v] ?? v),
                           ),
                       ],
-                      onChanged: (v) => setState(() => _version = v ?? _version),
+                      onChanged: (v) {
+                        setState(() => _version = v ?? _version);
+                        _persistConfig();
+                      },
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -310,6 +335,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
+                      onEditingComplete: _persistConfig,
                     ),
                   ),
                 ],
@@ -342,6 +368,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       );
     }
     return DropdownButtonFormField<String>(
+      isExpanded: true,
       initialValue: _selectedJar,
       decoration: const InputDecoration(
         labelText: '服务端 jar',
@@ -352,7 +379,20 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         for (final jar in ctx.jars)
           DropdownMenuItem(value: jar, child: Text(jar)),
       ],
-      onChanged: (v) => setState(() => _selectedJar = v),
+      selectedItemBuilder: (context) => [
+        for (final jar in ctx.jars)
+          DropdownMenuItem<String>(
+            value: jar,
+            child: Text(
+              jar,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+      onChanged: (v) {
+        setState(() => _selectedJar = v);
+        _persistConfig();
+      },
     );
   }
 

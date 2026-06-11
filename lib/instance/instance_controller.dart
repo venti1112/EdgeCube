@@ -121,6 +121,28 @@ class InstanceController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 更新指定实例的启动配置（内存、Java 版本、服务端 jar）。
+  Future<void> updateConfig(
+    String id, {
+    int? maxMemory,
+    String? javaVersion,
+    String? selectedJar,
+  }) async {
+    _instances = [
+      for (final instance in _instances)
+        if (instance.id == id)
+          instance.copyWith(
+            maxMemory: maxMemory,
+            javaVersion: javaVersion,
+            selectedJar: selectedJar,
+          )
+        else
+          instance,
+    ];
+    await _store.saveInstances(_instances);
+    notifyListeners();
+  }
+
   /// 是否已存在指定名称的实例；[exceptId] 用于改名时排除自身。
   bool _isNameTaken(String name, {String? exceptId}) {
     return _instances.any(
