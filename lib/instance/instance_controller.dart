@@ -143,6 +143,22 @@ class InstanceController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 删除指定实例：从列表移除、删除磁盘文件夹、持久化；若删的是当前选中项则自动选第一个。
+  Future<void> deleteInstance(String id) async {
+    final dir = await _rootResolver();
+    final instanceDir = Directory(p.join(dir.path, id));
+    if (await instanceDir.exists()) {
+      await instanceDir.delete(recursive: true);
+    }
+    _instances = _instances.where((i) => i.id != id).toList();
+    if (_selectedId == id) {
+      _selectedId = _instances.isNotEmpty ? _instances.first.id : null;
+    }
+    await _store.saveInstances(_instances);
+    await _store.saveSelectedId(_selectedId);
+    notifyListeners();
+  }
+
   /// 是否已存在指定名称的实例；[exceptId] 用于改名时排除自身。
   bool _isNameTaken(String name, {String? exceptId}) {
     return _instances.any(

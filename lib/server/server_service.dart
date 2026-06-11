@@ -76,7 +76,7 @@ class ServerService {
           return ServerLogEvent(map['line'] as String? ?? '');
         case 'state':
           return ServerStateEvent(
-            running: map['running'] as bool? ?? false,
+            status: map['status'] as String?,
             instanceId: map['instanceId'] as String?,
             instanceName: map['instanceName'] as String?,
             exitCode: map['exitCode'] as int?,
@@ -101,15 +101,18 @@ class ServerLogEvent extends ServerEvent {
 }
 
 /// 进程状态变化（也用于界面重连时的状态回放）。
+///
+/// [status] 为 `null` 表示已停止；非空时为 `preparing` / `starting` / `running`。
 class ServerStateEvent extends ServerEvent {
   const ServerStateEvent({
-    required this.running,
+    required this.status,
     this.instanceId,
     this.instanceName,
     this.exitCode,
   });
 
-  final bool running;
+  /// 进程状态字符串；null 表示已停止。
+  final String? status;
   final String? instanceId;
   final String? instanceName;
   final int? exitCode;

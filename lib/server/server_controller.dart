@@ -5,7 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'server_service.dart';
 
 /// 服务端进程的运行状态。
-enum ServerStatus { stopped, starting, running, stopping }
+///
+/// - [stopped]：进程未运行。
+/// - [preparing]：正在解压 JRE 运行时。
+/// - [starting]：JVM 已启动，服务端正在初始化（尚未输出 Done）。
+/// - [running]：服务端初始化完成，可接受玩家连接。
+/// - [stopping]：已发送 stop 命令，等待进程退出。
+enum ServerStatus { stopped, preparing, starting, running, stopping }
 
 /// 管理服务端进程的运行状态与日志缓冲，并把 UI 操作转发到 [ServerService]。
 ///
@@ -32,7 +38,9 @@ class ServerController extends ChangeNotifier {
   ServerStatus get status => _status;
   bool get isRunning => _status == ServerStatus.running;
   bool get isBusy =>
-      _status == ServerStatus.starting || _status == ServerStatus.stopping;
+      _status == ServerStatus.preparing ||
+      _status == ServerStatus.starting ||
+      _status == ServerStatus.stopping;
   String? get runningInstanceId => _instanceId;
   String? get runningInstanceName => _instanceName;
   int? get lastExitCode => _lastExitCode;
@@ -58,7 +66,7 @@ class ServerController extends ChangeNotifier {
     _instanceId = instanceId;
     _instanceName = instanceName;
     _lastExitCode = null;
-    _status = ServerStatus.starting;
+    _status = ServerStatus.preparing;
     _appendLine('[EdgeCube] 启动 $instanceName …');
     notifyListeners();
     try {
@@ -70,9 +78,9 @@ class ServerController extends ChangeNotifier {
         jvmArgs: jvmArgs,
         programArgs: programArgs,
       );
-      // 兜底：若 state 事件尚未把状态推进到 running。
-      if (_status == ServerStatus.starting) {
-        _status = ServerStatus.running;
+      // 兜底：若 state 事件尚未把状态推进到 starting/running。
+      if (_status == ServerStatus.preparing) {
+        _status = ServerStatus.starting;
         notifyListeners();
       }
     } catch (e) {
@@ -124,13 +132,19 @@ class ServerController extends ChangeNotifier {
         _appendLine(line);
         notifyListeners();
       case ServerStateEvent(
-          :final running,
+          :final status,
           :final instanceId,
           :final instanceName,
           :final exitCode
         ):
-        if (running) {
-          _status = ServerStatus.running;
+        if (status != null) {
+          // 进程存活，根据 status 字符串映射到对应状态。
+          _status = switch (status) {
+            'preparing' => ServerStatus.preparing,
+            'starting'  => ServerStatus.starting,
+            'running'   => ServerStatus.running,
+            _           => ServerStatus.starting,
+          };
           // 界面重建后，从原生回放中恢复当前正在运行的实例。
           if (instanceId != null) _instanceId = instanceId;
           if (instanceName != null) _instanceName = instanceName;

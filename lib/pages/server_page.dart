@@ -35,12 +35,6 @@ class ServerPage extends StatelessWidget {
             controller: controller,
             selected: selected,
           ),
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: '编辑实例',
-            onPressed:
-                selected == null ? null : () => _editInstance(context, controller, selected),
-          ),
           const SizedBox(width: 4),
         ],
       ),
@@ -55,25 +49,6 @@ class ServerPage extends StatelessWidget {
               instance: selected,
             ),
     );
-  }
-
-  Future<void> _editInstance(
-    BuildContext context,
-    InstanceController controller,
-    Instance instance,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final name = await _promptName(
-      context,
-      title: '编辑显示名称',
-      initialValue: instance.name,
-    );
-    if (name == null) return;
-    try {
-      await controller.rename(instance.id, name);
-    } on DuplicateInstanceNameException {
-      messenger.showSnackBar(SnackBar(content: Text('已存在同名实例：$name')));
-    }
   }
 }
 
@@ -250,7 +225,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _statusCard(context, ctx, status, active ? server.lastExitCode : null),
+            _statusCard(context, server, ctx, status, active ? server.lastExitCode : null),
             const SizedBox(height: 16),
             _actions(context, server, ctx, status),
             const SizedBox(height: 16),
@@ -261,14 +236,15 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     );
   }
 
-  Widget _statusCard(BuildContext context, _LaunchContext? ctx, ServerStatus status, int? exitCode) {
+  Widget _statusCard(BuildContext context, ServerController server, _LaunchContext? ctx, ServerStatus status, int? exitCode) {
     final theme = Theme.of(context);
     final (IconData icon, Color color, String text) = switch (status) {
-      ServerStatus.stopped => (Icons.stop_circle_outlined,
+      ServerStatus.stopped   => (Icons.stop_circle_outlined,
           theme.colorScheme.outline, '已停止'),
-      ServerStatus.starting => (Icons.hourglass_top, Colors.orange, '启动中…'),
-      ServerStatus.running => (Icons.play_circle, Colors.green, '运行中'),
-      ServerStatus.stopping => (Icons.hourglass_bottom, Colors.orange, '停止中…'),
+      ServerStatus.preparing => (Icons.hourglass_empty, Colors.orange, '准备中…'),
+      ServerStatus.starting  => (Icons.hourglass_top, Colors.orange, '启动中…'),
+      ServerStatus.running   => (Icons.play_circle, Colors.green, '运行中'),
+      ServerStatus.stopping  => (Icons.hourglass_bottom, Colors.orange, '停止中…'),
     };
     return Card(
       child: Padding(
@@ -294,8 +270,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
             ),
             IconButton(
               icon: const Icon(Icons.settings_outlined),
-              tooltip: '启动配置',
-              onPressed: () => _openSettings(context, ctx),
+              tooltip: '实例配置',
+              onPressed: () => _openSettings(context, server, ctx),
             ),
           ],
         ),
@@ -304,19 +280,30 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   }
 
   /// 打开启动配置对话框。
-  Future<void> _openSettings(BuildContext context, _LaunchContext? ctx) async {
+  Future<void> _openSettings(BuildContext context, ServerController server, _LaunchContext? ctx) async {
     if (ctx == null) return;
+    final nameController = TextEditingController(text: widget.instance.name);
+    final controller = InstanceScope.of(context);
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (ctx2, setDialogState) {
             return AlertDialog(
-              title: const Text('启动配置'),
+              title: const Text('实例配置'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: '名称',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       initialValue: ctx.versions.contains(_version) ? _version : null,
                       decoration: const InputDecoration(
@@ -353,9 +340,34 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () {
+                  onPressed: () async {
+                    final newName = nameController.text.trim();
+                    if (newName.isNotEmpty && newName != widget.instance.name) {
+                      try {
+                        await controller.rename(widget.instance.id, newName);
+                      } on DuplicateInstanceNameException {
+                        if (context.mounted) {
+                          await showDialog<void>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('提示'),
+                              content: Text('已存在同名实例：$newName'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(ctx).pop(),
+                                  child: const Text('确定'),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                        return;
+                      }
+                    }
                     _persistConfig();
-                    Navigator.of(dialogContext).pop();
+                    if (dialogContext.mounted) {
+                      Navigator.of(dialogContext).pop();
+                    }
                   },
                   child: const Text('保存'),
                 ),
@@ -365,6 +377,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         );
       },
     );
+    nameController.dispose();
   }
 
   Widget _jarField(BuildContext context, _LaunchContext ctx) {
@@ -421,19 +434,22 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   ) {
     final theme = Theme.of(context);
 
-    if (status == ServerStatus.running) {
+    if (status == ServerStatus.running ||
+        status == ServerStatus.starting ||
+        status == ServerStatus.stopping) {
+      final canStop = status == ServerStatus.running;
       return Row(
         children: [
           Expanded(
             child: FilledButton.icon(
-              onPressed: server.stop,
+              onPressed: canStop ? server.stop : null,
               icon: const Icon(Icons.stop),
               label: const Text('停止'),
             ),
           ),
           const SizedBox(width: 12),
           OutlinedButton.icon(
-            onPressed: server.forceStop,
+            onPressed: () => _confirmForceStop(context, server, theme),
             icon: const Icon(Icons.dangerous_outlined),
             label: const Text('强制'),
           ),
@@ -441,7 +457,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       );
     }
 
-    if (status == ServerStatus.starting || status == ServerStatus.stopping) {
+    if (status == ServerStatus.preparing) {
       return FilledButton.icon(
         onPressed: null,
         icon: const SizedBox(
@@ -449,7 +465,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           height: 18,
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
-        label: Text(status == ServerStatus.starting ? '启动中…' : '停止中…'),
+        label: const Text('准备中…'),
       );
     }
 
@@ -482,6 +498,38 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         ],
       ],
     );
+  }
+
+  /// 确认后强制结束服务端进程。
+  Future<void> _confirmForceStop(
+    BuildContext context,
+    ServerController server,
+    ThemeData theme,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          '强制停止',
+          style: TextStyle(color: theme.colorScheme.error),
+        ),
+        content: const Text('强制结束可能导致服务端数据丢失，确认继续？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('确认强制停止'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) server.forceStop();
   }
 }
 
@@ -522,19 +570,24 @@ class _InstanceSelectorButton extends StatelessWidget {
   }
 
   Future<void> _openSelector(BuildContext context) async {
+    final server = ServerScope.of(context);
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (sheetContext) => _InstanceListSheet(controller: controller),
+      builder: (sheetContext) => _InstanceListSheet(
+        controller: controller,
+        server: server,
+      ),
     );
   }
 }
 
 /// 实例列表底部弹窗：展示全部实例 + “新建实例”入口。
 class _InstanceListSheet extends StatelessWidget {
-  const _InstanceListSheet({required this.controller});
+  const _InstanceListSheet({required this.controller, required this.server});
 
   final InstanceController controller;
+  final ServerController server;
 
   @override
   Widget build(BuildContext context) {
@@ -586,6 +639,18 @@ class _InstanceListSheet extends StatelessWidget {
                         controller.select(instance.id);
                         Navigator.of(context).pop();
                       },
+                      trailing: IconButton(
+                        icon: Icon(
+                          Icons.delete_outline,
+                          color: server.isActive(instance.id)
+                              ? theme.colorScheme.outline
+                              : theme.colorScheme.error,
+                        ),
+                        tooltip: '删除实例',
+                        onPressed: server.isActive(instance.id)
+                            ? null
+                            : () => _confirmDelete(context, instance, theme),
+                      ),
                     ),
                 ],
               ),
@@ -595,7 +660,6 @@ class _InstanceListSheet extends StatelessWidget {
             leading: const Icon(Icons.add),
             title: const Text('新建实例'),
             onTap: () async {
-              final messenger = ScaffoldMessenger.of(context);
               final navigator = Navigator.of(context);
               final name = await _promptName(
                 context,
@@ -607,14 +671,87 @@ class _InstanceListSheet extends StatelessWidget {
                 await controller.createInstance(name);
                 navigator.pop();
               } on DuplicateInstanceNameException {
-                messenger
-                    .showSnackBar(SnackBar(content: Text('已存在同名实例：$name')));
+                if (context.mounted) {
+                  await showDialog<void>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('提示'),
+                      content: Text('已存在同名实例：$name'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          child: const Text('确定'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
               }
             },
           ),
         ],
       ),
     );
+  }
+
+  /// 两次确认后删除实例：第一次普通确认，第二次强调不可恢复。
+  Future<void> _confirmDelete(
+    BuildContext context,
+    Instance instance,
+    ThemeData theme,
+  ) async {
+    final navigator = Navigator.of(context);
+    // 第一次确认
+    final first = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认删除'),
+        content: Text('确定要删除实例「${instance.name}」吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (first != true) return;
+
+    if (!context.mounted) return;
+    // 第二次确认：强调不可恢复
+    final second = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          '不可恢复',
+          style: TextStyle(color: theme.colorScheme.error),
+        ),
+        content: Text(
+          '删除后实例「${instance.name}」的所有文件将永久丢失，确认继续？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('确认删除'),
+          ),
+        ],
+      ),
+    );
+    if (second != true) return;
+
+    await controller.deleteInstance(instance.id);
+    if (navigator.canPop()) navigator.pop();
   }
 }
 
@@ -673,7 +810,10 @@ class _MonitorCard extends StatelessWidget {
     final theme = Theme.of(context);
 
     final server = ServerScope.of(context);
-    final serverRunning = server.status == ServerStatus.running;
+    final serverStatus = server.status;
+    final serverProcessAlive = serverStatus == ServerStatus.starting ||
+        serverStatus == ServerStatus.running ||
+        serverStatus == ServerStatus.stopping;
 
     final memPercent = info.usedMemPercent;
     final cpuPercent = info.cpuUsage >= 0 ? info.cpuUsage : 0.0;
@@ -708,11 +848,12 @@ class _MonitorCard extends StatelessWidget {
               color: _colorForPercent(cpuPercent, theme),
             ),
 
-            // 服务端内存（仅运行时显示）
-            if (serverRunning && info.serverMemMb != null) ...[
-              const SizedBox(height: 12),
-              _ServerMemRow(memMb: info.serverMemMb!, maxMemMb: maxMemoryMb),
-            ],
+            // 服务端内存（常驻显示，未运行时显示提示信息）
+            const SizedBox(height: 12),
+            _ServerMemRow(
+              memMb: serverProcessAlive ? info.serverMemMb : null,
+              maxMemMb: maxMemoryMb,
+            ),
           ],
         ),
       ),
@@ -775,17 +916,21 @@ class _MonitorRow extends StatelessWidget {
 }
 
 /// 服务端内存行：当前 VmRSS / 用户设置最大值 + 进度条。
+/// [memMb] 为 null 时表示服务端未运行。
 class _ServerMemRow extends StatelessWidget {
   const _ServerMemRow({required this.memMb, required this.maxMemMb});
 
-  final int memMb;
+  final int? memMb;
   final int maxMemMb;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final percent = maxMemMb > 0 ? (memMb / maxMemMb) * 100.0 : 0.0;
-    final color = _MonitorCard._colorForPercent(percent, theme);
+    final running = memMb != null;
+    final percent = running && maxMemMb > 0 ? (memMb! / maxMemMb) * 100.0 : 0.0;
+    final color = running
+        ? _MonitorCard._colorForPercent(percent, theme)
+        : theme.colorScheme.outline;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -797,7 +942,7 @@ class _ServerMemRow extends StatelessWidget {
             Text('服务端内存', style: theme.textTheme.bodyMedium),
             const Spacer(),
             Text(
-              '$memMb MB / $maxMemMb MB',
+              running ? '$memMb MB / $maxMemMb MB' : '服务端未运行',
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: color,

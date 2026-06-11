@@ -27,6 +27,13 @@ class ServerProcessManager private constructor(private val appContext: Context) 
     companion object {
         private const val MAX_LOG_LINES = 2000
 
+        const val STATUS_PREPARING = "preparing"
+        const val STATUS_STARTING  = "starting"
+        const val STATUS_RUNNING   = "running"
+
+        /** 服务端初始化完成标志：匹配 “Done (Xs)! For help” 之类日志。 */
+        private val DONE_PATTERN = Regex("""Done\s*\([0-9.]+s\)!\s*For help""")
+
         @Volatile
         private var instance: ServerProcessManager? = null
 
@@ -45,6 +52,7 @@ class ServerProcessManager private constructor(private val appContext: Context) 
     @Volatile private var eventSink: EventChannel.EventSink? = null
     @Volatile private var runningInstanceId: String? = null
     @Volatile private var runningInstanceName: String? = null
+    @Volatile private var currentStatus: String? = null
 
     val isRunning: Boolean get() = process?.isAlive == true
     val activeInstanceId: String? get() = runningInstanceId
@@ -69,14 +77,14 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         eventSink = sink
         if (sink == null) return
         val snapshot = synchronized(logLock) { logBuffer.toList() }
-        val running = isRunning
+        val status = currentStatus
         val id = runningInstanceId
         val name = runningInstanceName
         mainHandler.post {
             for (line in snapshot) {
                 sink.success(mapOf("type" to "log", "line" to line))
             }
-            sink.success(stateMap(running, id, name, null))
+            sink.success(stateMap(status, id, name, null))
         }
     }
 
@@ -95,6 +103,7 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         if (isRunning) throw IllegalStateException("已有服务端正在运行，请先停止")
 
         if (!RuntimeInstaller.isInstalled(appContext, version)) {
+            currentStatus = STATUS_PREPARING
             emitLog("[EdgeCube] 正在解压 $version 运行时，请稍候…")
             RuntimeInstaller.install(appContext, version)
             emitLog("[EdgeCube] $version 运行时就绪")
@@ -138,7 +147,8 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         stdin = p.outputStream
         runningInstanceId = instanceId
         runningInstanceName = instanceName
-        emitState(true, instanceId, instanceName, null)
+        currentStatus = STATUS_STARTING
+        emitState(STATUS_STARTING, instanceId, instanceName, null)
 
         // 拉起前台 Service 保活。
         ServerService.start(appContext, instanceName)
@@ -149,6 +159,11 @@ class ServerProcessManager private constructor(private val appContext: Context) 
                     var line = reader.readLine()
                     while (line != null) {
                         emitLog(line)
+                        // 检测到服务端初始化完成标志时切换到“运行中”
+                        if (currentStatus == STATUS_STARTING && DONE_PATTERN.containsMatchIn(line)) {
+                            currentStatus = STATUS_RUNNING
+                            emitState(STATUS_RUNNING, runningInstanceId, runningInstanceName, null)
+                        }
                         line = reader.readLine()
                     }
                 }
@@ -168,7 +183,8 @@ class ServerProcessManager private constructor(private val appContext: Context) 
                     val name = runningInstanceName
                     runningInstanceId = null
                     runningInstanceName = null
-                    emitState(false, id, name, code)
+                    currentStatus = null
+                    emitState(null, id, name, code)
                 }
             }
             // 进程结束，撤下前台 Service。
@@ -211,20 +227,23 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         mainHandler.post { sink.success(mapOf("type" to "log", "line" to line)) }
     }
 
-    private fun emitState(running: Boolean, id: String?, name: String?, exitCode: Int?) {
+    /**
+     * status: "preparing" | "starting" | "running" 表示对应阶段；null 表示已停止。
+     */
+    private fun emitState(status: String?, id: String?, name: String?, exitCode: Int?) {
         val sink = eventSink ?: return
-        mainHandler.post { sink.success(stateMap(running, id, name, exitCode)) }
+        mainHandler.post { sink.success(stateMap(status, id, name, exitCode)) }
     }
 
     private fun stateMap(
-        running: Boolean,
+        status: String?,
         id: String?,
         name: String?,
         exitCode: Int?,
     ): Map<String, Any?> {
         val map = HashMap<String, Any?>()
         map["type"] = "state"
-        map["running"] = running
+        map["status"] = status  // null 表示已停止
         map["instanceId"] = id
         map["instanceName"] = name
         if (exitCode != null) map["exitCode"] = exitCode

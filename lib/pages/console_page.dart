@@ -179,10 +179,11 @@ class _ConsolePageState extends State<ConsolePage> {
   String _subtitle(ServerController server) {
     final name = server.runningInstanceName;
     return switch (server.status) {
-      ServerStatus.running => '运行中 · ${name ?? ''}',
-      ServerStatus.starting => '启动中 · ${name ?? ''}',
-      ServerStatus.stopping => '停止中 · ${name ?? ''}',
-      ServerStatus.stopped =>
+      ServerStatus.preparing => '准备中 · ${name ?? ''}',
+      ServerStatus.starting  => '启动中 · ${name ?? ''}',
+      ServerStatus.running   => '运行中 · ${name ?? ''}',
+      ServerStatus.stopping  => '停止中 · ${name ?? ''}',
+      ServerStatus.stopped   =>
         name == null ? '未运行' : '已停止 · $name',
     };
   }
