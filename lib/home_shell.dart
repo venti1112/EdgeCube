@@ -9,9 +9,6 @@ import 'pages/server_page.dart';
 import 'pages/settings_page.dart';
 
 /// 应用主壳：底部导航栏 + 页面切换。
-///
-/// 使用 [IndexedStack] 让所有页面常驻，切换时保留各自滚动位置与状态
-/// （例如控制台日志），而不是每次切换都重建页面。
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 

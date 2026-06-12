@@ -25,7 +25,7 @@ object RuntimeInstaller {
     private const val ASSET_ROOT = "runtimes"
 
     /** 全部内置版本，与 assets 子目录名一致。 */
-    val ALL_VERSIONS = listOf("jre8", "jre17", "jre21", "jre25")
+    val ALL_VERSIONS = listOf("jre17", "jre21", "jre25")
 
     fun runtimesDir(context: Context): File = File(context.filesDir, "runtimes")
 

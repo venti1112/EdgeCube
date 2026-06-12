@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../instance/create_instance_page.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
@@ -13,7 +14,6 @@ import '../widgets/placeholder_page.dart';
 
 /// 各内置 JRE 版本的展示名。
 const Map<String, String> _kVersionLabels = {
-  'jre8': 'Java 8',
   'jre17': 'Java 17',
   'jre21': 'Java 21',
   'jre25': 'Java 25',
@@ -100,6 +100,19 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     super.didChangeDependencies();
     // key 绑定实例 id，State 在实例不变期间复用，故只加载一次。
     _ctxFuture ??= _loadContext();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ServerControlPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // InstanceController.updateConfig 通过 copyWith 创建新 Instance 对象，
+    // 当实例配置变化（如 jar 导入/下载完成后 selectedJar/javaVersion 更新）时重新扫描。
+    if (oldWidget.instance.selectedJar != widget.instance.selectedJar ||
+        oldWidget.instance.javaVersion != widget.instance.javaVersion) {
+      _ctxFuture = _loadContext();
+      _version = widget.instance.javaVersion ?? 'jre21';
+      _selectedJar = widget.instance.selectedJar;
+    }
   }
 
   @override
@@ -693,31 +706,13 @@ class _InstanceListSheet extends StatelessWidget {
             title: const Text('新建实例'),
             onTap: () async {
               final navigator = Navigator.of(context);
-              final name = await _promptName(
-                context,
-                title: '新建实例',
-                initialValue: '新实例',
+              final result = await navigator.push<CreateInstanceResult>(
+                MaterialPageRoute(
+                  builder: (_) => const CreateInstancePage(),
+                ),
               );
-              if (name == null) return;
-              try {
-                await controller.createInstance(name);
+              if (result == CreateInstanceResult.done) {
                 navigator.pop();
-              } on DuplicateInstanceNameException {
-                if (context.mounted) {
-                  await showDialog<void>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('提示'),
-                      content: Text('已存在同名实例：$name'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(),
-                          child: const Text('确定'),
-                        ),
-                      ],
-                    ),
-                  );
-                }
               }
             },
           ),
@@ -795,47 +790,6 @@ class _InstanceListSheet extends StatelessWidget {
     await controller.deleteInstance(instance.id);
     if (navigator.canPop()) navigator.pop();
   }
-}
-
-/// 弹出一个文本输入对话框，返回去除首尾空白后的非空名称；取消或为空返回 null。
-Future<String?> _promptName(
-  BuildContext context, {
-  required String title,
-  required String initialValue,
-}) async {
-  final textController = TextEditingController(text: initialValue);
-  final result = await showDialog<String>(
-    context: context,
-    builder: (dialogContext) {
-      return AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: textController,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: '显示名称',
-            hintText: '请输入实例名称',
-          ),
-          onSubmitted: (value) =>
-              Navigator.of(dialogContext).pop(value.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(textController.text.trim()),
-            child: const Text('确定'),
-          ),
-        ],
-      );
-    },
-  );
-  textController.dispose();
-  if (result == null || result.isEmpty) return null;
-  return result;
 }
 
 /// 系统监控数据面板：设备内存、CPU 使用率，以及服务端内存（运行时显示）。

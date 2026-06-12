@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// 通用占位页面内容，用于各功能页尚未实现前的展示。
+/// 通用占位页面内容
 class PlaceholderPage extends StatelessWidget {
   const PlaceholderPage({
     super.key,
