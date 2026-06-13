@@ -9,6 +9,7 @@ import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.util.zip.GZIPInputStream
 
 /**
  * 将内置于 assets 的 JRE（FCL 产物，tar.xz）按设备架构解压到应用私有目录，并按版本号校验。
@@ -106,6 +107,98 @@ object RuntimeInstaller {
 
         // 最后写版本号，作为“解压完整”的标记。
         File(target, "version").writeText(assetVer)
+    }
+
+    // ──────────────────────────────────────────────────────
+    // PHP 运行时（PocketMine）：tgz 格式的 embed SAPI 共享库发行版
+    //   assets/runtimes/<version>/bin_<arch>.tgz    （当前仅 arm64）
+    //   内部布局：bin/php7/lib/libphp.so + libphpwrapper.so + php.ini 等
+    //   通过 dlopen libphpwrapper.so → php_run() 运行 PHP 脚本
+    // 解压目标：filesDir/runtimes/<version>/
+    // ──────────────────────────────────────────────────────
+        
+    /** PHP wrapper 库在解压后的相对路径（被 libphploader.so dlopen）。 */
+    private const val PHP_WRAPPER_REL = "bin/php7/lib/libphpwrapper.so"
+        
+    /** 全部内置 PHP 运行时版本，与 assets 子目录名一致。 */
+    val ALL_PHP_VERSIONS = listOf("php8.2")
+        
+    /** PHP wrapper 库的完整路径（供 libphploader.so 通过 EC_PHP_LIB 加载）。 */
+    fun phpLib(context: Context, version: String): File =
+        File(jreDir(context, version), PHP_WRAPPER_REL)
+        
+    /** PHP lib 目录路径（供 LD_LIBRARY_PATH 使用，libphp.so 在此目录）。 */
+    fun phpLibDir(context: Context, version: String): File =
+        File(jreDir(context, version), "bin/php7/lib")
+        
+    /** 当前架构下可用（assets 中确有对应 bin_<arch>.tgz）的 PHP 运行时版本列表。 */
+    fun availablePhpRuntimes(context: Context): List<String> {
+        val arch = deviceArch()
+        return ALL_PHP_VERSIONS.filter { v ->
+            assetExists(context, "$ASSET_ROOT/$v/bin_$arch.tgz")
+        }
+    }
+        
+    /** 该 PHP 版本是否已解压就位（wrapper 库存在且版本标记一致）。 */
+    fun isPhpInstalled(context: Context, version: String): Boolean {
+        if (!phpLib(context, version).exists()) return false
+        val marker = File(jreDir(context, version), "version")
+        return marker.exists() && marker.readText().trim() == version
+    }
+        
+    /**
+     * 解压安装指定 PHP 版本（先清空旧目录），按设备架构选取 bin_<arch>.tgz 并解压
+     * 到私有目录。耗时操作，请在后台线程调用。
+     */
+    fun installPhp(context: Context, version: String) {
+        val arch = deviceArch()
+        val asset = "$ASSET_ROOT/$version/bin_$arch.tgz"
+        if (!assetExists(context, asset)) {
+            throw IllegalStateException("$version 不支持当前架构 $arch")
+        }
+        
+        val target = jreDir(context, version)
+        target.deleteRecursively()
+        target.mkdirs()
+        
+        context.assets.open(asset).use { input ->
+            TarArchiveInputStream(GZIPInputStream(BufferedInputStream(input))).use { tar ->
+                val buf = ByteArray(8192)
+                var entry = tar.nextTarEntry
+                while (entry != null) {
+                    val name = entry.name.removePrefix("./")
+                    if (name.isNotEmpty()) {
+                        val outFile = File(target, name)
+                        when {
+                            entry.isDirectory -> outFile.mkdirs()
+                            entry.isSymbolicLink -> {
+                                outFile.parentFile?.mkdirs()
+                                outFile.delete()
+                                try {
+                                    Os.symlink(entry.linkName, outFile.absolutePath)
+                                } catch (_: Throwable) {}
+                            }
+                            else -> {
+                                outFile.parentFile?.mkdirs()
+                                FileOutputStream(outFile).use { os ->
+                                    var n = tar.read(buf)
+                                    while (n != -1) {
+                                        os.write(buf, 0, n)
+                                        n = tar.read(buf)
+                                    }
+                                }
+                                // bin/ 下的文件给执行位
+                                if (name.startsWith("bin/")) outFile.setExecutable(true, false)
+                            }
+                        }
+                    }
+                    entry = tar.nextTarEntry
+                }
+            }
+        }
+        
+        // 最后写版本标记，作为"解压完整"的标记。
+        File(target, "version").writeText(version)
     }
 
     private fun extractTarXz(input: InputStream, dest: File, onEntry: () -> Unit) {

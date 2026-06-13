@@ -26,3 +26,15 @@ target_link_libraries(launch dl log)
 # LD_PRELOAD 标签修复库：拦截 malloc/free 以恢复 Android 堆指针标签
 add_library(tagfix SHARED tagfix.c)
 target_link_libraries(tagfix dl log)
+
+# ─── libphploader.so ─── PHP 启动器（dlopen libphpwrapper.so，与 liblaunch.so 同构）
+add_executable(phploader phploader.c)
+
+set_target_properties(phploader PROPERTIES
+        PREFIX "lib"
+        SUFFIX ".so"
+        OUTPUT_NAME "phploader")
+
+target_compile_options(phploader PRIVATE -fPIE)
+target_link_options(phploader PRIVATE -fPIE -pie)
+target_link_libraries(phploader dl log)

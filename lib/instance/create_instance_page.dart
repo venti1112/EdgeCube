@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import '../files/file_service.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
+import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
 
@@ -28,8 +29,8 @@ enum CreateInstanceResult { done, cancelled }
 /// 新建实例向导页。
 ///
 /// 流程：
-/// 1. 输入名称 → 选择「选择服务端」或「导入服务端」
-/// 2a. 选择服务端 → 选类型 → 选版本 → 创建实例并下载
+/// 1. 输入名称 → 选择「下载服务端」或「导入服务端」
+/// 2a. 下载服务端 → 选类型 → 选版本 → 创建实例并下载
 /// 2b. 导入服务端 → 创建实例 → 选文件导入
 ///
 /// 如果用户中途退出（未完成），自动删除已创建的空实例。
@@ -194,9 +195,12 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       final dir = await _instanceController.directoryFor(instance);
       final savedPath = await _fileService.importFile(sourcePath, dir);
       final jarName = p.basename(savedPath);
+      // 导入 .phar 时自动切到 PHP（PocketMine）运行环境，其余按 Java 处理。
+      final isPhar = jarName.toLowerCase().endsWith('.phar');
       await _instanceController.updateConfig(
         instanceId,
         selectedJar: jarName,
+        runtime: isPhar ? kRuntimePhp : kRuntimeJava,
       );
       _completed = true;
       _finishWizard();
@@ -443,7 +447,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   String get _appBarTitle {
     return switch (_step) {
       _WizardStep.nameEntry => '新建实例',
-      _WizardStep.serverType => '选择服务端',
+      _WizardStep.serverType => '下载服务端',
       _WizardStep.versionSelect => '选择版本',
       _WizardStep.downloading => '下载中',
       _WizardStep.importFile => '导入服务端',
@@ -470,7 +474,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           TextField(
             controller: _nameController,
             decoration: const InputDecoration(
-              labelText: '显示名称',
+              labelText: '名称',
               hintText: '请输入实例名称',
               border: OutlineInputBorder(),
             ),
@@ -478,7 +482,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           const SizedBox(height: 24),
           _ServerTypeTile(
             icon: Icons.cloud_download_outlined,
-            title: '选择服务端',
+            title: '下载服务端',
             subtitle: '从官方端或 Paper 端选择版本下载',
             onTap: _goToServerType,
           ),
@@ -486,7 +490,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           _ServerTypeTile(
             icon: Icons.file_upload_outlined,
             title: '导入服务端',
-            subtitle: '从本地导入已有的 jar 文件',
+            subtitle: '从本地导入已有的 jar / phar 文件',
             onTap: _startImport,
           ),
           const SizedBox(height: 12),

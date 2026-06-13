@@ -55,6 +55,14 @@ class InstanceController extends ChangeNotifier {
     return null;
   }
 
+  /// 按 id 查找实例，未找到返回 null。
+  Instance? byId(String id) {
+    for (final instance in _instances) {
+      if (instance.id == id) return instance;
+    }
+    return null;
+  }
+
   /// 从持久化存储加载实例列表与选中项，应在应用启动时调用一次。
   Future<void> init() async {
     _instances = await _store.loadInstances();
@@ -104,7 +112,7 @@ class InstanceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 修改指定实例的显示名称。
+  /// 修改指定实例的名称。
   ///
   /// 若与其它实例重名（忽略首尾空白），抛 [DuplicateInstanceNameException]。
   Future<void> rename(String id, String newName) async {
@@ -121,29 +129,44 @@ class InstanceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 更新指定实例的启动配置（内存、Java 版本、服务端 jar、自定义 JVM 参数）。
+  /// 更新指定实例的启动配置（运行环境、内存、Java 版本、服务端 jar/phar、自定义 JVM 参数、兼容模式）。
   Future<void> updateConfig(
     String id, {
+    String? runtime,
     int? maxMemory,
     String? javaVersion,
     String? selectedJar,
     String? customJvmArgs,
+    bool? compatMode,
     bool clearCustomJvmArgs = false,
   }) async {
     _instances = [
       for (final instance in _instances)
         if (instance.id == id)
           instance.copyWith(
+            runtime: runtime,
             maxMemory: maxMemory,
             javaVersion: javaVersion,
             selectedJar: selectedJar,
             customJvmArgs: customJvmArgs,
+            compatMode: compatMode,
             clearCustomJvmArgs: clearCustomJvmArgs,
           )
         else
           instance,
     ];
     await _store.saveInstances(_instances);
+    notifyListeners();
+  }
+
+  /// 实例目录内文件发生变化的修订号。用户在「文件」页导入文件后自增，
+  /// 供依赖文件列表的页面（如服务器页扫描 jar）感知并刷新。
+  int _filesRevision = 0;
+  int get filesRevision => _filesRevision;
+
+  /// 通知当前实例目录内的文件发生变化（如导入 jar），触发依赖方重新扫描。
+  void notifyInstanceFilesChanged() {
+    _filesRevision++;
     notifyListeners();
   }
 

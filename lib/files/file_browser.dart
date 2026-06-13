@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../instance/instance_scope.dart';
 import 'file_entry.dart';
 import 'file_service.dart';
 import 'folder_picker.dart';
@@ -11,6 +12,9 @@ import 'system_picker.dart';
 import 'text_editor_page.dart';
 
 enum _FileAction { edit, rename, move, copy, export, delete }
+
+/// 多选模式下可对多个条目一起执行的操作。
+enum _BulkAction { move, copy, export }
 
 /// 可用内置编辑器打开的文本文件扩展名（小写，含点）。
 const _textExtensions = <String>{
@@ -38,6 +42,13 @@ class FileBrowser extends StatefulWidget {
   /// 让当前文件浏览器返回上一级目录（供返回键处理使用）。
   static void navigateUp() => _FileBrowserState._active?.goUp();
 
+  /// 当前文件浏览器是否处于多选模式（供返回键处理使用）。
+  static bool get isSelecting =>
+      _FileBrowserState._active?._selectionMode ?? false;
+
+  /// 退出多选模式（供返回键处理使用）。
+  static void exitSelection() => _FileBrowserState._active?._clearSelection();
+
   @override
   State<FileBrowser> createState() => _FileBrowserState();
 }
@@ -51,6 +62,10 @@ class _FileBrowserState extends State<FileBrowser> {
   late Directory _current = widget.rootDir;
   List<FileEntry> _entries = [];
   bool _loading = true;
+
+  /// 多选模式开关与已选中条目的路径集合。
+  bool _selectionMode = false;
+  final Set<String> _selectedPaths = {};
 
   @override
   void initState() {
@@ -68,8 +83,10 @@ class _FileBrowserState extends State<FileBrowser> {
   @override
   void didUpdateWidget(FileBrowser oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 切换实例后根目录变化，回到新实例根目录。
+    // 切换实例后根目录变化，回到新实例根目录并退出多选。
     if (!p.equals(oldWidget.rootDir.path, widget.rootDir.path)) {
+      _selectionMode = false;
+      _selectedPaths.clear();
       _current = widget.rootDir;
       _load();
     }
@@ -135,12 +152,15 @@ class _FileBrowserState extends State<FileBrowser> {
     if (!await _ensurePermission()) return;
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    final instances = InstanceScope.of(context);
     final sourcePath =
         await pickFromSystem(context, mode: SystemPickMode.file);
     if (sourcePath == null) return;
     try {
       await _service.importFile(sourcePath, _current);
       await _load();
+      // 通知服务器页重新扫描，新导入的 jar 可被立即识别。
+      instances.notifyInstanceFilesChanged();
       messenger.showSnackBar(const SnackBar(content: Text('导入完成')));
     } catch (e) {
       _showError(e);
@@ -153,6 +173,31 @@ class _FileBrowserState extends State<FileBrowser> {
     try {
       await _service.createDirectory(_current, name);
       await _load();
+    } catch (e) {
+      _showError(e);
+    }
+  }
+
+  /// 新建一个空白文件；若为可编辑文本类型，创建后直接打开内置编辑器。
+  Future<void> _createFile() async {
+    final instances = InstanceScope.of(context);
+    final name = await _promptText(context, title: '新建文件', label: '文件名称');
+    if (name == null || name.isEmpty) return;
+    try {
+      final file = await _service.createFile(_current, name);
+      await _load();
+      // 新文件可能是 jar，通知服务器页重新扫描。
+      instances.notifyInstanceFilesChanged();
+      final entry = FileEntry(
+        path: file.path,
+        name: p.basename(file.path),
+        isDirectory: false,
+        size: 0,
+        modified: DateTime.now(),
+      );
+      if (_isEditableText(entry) && mounted) {
+        await _openEditor(entry);
+      }
     } catch (e) {
       _showError(e);
     }
@@ -176,6 +221,7 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   Future<void> _rename(FileEntry entry) async {
+    final instances = InstanceScope.of(context);
     final name = await _promptText(
       context,
       title: '重命名',
@@ -186,12 +232,15 @@ class _FileBrowserState extends State<FileBrowser> {
     try {
       await _service.rename(entry.path, name);
       await _load();
+      // 重命名可能改变根目录的 jar，通知服务器页重新扫描。
+      instances.notifyInstanceFilesChanged();
     } catch (e) {
       _showError(e);
     }
   }
 
   Future<void> _moveOrCopy(FileEntry entry, {required bool isMove}) async {
+    final instances = InstanceScope.of(context);
     final dest = await pickFolder(
       context,
       rootDir: widget.rootDir,
@@ -206,6 +255,8 @@ class _FileBrowserState extends State<FileBrowser> {
         await _service.copy(entry.path, Directory(dest));
       }
       await _load();
+      // 移动/复制可能改变根目录的 jar，通知服务器页重新扫描。
+      instances.notifyInstanceFilesChanged();
     } catch (e) {
       _showError(e);
     }
@@ -256,6 +307,7 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   Future<void> _delete(FileEntry entry) async {
+    final instances = InstanceScope.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -277,9 +329,188 @@ class _FileBrowserState extends State<FileBrowser> {
     try {
       await _service.delete(entry.path);
       await _load();
+      // 删除可能移除根目录的 jar，通知服务器页重新扫描。
+      instances.notifyInstanceFilesChanged();
     } catch (e) {
       _showError(e);
     }
+  }
+
+  // —— 多选 ——
+
+  /// 当前已选中的条目（按当前列表顺序）。
+  List<FileEntry> get _selectedEntries =>
+      _entries.where((e) => _selectedPaths.contains(e.path)).toList();
+
+  /// 进入多选模式并选中 [entry]（长按触发）。
+  void _enterSelection(FileEntry entry) {
+    setState(() {
+      _selectionMode = true;
+      _selectedPaths.add(entry.path);
+    });
+  }
+
+  /// 切换某条目的选中状态；取消最后一项时退出多选模式。
+  void _toggleSelected(FileEntry entry) {
+    setState(() {
+      if (!_selectedPaths.remove(entry.path)) {
+        _selectedPaths.add(entry.path);
+      }
+      if (_selectedPaths.isEmpty) _selectionMode = false;
+    });
+  }
+
+  /// 全选 / 取消全选当前目录下的条目。
+  void _toggleSelectAll() {
+    setState(() {
+      if (_selectedPaths.length == _entries.length) {
+        _selectedPaths.clear();
+        _selectionMode = false;
+      } else {
+        _selectedPaths
+          ..clear()
+          ..addAll(_entries.map((e) => e.path));
+      }
+    });
+  }
+
+  /// 退出多选模式并清空选择。
+  void _clearSelection() {
+    if (!_selectionMode && _selectedPaths.isEmpty) return;
+    if (!mounted) {
+      _selectionMode = false;
+      _selectedPaths.clear();
+      return;
+    }
+    setState(() {
+      _selectionMode = false;
+      _selectedPaths.clear();
+    });
+  }
+
+  void _onBulkAction(_BulkAction action) {
+    switch (action) {
+      case _BulkAction.move:
+        _moveSelected();
+      case _BulkAction.copy:
+        _copySelected();
+      case _BulkAction.export:
+        _exportSelected();
+    }
+  }
+
+  /// 汇报批量操作结果；[failed] 为失败条目名称列表。
+  void _reportBulkResult(String action, List<String> failed) {
+    if (!mounted) return;
+    final msg = failed.isEmpty
+        ? '$action完成'
+        : '$action完成，${failed.length} 项失败：${failed.join('、')}';
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _deleteSelected() async {
+    final entries = _selectedEntries;
+    if (entries.isEmpty) return;
+    final instances = InstanceScope.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除'),
+        content: Text('确定删除选中的 ${entries.length} 项吗？其中的文件夹及其内容将一并删除。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final failed = <String>[];
+    for (final entry in entries) {
+      try {
+        await _service.delete(entry.path);
+      } catch (_) {
+        failed.add(entry.name);
+      }
+    }
+    _clearSelection();
+    await _load();
+    instances.notifyInstanceFilesChanged();
+    _reportBulkResult('删除', failed);
+  }
+
+  Future<void> _moveSelected() async {
+    final entries = _selectedEntries;
+    if (entries.isEmpty) return;
+    final instances = InstanceScope.of(context);
+    final dest = await pickFolder(
+      context,
+      rootDir: widget.rootDir,
+      title: '移动 ${entries.length} 项到',
+    );
+    if (dest == null) return;
+    final failed = <String>[];
+    for (final entry in entries) {
+      try {
+        await _service.move(entry.path, Directory(dest));
+      } catch (_) {
+        failed.add(entry.name);
+      }
+    }
+    _clearSelection();
+    await _load();
+    instances.notifyInstanceFilesChanged();
+    _reportBulkResult('移动', failed);
+  }
+
+  Future<void> _copySelected() async {
+    final entries = _selectedEntries;
+    if (entries.isEmpty) return;
+    final instances = InstanceScope.of(context);
+    final dest = await pickFolder(
+      context,
+      rootDir: widget.rootDir,
+      title: '复制 ${entries.length} 项到',
+    );
+    if (dest == null) return;
+    final failed = <String>[];
+    for (final entry in entries) {
+      try {
+        await _service.copy(entry.path, Directory(dest));
+      } catch (_) {
+        failed.add(entry.name);
+      }
+    }
+    _clearSelection();
+    await _load();
+    instances.notifyInstanceFilesChanged();
+    _reportBulkResult('复制', failed);
+  }
+
+  Future<void> _exportSelected() async {
+    final entries = _selectedEntries;
+    if (entries.isEmpty) return;
+    if (!await _ensurePermission()) return;
+    if (!mounted) return;
+    final destDir =
+        await pickFromSystem(context, mode: SystemPickMode.directory);
+    if (destDir == null) return;
+    final failed = <String>[];
+    for (final entry in entries) {
+      try {
+        await _service.exportTo(entry.path, destDir);
+      } catch (_) {
+        failed.add(entry.name);
+      }
+    }
+    _clearSelection();
+    _reportBulkResult('导出', failed);
   }
 
   @override
@@ -287,15 +518,18 @@ class _FileBrowserState extends State<FileBrowser> {
     final theme = Theme.of(context);
     return Column(
       children: [
-        _Toolbar(
-          atRoot: _atRoot,
-          relativePath: _atRoot
-              ? '根目录'
-              : p.relative(_current.path, from: widget.rootDir.path),
-          onUp: _goUp,
-          onImport: _importFile,
-          onNewFolder: _createFolder,
-        ),
+        _selectionMode
+            ? _buildSelectionBar(theme)
+            : _Toolbar(
+                atRoot: _atRoot,
+                relativePath: _atRoot
+                    ? '根目录'
+                    : p.relative(_current.path, from: widget.rootDir.path),
+                onUp: _goUp,
+                onImport: _importFile,
+                onNewFolder: _createFolder,
+                onNewFile: _createFile,
+              ),
         const Divider(height: 1),
         Expanded(
           child: _loading
@@ -315,18 +549,32 @@ class _FileBrowserState extends State<FileBrowser> {
                         itemCount: _entries.length,
                         itemBuilder: (_, i) {
                           final entry = _entries[i];
+                          final selected = _selectedPaths.contains(entry.path);
                           return ListTile(
-                            leading: Icon(entry.isDirectory
-                                ? Icons.folder
-                                : Icons.insert_drive_file_outlined),
+                            selected: _selectionMode && selected,
+                            leading: _selectionMode
+                                ? Checkbox(
+                                    value: selected,
+                                    onChanged: (_) => _toggleSelected(entry),
+                                  )
+                                : Icon(entry.isDirectory
+                                    ? Icons.folder
+                                    : Icons.insert_drive_file_outlined),
                             title: Text(entry.name),
                             subtitle: Text(_subtitle(entry)),
-                            onTap: entry.isDirectory
-                                ? () => _enter(entry)
-                                : _isEditableText(entry)
-                                    ? () => _openEditor(entry)
-                                    : null,
-                            trailing: PopupMenuButton<_FileAction>(
+                            onTap: _selectionMode
+                                ? () => _toggleSelected(entry)
+                                : entry.isDirectory
+                                    ? () => _enter(entry)
+                                    : _isEditableText(entry)
+                                        ? () => _openEditor(entry)
+                                        : null,
+                            onLongPress: _selectionMode
+                                ? null
+                                : () => _enterSelection(entry),
+                            trailing: _selectionMode
+                                ? null
+                                : PopupMenuButton<_FileAction>(
                               onSelected: (a) => _onAction(a, entry),
                               itemBuilder: (_) => [
                                 if (!entry.isDirectory)
@@ -365,6 +613,51 @@ class _FileBrowserState extends State<FileBrowser> {
     );
   }
 
+  /// 多选模式下的顶部操作栏：退出、计数、全选、删除、更多（移动/复制/导出）。
+  Widget _buildSelectionBar(ThemeData theme) {
+    final count = _selectedPaths.length;
+    final allSelected = _entries.isNotEmpty && count == _entries.length;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: '退出多选',
+            onPressed: _clearSelection,
+          ),
+          Expanded(
+            child: Text(
+              '已选 $count 项',
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          IconButton(
+            icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
+            tooltip: allSelected ? '取消全选' : '全选',
+            onPressed: _entries.isEmpty ? null : _toggleSelectAll,
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: '删除',
+            onPressed: count == 0 ? null : _deleteSelected,
+          ),
+          PopupMenuButton<_BulkAction>(
+            enabled: count > 0,
+            tooltip: '更多操作',
+            onSelected: _onBulkAction,
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: _BulkAction.move, child: Text('移动')),
+              PopupMenuItem(value: _BulkAction.copy, child: Text('复制')),
+              PopupMenuItem(value: _BulkAction.export, child: Text('导出')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   String _subtitle(FileEntry entry) {
     if (entry.isDirectory) return '文件夹';
     return _formatSize(entry.size);
@@ -390,6 +683,7 @@ class _Toolbar extends StatelessWidget {
     required this.onUp,
     required this.onImport,
     required this.onNewFolder,
+    required this.onNewFile,
   });
 
   final bool atRoot;
@@ -397,6 +691,7 @@ class _Toolbar extends StatelessWidget {
   final VoidCallback onUp;
   final VoidCallback onImport;
   final VoidCallback onNewFolder;
+  final VoidCallback onNewFile;
 
   @override
   Widget build(BuildContext context) {
@@ -415,6 +710,11 @@ class _Toolbar extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.note_add_outlined),
+            tooltip: '新建文件',
+            onPressed: onNewFile,
           ),
           IconButton(
             icon: const Icon(Icons.create_new_folder_outlined),

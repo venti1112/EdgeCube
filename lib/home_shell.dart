@@ -42,10 +42,16 @@ class _HomeShellState extends State<HomeShell> {
           _handleExit();
           return;
         }
-        // 在文件页面且不在根目录：返回上级目录
-        if (_selectedIndex == 3 && FileBrowser.canNavigateUp) {
-          FileBrowser.navigateUp();
-          return;
+        // 在文件页面：先退出多选，其次返回上级目录
+        if (_selectedIndex == 3) {
+          if (FileBrowser.isSelecting) {
+            FileBrowser.exitSelection();
+            return;
+          }
+          if (FileBrowser.canNavigateUp) {
+            FileBrowser.navigateUp();
+            return;
+          }
         }
         // 其它情况：返回服务器页面
         setState(() => _selectedIndex = 0);

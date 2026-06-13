@@ -12,11 +12,12 @@ import '../server/server_scope.dart';
 import '../server/system_monitor_scope.dart';
 import '../widgets/placeholder_page.dart';
 
-/// 各内置 JRE 版本的展示名。
+/// 各内置运行时版本的展示名（JRE 与 PHP）。
 const Map<String, String> _kVersionLabels = {
   'jre17': 'Java 17',
   'jre21': 'Java 21',
   'jre25': 'Java 25',
+  'php8.2': 'PHP 8.2',
 };
 
 class ServerPage extends StatelessWidget {
@@ -47,29 +48,42 @@ class ServerPage extends StatelessWidget {
           : _ServerControlPanel(
               key: ValueKey(selected.id),
               instance: selected,
+              filesRevision: controller.filesRevision,
             ),
     );
   }
 }
 
-/// 启动所需的上下文：实例工作目录、可作为服务端的 .jar 列表、当前架构可用的 JRE 版本。
+/// 启动所需的上下文：实例工作目录、可作为服务端的文件列表（.jar / .phar）、
+/// 当前架构可用的 JRE 版本与 PHP 运行时。
 class _LaunchContext {
   const _LaunchContext({
     required this.workingDir,
     required this.jars,
+    required this.phars,
     required this.versions,
+    required this.phpRuntimes,
   });
 
   final String workingDir;
   final List<String> jars;
+  final List<String> phars;
   final List<String> versions;
+  final List<String> phpRuntimes;
 }
 
 /// 选中实例的服务端控制面板：状态、启动配置与启动/停止操作。
 class _ServerControlPanel extends StatefulWidget {
-  const _ServerControlPanel({super.key, required this.instance});
+  const _ServerControlPanel({
+    super.key,
+    required this.instance,
+    required this.filesRevision,
+  });
 
   final Instance instance;
+
+  /// 实例目录文件修订号，变化时触发重新扫描 jar。
+  final int filesRevision;
 
   @override
   State<_ServerControlPanel> createState() => _ServerControlPanelState();
@@ -78,9 +92,13 @@ class _ServerControlPanel extends StatefulWidget {
 class _ServerControlPanelState extends State<_ServerControlPanel> {
   late final TextEditingController _memController;
   late final TextEditingController _jvmArgsController;
+  String _runtime = kRuntimeJava;
   String _version = 'jre21';
   String? _selectedJar;
+  bool _compatMode = false;
   Future<_LaunchContext>? _ctxFuture;
+
+  bool get _isPhp => _runtime == kRuntimePhp;
 
   @override
   void initState() {
@@ -91,8 +109,10 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     _jvmArgsController = TextEditingController(
       text: widget.instance.customJvmArgs ?? '',
     );
+    _runtime = widget.instance.runtime;
     _version = widget.instance.javaVersion ?? 'jre21';
     _selectedJar = widget.instance.selectedJar;
+    _compatMode = widget.instance.compatMode;
   }
 
   @override
@@ -105,13 +125,22 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   @override
   void didUpdateWidget(covariant _ServerControlPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // InstanceController.updateConfig 通过 copyWith 创建新 Instance 对象，
-    // 当实例配置变化（如 jar 导入/下载完成后 selectedJar/javaVersion 更新）时重新扫描。
-    if (oldWidget.instance.selectedJar != widget.instance.selectedJar ||
-        oldWidget.instance.javaVersion != widget.instance.javaVersion) {
-      _ctxFuture = _loadContext();
+    // 实例配置变化（如下载完成后 selectedJar/javaVersion 更新、导入 phar 改变 runtime）时，同步表单值。
+    final configChanged =
+        oldWidget.instance.selectedJar != widget.instance.selectedJar ||
+            oldWidget.instance.javaVersion != widget.instance.javaVersion ||
+            oldWidget.instance.runtime != widget.instance.runtime ||
+            oldWidget.instance.compatMode != widget.instance.compatMode;
+    if (configChanged) {
+      _runtime = widget.instance.runtime;
       _version = widget.instance.javaVersion ?? 'jre21';
       _selectedJar = widget.instance.selectedJar;
+      _compatMode = widget.instance.compatMode;
+    }
+    // 配置变化，或用户在「文件」页导入 jar 使 filesRevision 自增时，重新扫描目录。
+    // 仅文件变化时不重置表单，扫描完成后由 _loadContext 回退无效的 jar 选择。
+    if (configChanged || oldWidget.filesRevision != widget.filesRevision) {
+      _ctxFuture = _loadContext();
     }
   }
 
@@ -128,10 +157,12 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     final argsText = _jvmArgsController.text.trim();
     controller.updateConfig(
       widget.instance.id,
+      runtime: _runtime,
       maxMemory: int.tryParse(_memController.text.trim()),
       javaVersion: _version,
       selectedJar: _selectedJar,
       customJvmArgs: argsText.isEmpty ? null : argsText,
+      compatMode: _compatMode,
       clearCustomJvmArgs: argsText.isEmpty,
     );
   }
@@ -143,9 +174,10 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     future.then((ctx) {
       if (!mounted) return;
       setState(() {
-        // 优先保留已持久化的 jar 和版本，若无效则回退到扫描结果。
-        if (_selectedJar == null || !ctx.jars.contains(_selectedJar)) {
-          _selectedJar = ctx.jars.isNotEmpty ? ctx.jars.first : null;
+        // 优先保留已持久化的服务端文件与版本，若无效则回退到扫描结果。
+        final files = _isPhp ? ctx.phars : ctx.jars;
+        if (_selectedJar == null || !files.contains(_selectedJar)) {
+          _selectedJar = files.isNotEmpty ? files.first : null;
         }
         if (!ctx.versions.contains(_version) && ctx.versions.isNotEmpty) {
           _version =
@@ -163,10 +195,15 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   ) async {
     final dir = await instances.directoryFor(instance);
     final jars = <String>[];
+    final phars = <String>[];
     if (await dir.exists()) {
       await for (final entry in dir.list(followLinks: false)) {
-        if (entry is File && entry.path.toLowerCase().endsWith('.jar')) {
+        if (entry is! File) continue;
+        final lower = entry.path.toLowerCase();
+        if (lower.endsWith('.jar')) {
           jars.add(p.basename(entry.path));
+        } else if (lower.endsWith('.phar')) {
+          phars.add(p.basename(entry.path));
         }
       }
     }
@@ -188,8 +225,16 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       final r = rank(a).compareTo(rank(b));
       return r != 0 ? r : a.compareTo(b);
     });
+    phars.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     final versions = await server.availableVersions();
-    return _LaunchContext(workingDir: dir.path, jars: jars, versions: versions);
+    final phpRuntimes = await server.availablePhpRuntimes();
+    return _LaunchContext(
+      workingDir: dir.path,
+      jars: jars,
+      phars: phars,
+      versions: versions,
+      phpRuntimes: phpRuntimes,
+    );
   }
 
   /// 启动前自动检查并写入 eula.txt，确保 eula=true。
@@ -214,8 +259,45 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   }
 
   void _start(ServerController server, _LaunchContext ctx) async {
-    final jar = _selectedJar;
-    if (jar == null) return;
+    final file = _selectedJar;
+
+    // PHP（PocketMine）：用 PHP 运行时执行选中的 .phar。
+    if (_isPhp) {
+      if (ctx.phpRuntimes.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前设备架构不支持 PHP 运行环境。')),
+        );
+        return;
+      }
+      if (file == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('未在实例目录找到 .phar，请先在「文件」页放入 PocketMine 的 phar。'),
+          ),
+        );
+        return;
+      }
+      server.start(
+        instanceId: widget.instance.id,
+        instanceName: widget.instance.name,
+        workingDir: ctx.workingDir,
+        version: ctx.phpRuntimes.first,
+        runtime: kRuntimePhp,
+        jvmArgs: const [],
+        programArgs: [file],
+      );
+      return;
+    }
+
+    // Java：用 JRE 执行选中的 .jar。
+    if (file == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('未在实例目录找到 .jar，请先在「文件」页放入服务端 jar。'),
+        ),
+      );
+      return;
+    }
     final mem = int.tryParse(_memController.text.trim());
     final jvmArgs = <String>[
       if (mem != null && mem > 0) '-Xmx${mem}M',
@@ -229,8 +311,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       instanceName: widget.instance.name,
       workingDir: ctx.workingDir,
       version: _version,
+      runtime: kRuntimeJava,
       jvmArgs: jvmArgs,
-      programArgs: ['-jar', jar, 'nogui'],
+      programArgs: ['-jar', file, 'nogui'],
     );
   }
 
@@ -336,52 +419,125 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    // 运行环境：Java（JVM 跑 .jar）/ PHP（PocketMine 跑 .phar）。
                     DropdownButtonFormField<String>(
-                      initialValue: ctx.versions.contains(_version) ? _version : null,
+                      initialValue: _runtime,
                       decoration: const InputDecoration(
-                        labelText: 'Java 版本',
+                        labelText: '运行环境',
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
-                      items: [
-                        for (final v in ctx.versions)
-                          DropdownMenuItem(
-                            value: v,
-                            child: Text(_kVersionLabels[v] ?? v),
-                          ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: kRuntimeJava,
+                          child: Text('Java（Minecraft）'),
+                        ),
+                        DropdownMenuItem(
+                          value: kRuntimePhp,
+                          child: Text('PHP（PocketMine）'),
+                        ),
                       ],
                       onChanged: (v) {
-                        setDialogState(() => _version = v ?? _version);
+                        if (v == null || v == _runtime) return;
+                        setDialogState(() {
+                          _runtime = v;
+                          // 切换运行环境后，把服务端文件/版本回退到该环境下的有效默认值。
+                          if (_isPhp) {
+                            _selectedJar =
+                                ctx.phars.isNotEmpty ? ctx.phars.first : null;
+                          } else {
+                            _selectedJar =
+                                ctx.jars.isNotEmpty ? ctx.jars.first : null;
+                            if (!ctx.versions.contains(_version) &&
+                                ctx.versions.isNotEmpty) {
+                              _version = ctx.versions.contains('jre21')
+                                  ? 'jre21'
+                                  : ctx.versions.first;
+                            }
+                          }
+                        });
                       },
                     ),
                     const SizedBox(height: 16),
-                    TextField(
-                      controller: _memController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: '最大内存',
-                        suffixText: 'MB',
-                        border: OutlineInputBorder(),
-                        isDense: true,
+                    if (!_isPhp) ...[
+                      DropdownButtonFormField<String>(
+                        initialValue:
+                            ctx.versions.contains(_version) ? _version : null,
+                        decoration: const InputDecoration(
+                          labelText: 'Java 版本',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: [
+                          for (final v in ctx.versions)
+                            DropdownMenuItem(
+                              value: v,
+                              child: Text(_kVersionLabels[v] ?? v),
+                            ),
+                        ],
+                        onChanged: (v) {
+                          setDialogState(() => _version = v ?? _version);
+                        },
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    _jarField(dialogContext, ctx),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _jvmArgsController,
-                      maxLines: 4,
-                      minLines: 2,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _memController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '最大内存',
+                          suffixText: 'MB',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
                       ),
-                      decoration: const InputDecoration(
-                        labelText: '自定义 JVM 参数',
-                        hintText: '每行或空格分隔一个参数，例如：\n-Dfml.ignoreInvalidMinecraftCertificates=true\n-XX:+UseG1GC',
-                        alignLabelWithHint: true,
-                        border: OutlineInputBorder(),
-                        isDense: true,
+                      const SizedBox(height: 16),
+                    ] else ...[
+                      // PHP 运行时版本（只读；当前仅 PHP 8.2，且仅 arm64 提供）。
+                      InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: '运行时版本',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        child: Text(
+                          ctx.phpRuntimes.isNotEmpty
+                              ? (_kVersionLabels[ctx.phpRuntimes.first] ??
+                                  ctx.phpRuntimes.first)
+                              : '当前设备架构不支持 PHP',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    _serverFileField(dialogContext, ctx),
+                    const SizedBox(height: 16),
+                    if (!_isPhp) ...[
+                      TextField(
+                        controller: _jvmArgsController,
+                        maxLines: 4,
+                        minLines: 2,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: '自定义 JVM 参数',
+                          hintText: '每行或空格分隔一个参数，例如：\n-Dfml.ignoreInvalidMinecraftCertificates=true\n-XX:+UseG1GC',
+                          alignLabelWithHint: true,
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: _compatMode,
+                      onChanged: (v) =>
+                          setDialogState(() => _compatMode = v),
+                      title: const Text('兼容模式'),
+                      subtitle: const Text(
+                        '准备完成、服务端进程启动后立即标记为「运行中」，跳过「启动中」。'
+                        '适用于不输出 Done 标志的非标准服务端。',
                       ),
                     ),
                   ],
@@ -429,16 +585,19 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     nameController.dispose();
   }
 
-  Widget _jarField(BuildContext context, _LaunchContext ctx) {
+  Widget _serverFileField(BuildContext context, _LaunchContext ctx) {
     final theme = Theme.of(context);
-    if (ctx.jars.isEmpty) {
+    final files = _isPhp ? ctx.phars : ctx.jars;
+    final ext = _isPhp ? '.phar' : '.jar';
+    final label = _isPhp ? '服务端 phar' : '服务端 jar';
+    if (files.isEmpty) {
       return Row(
         children: [
           Icon(Icons.warning_amber, size: 20, color: theme.colorScheme.error),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '未在实例目录找到 .jar，请在「文件」页放入服务端 jar。',
+              '未在实例目录找到 $ext，请在「文件」页放入服务端文件。',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.error,
               ),
@@ -447,24 +606,25 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         ],
       );
     }
+    // 持久化的选择可能属于另一种运行环境（jar/phar），回退到首个有效项以避免下拉断言。
+    final value = files.contains(_selectedJar) ? _selectedJar : files.first;
     return DropdownButtonFormField<String>(
       isExpanded: true,
-      initialValue: _selectedJar,
-      decoration: const InputDecoration(
-        labelText: '服务端 jar',
-        border: OutlineInputBorder(),
+      initialValue: value,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
         isDense: true,
       ),
       items: [
-        for (final jar in ctx.jars)
-          DropdownMenuItem(value: jar, child: Text(jar)),
+        for (final f in files) DropdownMenuItem(value: f, child: Text(f)),
       ],
       selectedItemBuilder: (context) => [
-        for (final jar in ctx.jars)
+        for (final f in files)
           DropdownMenuItem<String>(
-            value: jar,
+            value: f,
             child: Text(
-              jar,
+              f,
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -518,10 +678,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       );
     }
 
-    // 已停止：可启动，但需排除“他实例运行中”与“无 jar”。
+    // 已停止：可启动。无 jar 时按钮仍可点击，由 _start 在启动前校验并提示。
     final otherRunning = server.isOtherRunning(widget.instance.id);
-    final hasJar = ctx != null && _selectedJar != null;
-    final canStart = !otherRunning && hasJar;
+    final canStart = ctx != null && !otherRunning;
 
     String? hint;
     if (otherRunning) {

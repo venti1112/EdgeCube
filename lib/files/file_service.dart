@@ -54,6 +54,18 @@ class FileService {
     return target.create();
   }
 
+  /// 在 [parent] 下新建一个空文件，返回创建的文件。
+  /// 已存在同名文件或目录时抛 [FileConflictException]。
+  Future<File> createFile(Directory parent, String name) async {
+    final trimmed = name.trim();
+    final target = File(p.join(parent.path, trimmed));
+    if (await _exists(target.path)) {
+      throw FileConflictException(trimmed);
+    }
+    await target.create();
+    return target;
+  }
+
   /// 删除文件或目录（目录递归删除）。
   Future<void> delete(String path) async {
     final type = FileSystemEntity.typeSync(path);

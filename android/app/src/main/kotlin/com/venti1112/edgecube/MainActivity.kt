@@ -83,6 +83,9 @@ class MainActivity : FlutterActivity() {
                 "availableVersions" ->
                     result.success(RuntimeInstaller.availableVersions(applicationContext))
 
+                "availablePhpRuntimes" ->
+                    result.success(RuntimeInstaller.availablePhpRuntimes(applicationContext))
+
                 "isRuntimeReady" -> {
                     val version = call.argument<String>("version")
                     if (version == null) {
@@ -100,6 +103,7 @@ class MainActivity : FlutterActivity() {
                     val instanceId = call.argument<String>("instanceId")
                     val workingDir = call.argument<String>("workingDir")
                     val version = call.argument<String>("version")
+                    val runtime = call.argument<String>("runtime") ?: "java"
                     val jvmArgs = call.argument<List<String>>("jvmArgs") ?: emptyList()
                     val programArgs = call.argument<List<String>>("programArgs") ?: emptyList()
                     if (instanceId == null || workingDir == null || version == null) {
@@ -110,7 +114,7 @@ class MainActivity : FlutterActivity() {
                         thread {
                             try {
                                 serverManager.start(
-                                    instanceId, instanceName, workingDir, version, jvmArgs, programArgs,
+                                    instanceId, instanceName, workingDir, version, runtime, jvmArgs, programArgs,
                                 )
                                 runOnUiThread { result.success(true) }
                             } catch (e: Exception) {

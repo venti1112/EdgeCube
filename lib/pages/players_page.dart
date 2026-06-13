@@ -117,134 +117,121 @@ class _OnlineTabState extends State<_OnlineTab> {
     final running = server.isRunning && server.isActive(widget.instance.id);
     final players = server.onlinePlayers.toList()..sort();
 
+    final Widget body;
     if (!running) {
-      return _emptyState(theme, Icons.power_settings_new, '服务端未运行',
+      body = _emptyState(theme, Icons.power_settings_new, '服务端未运行',
           '启动服务器后，在线玩家将自动显示在这里。');
-    }
-
-    if (players.isEmpty) {
-      return _emptyState(theme, Icons.person_off, '暂无在线玩家',
+    } else if (players.isEmpty) {
+      body = _emptyState(theme, Icons.person_off, '暂无在线玩家',
           '等待玩家加入服务器…');
+    } else {
+      body = ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: players.length,
+        itemBuilder: (ctx, i) {
+          final name = players[i];
+          final lower = name.toLowerCase();
+          final inWhitelist = _whitelist.contains(lower);
+          final isOp = _ops.contains(lower);
+          final isBanned = _bans.contains(lower);
+          return Card(
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor: theme.colorScheme.primaryContainer,
+                child: Text(
+                  name[0].toUpperCase(),
+                  style: TextStyle(
+                    color: theme.colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              title: Text(name),
+              subtitle: Row(
+                children: [
+                  if (isOp)
+                    _PlayerTag(label: 'OP', color: theme.colorScheme.tertiary),
+                  if (inWhitelist)
+                    _PlayerTag(label: '白名单', color: theme.colorScheme.primary),
+                  if (isBanned)
+                    _PlayerTag(label: '已封禁', color: theme.colorScheme.error),
+                ],
+              ),
+              trailing: PopupMenuButton<String>(
+                onSelected: (action) =>
+                    _handleAction(context, server, name, action),
+                itemBuilder: (ctx) => [
+                  PopupMenuItem(
+                    value: 'kick',
+                    child: ListTile(
+                      leading: Icon(Icons.exit_to_app,
+                          color: theme.colorScheme.error),
+                      title: const Text('踢出'),
+                      contentPadding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  PopupMenuItem(
+                    value: inWhitelist ? 'wl_remove' : 'wl_add',
+                    child: ListTile(
+                      leading: Icon(
+                        inWhitelist ? Icons.delete : Icons.how_to_reg_outlined,
+                        color: inWhitelist
+                            ? theme.colorScheme.error
+                            : theme.colorScheme.primary,
+                      ),
+                      title: Text(inWhitelist ? '移出白名单' : '加入白名单'),
+                      contentPadding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: isOp ? 'deop' : 'op',
+                    child: ListTile(
+                      leading: Icon(
+                        isOp ? Icons.delete : Icons.admin_panel_settings,
+                        color: isOp
+                            ? theme.colorScheme.error
+                            : theme.colorScheme.primary,
+                      ),
+                      title: Text(isOp ? '取消 OP' : '给予 OP'),
+                      contentPadding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  PopupMenuItem(
+                    value: 'ban',
+                    child: ListTile(
+                      leading: Icon(Icons.block,
+                          color: theme.colorScheme.error),
+                      title: const Text('封禁'),
+                      contentPadding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
     }
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Row(
-            children: [
-              Icon(Icons.people, size: 18, color: theme.colorScheme.primary),
-              const SizedBox(width: 6),
-              Text(
-                '${players.length} 位玩家在线',
-                style: theme.textTheme.titleSmall,
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.refresh, size: 20),
-                tooltip: '刷新（发送 list）',
-                onPressed: () {
+        _ListHeader(
+          title: '在线（${running ? players.length : 0}）',
+          tooltip: '刷新（发送 list）',
+          onRefresh: running
+              ? () {
                   server.sendCommand('list');
                   _loadContextSets();
-                },
-              ),
-            ],
-          ),
+                }
+              : null,
         ),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: players.length,
-            itemBuilder: (ctx, i) {
-              final name = players[i];
-              final lower = name.toLowerCase();
-              final inWhitelist = _whitelist.contains(lower);
-              final isOp = _ops.contains(lower);
-              final isBanned = _bans.contains(lower);
-              return Card(
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                    child: Text(
-                      name[0].toUpperCase(),
-                      style: TextStyle(
-                        color: theme.colorScheme.onPrimaryContainer,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  title: Text(name),
-                  subtitle: Row(
-                    children: [
-                      if (isOp)
-                        _PlayerTag(label: 'OP', color: theme.colorScheme.tertiary),
-                      if (inWhitelist)
-                        _PlayerTag(label: '白名单', color: theme.colorScheme.primary),
-                      if (isBanned)
-                        _PlayerTag(label: '已封禁', color: theme.colorScheme.error),
-                    ],
-                  ),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (action) =>
-                        _handleAction(context, server, name, action),
-                    itemBuilder: (ctx) => [
-                      PopupMenuItem(
-                        value: 'kick',
-                        child: ListTile(
-                          leading: Icon(Icons.exit_to_app,
-                              color: theme.colorScheme.error),
-                          title: const Text('踢出'),
-                          contentPadding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                      const PopupMenuDivider(),
-                      PopupMenuItem(
-                        value: inWhitelist ? 'wl_remove' : 'wl_add',
-                        child: ListTile(
-                          leading: Icon(
-                            inWhitelist ? Icons.delete : Icons.how_to_reg_outlined,
-                            color: inWhitelist
-                                ? theme.colorScheme.error
-                                : theme.colorScheme.primary,
-                          ),
-                          title: Text(inWhitelist ? '移出白名单' : '加入白名单'),
-                          contentPadding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: isOp ? 'deop' : 'op',
-                        child: ListTile(
-                          leading: Icon(
-                            isOp ? Icons.delete : Icons.admin_panel_settings,
-                            color: isOp
-                                ? theme.colorScheme.error
-                                : theme.colorScheme.primary,
-                          ),
-                          title: Text(isOp ? '取消 OP' : '给予 OP'),
-                          contentPadding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                      const PopupMenuDivider(),
-                      PopupMenuItem(
-                        value: 'ban',
-                        child: ListTile(
-                          leading: Icon(Icons.block,
-                              color: theme.colorScheme.error),
-                          title: const Text('封禁'),
-                          contentPadding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
+        Expanded(child: body),
       ],
     );
   }
@@ -421,7 +408,7 @@ class _WhitelistTabState extends State<_WhitelistTab> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 child: Text(
-                  '服务端运行中可执行操作，文件内容始终可读。',
+                  '只读模式，启动服务端后可进行操作',
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
@@ -554,7 +541,7 @@ class _BansTabState extends State<_BansTab> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 child: Text(
-                  '服务端运行中可执行操作，文件内容始终可读。',
+                  '只读模式，启动服务端后可进行操作',
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
@@ -690,7 +677,7 @@ class _OpsTabState extends State<_OpsTab> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 child: Text(
-                  '服务端运行中可执行操作，文件内容始终可读。',
+                  '只读模式，启动服务端后可进行操作',
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
@@ -779,16 +766,18 @@ class _ListHeader extends StatelessWidget {
     required this.title,
     required this.tooltip,
     required this.onRefresh,
-    required this.actionLabel,
-    required this.actionIcon,
+    this.actionLabel,
+    this.actionIcon,
     this.onAction,
   });
 
   final String title;
   final String tooltip;
-  final VoidCallback onRefresh;
-  final String actionLabel;
-  final IconData actionIcon;
+
+  /// 刷新回调；为 null 时刷新按钮禁用（如在线页未运行时）。
+  final VoidCallback? onRefresh;
+  final String? actionLabel;
+  final IconData? actionIcon;
   final VoidCallback? onAction;
 
   @override
@@ -805,11 +794,12 @@ class _ListHeader extends StatelessWidget {
             tooltip: tooltip,
             onPressed: onRefresh,
           ),
-          IconButton(
-            icon: Icon(actionIcon, size: 20),
-            tooltip: actionLabel,
-            onPressed: onAction,
-          ),
+          if (actionIcon != null)
+            IconButton(
+              icon: Icon(actionIcon, size: 20),
+              tooltip: actionLabel,
+              onPressed: onAction,
+            ),
         ],
       ),
     );

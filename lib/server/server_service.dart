@@ -11,10 +11,17 @@ class ServerService {
   static const EventChannel _events =
       EventChannel('com.venti1112.edgecube/server_events');
 
-  /// 当前设备架构下可用的 JRE 版本（如 ['jre8','jre17','jre21','jre25']）。
+  /// 当前设备架构下可用的 JRE 版本（如 ['jre17','jre21','jre25']）。
   Future<List<String>> availableVersions() async {
     final list =
         await _method.invokeMethod<List<dynamic>>('availableVersions');
+    return list?.cast<String>() ?? const [];
+  }
+
+  /// 当前设备架构下可用的 PHP 运行时（如 ['php8.2']）；不支持的架构返回空。
+  Future<List<String>> availablePhpRuntimes() async {
+    final list =
+        await _method.invokeMethod<List<dynamic>>('availablePhpRuntimes');
     return list?.cast<String>() ?? const [];
   }
 
@@ -35,12 +42,13 @@ class ServerService {
   Future<String?> activeInstanceId() =>
       _method.invokeMethod<String>('activeInstanceId');
 
-  /// 启动服务端。含首次 JRE 解压，可能耗时数秒到数十秒。
+  /// 启动服务端。含首次运行时解压，可能耗时数秒到数十秒。
   Future<void> start({
     required String instanceId,
     required String instanceName,
     required String workingDir,
     required String version,
+    required String runtime,
     required List<String> jvmArgs,
     required List<String> programArgs,
   }) {
@@ -49,6 +57,7 @@ class ServerService {
       'instanceName': instanceName,
       'workingDir': workingDir,
       'version': version,
+      'runtime': runtime,
       'jvmArgs': jvmArgs,
       'programArgs': programArgs,
     });

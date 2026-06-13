@@ -16,6 +16,9 @@ Future<void> main() async {
   final instanceController = InstanceController();
   await instanceController.init();
   final serverController = ServerController();
+  // 让服务端状态机能查询某实例是否开启兼容模式（兼容模式跳过「启动中」标签）。
+  serverController.compatModeResolver =
+      (id) => instanceController.byId(id)?.compatMode ?? false;
   final systemMonitorController = SystemMonitorController();
   runApp(EdgeCubeApp(
     initialThemeMode: initialThemeMode,

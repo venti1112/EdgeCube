@@ -4,9 +4,12 @@ import 'package:flutter/foundation.dart';
 
 import 'server_service.dart';
 
-/// 匹配 Minecraft 服务端日志中玩家加入/离开的正则。
-final _reJoin = RegExp(r'(\w{1,16})\[/[\d.:]+\] logged in');
-final _reLeave = RegExp(r'(\w{1,16}) left the game');
+/// 匹配 Minecraft 服务端日志中玩家加入/离开的正则（兼容英文与中文输出）。
+///
+/// 捕获组 1 均为玩家名：英文匹配 `Name[/ip] logged in` / `Name left the game`，
+/// 中文匹配 Nukkit 等服务端的 `Name 加入了游戏` / `Name 退出了游戏`。
+final _reJoin = RegExp(r'(\w{1,16})(?:\[/[\d.:]+\] logged in| 加入了游戏)');
+final _reLeave = RegExp(r'(\w{1,16})(?: left the game| 退出了游戏)');
 final _reListResp = RegExp(r'online(?:\s*:\s*|\s+)(.*)');
 
 
@@ -31,6 +34,10 @@ class ServerController extends ChangeNotifier {
 
   final ServerService _service;
   late final StreamSubscription<ServerEvent> _sub;
+
+  /// 解析指定实例是否启用兼容模式。兼容模式下，原生上报的「启动中」会被直接
+  /// 视为「运行中」，从而跳过「启动中」标签。由外层（main）注入，读取实例配置。
+  bool Function(String instanceId)? compatModeResolver;
 
   /// 日志环形缓冲上限，超出丢弃最旧的行。
   static const int _maxLogLines = 5000;
@@ -61,12 +68,15 @@ class ServerController extends ChangeNotifier {
   /// 当前实例是否就是正在运行/启动中的那个。
   bool isActive(String instanceId) => _instanceId == instanceId;
 
-  /// 启动服务端。[jvmArgs] 如 `['-Xmx1024M']`，[programArgs] 如 `['-jar','server.jar','nogui']`。
+  /// 启动服务端。[runtime] 为 `'java'` 或 `'php'`：
+  /// Java 版 [jvmArgs] 如 `['-Xmx1024M']`、[programArgs] 如 `['-jar','server.jar','nogui']`；
+  /// PHP 版 [jvmArgs] 为空、[programArgs] 即 `['PocketMine-MP.phar']`。
   Future<void> start({
     required String instanceId,
     required String instanceName,
     required String workingDir,
     required String version,
+    required String runtime,
     required List<String> jvmArgs,
     required List<String> programArgs,
   }) async {
@@ -83,12 +93,16 @@ class ServerController extends ChangeNotifier {
         instanceName: instanceName,
         workingDir: workingDir,
         version: version,
+        runtime: runtime,
         jvmArgs: jvmArgs,
         programArgs: programArgs,
       );
       // 兜底：若 state 事件尚未把状态推进到 starting/running。
+      // 兼容模式下跳过「启动中」，直接视为「运行中」。
       if (_status == ServerStatus.preparing) {
-        _status = ServerStatus.starting;
+        _status = _compatFor(instanceId)
+            ? ServerStatus.running
+            : ServerStatus.starting;
         notifyListeners();
       }
     } catch (e) {
@@ -139,6 +153,9 @@ class ServerController extends ChangeNotifier {
   /// 当前设备架构下可用的 JRE 版本。
   Future<List<String>> availableVersions() => _service.availableVersions();
 
+  /// 当前设备架构下可用的 PHP 运行时（不支持的架构返回空）。
+  Future<List<String>> availablePhpRuntimes() => _service.availablePhpRuntimes();
+
   void _onEvent(ServerEvent event) {
     switch (event) {
       case ServerLogEvent(:final line):
@@ -152,16 +169,19 @@ class ServerController extends ChangeNotifier {
           :final exitCode
         ):
         if (status != null) {
-          // 进程存活，根据 status 字符串映射到对应状态。
-          _status = switch (status) {
-            'preparing' => ServerStatus.preparing,
-            'starting'  => ServerStatus.starting,
-            'running'   => ServerStatus.running,
-            _           => ServerStatus.starting,
-          };
           // 界面重建后，从原生回放中恢复当前正在运行的实例。
           if (instanceId != null) _instanceId = instanceId;
           if (instanceName != null) _instanceName = instanceName;
+          // 兼容模式下「启动中」直接当作「运行中」，跳过「启动中」标签；
+          // 应用被回收后重连时的状态回放同样适用。
+          final compat = _compatFor(_instanceId);
+          // 进程存活，根据 status 字符串映射到对应状态。
+          _status = switch (status) {
+            'preparing' => ServerStatus.preparing,
+            'starting'  => compat ? ServerStatus.running : ServerStatus.starting,
+            'running'   => ServerStatus.running,
+            _           => compat ? ServerStatus.running : ServerStatus.starting,
+          };
         } else {
           _status = ServerStatus.stopped;
           _lastExitCode = exitCode;
@@ -200,6 +220,10 @@ class ServerController extends ChangeNotifier {
       }
     }
   }
+
+  /// 指定实例是否启用兼容模式（未注入解析器或实例为空时返回 false）。
+  bool _compatFor(String? instanceId) =>
+      instanceId != null && (compatModeResolver?.call(instanceId) ?? false);
 
   void _appendLine(String line) {
     _log.add(line);
