@@ -152,6 +152,7 @@ class ServerProcessManager private constructor(private val appContext: Context) 
             env["EC_PHP_LIB"] = phpLib.absolutePath
             env["LD_PRELOAD"] = tagfixLib
             env["LD_LIBRARY_PATH"] = "${RuntimeInstaller.phpLibDir(appContext, version).absolutePath}:$nativeDir"
+            env["PHPRC"] = File(RuntimeInstaller.jreDir(appContext, version), "bin").absolutePath
             env["HOME"] = workingDir
             env["TMPDIR"] = appContext.cacheDir.absolutePath
             env["LANG"] = "en_US.UTF-8"
