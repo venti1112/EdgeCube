@@ -27,6 +27,18 @@ target_link_libraries(launch dl log)
 add_library(tagfix SHARED tagfix.c)
 target_link_libraries(tagfix dl log)
 
+# ─── libtsrm_cache.so ─── PHP ZTS TLS 变量提供者
+# 作为主可执行文件的 NEEDED 依赖，在进程启动时加载，
+# 使 _tsrm_ls_cache 在初始 TLS 块中分配，IE 访问模型合法。
+add_library(tsrm_cache SHARED tsrm_cache.c)
+# -fno-emulated-tls：强制使用原生 TLS（非 emutls）。
+# NDK 对 API < 29 默认使用 emutls，但 libphp.so 以原生 TLS 引用
+# _tsrm_ls_cache，两者符号名不匹配（emutls 生成 __emutls_v._tsrm_ls_cache）。
+# 注：旧写法 `-mllvm -emulated-tls=0` 在 NDK 28 的 Clang 19 下已不被识别
+# （LLVM 移除了该内部选项），改用等价的 driver 标志 -fno-emulated-tls；
+# 实测两者产物一致：_tsrm_ls_cache 为 Type=TLS 的原生 TLS 符号。
+target_compile_options(tsrm_cache PRIVATE -ftls-model=initial-exec -fno-emulated-tls)
+
 # ─── libphploader.so ─── PHP 启动器（dlopen libphpwrapper.so，与 liblaunch.so 同构）
 add_executable(phploader phploader.c)
 
@@ -37,4 +49,19 @@ set_target_properties(phploader PROPERTIES
 
 target_compile_options(phploader PRIVATE -fPIE)
 target_link_options(phploader PRIVATE -fPIE -pie)
-target_link_libraries(phploader dl log)
+# 链接 libtsrm_cache.so → 它成为 NEEDED 依赖，进程启动时一起加载
+target_link_libraries(phploader tsrm_cache dl log)
+
+# ─── libfrpcloader.so ─── frpc 启动器（dlopen 数据目录里的 libfrpc.so）
+# 与 liblaunch.so / libphploader.so 同构，但更简单：libfrpc.so 是 Go c-shared
+# 自包含库，运行期无额外 .so 依赖，故无需预加载、无需 tsrm_cache、无需 tagfix。
+add_executable(frpcloader frpcloader.c)
+
+set_target_properties(frpcloader PROPERTIES
+        PREFIX "lib"
+        SUFFIX ".so"
+        OUTPUT_NAME "frpcloader")
+
+target_compile_options(frpcloader PRIVATE -fPIE)
+target_link_options(frpcloader PRIVATE -fPIE -pie)
+target_link_libraries(frpcloader dl log)

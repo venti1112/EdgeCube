@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'files/file_browser.dart';
 import 'pages/console_page.dart';
 import 'pages/files_page.dart';
-import 'pages/players_page.dart';
+import 'pages/manage_page.dart';
 import 'pages/server_page.dart';
 import 'pages/settings_page.dart';
 
@@ -22,7 +22,7 @@ class _HomeShellState extends State<HomeShell> {
   static const List<Widget> _pages = <Widget>[
     ServerPage(),
     ConsolePage(),
-    PlayersPage(),
+    ManagePage(),
     FilesPage(),
     SettingsPage(),
   ];
@@ -76,9 +76,9 @@ class _HomeShellState extends State<HomeShell> {
               label: '控制台',
             ),
             NavigationDestination(
-              icon: Icon(Icons.people_outline),
-              selectedIcon: Icon(Icons.people),
-              label: '玩家',
+              icon: Icon(Icons.tune_outlined),
+              selectedIcon: Icon(Icons.tune),
+              label: '管理',
             ),
             NavigationDestination(
               icon: Icon(Icons.folder_outlined),

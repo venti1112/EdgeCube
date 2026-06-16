@@ -244,6 +244,93 @@ object RuntimeInstaller {
         File(target, "version").writeText(assetVer)
     }
 
+    // ──────────────────────────────────────────────────────
+    // frpc 运行时（frp 客户端，内网穿透）：Go 以 c-shared 编译的自包含 .so
+    //   assets/runtimes/frpc/bin_<arch>.tgz   （arm64 / arm / x86_64）
+    //   assets/runtimes/frpc/version          版本号（单行）
+    //   tgz 内部布局：lib/libfrpc.so (+ version)
+    //   通过 libfrpcloader.so dlopen lib/libfrpc.so 运行，与 PHP/Java 同构。
+    // 解压目标：filesDir/runtimes/frpc/
+    // ──────────────────────────────────────────────────────
+
+    /** frpc 在 runtimes 下的固定目录名（单一版本，无需多版本共存）。 */
+    const val FRPC_VERSION = "frpc"
+
+    /** frpc 引擎库在解压后的相对路径（被 libfrpcloader.so dlopen）。 */
+    private const val FRPC_LIB_REL = "lib/libfrpc.so"
+
+    fun frpcDir(context: Context): File = jreDir(context, FRPC_VERSION)
+
+    /** libfrpc.so 的完整路径（供 libfrpcloader.so 通过 EC_FRPC_LIB 加载）。 */
+    fun frpcLib(context: Context): File = File(frpcDir(context), FRPC_LIB_REL)
+
+    /** frpc lib 目录路径（供 LD_LIBRARY_PATH 使用）。 */
+    fun frpcLibDir(context: Context): File = File(frpcDir(context), "lib")
+
+    /** 当前架构下是否内置了 frpc（assets 中确有对应 bin_<arch>.tgz）。 */
+    fun isFrpcAvailable(context: Context): Boolean {
+        val arch = deviceArch()
+        return assetExists(context, "$ASSET_ROOT/$FRPC_VERSION/bin_$arch.tgz")
+    }
+
+    /** frpc 是否已按最新版本号解压就位（version 一致且引擎库存在）。 */
+    fun isFrpcInstalled(context: Context): Boolean {
+        val assetVer = assetVersion(context, FRPC_VERSION) ?: return false
+        val installedFile = File(frpcDir(context), "version")
+        if (!installedFile.exists()) return false
+        val installed = installedFile.readText().trim()
+        return installed.isNotEmpty() && installed == assetVer && frpcLib(context).exists()
+    }
+
+    /**
+     * 解压安装 frpc（先清空旧目录），按设备架构选取 bin_<arch>.tgz。
+     * 耗时操作，请在后台线程调用。
+     */
+    fun installFrpc(context: Context) {
+        val assetVer = assetVersion(context, FRPC_VERSION)
+            ?: throw IllegalStateException("assets 中缺少 frpc 的 version 文件")
+        val arch = deviceArch()
+        val asset = "$ASSET_ROOT/$FRPC_VERSION/bin_$arch.tgz"
+        if (!assetExists(context, asset)) {
+            throw IllegalStateException("frpc 不支持当前架构 $arch")
+        }
+
+        val target = frpcDir(context)
+        target.deleteRecursively()
+        target.mkdirs()
+
+        context.assets.open(asset).use { input ->
+            TarArchiveInputStream(GZIPInputStream(BufferedInputStream(input))).use { tar ->
+                val buf = ByteArray(8192)
+                var entry = tar.nextTarEntry
+                while (entry != null) {
+                    val name = entry.name.removePrefix("./")
+                    if (name.isNotEmpty() && !entry.isDirectory) {
+                        val outFile = File(target, name)
+                        outFile.parentFile?.mkdirs()
+                        FileOutputStream(outFile).use { os ->
+                            var n = tar.read(buf)
+                            while (n != -1) {
+                                os.write(buf, 0, n)
+                                n = tar.read(buf)
+                            }
+                        }
+                        // lib/ 下的 .so 给执行位（dlopen 需要）
+                        if (name.startsWith("lib/") && name.endsWith(".so")) {
+                            outFile.setExecutable(true, false)
+                        }
+                    } else if (name.isNotEmpty() && entry.isDirectory) {
+                        File(target, name).mkdirs()
+                    }
+                    entry = tar.nextTarEntry
+                }
+            }
+        }
+
+        // 最后写版本号，作为"解压完整"的标记。
+        File(target, "version").writeText(assetVer)
+    }
+
     private fun extractTarXz(input: InputStream, dest: File, onEntry: () -> Unit) {
         TarArchiveInputStream(XZCompressorInputStream(BufferedInputStream(input))).use { tar ->
             val buf = ByteArray(8192)

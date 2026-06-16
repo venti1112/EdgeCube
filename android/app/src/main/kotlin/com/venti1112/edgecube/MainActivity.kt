@@ -14,6 +14,7 @@ import android.provider.Settings
 import androidx.annotation.NonNull
 import com.venti1112.edgecube.server.RuntimeInstaller
 import com.venti1112.edgecube.server.ServerProcessManager
+import com.venti1112.edgecube.server.TunnelProcessManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -35,6 +36,8 @@ class MainActivity : FlutterActivity() {
     private val serverChannel = "com.venti1112.edgecube/server"
     private val serverEventChannel = "com.venti1112.edgecube/server_events"
     private val systemMonitorChannel = "com.venti1112.edgecube/system_monitor"
+    private val tunnelChannel = "com.venti1112.edgecube/tunnel"
+    private val tunnelEventChannel = "com.venti1112.edgecube/tunnel_events"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,6 +55,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         val serverManager = ServerProcessManager.getInstance(applicationContext)
+        val tunnelManager = TunnelProcessManager.getInstance(applicationContext)
 
         MethodChannel(messenger, storageChannel).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -173,6 +177,80 @@ class MainActivity : FlutterActivity() {
 
                 override fun onCancel(arguments: Any?) {
                     serverManager.setEventSink(null)
+                }
+            },
+        )
+
+        // 隧道（frpc）通道：与服务端通道完全独立，可同时运行。
+        MethodChannel(messenger, tunnelChannel).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isFrpcAvailable" ->
+                    result.success(RuntimeInstaller.isFrpcAvailable(applicationContext))
+
+                "isFrpcReady" ->
+                    result.success(RuntimeInstaller.isFrpcInstalled(applicationContext))
+
+                "isRunning" -> result.success(tunnelManager.isRunning)
+
+                "start" -> {
+                    val configPath = call.argument<String>("configPath")
+                    val name = call.argument<String>("name") ?: "frpc"
+                    if (configPath == null) {
+                        result.error("BAD_ARGS", "缺少 configPath", null)
+                    } else {
+                        // 含首次解压，放后台线程；完成后回主线程返回结果。
+                        thread {
+                            try {
+                                tunnelManager.start(configPath, name)
+                                runOnUiThread { result.success(true) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("START_FAILED", e.message, null) }
+                            }
+                        }
+                    }
+                }
+
+                "stop" -> {
+                    tunnelManager.stop()
+                    result.success(null)
+                }
+
+                "forceStop" -> {
+                    tunnelManager.forceStop()
+                    result.success(null)
+                }
+
+                "reload" -> {
+                    val port = call.argument<Int>("port") ?: 0
+                    val user = call.argument<String>("user")
+                    val password = call.argument<String>("password")
+                    if (port <= 0) {
+                        result.error("BAD_ARGS", "缺少有效的 port", null)
+                    } else {
+                        thread {
+                            val ok = tunnelManager.reload(port, user, password)
+                            runOnUiThread { result.success(ok) }
+                        }
+                    }
+                }
+
+                "clearLog" -> {
+                    tunnelManager.clearLog()
+                    result.success(null)
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+
+        EventChannel(messenger, tunnelEventChannel).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    tunnelManager.setEventSink(events)
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    tunnelManager.setEventSink(null)
                 }
             },
         )

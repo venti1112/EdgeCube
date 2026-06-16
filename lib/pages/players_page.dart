@@ -38,7 +38,7 @@ class _PlayersPageState extends State<PlayersPage>
     final instance = InstanceScope.of(context).selected;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('玩家'),
+        title: const Text('玩家管理'),
         bottom: TabBar(
           controller: _tabCtrl,
           isScrollable: true,
