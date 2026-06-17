@@ -19,6 +19,8 @@ enum _WizardStep {
   nameEntry,
   serverType,
   versionSelect,
+  fabricMcVersionSelect,
+  fabricLoaderVersionSelect,
   downloading,
   importFile,
 }
@@ -60,6 +62,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   /// 用户确认要下载的版本号（弹窗确认后记录，供下载和自动 Java 版本推断使用）。
   String? _selectedVersion;
 
+  /// Fabric 流程中选择的 Minecraft 版本与 Loader 版本。
+  String? _selectedMcVersion;
+  String? _selectedLoaderVersion;
+
   late InstanceController _instanceController;
 
   @override
@@ -98,6 +104,26 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   Future<void> _selectServerType(String type) async {
     _serverType = type;
+    if (type == 'fabric') {
+      setState(() {
+        _step = _WizardStep.fabricMcVersionSelect;
+        _loadingVersions = true;
+        _versionError = null;
+        _versions = [];
+      });
+      try {
+        _versions = await _fetchFabricMcVersions();
+        if (!mounted) return;
+        setState(() => _loadingVersions = false);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _loadingVersions = false;
+          _versionError = '获取 Minecraft 版本列表失败：$e';
+        });
+      }
+      return;
+    }
     setState(() {
       _step = _WizardStep.versionSelect;
       _loadingVersions = true;
@@ -246,7 +272,66 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     }
   }
 
-  /// 在下载页中先获取下载信息，再执行下载。
+  /// Fabric 流程：选择 Minecraft 版本后进入 Loader 版本选择。
+  Future<void> _selectFabricMcVersion(String mcVersion) async {
+    _selectedMcVersion = mcVersion;
+    setState(() {
+      _step = _WizardStep.fabricLoaderVersionSelect;
+      _loadingVersions = true;
+      _versionError = null;
+      _versions = [];
+    });
+    try {
+      _versions = await _fetchFabricLoaderVersions(mcVersion);
+      if (!mounted) return;
+      setState(() => _loadingVersions = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingVersions = false;
+        _versionError = '获取 Fabric Loader 版本列表失败：$e';
+      });
+    }
+  }
+
+  /// Fabric 流程：选择 Loader 版本后确认并下载。
+  Future<void> _selectFabricLoaderVersion(String loaderVersion) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认版本'),
+        content: Text(
+          '确定要下载 Minecraft $_selectedMcVersion + Fabric Loader $loaderVersion 吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final name = _nameController.text.trim();
+    try {
+      final instance = await _instanceController.createInstance(name);
+      if (!mounted) return;
+      _instanceId = instance.id;
+      _selectedLoaderVersion = loaderVersion;
+      setState(() => _step = _WizardStep.downloading);
+      await _fetchAndDownloadFabric(instance.id);
+    } on DuplicateInstanceNameException {
+      if (!mounted) return;
+      _showDuplicateDialog(name);
+    }
+  }
+
+  /// 在下载页中先获取下载信息，再执行下载（Vanilla / Paper）。
   Future<void> _fetchAndDownload(String instanceId, String version) async {
     setState(() {
       _downloadProgress = null;
@@ -256,6 +341,25 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     _DownloadInfo info;
     try {
       info = await _fetchDownloadInfo(version);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _downloadError = '获取下载信息失败：$e');
+      return;
+    }
+
+    await _downloadJar(instanceId, info);
+  }
+
+  /// Fabric 下载流程：获取最新 Installer 版本并构造下载 URL。
+  Future<void> _fetchAndDownloadFabric(String instanceId) async {
+    setState(() {
+      _downloadProgress = null;
+      _downloadError = null;
+    });
+
+    _DownloadInfo info;
+    try {
+      info = await _fetchFabricDownloadInfo();
     } catch (e) {
       if (!mounted) return;
       setState(() => _downloadError = '获取下载信息失败：$e');
@@ -312,7 +416,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         return;
       }
 
-      final mcVersion = _selectedVersion ?? '';
+      final mcVersion = _serverType == 'fabric'
+          ? (_selectedMcVersion ?? '')
+          : (_selectedVersion ?? '');
       final javaVer = _javaVersionForMc(mcVersion);
       await _instanceController.updateConfig(
         instanceId,
@@ -373,6 +479,16 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         setState(() => _step = _WizardStep.nameEntry);
       case _WizardStep.versionSelect:
         setState(() => _step = _WizardStep.serverType);
+      case _WizardStep.fabricMcVersionSelect:
+        setState(() {
+          _step = _WizardStep.serverType;
+          _selectedMcVersion = null;
+        });
+      case _WizardStep.fabricLoaderVersionSelect:
+        setState(() {
+          _step = _WizardStep.fabricMcVersionSelect;
+          _selectedLoaderVersion = null;
+        });
       case _WizardStep.importFile:
         // 导入流程已创建实例，返回时删除空实例并关闭向导。
         _deleteCreatedInstance();
@@ -449,6 +565,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _WizardStep.nameEntry => '新建实例',
       _WizardStep.serverType => '下载服务端',
       _WizardStep.versionSelect => '选择版本',
+      _WizardStep.fabricMcVersionSelect => '选择 Minecraft 版本',
+      _WizardStep.fabricLoaderVersionSelect => '选择 Fabric Loader 版本',
       _WizardStep.downloading => '下载中',
       _WizardStep.importFile => '导入服务端',
     };
@@ -459,6 +577,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _WizardStep.nameEntry => _buildNameEntry(theme),
       _WizardStep.serverType => _buildServerTypeSelect(theme),
       _WizardStep.versionSelect => _buildVersionSelect(theme),
+      _WizardStep.fabricMcVersionSelect => _buildVersionSelect(theme),
+      _WizardStep.fabricLoaderVersionSelect => _buildVersionSelect(theme),
       _WizardStep.downloading => _buildDownloading(theme),
       _WizardStep.importFile => _buildImporting(theme),
     };
@@ -483,7 +603,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           _ServerTypeTile(
             icon: Icons.cloud_download_outlined,
             title: '下载服务端',
-            subtitle: '从官方端或 Paper 端选择版本下载',
+            subtitle: '从官方端、Paper 端或 Fabric 端选择版本下载',
             onTap: _goToServerType,
           ),
           const SizedBox(height: 12),
@@ -505,7 +625,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     );
   }
 
-  /// 步骤 2a：服务端类型选择（官方端 / Paper 端）。
+  /// 步骤 2a：服务端类型选择（官方端 / Paper 端 / Fabric 端）。
   Widget _buildServerTypeSelect(ThemeData theme) {
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -524,11 +644,18 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           subtitle: '高性能优化服务端',
           onTap: () => _selectServerType('paper'),
         ),
+        const SizedBox(height: 12),
+        _ServerTypeTile(
+          icon: Icons.layers_outlined,
+          title: 'Fabric 端',
+          subtitle: '模组加载服务端',
+          onTap: () => _selectServerType('fabric'),
+        ),
       ],
     );
   }
 
-  /// 步骤 3a：版本列表选择。
+  /// 步骤 3a/3b/4b：版本列表选择（Vanilla、Paper、Fabric MC、Fabric Loader）。
   Widget _buildVersionSelect(ThemeData theme) {
     if (_loadingVersions) {
       return const Center(child: CircularProgressIndicator());
@@ -550,7 +677,17 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
               ),
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: () => _selectServerType(_serverType!),
+                onPressed: () {
+                  if (_step == _WizardStep.fabricMcVersionSelect) {
+                    _selectServerType('fabric');
+                  } else if (_step == _WizardStep.fabricLoaderVersionSelect) {
+                    if (_selectedMcVersion != null) {
+                      _selectFabricMcVersion(_selectedMcVersion!);
+                    }
+                  } else {
+                    _selectServerType(_serverType!);
+                  }
+                },
                 child: const Text('重试'),
               ),
             ],
@@ -569,7 +706,18 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         return ListTile(
           title: Text(v),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => _selectVersion(v),
+          onTap: () {
+            switch (_step) {
+              case _WizardStep.versionSelect:
+                _selectVersion(v);
+              case _WizardStep.fabricMcVersionSelect:
+                _selectFabricMcVersion(v);
+              case _WizardStep.fabricLoaderVersionSelect:
+                _selectFabricLoaderVersion(v);
+              default:
+                break;
+            }
+          },
         );
       },
     );
@@ -627,7 +775,15 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                       FilledButton(
                         onPressed: () {
                           _deleteCreatedInstance();
-                          setState(() => _step = _WizardStep.versionSelect);
+                          setState(() {
+                            if (_serverType == 'fabric') {
+                              _step = _selectedLoaderVersion != null
+                                  ? _WizardStep.fabricLoaderVersionSelect
+                                  : _WizardStep.fabricMcVersionSelect;
+                            } else {
+                              _step = _WizardStep.versionSelect;
+                            }
+                          });
                         },
                         child: const Text('重新选择'),
                       ),
@@ -675,6 +831,46 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       return _fetchVanillaVersions();
     } else {
       return _fetchPaperVersions();
+    }
+  }
+
+  /// 获取 Fabric 支持的 Minecraft 版本列表（仅稳定版）。
+  Future<List<String>> _fetchFabricMcVersions() async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse('https://meta.fabricmc.net/v2/versions/game'),
+      );
+      final res = await req.close();
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as List<dynamic>;
+      return json
+          .where((v) => v['stable'] == true)
+          .map<String>((v) => v['version'] as String)
+          .toList();
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 获取指定 Minecraft 版本的 Fabric Loader 版本列表。
+  Future<List<String>> _fetchFabricLoaderVersions(String mcVersion) async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+            'https://meta.fabricmc.net/v2/versions/loader/$mcVersion'),
+      );
+      final res = await req.close();
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as List<dynamic>;
+      return json
+          .map<String>(
+            (v) => (v['loader'] as Map<String, dynamic>)['version'] as String,
+          )
+          .toList();
+    } finally {
+      client.close();
     }
   }
 
@@ -733,6 +929,31 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       return _fetchVanillaDownloadInfo(version);
     } else {
       return _fetchPaperDownloadInfo(version);
+    }
+  }
+
+  /// Fabric 下载信息：查询最新 Installer 版本并组装直接下载 URL。
+  Future<_DownloadInfo> _fetchFabricDownloadInfo() async {
+    final mcVersion = _selectedMcVersion!;
+    final loaderVersion = _selectedLoaderVersion!;
+
+    final client = HttpClient();
+    try {
+      // 获取最新 Installer 版本。
+      final req = await client.getUrl(
+        Uri.parse('https://meta.fabricmc.net/v2/versions/installer'),
+      );
+      final res = await req.close();
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as List<dynamic>;
+      final latestInstaller = json.first['version'] as String;
+
+      return _DownloadInfo(
+        url:
+            'https://meta.fabricmc.net/v2/versions/loader/$mcVersion/$loaderVersion/$latestInstaller/server/jar',
+      );
+    } finally {
+      client.close();
     }
   }
 
