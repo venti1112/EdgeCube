@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'players_page.dart';
 import 'port_mapping_page.dart';
+import 'server_properties_page.dart';
 
 /// 「管理」入口页：以卡片选择进入各管理子页面（玩家管理 / 端口映射），
 /// 风格与新建实例向导中的选项卡一致。
@@ -26,9 +27,18 @@ class ManagePage extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _ManageEntryTile(
+              icon: Icons.tune,
+              title: '服务器配置',
+              subtitle: '编辑 server.properties',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ServerPropertiesPage()),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _ManageEntryTile(
               icon: Icons.lan_outlined,
-              title: '端口映射',
-              subtitle: '通过 frp 将服务器映射到公网访问',
+              title: '网络映射',
+              subtitle: 'UPnP 端口映射与 FRP 隧道',
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const PortMappingPage()),
               ),

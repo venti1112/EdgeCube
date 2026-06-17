@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'home_shell.dart';
 import 'instance/instance_controller.dart';
@@ -19,6 +20,16 @@ Future<void> main() async {
   // 让服务端状态机能查询某实例是否开启兼容模式（兼容模式跳过「启动中」标签）。
   serverController.compatModeResolver =
       (id) => instanceController.byId(id)?.compatMode ?? false;
+  // UPnP 端口映射开关：读取 SharedPreferences 中的持久化配置。
+  serverController.upnpEnabledResolver = () async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('upnp_enabled') ?? false;
+  };
+  // FRP 隧道开关：读取 SharedPreferences 中的持久化配置。
+  serverController.tunnelEnabledResolver = () async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('tunnel_enabled') ?? false;
+  };
   final systemMonitorController = SystemMonitorController();
   runApp(EdgeCubeApp(
     initialThemeMode: initialThemeMode,

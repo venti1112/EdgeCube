@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../server/server_scope.dart';
 import '../tunnel/tunnel_service.dart';
 
-/// 端口映射页：通过 frp（frpc 客户端）把本机的 Minecraft 服务端映射到公网。
+/// 网络映射页：UPnP 自动端口映射 + FRP 隧道，均随服务器自动启停。
 ///
-/// 配置持久化到 shared_preferences，启动后表单只读（改动需停止后重设；仅代理类
-/// 配置可在运行中「热重载」）。日志与状态实时来自原生侧 [TunnelService]。
+/// 所有配置持久化到 SharedPreferences。
 class PortMappingPage extends StatefulWidget {
   const PortMappingPage({super.key});
 
@@ -19,35 +19,32 @@ class PortMappingPage extends StatefulWidget {
 }
 
 class _PortMappingPageState extends State<PortMappingPage> {
-  static const _prefsKey = 'frpc_config';
+  static const _frpcPrefsKey = 'frpc_config';
 
   final _tunnel = TunnelService();
 
-  // —— 表单控制器 ——
+  // —— UPnP / FRP 开关状态 ——
+  bool _upnpEnabled = false;
+  bool _tunnelEnabled = false;
+
+  // —— FRP 表单控制器 ——
   final _serverAddr = TextEditingController();
   final _serverPort = TextEditingController(text: '7000');
   final _token = TextEditingController();
   final _proxyName = TextEditingController(text: 'minecraft');
-  final _localPort = TextEditingController(text: '25565');
   final _remotePort = TextEditingController(text: '25565');
-  final _adminPort = TextEditingController(text: '7400');
-  final _adminUser = TextEditingController(text: 'admin');
-  final _adminPassword = TextEditingController();
   String _proxyType = 'tcp';
 
-  // —— 运行状态 ——
-  /// null 表示已停止；否则为 preparing / starting / running。
-  String? _status;
+  // —— 隧道运行状态 ——
+  String? _tunnelStatus;
   final List<String> _logs = [];
-  StreamSubscription<TunnelEvent>? _sub;
   final _logScroll = ScrollController();
-
-  bool get _running => _status != null;
+  StreamSubscription<TunnelEvent>? _sub;
 
   @override
   void initState() {
     super.initState();
-    _loadConfig();
+    _loadAll();
     _subscribe();
   }
 
@@ -55,27 +52,23 @@ class _PortMappingPageState extends State<PortMappingPage> {
   void dispose() {
     _sub?.cancel();
     _logScroll.dispose();
-    for (final c in [
-      _serverAddr,
-      _serverPort,
-      _token,
-      _proxyName,
-      _localPort,
-      _remotePort,
-      _adminPort,
-      _adminUser,
-      _adminPassword,
-    ]) {
+    for (final c in [_serverAddr, _serverPort, _token, _proxyName, _remotePort]) {
       c.dispose();
     }
     super.dispose();
   }
 
-  // —— 配置持久化 ——
+  // —— 加载 ——
 
-  Future<void> _loadConfig() async {
+  Future<void> _loadAll() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_prefsKey);
+    if (!mounted) return;
+    setState(() {
+      _upnpEnabled = prefs.getBool('upnp_enabled') ?? false;
+      _tunnelEnabled = prefs.getBool('tunnel_enabled') ?? false;
+    });
+    // 加载 FRP 配置。
+    final raw = prefs.getString(_frpcPrefsKey);
     if (raw == null) return;
     try {
       final m = jsonDecode(raw) as Map<String, dynamic>;
@@ -86,24 +79,17 @@ class _PortMappingPageState extends State<PortMappingPage> {
         _token.text = m['authToken'] as String? ?? '';
         _proxyName.text = m['proxyName'] as String? ?? 'minecraft';
         _proxyType = m['proxyType'] as String? ?? 'tcp';
-        _localPort.text = '${m['localPort'] ?? 25565}';
         _remotePort.text = '${m['remotePort'] ?? 25565}';
-        _adminPort.text = '${m['adminPort'] ?? 7400}';
-        _adminUser.text = m['adminUser'] as String? ?? 'admin';
-        _adminPassword.text = m['adminPassword'] as String? ?? '';
       });
     } catch (_) {
-      // 损坏的配置忽略，使用默认值。
+      // 损坏的配置忽略。
     }
   }
 
-  Future<void> _saveConfig() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefsKey, jsonEncode(_buildConfig().toJsonMap()));
-  }
+  // —— 保存 + 即时生效 ——
 
-  /// 从表单构造配置；端口非法时回退到默认值。
-  FrpcConfig _buildConfig() {
+  /// 从表单构造 FrpcConfig（localPort 为占位值，实际运行时由 ServerController 注入）。
+  FrpcConfig _buildFrpcConfig() {
     int port(TextEditingController c, int fallback) =>
         int.tryParse(c.text.trim()) ?? fallback;
     return FrpcConfig(
@@ -112,15 +98,55 @@ class _PortMappingPageState extends State<PortMappingPage> {
       authToken: _token.text.trim().isEmpty ? null : _token.text.trim(),
       proxyName: _proxyName.text.trim().isEmpty ? 'minecraft' : _proxyName.text.trim(),
       proxyType: _proxyType,
-      localPort: port(_localPort, 25565),
+      localPort: 25565,
       remotePort: port(_remotePort, 25565),
-      adminPort: port(_adminPort, 7400),
-      adminUser: _adminUser.text.trim().isEmpty ? null : _adminUser.text.trim(),
-      adminPassword: _adminPassword.text.isEmpty ? null : _adminPassword.text,
     );
   }
 
-  // —— 事件订阅 ——
+  Future<void> _setUpnp(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('upnp_enabled', value);
+    if (!mounted) return;
+    setState(() => _upnpEnabled = value);
+    final server = ServerScope.of(context);
+    if (value) {
+      server.enableUpnpNow();
+    } else {
+      server.disableUpnpNow();
+    }
+  }
+
+  Future<void> _setTunnel(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('tunnel_enabled', value);
+    if (!mounted) return;
+    setState(() => _tunnelEnabled = value);
+    final server = ServerScope.of(context);
+    if (value) {
+      server.enableTunnelNow(_buildFrpcConfig());
+    } else {
+      server.disableTunnelNow();
+    }
+  }
+
+  Future<void> _saveFrpcConfig() async {
+    // 持久化到 SharedPreferences。
+    final config = _buildFrpcConfig();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_frpcPrefsKey, jsonEncode(config.toJsonMap()));
+    if (!mounted) return;
+    // 若隧道正在运行，即时重启以应用新配置。
+    final server = ServerScope.of(context);
+    if (server.isRunning) {
+      server.applyTunnelConfig(config);
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已保存'), duration: Duration(seconds: 2)),
+    );
+  }
+
+  // —— 隧道状态订阅 ——
 
   void _subscribe() {
     _sub = _tunnel.events().listen((e) {
@@ -132,7 +158,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
         });
         _scrollLogToBottom();
       } else if (e is TunnelStateEvent) {
-        setState(() => _status = e.status);
+        setState(() => _tunnelStatus = e.status);
       }
     });
   }
@@ -145,50 +171,6 @@ class _PortMappingPageState extends State<PortMappingPage> {
     });
   }
 
-  // —— 操作 ——
-
-  Future<void> _start() async {
-    if (_serverAddr.text.trim().isEmpty) {
-      _toast('请填写服务器地址');
-      return;
-    }
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await _saveConfig();
-      await _tunnel.startWithConfig(_buildConfig(), name: _proxyName.text.trim());
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('启动失败：$e')));
-    }
-  }
-
-  Future<void> _stop() async {
-    await _tunnel.stop();
-  }
-
-  Future<void> _reload() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final cfg = _buildConfig();
-    try {
-      // 先用最新表单覆盖配置文件，再触发 frpc 重新读取。
-      await _tunnel.writeConfig(cfg);
-      await _saveConfig();
-      final ok = await _tunnel.reload(
-        port: cfg.adminPort,
-        user: cfg.adminUser,
-        password: cfg.adminPassword,
-      );
-      messenger.showSnackBar(
-        SnackBar(content: Text(ok ? '已请求热重载' : '热重载失败，请查看日志')),
-      );
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('热重载失败：$e')));
-    }
-  }
-
-  void _toast(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
   // —— UI ——
 
   @override
@@ -196,98 +178,55 @@ class _PortMappingPageState extends State<PortMappingPage> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('端口映射'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.cleaning_services_outlined),
-            tooltip: '清空日志',
-            onPressed: () {
-              _tunnel.clearLog();
-              setState(() => _logs.clear());
-            },
-          ),
-        ],
+        title: const Text('网络映射'),
       ),
       body: SafeArea(
-        child: Column(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            _statusCard(theme),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                children: [
-                  _sectionTitle(theme, '服务器'),
-                  _field(_serverAddr, 'frps 服务器地址', hint: '例如 frp.example.com'),
-                  Row(
-                    children: [
-                      Expanded(child: _field(_serverPort, 'frps 端口', number: true)),
-                      const SizedBox(width: 12),
-                      Expanded(child: _field(_token, 'Token（可选）')),
-                    ],
-                  ),
-                  _sectionTitle(theme, '代理'),
-                  _field(_proxyName, '代理名称'),
-                  Row(
-                    children: [
-                      Expanded(child: _typeDropdown()),
-                      const SizedBox(width: 12),
-                      Expanded(child: _field(_localPort, '本地端口', number: true)),
-                      const SizedBox(width: 12),
-                      Expanded(child: _field(_remotePort, '远程端口', number: true)),
-                    ],
-                  ),
-                  _sectionTitle(theme, '热重载 Admin（可选）'),
-                  Row(
-                    children: [
-                      Expanded(child: _field(_adminPort, '端口', number: true)),
-                      const SizedBox(width: 12),
-                      Expanded(child: _field(_adminUser, '用户名')),
-                      const SizedBox(width: 12),
-                      Expanded(child: _field(_adminPassword, '密码', obscure: true)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _actions(theme),
-                  const SizedBox(height: 16),
-                  _sectionTitle(theme, '日志'),
-                  _logView(theme),
-                ],
-              ),
-            ),
+            _buildUpnpCard(theme),
+            const SizedBox(height: 16),
+            _buildFrpcCard(theme),
+            if (_tunnelStatus != null) ...[
+              const SizedBox(height: 16),
+              _buildLogSection(theme),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _statusCard(ThemeData theme) {
-    final (icon, color, text) = switch (_status) {
-      'running' => (Icons.cloud_done, theme.colorScheme.primary, '运行中'),
-      'starting' => (Icons.cloud_sync, theme.colorScheme.tertiary, '连接中…'),
-      'preparing' => (Icons.downloading, theme.colorScheme.tertiary, '准备运行时…'),
-      _ => (Icons.cloud_off, theme.colorScheme.onSurfaceVariant, '已停止'),
-    };
-    final addr = _serverAddr.text.trim();
-    final remote = _remotePort.text.trim();
+  // —— UPnP 卡片 ——
+
+  Widget _buildUpnpCard(ThemeData theme) {
     return Card(
-      margin: const EdgeInsets.all(16),
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 36, color: color),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
                 children: [
-                  Text(text, style: theme.textTheme.titleMedium),
-                  if (_status == 'running' && addr.isNotEmpty)
-                    Text('公网入口：$addr:$remote',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant)),
+                  Icon(Icons.router_outlined, size: 20,
+                      color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text('路由器端口映射',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                          color: theme.colorScheme.primary)),
                 ],
               ),
+            ),
+            SwitchListTile(
+              title: const Text('启用自动端口映射'),
+              subtitle: const Text(
+                '服务器启动后自动在路由器上开放端口\n需路由器支持 UPnP / NAT-PMP / NAT-PCP 协议',
+              ),
+              value: _upnpEnabled,
+              onChanged: _setUpnp,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
           ],
         ),
@@ -295,84 +234,207 @@ class _PortMappingPageState extends State<PortMappingPage> {
     );
   }
 
-  Widget _actions(ThemeData theme) {
-    if (!_running) {
-      return FilledButton.icon(
-        icon: const Icon(Icons.play_arrow),
-        label: const Text('启动'),
-        onPressed: _start,
-      );
-    }
-    return Row(
+  // —— FRP 卡片 ——
+
+  Widget _buildFrpcCard(ThemeData theme) {
+    final statusText = switch (_tunnelStatus) {
+      'running' => '隧道运行中',
+      'starting' => '隧道连接中…',
+      'preparing' => '隧道准备中…',
+      _ => null,
+    };
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.cloud_outlined, size: 20,
+                      color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('FRP 隧道',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                            color: theme.colorScheme.primary)),
+                  ),
+                  if (statusText != null)
+                    _statusChip(theme, statusText),
+                ],
+              ),
+            ),
+            SwitchListTile(
+              title: const Text('启用 FRP 隧道'),
+              subtitle: const Text(
+                '通过 frps 服务器将本地服务映射到公网\n服务器启动时自动连接，停止时自动断开',
+              ),
+              value: _tunnelEnabled,
+              onChanged: _setTunnel,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            if (_tunnelEnabled) ...[
+              const Divider(indent: 16, endIndent: 16),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text('frps 服务器',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.primary)),
+              ),
+              _px(_field(_serverAddr, '服务器地址', hint: '例如 frp.example.com')),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Expanded(child: _field(_serverPort, '端口', number: true)),
+                    const SizedBox(width: 12),
+                    Expanded(child: _field(_token, 'Token（可选）')),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text('代理',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.primary)),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Expanded(child: _typeDropdown()),
+                    const SizedBox(width: 12),
+                    Expanded(child: _field(_proxyName, '代理名称')),
+                    const SizedBox(width: 12),
+                    Expanded(child: _field(_remotePort, '远程端口', number: true)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Card(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  margin: EdgeInsets.zero,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 18,
+                            color: theme.colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '本地端口自动使用当前服务器的 server-port',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _saveFrpcConfig,
+                    icon: const Icon(Icons.save, size: 18),
+                    label: const Text('保存配置'),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statusChip(ThemeData theme, String text) {
+    final color = _tunnelStatus == 'running'
+        ? theme.colorScheme.primary
+        : theme.colorScheme.tertiary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(text,
+          style: theme.textTheme.labelSmall?.copyWith(color: color)),
+    );
+  }
+
+  // —— 工具 ——
+
+  Widget _buildLogSection(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            icon: const Icon(Icons.refresh),
-            label: const Text('热重载'),
-            onPressed: _status == 'running' ? _reload : null,
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            children: [
+              Text('隧道日志',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary)),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+                tooltip: '清空日志',
+                onPressed: () {
+                  _tunnel.clearLog();
+                  setState(() => _logs.clear());
+                },
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: theme.colorScheme.error,
-            ),
-            icon: const Icon(Icons.stop),
-            label: const Text('停止'),
-            onPressed: _stop,
+        Container(
+          height: 220,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
           ),
+          padding: const EdgeInsets.all(8),
+          child: _logs.isEmpty
+              ? Center(
+                  child: Text('暂无日志',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant)),
+                )
+              : ListView.builder(
+                  controller: _logScroll,
+                  itemCount: _logs.length,
+                  itemBuilder: (_, i) => Text(
+                    _logs[i],
+                    style: const TextStyle(
+                        fontFamily: 'monospace', fontSize: 11, height: 1.3),
+                  ),
+                ),
         ),
       ],
     );
   }
 
-  Widget _logView(ThemeData theme) {
-    return Container(
-      height: 220,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      padding: const EdgeInsets.all(8),
-      child: _logs.isEmpty
-          ? Center(
-              child: Text('暂无日志',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant)),
-            )
-          : ListView.builder(
-              controller: _logScroll,
-              itemCount: _logs.length,
-              itemBuilder: (_, i) => Text(
-                _logs[i],
-                style: const TextStyle(
-                    fontFamily: 'monospace', fontSize: 11, height: 1.3),
-              ),
-            ),
-    );
-  }
-
-  Widget _sectionTitle(ThemeData theme, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
-      child: Text(text,
-          style: theme.textTheme.titleSmall
-              ?.copyWith(color: theme.colorScheme.primary)),
-    );
-  }
+  Widget _px(Widget child) =>
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: child);
 
   Widget _field(
     TextEditingController c,
     String label, {
     String? hint,
     bool number = false,
-    bool obscure = false,
   }) {
     return TextField(
       controller: c,
-      enabled: !_running, // 运行中锁定表单
-      obscureText: obscure,
       keyboardType: number ? TextInputType.number : TextInputType.text,
       inputFormatters:
           number ? [FilteringTextInputFormatter.digitsOnly] : null,
@@ -397,7 +459,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
         DropdownMenuItem(value: 'tcp', child: Text('TCP')),
         DropdownMenuItem(value: 'udp', child: Text('UDP')),
       ],
-      onChanged: _running ? null : (v) => setState(() => _proxyType = v ?? 'tcp'),
+      onChanged: (v) => setState(() => _proxyType = v ?? 'tcp'),
     );
   }
 }

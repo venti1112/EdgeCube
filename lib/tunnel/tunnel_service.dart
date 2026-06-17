@@ -4,13 +4,13 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-/// 与原生 tunnel 通道对接：启动/停止 frpc 内网穿透进程、热重载配置、接收日志与状态。
+/// 与原生 tunnel 通道对接：启动/停止 frpc 内网穿透进程、接收日志与状态。
 ///
 /// 对应 [MainActivity] 中注册的：
 ///  - MethodChannel `com.venti1112.edgecube/tunnel`
 ///  - EventChannel  `com.venti1112.edgecube/tunnel_events`
 ///
-/// 与 Minecraft 服务端通道（[ServerService]）相互独立，可同时运行。
+/// 隧道生命周期由 [ServerController] 管理，随服务端启停而启停。
 class TunnelService {
   static const MethodChannel _method =
       MethodChannel('com.venti1112.edgecube/tunnel');
@@ -38,14 +38,6 @@ class TunnelService {
 
   /// 强制结束（SIGKILL）。
   Future<void> forceStop() => _method.invokeMethod('forceStop');
-
-  /// 通过 Admin API 热重载配置（需在配置中开启 webServer）。返回是否成功。
-  Future<bool> reload({required int port, String? user, String? password}) async =>
-      await _method.invokeMethod<bool>(
-        'reload',
-        {'port': port, 'user': user, 'password': password},
-      ) ??
-      false;
 
   /// 清空原生侧日志缓冲（与界面清屏同步）。
   Future<void> clearLog() => _method.invokeMethod('clearLog');
@@ -117,13 +109,6 @@ class FrpcConfig {
   /// 远程暴露端口（公网通过 serverAddr:remotePort 访问）。
   final int remotePort;
 
-  /// Admin API 端口（用于热重载）；<= 0 表示不启用 webServer。
-  final int adminPort;
-
-  /// Admin API 用户名 / 密码（启用 webServer 时建议设置）。
-  final String? adminUser;
-  final String? adminPassword;
-
   /// 日志级别：trace / debug / info / warn / error。
   final String logLevel;
 
@@ -136,11 +121,21 @@ class FrpcConfig {
     this.localIp = '127.0.0.1',
     required this.localPort,
     required this.remotePort,
-    this.adminPort = 7400,
-    this.adminUser,
-    this.adminPassword,
     this.logLevel = 'info',
   });
+
+  /// 以新的 [localPort] 生成副本。
+  FrpcConfig copyWith({int? localPort}) => FrpcConfig(
+        serverAddr: serverAddr,
+        serverPort: serverPort,
+        authToken: authToken,
+        proxyName: proxyName,
+        proxyType: proxyType,
+        localIp: localIp,
+        localPort: localPort ?? this.localPort,
+        remotePort: remotePort,
+        logLevel: logLevel,
+      );
 
   /// 序列化为 frpc 的 TOML 配置。log.to=console 确保日志输出到 stdout，
   /// 由原生侧的进程读取并回传到界面。
@@ -154,19 +149,6 @@ class FrpcConfig {
     }
     b.writeln('log.to = "console"');
     b.writeln('log.level = ${_q(logLevel)}');
-    if (adminPort > 0) {
-      b.writeln();
-      b.writeln('webServer.addr = "127.0.0.1"');
-      b.writeln('webServer.port = $adminPort');
-      final u = adminUser;
-      if (u != null && u.isNotEmpty) {
-        b.writeln('webServer.user = ${_q(u)}');
-      }
-      final pw = adminPassword;
-      if (pw != null && pw.isNotEmpty) {
-        b.writeln('webServer.password = ${_q(pw)}');
-      }
-    }
     b.writeln();
     b.writeln('[[proxies]]');
     b.writeln('name = ${_q(proxyName)}');
@@ -184,11 +166,7 @@ class FrpcConfig {
         'authToken': authToken,
         'proxyName': proxyName,
         'proxyType': proxyType,
-        'localPort': localPort,
         'remotePort': remotePort,
-        'adminPort': adminPort,
-        'adminUser': adminUser,
-        'adminPassword': adminPassword,
       };
 
   /// TOML 基本字符串转义。

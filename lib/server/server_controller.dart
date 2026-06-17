@@ -1,8 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'server_properties.dart';
 import 'server_service.dart';
+import 'upnp_service.dart';
+import '../tunnel/tunnel_service.dart';
 
 /// 匹配 Minecraft 服务端日志中玩家加入/离开的正则（兼容英文与中文输出）。
 ///
@@ -27,17 +34,27 @@ enum ServerStatus { stopped, preparing, starting, running, stopping }
 /// 单活动进程模型：同一时刻只跟踪一个正在运行的服务端，[runningInstanceId]
 /// 标识它属于哪个实例。日志为所有页面共享，故本控制器置于全局 Scope。
 class ServerController extends ChangeNotifier {
-  ServerController({ServerService? service})
-      : _service = service ?? ServerService() {
+  ServerController({ServerService? service, UpnpService? upnp, TunnelService? tunnel})
+      : _service = service ?? ServerService(),
+        _upnp = upnp ?? UpnpService(),
+        _tunnel = tunnel ?? TunnelService() {
     _sub = _service.events().listen(_onEvent);
   }
 
   final ServerService _service;
+  final UpnpService _upnp;
+  final TunnelService _tunnel;
   late final StreamSubscription<ServerEvent> _sub;
 
   /// 解析指定实例是否启用兼容模式。兼容模式下，原生上报的「启动中」会被直接
   /// 视为「运行中」，从而跳过「启动中」标签。由外层（main）注入，读取实例配置。
   bool Function(String instanceId)? compatModeResolver;
+
+  /// 解析当前是否启用了 UPnP 端口映射。由外层（main）注入，读取 SharedPreferences。
+  Future<bool> Function()? upnpEnabledResolver;
+
+  /// 解析当前是否启用了 FRP 隧道。由外层（main）注入，读取 SharedPreferences。
+  Future<bool> Function()? tunnelEnabledResolver;
 
   /// 日志环形缓冲上限，超出丢弃最旧的行。
   static const int _maxLogLines = 5000;
@@ -45,9 +62,15 @@ class ServerController extends ChangeNotifier {
   ServerStatus _status = ServerStatus.stopped;
   String? _instanceId;
   String? _instanceName;
+  String? _workingDir;
   int? _lastExitCode;
   final List<String> _log = [];
   final Set<String> _onlinePlayers = {};
+
+  // —— UPnP / FRP 即时状态标志 ——
+  bool _upnpActive = false;
+  bool _tunnelActive = false;
+  bool _restartingTunnel = false;
 
   ServerStatus get status => _status;
   bool get isRunning => _status == ServerStatus.running;
@@ -83,6 +106,7 @@ class ServerController extends ChangeNotifier {
     if (_status != ServerStatus.stopped) return;
     _instanceId = instanceId;
     _instanceName = instanceName;
+    _workingDir = workingDir;
     _lastExitCode = null;
     _status = ServerStatus.preparing;
     _appendLine('[EdgeCube] 启动 $instanceName …');
@@ -103,6 +127,10 @@ class ServerController extends ChangeNotifier {
         _status = _compatFor(instanceId)
             ? ServerStatus.running
             : ServerStatus.starting;
+        if (_status == ServerStatus.running) {
+          _triggerUpnp();
+          _triggerTunnel();
+        }
         notifyListeners();
       }
     } catch (e) {
@@ -182,10 +210,17 @@ class ServerController extends ChangeNotifier {
             'running'   => ServerStatus.running,
             _           => compat ? ServerStatus.running : ServerStatus.starting,
           };
+          // 服务端进入运行态后触发 UPnP 端口映射和 FRP 隧道。
+          if (_status == ServerStatus.running) {
+            if (!_upnpActive) _triggerUpnp();
+            if (!_tunnelActive) _triggerTunnel();
+          }
         } else {
           _status = ServerStatus.stopped;
           _lastExitCode = exitCode;
           _onlinePlayers.clear();
+          if (_upnpActive) _stopUpnp();
+          if (_tunnelActive && !_restartingTunnel) _stopTunnel();
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
           if (exitCode != null) {
             _appendLine('[EdgeCube] 服务端已退出（退出码 $exitCode）');
@@ -224,6 +259,155 @@ class ServerController extends ChangeNotifier {
   /// 指定实例是否启用兼容模式（未注入解析器或实例为空时返回 false）。
   bool _compatFor(String? instanceId) =>
       instanceId != null && (compatModeResolver?.call(instanceId) ?? false);
+
+  /// 触发 UPnP 端口映射（服务端进入运行态时调用）。
+  void _triggerUpnp() {
+    final resolver = upnpEnabledResolver;
+    if (resolver == null) return;
+    resolver().then((enabled) {
+      if (enabled) _startUpnp();
+    });
+  }
+
+  /// 启动 UPnP 端口映射。
+  void _startUpnp() {
+    final dir = _workingDir;
+    if (dir == null || _upnpActive) return;
+    _upnpActive = true;
+    _upnp.openPort(dir).then((port) {
+      if (port != null) {
+        _appendLine('[EdgeCube] 路由器端口映射成功：$port');
+        notifyListeners();
+      }
+    });
+  }
+
+  /// 解除 UPnP 端口映射。
+  void _stopUpnp() {
+    if (!_upnpActive) return;
+    _upnpActive = false;
+    _upnp.closePort().then((_) {
+      // 静默处理，不影响主流程。
+    });
+  }
+
+  /// 启动 FRP 隧道（服务端进入运行态时调用）。
+  void _triggerTunnel() {
+    final resolver = tunnelEnabledResolver;
+    if (resolver == null) return;
+    resolver().then((enabled) {
+      if (enabled) _startTunnelWithConfig(null);
+    });
+  }
+
+  /// 使用指定配置启动 FRP 隧道（config 为 null 时从 SharedPreferences 读取）。
+  void _startTunnelWithConfig(FrpcConfig? config) {
+    final dir = _workingDir;
+    if (dir == null || _tunnelActive) return;
+    _tunnelActive = true;
+    _doStartTunnel(config, dir);
+  }
+
+  Future<void> _doStartTunnel(FrpcConfig? config, String dir) async {
+    try {
+      FrpcConfig finalConfig;
+      if (config != null) {
+        finalConfig = config;
+      } else {
+        // 从 SharedPreferences 读取（服务器启动时的路径）。
+        final prefs = await SharedPreferences.getInstance();
+        final raw = prefs.getString('frpc_config');
+        if (raw == null) {
+          _appendLine('[EdgeCube] FRP 隧道未配置，跳过启动');
+          _tunnelActive = false;
+          return;
+        }
+        final m = jsonDecode(raw) as Map<String, dynamic>;
+        final serverAddr = m['serverAddr'] as String? ?? '';
+        if (serverAddr.isEmpty) {
+          _appendLine('[EdgeCube] FRP 服务器地址未填写，跳过启动');
+          _tunnelActive = false;
+          return;
+        }
+        finalConfig = FrpcConfig(
+          serverAddr: serverAddr,
+          serverPort: (m['serverPort'] as int?) ?? 7000,
+          authToken: m['authToken'] as String?,
+          proxyName: (m['proxyName'] as String?) ?? 'minecraft',
+          proxyType: (m['proxyType'] as String?) ?? 'tcp',
+          localPort: 25565,
+          remotePort: (m['remotePort'] as int?) ?? 25565,
+        );
+      }
+      // 注入实际 localPort。
+      int localPort = finalConfig.localPort;
+      final propsFile = File(p.join(dir, 'server.properties'));
+      if (await propsFile.exists()) {
+        final props = ServerProperties.parse(await propsFile.readAsString());
+        localPort = props.getInt('server-port') ?? 25565;
+      }
+      finalConfig = finalConfig.copyWith(localPort: localPort);
+      if (_status != ServerStatus.running) {
+        _tunnelActive = false;
+        return;
+      }
+      final path = await _tunnel.writeConfig(finalConfig);
+      await _tunnel.start(configPath: path, name: finalConfig.proxyName);
+      _appendLine('[EdgeCube] FRP 隧道已启动（本地端口 $localPort）');
+      notifyListeners();
+    } catch (e) {
+      _appendLine('[EdgeCube] FRP 隧道启动失败：$e');
+      _tunnelActive = false;
+    }
+  }
+
+  /// 停止 FRP 隧道。
+  void _stopTunnel() {
+    if (!_tunnelActive) return;
+    _tunnelActive = false;
+    _tunnel.stop().then((_) {
+      // 静默处理，不影响主流程。
+    });
+  }
+
+  // —— 即时生效公共接口 ——
+
+  /// 立即启用 UPnP（用户在 UI 中打开开关时调用）。
+  void enableUpnpNow() {
+    if (_upnpActive || _status != ServerStatus.running) return;
+    _startUpnp();
+  }
+
+  /// 立即停用 UPnP（用户在 UI 中关闭开关时调用）。
+  void disableUpnpNow() {
+    if (!_upnpActive) return;
+    _stopUpnp();
+  }
+
+  /// 立即启用 FRP 隧道（用户在 UI 中打开开关时调用）。
+  /// [config] 可选，传入当前 UI 配置；为 null 时从 SharedPreferences 读取。
+  void enableTunnelNow([FrpcConfig? config]) {
+    if (_tunnelActive || _status != ServerStatus.running) return;
+    _startTunnelWithConfig(config);
+  }
+
+  /// 立即停用 FRP 隧道（用户在 UI 中关闭开关时调用）。
+  void disableTunnelNow() {
+    if (!_tunnelActive) return;
+    _stopTunnel();
+  }
+
+  /// 以指定配置重启 FRP 隧道（用户在运行中修改配置后调用）。
+  Future<void> applyTunnelConfig(FrpcConfig config) async {
+    if (!_tunnelActive || _status != ServerStatus.running) return;
+    _restartingTunnel = true;
+    await _tunnel.stop();
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (_status == ServerStatus.running && _workingDir != null) {
+      _doStartTunnel(config, _workingDir!);
+    }
+    _restartingTunnel = false;
+  }
 
   void _appendLine(String line) {
     _log.add(line);
