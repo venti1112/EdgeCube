@@ -29,6 +29,25 @@ final _reListResp = RegExp(r'online(?:\s*:\s*|\s+)(.*)');
 /// - [stopping]：已发送 stop 命令，等待进程退出。
 enum ServerStatus { stopped, preparing, starting, running, stopping }
 
+/// 服务端意外退出时的崩溃报告数据。
+class CrashData {
+  const CrashData({
+    required this.exitCode,
+    required this.logLines,
+    required this.envType,
+    required this.envVersion,
+  });
+
+  final int exitCode;
+  final List<String> logLines;
+
+  /// 运行环境类型：'java' 或 'php'。
+  final String envType;
+
+  /// 运行环境版本：如 'jre21'、'php8.2'。
+  final String envVersion;
+}
+
 /// 管理服务端进程的运行状态与日志缓冲，并把 UI 操作转发到 [ServerService]。
 ///
 /// 单活动进程模型：同一时刻只跟踪一个正在运行的服务端，[runningInstanceId]
@@ -67,10 +86,27 @@ class ServerController extends ChangeNotifier {
   final List<String> _log = [];
   final Set<String> _onlinePlayers = {};
 
+  // —— 运行时类型/版本追踪（崩溃报告用）——
+  String _runtimeType = '';
+  String _runtimeVersion = '';
+
+  // —— 用户主动操作标志（区分意外退出与主动停止）——
+  bool _userStopping = false;
+  bool _userForceStopping = false;
+
   // —— UPnP / FRP 即时状态标志 ——
   bool _upnpActive = false;
   bool _tunnelActive = false;
   bool _restartingTunnel = false;
+
+  // —— 崩溃回调：服务端意外退出时触发 ——
+  /// 当服务端非正常退出（退出码不为 0 且非用户主动停止）时调用。
+  /// UI 层应监听此回调并展示崩溃报告弹窗。
+  void Function(CrashData crash)? onCrashExit;
+
+  // —— 映射结果追踪 ——
+  String? _upnpExternalIp;   // UPnP 映射成功后的公网 IP
+  FrpcConfig? _activeFrpcConfig;  // 当前活跃的 FRP 配置
 
   ServerStatus get status => _status;
   bool get isRunning => _status == ServerStatus.running;
@@ -83,6 +119,13 @@ class ServerController extends ChangeNotifier {
   int? get lastExitCode => _lastExitCode;
   List<String> get log => List.unmodifiable(_log);
   Set<String> get onlinePlayers => Set.unmodifiable(_onlinePlayers);
+
+  // —— 映射状态公共接口 ——
+  bool get isUpnpActive => _upnpActive;
+  bool get isTunnelActive => _tunnelActive;
+  String? get upnpExternalIp => _upnpExternalIp;
+  int? get upnpMappedPort => _upnp.mappedPort;
+  FrpcConfig? get activeFrpcConfig => _activeFrpcConfig;
 
   /// 是否正有某个“其它”实例在运行（用于禁用对当前实例的启动）。
   bool isOtherRunning(String instanceId) =>
@@ -108,6 +151,10 @@ class ServerController extends ChangeNotifier {
     _instanceName = instanceName;
     _workingDir = workingDir;
     _lastExitCode = null;
+    _runtimeType = runtime;
+    _runtimeVersion = version;
+    _userStopping = false;
+    _userForceStopping = false;
     _status = ServerStatus.preparing;
     _appendLine('[EdgeCube] 启动 $instanceName …');
     notifyListeners();
@@ -145,6 +192,7 @@ class ServerController extends ChangeNotifier {
   /// 优雅停止（向服务端发送 stop 命令）。
   Future<void> stop() async {
     if (_status != ServerStatus.running) return;
+    _userStopping = true;
     _status = ServerStatus.stopping;
     _appendLine('[EdgeCube] 正在停止（已发送 stop 命令）…');
     notifyListeners();
@@ -154,6 +202,7 @@ class ServerController extends ChangeNotifier {
   /// 强制结束进程。
   Future<void> forceStop() async {
     if (_status == ServerStatus.stopped) return;
+    _userForceStopping = true;
     _appendLine('[EdgeCube] 强制结束进程…');
     await _service.forceStop();
   }
@@ -224,7 +273,13 @@ class ServerController extends ChangeNotifier {
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
           if (exitCode != null) {
             _appendLine('[EdgeCube] 服务端已退出（退出码 $exitCode）');
+            // 崩溃检测：退出码不为 0 且非用户主动停止/强制停止。
+            if (exitCode != 0 && !_userStopping && !_userForceStopping) {
+              _handleCrash(exitCode);
+            }
           }
+          _userStopping = false;
+          _userForceStopping = false;
         }
         notifyListeners();
     }
@@ -274,9 +329,11 @@ class ServerController extends ChangeNotifier {
     final dir = _workingDir;
     if (dir == null || _upnpActive) return;
     _upnpActive = true;
-    _upnp.openPort(dir).then((port) {
+    _upnp.openPort(dir).then((port) async {
       if (port != null) {
         _appendLine('[EdgeCube] 路由器端口映射成功：$port');
+        // 尝试获取公网 IP。
+        _upnpExternalIp = await _upnp.getExternalIp();
         notifyListeners();
       }
     });
@@ -286,6 +343,7 @@ class ServerController extends ChangeNotifier {
   void _stopUpnp() {
     if (!_upnpActive) return;
     _upnpActive = false;
+    _upnpExternalIp = null;
     _upnp.closePort().then((_) {
       // 静默处理，不影响主流程。
     });
@@ -353,6 +411,7 @@ class ServerController extends ChangeNotifier {
       }
       final path = await _tunnel.writeConfig(finalConfig);
       await _tunnel.start(configPath: path, name: finalConfig.proxyName);
+      _activeFrpcConfig = finalConfig;
       _appendLine('[EdgeCube] FRP 隧道已启动（本地端口 $localPort）');
       notifyListeners();
     } catch (e) {
@@ -365,6 +424,7 @@ class ServerController extends ChangeNotifier {
   void _stopTunnel() {
     if (!_tunnelActive) return;
     _tunnelActive = false;
+    _activeFrpcConfig = null;
     _tunnel.stop().then((_) {
       // 静默处理，不影响主流程。
     });
@@ -414,6 +474,20 @@ class ServerController extends ChangeNotifier {
     if (_log.length > _maxLogLines) {
       _log.removeRange(0, _log.length - _maxLogLines);
     }
+  }
+
+  /// 服务端意外退出时生成崩溃数据并触发回调。
+  void _handleCrash(int exitCode) {
+    final callback = onCrashExit;
+    if (callback == null) return;
+    // 复制当前日志快照，避免后续新启动覆盖。
+    final snapshot = List<String>.from(_log);
+    callback(CrashData(
+      exitCode: exitCode,
+      logLines: snapshot,
+      envType: _runtimeType,
+      envVersion: _runtimeVersion,
+    ));
   }
 
   @override

@@ -16,6 +16,9 @@ class UpnpService {
   /// 当前已映射的端口（用于停止时解除映射）。
   int? _mappedPort;
 
+  /// 当前已映射的端口号（映射成功后可获取）。
+  int? get mappedPort => _mappedPort;
+
   /// 是否已有网关发现任务正在进行。
   bool _discovering = false;
 

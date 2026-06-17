@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'files/file_browser.dart';
+import 'online/online_service.dart';
 import 'pages/console_page.dart';
 import 'pages/files_page.dart';
 import 'pages/manage_page.dart';
@@ -10,7 +11,9 @@ import 'pages/settings_page.dart';
 
 /// 应用主壳：底部导航栏 + 页面切换。
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  const HomeShell({super.key, required this.onlineService});
+
+  final OnlineService onlineService;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -19,13 +22,53 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _selectedIndex = 0;
 
-  static const List<Widget> _pages = <Widget>[
-    ServerPage(),
-    ConsolePage(),
-    ManagePage(),
-    FilesPage(),
-    SettingsPage(),
+  List<Widget> get _tabPages => [
+    ServerPage(onlineService: widget.onlineService),
+    const ConsolePage(),
+    const ManagePage(),
+    const FilesPage(),
+    SettingsPage(onlineService: widget.onlineService),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // 首次启动弹窗：询问是否启用在线服务。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showFirstLaunchDialog());
+  }
+
+  Future<void> _showFirstLaunchDialog() async {
+    if (widget.onlineService.asked) return;
+    if (!mounted) return;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('启用在线服务'),
+        content: const Text(
+          'EdgeCube 提供了一些在线服务以提升使用体验。'
+          '启用后将生成唯一设备标识用于服务识别。'
+          '我们可能会收集您的设备信息以改进软件。\n'
+          '您是否同意启用在线服务？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('不同意'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('同意'),
+          ),
+        ],
+      ),
+    );
+
+    await widget.onlineService.markAsked();
+    if (result == true) {
+      await widget.onlineService.setEnabled(true);
+    }
+  }
 
   void _onDestinationSelected(int index) {
     setState(() => _selectedIndex = index);
@@ -59,7 +102,7 @@ class _HomeShellState extends State<HomeShell> {
       child: Scaffold(
         body: IndexedStack(
           index: _selectedIndex,
-          children: _pages,
+          children: _tabPages,
         ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _selectedIndex,

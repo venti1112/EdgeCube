@@ -2,11 +2,17 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../online/online_service.dart';
 import '../server/power_service.dart';
 import '../theme/theme_scope.dart';
+import 'about_page.dart';
+import 'appearance_settings_page.dart';
+import 'online_services_page.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
+  const SettingsPage({super.key, required this.onlineService});
+
+  final OnlineService onlineService;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -51,6 +57,17 @@ class _SettingsPageState extends State<SettingsPage>
     await _refreshBattery();
   }
 
+  String _themeModeLabel(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.system:
+        return '跟随系统';
+      case ThemeMode.dark:
+        return '深色模式';
+      case ThemeMode.light:
+        return '浅色模式';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -61,36 +78,59 @@ class _SettingsPageState extends State<SettingsPage>
       body: ListView(
         children: [
           _sectionHeader(theme, '外观'),
-          RadioGroup<ThemeMode>(
-            groupValue: themeScope.themeMode,
-            onChanged: (mode) {
-              if (mode != null) themeScope.setThemeMode(mode);
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('外观设置'),
+            subtitle: Text(_themeModeLabel(themeScope.themeMode)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AppearanceSettingsPage(),
+                ),
+              );
             },
-            child: const Column(
-              children: [
-                RadioListTile<ThemeMode>(
-                  title: Text('跟随系统'),
-                  secondary: Icon(Icons.brightness_auto),
-                  value: ThemeMode.system,
-                ),
-                RadioListTile<ThemeMode>(
-                  title: Text('深色模式'),
-                  secondary: Icon(Icons.dark_mode),
-                  value: ThemeMode.dark,
-                ),
-                RadioListTile<ThemeMode>(
-                  title: Text('浅色模式'),
-                  secondary: Icon(Icons.light_mode),
-                  value: ThemeMode.light,
-                ),
-              ],
-            ),
           ),
           if (Platform.isAndroid) ...[
             const Divider(),
             _sectionHeader(theme, '后台保活'),
             _buildBatteryTile(theme),
           ],
+          const Divider(),
+          _sectionHeader(theme, '在线服务'),
+          ListenableBuilder(
+            listenable: widget.onlineService,
+            builder: (context, _) => ListTile(
+              leading: const Icon(Icons.cloud_outlined),
+              title: const Text('在线服务'),
+              subtitle: Text(widget.onlineService.enabled ? '已启用' : '已关闭'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => OnlineServicesPage(
+                      onlineService: widget.onlineService,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const Divider(),
+          _sectionHeader(theme, '其他'),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('关于'),
+            subtitle: const Text('版本信息、开源许可'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AboutPage(),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );

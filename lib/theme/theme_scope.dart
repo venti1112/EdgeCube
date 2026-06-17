@@ -1,19 +1,29 @@
 import 'package:flutter/material.dart';
 
-/// 向子树暴露当前主题模式与修改入口。
+/// 向子树暴露当前主题模式、种子色与修改入口。
 ///
-/// 设置页通过 [ThemeScope.of] 读取 [themeMode] 并调用 [setThemeMode] 切换，
-/// 应用顶层据此驱动 [MaterialApp.themeMode]。
+/// 设置页通过 [ThemeScope.of] 读取 [themeMode] / [seedColor] / [useDynamicColor]
+/// 并调用对应 setter 切换，应用顶层据此驱动 [MaterialApp.themeMode] 与色彩方案。
 class ThemeScope extends InheritedWidget {
   const ThemeScope({
     super.key,
     required this.themeMode,
     required this.setThemeMode,
+    required this.seedColor,
+    required this.setSeedColor,
+    required this.useDynamicColor,
+    required this.setUseDynamicColor,
     required super.child,
   });
 
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> setThemeMode;
+
+  final Color seedColor;
+  final ValueChanged<Color> setSeedColor;
+
+  final bool useDynamicColor;
+  final ValueChanged<bool> setUseDynamicColor;
 
   static ThemeScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<ThemeScope>();
@@ -23,5 +33,7 @@ class ThemeScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(ThemeScope oldWidget) =>
-      themeMode != oldWidget.themeMode;
+      themeMode != oldWidget.themeMode ||
+      seedColor != oldWidget.seedColor ||
+      useDynamicColor != oldWidget.useDynamicColor;
 }

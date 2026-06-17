@@ -27,6 +27,30 @@ class SystemMonitorService {
       serverMemMb: (map['serverMemMb'] as num?)?.toInt(),
     );
   }
+
+  /// 获取设备硬件信息（SoC、架构、制造商、型号）。
+  Future<DeviceInfo> getDeviceInfo() async {
+    final raw = await _channel.invokeMethod<Map>('getDeviceInfo');
+    if (raw == null) {
+      return const DeviceInfo(
+        socModel: 'unknown',
+        architecture: 'unknown',
+        manufacturer: 'unknown',
+        model: 'unknown',
+        androidVersion: 'unknown',
+        securityPatch: 'unknown',
+      );
+    }
+    final map = Map<String, dynamic>.from(raw);
+    return DeviceInfo(
+      socModel: (map['socModel'] as String?) ?? 'unknown',
+      architecture: (map['architecture'] as String?) ?? 'unknown',
+      manufacturer: (map['manufacturer'] as String?) ?? 'unknown',
+      model: (map['model'] as String?) ?? 'unknown',
+      androidVersion: (map['androidVersion'] as String?) ?? 'unknown',
+      securityPatch: (map['securityPatch'] as String?) ?? 'unknown',
+    );
+  }
 }
 
 /// 一次系统状态快照。
@@ -57,4 +81,34 @@ class SystemInfo {
   /// 已用内存占总量百分比。
   double get usedMemPercent =>
       totalMemMb > 0 ? (usedMemMb / totalMemMb) * 100.0 : 0.0;
+}
+
+/// 设备硬件信息，用于崩溃报告。
+class DeviceInfo {
+  const DeviceInfo({
+    required this.socModel,
+    required this.architecture,
+    required this.manufacturer,
+    required this.model,
+    required this.androidVersion,
+    required this.securityPatch,
+  });
+
+  /// SoC 型号（如 Snapdragon 8 Gen 2）。
+  final String socModel;
+
+  /// 设备架构（如 arm64-v8a）。
+  final String architecture;
+
+  /// 设备制造商（如 Xiaomi）。
+  final String manufacturer;
+
+  /// 设备型号（如 2210132C）。
+  final String model;
+
+  /// 安卓系统版本（如 14）。
+  final String androidVersion;
+
+  /// 安全补丁日期（如 2024-01-01）。
+  final String securityPatch;
 }

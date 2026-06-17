@@ -1,15 +1,21 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../instance/create_instance_page.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
+import '../online/error_report_service.dart';
+import '../online/online_service.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
 import '../server/system_monitor_scope.dart';
+import '../server/system_monitor_service.dart';
 import '../widgets/placeholder_page.dart';
 
 /// 各内置运行时版本的展示名（JRE 与 PHP）。
@@ -21,7 +27,9 @@ const Map<String, String> _kVersionLabels = {
 };
 
 class ServerPage extends StatelessWidget {
-  const ServerPage({super.key});
+  const ServerPage({super.key, required this.onlineService});
+
+  final OnlineService onlineService;
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +57,7 @@ class ServerPage extends StatelessWidget {
               key: ValueKey(selected.id),
               instance: selected,
               filesRevision: controller.filesRevision,
+              onlineService: onlineService,
             ),
     );
   }
@@ -78,12 +87,15 @@ class _ServerControlPanel extends StatefulWidget {
     super.key,
     required this.instance,
     required this.filesRevision,
+    required this.onlineService,
   });
 
   final Instance instance;
 
   /// 实例目录文件修订号，变化时触发重新扫描 jar。
   final int filesRevision;
+
+  final OnlineService onlineService;
 
   @override
   State<_ServerControlPanel> createState() => _ServerControlPanelState();
@@ -113,6 +125,22 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     _version = widget.instance.javaVersion ?? 'jre21';
     _selectedJar = widget.instance.selectedJar;
     _compatMode = widget.instance.compatMode;
+    // 设置崩溃回调：服务端意外退出时弹出报告弹窗。
+    final server = ServerScope.of(context);
+    server.onCrashExit = _onCrashExit;
+  }
+
+  /// 服务端意外退出回调。
+  void _onCrashExit(CrashData crash) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _CrashDialog(
+        crash: crash,
+        onlineService: widget.onlineService,
+      ),
+    );
   }
 
   @override
@@ -341,6 +369,10 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           padding: const EdgeInsets.all(16),
           children: [
             _statusCard(context, server, ctx, status, active ? server.lastExitCode : null),
+            if (status == ServerStatus.running) ...[
+              const SizedBox(height: 16),
+              _ConnectionCard(server: server),
+            ],
             const SizedBox(height: 16),
             _actions(context, server, ctx, status),
             const SizedBox(height: 16),
@@ -1162,6 +1194,411 @@ class _AnimatedProgressBar extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// 获取设备局域网 IP 地址（优先 WiFi，其次有线）。
+Future<String?> _getLocalIp() async {
+  try {
+    final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4);
+    for (final iface in interfaces) {
+      // 跳过回环接口。
+      if (iface.name == 'lo' || iface.name == 'lo0') continue;
+      for (final addr in iface.addresses) {
+        if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+          return addr.address;
+        }
+      }
+    }
+  } catch (_) {
+    // 网络权限问题或接口不可用。
+  }
+  return null;
+}
+
+/// 连接信息卡片：显示内网 IP、映射状态、公网 IP。
+///
+/// 仅在服务器运行时显示。
+class _ConnectionCard extends StatelessWidget {
+  const _ConnectionCard({required this.server});
+
+  final ServerController server;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final upnpActive = server.isUpnpActive;
+    final tunnelActive = server.isTunnelActive;
+    final upnpIp = server.upnpExternalIp;
+    final upnpPort = server.upnpMappedPort;
+    final frpConfig = server.activeFrpcConfig;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 标题行。
+            Row(
+              children: [
+                Icon(Icons.link, size: 20, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('连接信息',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.primary)),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // 内网连接地址。
+            FutureBuilder<String?>(
+              future: _getLocalIp(),
+              builder: (context, snapshot) {
+                final localIp = snapshot.data ?? '…';
+                return _infoRow(
+                  context, theme,
+                  icon: Icons.lan_outlined,
+                  label: '内网地址',
+                  value: '$localIp:${upnpPort ?? 25565}',
+                  canCopy: snapshot.hasData,
+                );
+              },
+            ),
+
+            // 映射状态指示器。
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                _statusChip(
+                  theme,
+                  icon: Icons.router_outlined,
+                  label: 'UPnP',
+                  active: upnpActive,
+                  success: upnpIp != null,
+                ),
+                _statusChip(
+                  theme,
+                  icon: Icons.cloud_outlined,
+                  label: 'FRP',
+                  active: tunnelActive,
+                  success: tunnelActive,
+                ),
+              ],
+            ),
+
+            // UPnP 公网 IP（映射成功时显示）。
+            if (upnpActive && upnpIp != null && upnpPort != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _infoRow(
+                  context, theme,
+                  icon: Icons.public,
+                  label: 'UPnP 公网',
+                  value: '$upnpIp:$upnpPort',
+                  canCopy: true,
+                ),
+              ),
+
+            // FRP 公网地址（隧道运行时显示）。
+            if (tunnelActive && frpConfig != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _infoRow(
+                  context, theme,
+                  icon: Icons.cloud_outlined,
+                  label: 'FRP 公网',
+                  value: '${frpConfig.serverAddr}:${frpConfig.remotePort}',
+                  canCopy: true,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 信息行：图标 + 标签 + 值，可选复制按钮。
+  Widget _infoRow(BuildContext context, ThemeData theme,
+      {required IconData icon,
+      required String label,
+      required String value,
+      bool canCopy = false}) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Text(label,
+            style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              fontFamily: 'monospace',
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (canCopy)
+          InkWell(
+            onTap: () => _copyAddress(context, value),
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: Icon(Icons.copy, size: 16,
+                  color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 状态芯片：显示映射功能的启用状态。
+  Widget _statusChip(ThemeData theme,
+      {required IconData icon,
+      required String label,
+      required bool active,
+      required bool success}) {
+    final Color color;
+    final String statusText;
+    if (!active) {
+      color = theme.colorScheme.outline;
+      statusText = '未启用';
+    } else if (success) {
+      color = Colors.green;
+      statusText = '已映射';
+    } else {
+      color = Colors.orange;
+      statusText = '连接中';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text('$label $statusText',
+              style: theme.textTheme.labelSmall?.copyWith(color: color)),
+        ],
+      ),
+    );
+  }
+
+  void _copyAddress(BuildContext context, String address) {
+    Clipboard.setData(ClipboardData(text: address));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已复制 $address'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────
+// 崩溃报告弹窗
+// ──────────────────────────────────────────────────────────
+
+/// 服务端意外退出时展示的崩溃报告对话框。
+///
+/// 提供导出日志（通过系统分享）和上传日志（在线服务启用时）功能。
+class _CrashDialog extends StatefulWidget {
+  const _CrashDialog({
+    required this.crash,
+    required this.onlineService,
+  });
+
+  final CrashData crash;
+  final OnlineService onlineService;
+
+  @override
+  State<_CrashDialog> createState() => _CrashDialogState();
+}
+
+class _CrashDialogState extends State<_CrashDialog> {
+  bool _exporting = false;
+  bool _uploading = false;
+  bool _uploadOk = false;
+  String? _uploadResult;
+
+  /// 设备信息 + 系统信息头部，在 init 时异步获取。
+  String _deviceHeader = '正在获取设备信息…';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDeviceHeader();
+  }
+
+  Future<void> _loadDeviceHeader() async {
+    try {
+      final monitorService = SystemMonitorService();
+      final deviceInfo = await monitorService.getDeviceInfo();
+      final sysInfo = await monitorService.getSystemInfo();
+      final envType = widget.crash.envType == 'php' ? 'PHP' : 'Java';
+      final envVersion = _versionLabel(widget.crash.envVersion);
+      final header = [
+        '=== 设备信息 ===',
+        'SoC 型号: ${deviceInfo.socModel}',
+        '内存总量: ${sysInfo.totalMemMb} MB',
+        '内存已用: ${sysInfo.usedMemMb} MB',
+        '环境类型: $envType',
+        '环境版本: $envVersion',
+        '设备架构: ${deviceInfo.architecture}',
+        '设备制造商: ${deviceInfo.manufacturer}',
+        '设备型号: ${deviceInfo.model}',
+        '安卓版本: ${deviceInfo.androidVersion}',
+        '安全补丁: ${deviceInfo.securityPatch}',
+        '退出码: ${widget.crash.exitCode}',
+        '================',
+        '',
+      ].join('\n');
+      if (mounted) setState(() => _deviceHeader = header);
+    } catch (_) {
+      if (mounted) setState(() => _deviceHeader = '(设备信息获取失败)\n\n');
+    }
+  }
+
+  static String _versionLabel(String version) {
+    const labels = {
+      'jre17': 'Java 17',
+      'jre21': 'Java 21',
+      'jre25': 'Java 25',
+      'php8.2': 'PHP 8.2',
+    };
+    return labels[version] ?? version;
+  }
+
+  /// 拼接完整日志内容（设备信息 + 控制台输出）。
+  String _buildFullLog() => '$_deviceHeader${widget.crash.logLines.join('\n')}';
+
+  /// 导出日志：写入临时文件并通过系统分享发送。
+  Future<void> _exportLog() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final dir = await getTemporaryDirectory();
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final file = File(p.join(dir.path, 'edgecube_crash_$ts.log'));
+      await file.writeAsString(_buildFullLog());
+      if (!mounted) return;
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path)],
+        text: 'EdgeCube 服务端崩溃日志',
+      ));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  /// 上传日志到 EdgeCube 服务器。
+  Future<void> _uploadLog() async {
+    if (_uploading) return;
+    final deviceId = widget.onlineService.deviceId;
+    if (deviceId == null) {
+      setState(() {
+        _uploadResult = '设备 ID 不可用';
+        _uploadOk = false;
+      });
+      return;
+    }
+    setState(() {
+      _uploading = true;
+      _uploadResult = null;
+      _uploadOk = false;
+    });
+    final result = await ErrorReportService.upload(
+      logContent: _buildFullLog(),
+      deviceId: deviceId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _uploading = false;
+      _uploadOk = result.success;
+      _uploadResult = result.message;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onlineEnabled =
+        widget.onlineService.enabled && widget.onlineService.deviceId != null;
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.error_outline, color: theme.colorScheme.error, size: 24),
+          const SizedBox(width: 8),
+          const Text('服务端意外退出'),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '服务端进程已意外退出（退出码 ${widget.crash.exitCode}）。'
+            '您可以导出日志用于排查，'
+            '${onlineEnabled ? '或上传日志帮助我们改进。' : '或启用在线服务以上传日志帮助我们改进。'}',
+          ),
+          if (_uploadResult != null) ...[            const SizedBox(height: 8),
+            Text(
+              _uploadResult!,
+              style: TextStyle(
+                color: _uploadOk
+                    ? Colors.green
+                    : theme.colorScheme.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('关闭'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _exporting ? null : _exportLog,
+          icon: _exporting
+              ? const SizedBox(
+                  width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.download),
+          label: const Text('导出日志'),
+        ),
+        if (onlineEnabled)
+          FilledButton.icon(
+            onPressed: _uploading ? null : _uploadLog,
+            icon: _uploading
+                ? const SizedBox(
+                    width: 16, height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.cloud_upload),
+            label: const Text('上传日志'),
+          ),
+      ],
     );
   }
 }
