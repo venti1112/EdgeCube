@@ -9,9 +9,12 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.annotation.NonNull
+import com.venti1112.edgecube.server.JreLayout
 import com.venti1112.edgecube.server.RuntimeInstaller
 import com.venti1112.edgecube.server.ServerProcessManager
 import com.venti1112.edgecube.server.TunnelProcessManager
@@ -20,8 +23,10 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.BufferedReader
+import java.io.File
 import java.io.FileInputStream
 import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
 import kotlin.concurrent.thread
 
 /**
@@ -38,6 +43,7 @@ class MainActivity : FlutterActivity() {
     private val systemMonitorChannel = "com.venti1112.edgecube/system_monitor"
     private val tunnelChannel = "com.venti1112.edgecube/tunnel"
     private val tunnelEventChannel = "com.venti1112.edgecube/tunnel_events"
+    private val forgeEventChannel = "com.venti1112.edgecube/forge_events"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -162,6 +168,45 @@ class MainActivity : FlutterActivity() {
                             runOnUiThread { result.success(info) }
                         } catch (e: Exception) {
                             runOnUiThread { result.error("MONITOR_ERR", e.message, null) }
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // Forge 安装事件通道
+        var forgeEventSink: EventChannel.EventSink? = null
+        EventChannel(messenger, forgeEventChannel).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    forgeEventSink = events
+                }
+                override fun onCancel(arguments: Any?) {
+                    forgeEventSink = null
+                }
+            },
+        )
+
+        // Forge 安装通道：下载 installer 后在本地运行 java -jar installer.jar --installServer
+        MethodChannel(messenger, "com.venti1112.edgecube/forge").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "runInstaller" -> {
+                    val installerJar = call.argument<String>("installerJar")
+                    val workingDir = call.argument<String>("workingDir")
+                    val javaVersion = call.argument<String>("javaVersion") ?: "jre21"
+                    if (installerJar == null || workingDir == null) {
+                        result.error("BAD_ARGS", "缺少 installerJar/workingDir", null)
+                    } else {
+                        thread {
+                            try {
+                                val exitCode = runForgeInstaller(
+                                    installerJar, workingDir, javaVersion, forgeEventSink,
+                                )
+                                runOnUiThread { result.success(exitCode) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("INSTALL_FAILED", e.message, null) }
+                            }
                         }
                     }
                 }
@@ -463,5 +508,93 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {
             null
         }
+    }
+
+    // ──────────────────────────────────────────────────────
+    // Forge 安装器：通过 liblaunch.so 运行 Forge Installer
+    // ──────────────────────────────────────────────────────
+
+    private val forgeAnsiPattern = Regex("\\x1B\\[[0-?]*[ -/]*[@-~]")
+
+    /**
+     * 在后台线程运行 Forge Installer（java -jar installer.jar --installServer）。
+     * 复用 liblaunch.so + JRE 机制，绕开 Android SELinux 对 data 目录的 execve 限制。
+     * 安装器会自行下载 Forge 库文件到 workingDir。
+     *
+     * @return 进程退出码，0 表示成功。
+     */
+    private fun runForgeInstaller(
+        installerJar: String,
+        workingDir: String,
+        javaVersion: String,
+        sink: EventChannel.EventSink?,
+        mainHandler: Handler = Handler(Looper.getMainLooper()),
+    ): Int {
+        val nativeDir = applicationContext.applicationInfo.nativeLibraryDir
+        val tagfixLib = "$nativeDir/libtagfix.so"
+
+        // 确保 JRE 已解压。
+        if (!RuntimeInstaller.isInstalled(applicationContext, javaVersion)) {
+            emitForgeEvent(sink, mainHandler, "[EdgeCube] 正在解压 $javaVersion 运行时…")
+            RuntimeInstaller.install(applicationContext, javaVersion)
+            emitForgeEvent(sink, mainHandler, "[EdgeCube] $javaVersion 运行时就绪")
+        }
+
+        val jreDir = RuntimeInstaller.jreDir(applicationContext, javaVersion)
+        val resolved = JreLayout.resolve(jreDir, nativeDir)
+        val launchBin = File(nativeDir, "liblaunch.so")
+        if (!launchBin.exists()) {
+            throw IllegalStateException("未找到 liblaunch.so，请确认其已随 APK 打包到 lib 目录")
+        }
+
+        val cmd = listOf(
+            launchBin.absolutePath,
+            "-XX:ErrorFile=/proc/self/fd/2",
+            // Android 上 /tmp 不可写，指定可写的 tmpdir
+            "-Djava.io.tmpdir=${applicationContext.cacheDir.absolutePath}",
+            "-jar", installerJar,
+            "--installServer",
+        )
+
+        val pb = ProcessBuilder(cmd)
+        pb.directory(File(workingDir))
+        pb.redirectErrorStream(true)
+        val env = pb.environment()
+        env["LD_PRELOAD"] = tagfixLib
+        env["JAVA_HOME"] = jreDir.absolutePath
+        env["EC_LIBJLI"] = resolved.libjli.absolutePath
+        env["LD_LIBRARY_PATH"] = resolved.ldLibraryPath
+        env["HOME"] = workingDir
+        env["TMPDIR"] = applicationContext.cacheDir.absolutePath
+        env["LANG"] = "en_US.UTF-8"
+        env["FCL_NATIVEDIR"] = nativeDir
+        env["POJAV_NATIVEDIR"] = nativeDir
+        env["PATH"] = "${jreDir.absolutePath}/bin:${System.getenv("PATH") ?: ""}"
+
+        emitForgeEvent(sink, mainHandler, "[EdgeCube] 开始安装 Forge 服务端…")
+        val p = pb.start()
+
+        var exitCode = -1
+        try {
+            BufferedReader(InputStreamReader(p.inputStream, StandardCharsets.UTF_8)).use { reader ->
+                var line = reader.readLine()
+                while (line != null) {
+                    val clean = forgeAnsiPattern.replace(line, "")
+                    emitForgeEvent(sink, mainHandler, clean)
+                    line = reader.readLine()
+                }
+            }
+            exitCode = p.waitFor()
+        } catch (e: Exception) {
+            emitForgeEvent(sink, mainHandler, "[EdgeCube] 安装器异常：${e.message}")
+        }
+
+        emitForgeEvent(sink, mainHandler, "[EdgeCube] 安装器退出，退出码：$exitCode")
+        return exitCode
+    }
+
+    private fun emitForgeEvent(sink: EventChannel.EventSink?, handler: Handler, line: String) {
+        if (sink == null) return
+        handler.post { sink.success(line) }
     }
 }

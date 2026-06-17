@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../files/file_service.dart';
@@ -21,7 +22,10 @@ enum _WizardStep {
   versionSelect,
   fabricMcVersionSelect,
   fabricLoaderVersionSelect,
+  forgeMcVersionSelect,
+  forgeVersionSelect,
   downloading,
+  forgeInstalling,
   importFile,
 }
 
@@ -32,7 +36,8 @@ enum CreateInstanceResult { done, cancelled }
 ///
 /// 流程：
 /// 1. 输入名称 → 选择「下载服务端」或「导入服务端」
-/// 2a. 下载服务端 → 选类型 → 选版本 → 创建实例并下载
+/// 2a. 下载服务端 → 选类型（官方/Paper/Fabric/Forge） → 选版本 → 创建实例并下载
+///     - Forge 特殊流程：下载 Installer jar → 运行 java -jar --installServer → 配置
 /// 2b. 导入服务端 → 创建实例 → 选文件导入
 ///
 /// 如果用户中途退出（未完成），自动删除已创建的空实例。
@@ -66,6 +71,20 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   String? _selectedMcVersion;
   String? _selectedLoaderVersion;
 
+  /// Forge 流程：缓存全量版本映射 {mcVersion: [forgeVersion...]}。
+  Map<String, List<String>> _forgeVersionMap = {};
+  /// Forge 流程中选择的 Minecraft 版本与 Forge 版本。
+  String? _selectedForgeMcVersion;
+  String? _selectedForgeVersion;
+  /// Forge 安装日志输出。
+  final List<String> _forgeInstallLogs = [];
+  bool _forgeInstalling = false;
+  String? _forgeInstallError;
+  StreamSubscription<dynamic>? _forgeEventSub;
+
+  static const _forgeChannel = MethodChannel('com.venti1112.edgecube/forge');
+  static const _forgeEventChannel = EventChannel('com.venti1112.edgecube/forge_events');
+
   late InstanceController _instanceController;
 
   @override
@@ -77,6 +96,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   @override
   void dispose() {
     _nameController.dispose();
+    _forgeEventSub?.cancel();
     // 如果向导未完成且已创建了实例，清理空实例。
     if (!_completed && _instanceId != null) {
       _instanceController.deleteInstance(_instanceId!);
@@ -120,6 +140,27 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         setState(() {
           _loadingVersions = false;
           _versionError = '获取 Minecraft 版本列表失败：$e';
+        });
+      }
+      return;
+    }
+    if (type == 'forge') {
+      setState(() {
+        _step = _WizardStep.forgeMcVersionSelect;
+        _loadingVersions = true;
+        _versionError = null;
+        _versions = [];
+      });
+      try {
+        _forgeVersionMap = await _fetchAllForgeVersions();
+        _versions = _forgeVersionMap.keys.toList();
+        if (!mounted) return;
+        setState(() => _loadingVersions = false);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _loadingVersions = false;
+          _versionError = '获取 Forge 版本列表失败：$e';
         });
       }
       return;
@@ -331,6 +372,226 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     }
   }
 
+  /// Forge 流程：选择 MC 版本后进入 Forge 版本选择。
+  Future<void> _selectForgeMcVersion(String mcVersion) async {
+    _selectedForgeMcVersion = mcVersion;
+    final forgeVersions = _forgeVersionMap[mcVersion] ?? [];
+    setState(() {
+      _step = _WizardStep.forgeVersionSelect;
+      _versions = forgeVersions;
+      _loadingVersions = false;
+      _versionError = null;
+    });
+  }
+
+  /// Forge 流程：选择 Forge 版本后确认并下载。
+  Future<void> _selectForgeVersion(String forgeVersion) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认版本'),
+        content: Text(
+          '确定要安装 Minecraft $_selectedForgeMcVersion + Forge $forgeVersion 吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final name = _nameController.text.trim();
+    try {
+      final instance = await _instanceController.createInstance(name);
+      if (!mounted) return;
+      _instanceId = instance.id;
+      _selectedForgeVersion = forgeVersion;
+      setState(() => _step = _WizardStep.downloading);
+      await _fetchAndDownloadForge(instance.id);
+    } on DuplicateInstanceNameException {
+      if (!mounted) return;
+      _showDuplicateDialog(name);
+    }
+  }
+
+  /// Forge 下载流程：下载 Installer jar，然后进入安装步骤。
+  Future<void> _fetchAndDownloadForge(String instanceId) async {
+    setState(() {
+      _downloadProgress = null;
+      _downloadError = null;
+    });
+
+    final mcVersion = _selectedForgeMcVersion!;
+    final forgeVersion = _selectedForgeVersion!;
+    final url =
+        'https://maven.minecraftforge.net/net/minecraftforge/forge/$mcVersion-$forgeVersion/forge-$mcVersion-$forgeVersion-installer.jar';
+    final info = _DownloadInfo(url: url);
+
+    await _downloadForgeJar(instanceId, info);
+  }
+
+  /// 下载 Forge Installer jar 到实例目录，完成后启动安装。
+  Future<void> _downloadForgeJar(String instanceId, _DownloadInfo info) async {
+    setState(() {
+      _downloadProgress = null;
+      _downloadError = null;
+    });
+
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(Uri.parse(info.url));
+      final response = await request.close();
+
+      if (response.statusCode != 200) {
+        if (!mounted) return;
+        setState(() => _downloadError = '下载失败（HTTP ${response.statusCode}）');
+        return;
+      }
+
+      final instance = _instanceController.instances
+          .firstWhere((i) => i.id == instanceId);
+      final dir = await _instanceController.directoryFor(instance);
+      final file = File(p.join(dir.path, 'forge-installer.jar'));
+
+      final contentLength = response.contentLength;
+      int received = 0;
+
+      final sink = file.openWrite();
+      final allBytes = BytesBuilder(copy: false);
+      await for (final chunk in response) {
+        received += chunk.length;
+        allBytes.add(chunk);
+        if (contentLength > 0 && mounted) {
+          setState(() => _downloadProgress = received / contentLength);
+        }
+        sink.add(chunk);
+      }
+      await sink.close();
+
+      // 下载完成，进入安装步骤。
+      if (!mounted) return;
+      await _runForgeInstaller(instanceId, file.path);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _downloadError = '下载失败：$e');
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 调用原生平台运行 Forge Installer，安装完成后配置实例。
+  Future<void> _runForgeInstaller(String instanceId, String installerPath) async {
+    setState(() {
+      _step = _WizardStep.forgeInstalling;
+      _forgeInstalling = true;
+      _forgeInstallError = null;
+      _forgeInstallLogs.clear();
+    });
+
+    // 监听安装器日志。
+    _forgeEventSub = _forgeEventChannel
+        .receiveBroadcastStream()
+        .listen((event) {
+      if (mounted && event is String) {
+        setState(() {
+          _forgeInstallLogs.add(event);
+          // 保留最近 200 行。
+          if (_forgeInstallLogs.length > 200) {
+            _forgeInstallLogs.removeRange(0, _forgeInstallLogs.length - 200);
+          }
+        });
+      }
+    });
+
+    try {
+      final mcVersion = _selectedForgeMcVersion!;
+      final javaVer = _javaVersionForMc(mcVersion);
+
+      final exitCode = await _forgeChannel.invokeMethod<int>('runInstaller', {
+        'installerJar': installerPath,
+        'workingDir': (await _instanceController.directoryFor(
+          _instanceController.instances.firstWhere((i) => i.id == instanceId),
+        )).path,
+        'javaVersion': javaVer,
+      });
+
+      await _forgeEventSub?.cancel();
+      _forgeEventSub = null;
+
+      if (exitCode != 0) {
+        if (!mounted) return;
+        setState(() {
+          _forgeInstalling = false;
+          _forgeInstallError = 'Forge 安装器退出，退出码：$exitCode';
+        });
+        return;
+      }
+
+      // 安装成功：扫描目录找到 forge 服务端 jar。
+      final instance = _instanceController.instances
+          .firstWhere((i) => i.id == instanceId);
+      final dir = await _instanceController.directoryFor(instance);
+      final forgeJar = _findForgeServerJar(dir);
+      if (forgeJar == null) {
+        if (!mounted) return;
+        setState(() {
+          _forgeInstalling = false;
+          _forgeInstallError = '安装完成但未找到服务端 jar 文件';
+        });
+        return;
+      }
+
+      await _instanceController.updateConfig(
+        instanceId,
+        selectedJar: forgeJar,
+        javaVersion: javaVer,
+      );
+
+      // 清理 installer jar。
+      try {
+        await File(p.join(dir.path, 'forge-installer.jar')).delete();
+      } catch (_) {}
+
+      _completed = true;
+      if (mounted) {
+        setState(() => _forgeInstalling = false);
+        _finishWizard();
+      }
+    } catch (e) {
+      await _forgeEventSub?.cancel();
+      _forgeEventSub = null;
+      if (!mounted) return;
+      setState(() {
+        _forgeInstalling = false;
+        _forgeInstallError = 'Forge 安装失败：$e';
+      });
+    }
+  }
+
+  /// 在实例目录中查找 Forge 安装后生成的服务端 jar。
+  String? _findForgeServerJar(Directory dir) {
+    final files = dir.listSync();
+    String? forgeJar;
+    for (final f in files) {
+      if (f is! File) continue;
+      final name = p.basename(f.path);
+      // 跳过 installer、不相关的 jar。
+      if (name == 'forge-installer.jar') continue;
+      if (name == 'server.jar') continue;
+      if (name.startsWith('forge-') && name.endsWith('.jar')) {
+        forgeJar = name;
+      }
+    }
+    return forgeJar;
+  }
+
   /// 在下载页中先获取下载信息，再执行下载（Vanilla / Paper）。
   Future<void> _fetchAndDownload(String instanceId, String version) async {
     setState(() {
@@ -489,14 +750,25 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           _step = _WizardStep.fabricMcVersionSelect;
           _selectedLoaderVersion = null;
         });
+      case _WizardStep.forgeMcVersionSelect:
+        setState(() {
+          _step = _WizardStep.serverType;
+          _selectedForgeMcVersion = null;
+        });
+      case _WizardStep.forgeVersionSelect:
+        setState(() {
+          _step = _WizardStep.forgeMcVersionSelect;
+          _selectedForgeVersion = null;
+        });
       case _WizardStep.importFile:
-        // 导入流程已创建实例，返回时删除空实例并关闭向导。
         _deleteCreatedInstance();
         _closeWizard();
       case _WizardStep.downloading:
-        // 下载流程已创建实例，返回时删除空实例并关闭向导。
         _deleteCreatedInstance();
         _closeWizard();
+      case _WizardStep.forgeInstalling:
+        // 安装进行中，不允许返回（已创建实例）。
+        break;
     }
   }
 
@@ -567,7 +839,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _WizardStep.versionSelect => '选择版本',
       _WizardStep.fabricMcVersionSelect => '选择 Minecraft 版本',
       _WizardStep.fabricLoaderVersionSelect => '选择 Fabric Loader 版本',
+      _WizardStep.forgeMcVersionSelect => '选择 Minecraft 版本',
+      _WizardStep.forgeVersionSelect => '选择 Forge 版本',
       _WizardStep.downloading => '下载中',
+      _WizardStep.forgeInstalling => '安装 Forge',
       _WizardStep.importFile => '导入服务端',
     };
   }
@@ -579,7 +854,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _WizardStep.versionSelect => _buildVersionSelect(theme),
       _WizardStep.fabricMcVersionSelect => _buildVersionSelect(theme),
       _WizardStep.fabricLoaderVersionSelect => _buildVersionSelect(theme),
+      _WizardStep.forgeMcVersionSelect => _buildVersionSelect(theme),
+      _WizardStep.forgeVersionSelect => _buildVersionSelect(theme),
       _WizardStep.downloading => _buildDownloading(theme),
+      _WizardStep.forgeInstalling => _buildForgeInstalling(theme),
       _WizardStep.importFile => _buildImporting(theme),
     };
   }
@@ -603,7 +881,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           _ServerTypeTile(
             icon: Icons.cloud_download_outlined,
             title: '下载服务端',
-            subtitle: '从官方端、Paper 端或 Fabric 端选择版本下载',
+            subtitle: '从官方端、Paper 端、Fabric 端或 Forge 端选择版本下载',
             onTap: _goToServerType,
           ),
           const SizedBox(height: 12),
@@ -651,6 +929,13 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           subtitle: '模组加载服务端',
           onTap: () => _selectServerType('fabric'),
         ),
+        const SizedBox(height: 12),
+        _ServerTypeTile(
+          icon: Icons.build_outlined,
+          title: 'Forge 端',
+          subtitle: 'Forge 模组加载服务端',
+          onTap: () => _selectServerType('forge'),
+        ),
       ],
     );
   }
@@ -684,6 +969,12 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                     if (_selectedMcVersion != null) {
                       _selectFabricMcVersion(_selectedMcVersion!);
                     }
+                  } else if (_step == _WizardStep.forgeMcVersionSelect) {
+                    _selectServerType('forge');
+                  } else if (_step == _WizardStep.forgeVersionSelect) {
+                    if (_selectedForgeMcVersion != null) {
+                      _selectForgeMcVersion(_selectedForgeMcVersion!);
+                    }
                   } else {
                     _selectServerType(_serverType!);
                   }
@@ -714,6 +1005,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                 _selectFabricMcVersion(v);
               case _WizardStep.fabricLoaderVersionSelect:
                 _selectFabricLoaderVersion(v);
+              case _WizardStep.forgeMcVersionSelect:
+                _selectForgeMcVersion(v);
+              case _WizardStep.forgeVersionSelect:
+                _selectForgeVersion(v);
               default:
                 break;
             }
@@ -780,6 +1075,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                               _step = _selectedLoaderVersion != null
                                   ? _WizardStep.fabricLoaderVersionSelect
                                   : _WizardStep.fabricMcVersionSelect;
+                            } else if (_serverType == 'forge') {
+                              _step = _selectedForgeVersion != null
+                                  ? _WizardStep.forgeVersionSelect
+                                  : _WizardStep.forgeMcVersionSelect;
                             } else {
                               _step = _WizardStep.versionSelect;
                             }
@@ -822,6 +1121,159 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         ],
       ),
     );
+  }
+
+  /// Forge 安装进度页：显示安装器日志输出。
+  Widget _buildForgeInstalling(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_forgeInstalling)
+                    const SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: CircularProgressIndicator(),
+                    )
+                  else if (_forgeInstallError == null)
+                    Icon(Icons.check_circle_outline,
+                        size: 36, color: theme.colorScheme.primary)
+                  else
+                    Icon(Icons.error_outline,
+                        size: 36, color: theme.colorScheme.error),
+                  const SizedBox(height: 12),
+                  Text(
+                    _forgeInstalling
+                        ? '正在安装 Forge 服务端，请稍候…'
+                        : (_forgeInstallError != null
+                            ? '安装失败'
+                            : '安装完成'),
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  if (_forgeInstallError != null) ...[                    const SizedBox(height: 8),
+                    Text(
+                      _forgeInstallError!,
+                      style: TextStyle(color: theme.colorScheme.error),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.save_outlined, size: 18),
+                          onPressed: _exportForgeLogs,
+                          label: const Text('导出日志'),
+                        ),
+                        OutlinedButton(
+                          onPressed: () {
+                            _deleteCreatedInstance();
+                            _closeWizard();
+                          },
+                          child: const Text('取消'),
+                        ),
+                        FilledButton(
+                          onPressed: () {
+                            _deleteCreatedInstance();
+                            setState(() =>
+                                _step = _WizardStep.forgeVersionSelect);
+                          },
+                          child: const Text('重新选择'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: _forgeInstallLogs.isEmpty
+                    ? const Center(child: Text('等待安装器输出…'))
+                    : ListView.builder(
+                        itemCount: _forgeInstallLogs.length,
+                        itemBuilder: (_, i) => Text(
+                          _forgeInstallLogs[i],
+                          style: const TextStyle(
+                              fontSize: 12, fontFamily: 'monospace'),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 导出 Forge 安装日志到用户选择的外部目录。
+  Future<void> _exportForgeLogs() async {
+    if (_forgeInstallLogs.isEmpty) return;
+    if (!await StoragePermission.isGranted()) {
+      if (!mounted) return;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('需要文件访问权限'),
+          content: const Text(
+            '导出日志需要「所有文件访问权限」。点击「去授权」后，请在系统设置中为本应用打开该权限，再返回重试。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('去授权'),
+            ),
+          ],
+        ),
+      );
+      if (go != true) return;
+      await StoragePermission.request();
+      // 授权后重新尝试导出。
+      _exportForgeLogs();
+      return;
+    }
+
+    if (!mounted) return;
+    final destDir = await pickFromSystem(context, mode: SystemPickMode.directory);
+    if (destDir == null) return;
+
+    try {
+      final now = DateTime.now();
+      final ts =
+          '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_'
+          '${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+      final fileName = 'forge_install_log_$ts.txt';
+      final content = _forgeInstallLogs.join('\n');
+      final file = File(p.join(destDir, fileName));
+      await file.writeAsString(content, flush: true);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('日志已导出至 $destDir/$fileName')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导出失败：$e')),
+      );
+    }
   }
 
   // —— 网络请求 ——
@@ -869,6 +1321,52 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
             (v) => (v['loader'] as Map<String, dynamic>)['version'] as String,
           )
           .toList();
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 解析 Forge Maven 元数据 XML，返回 {mcVersion: [forgeVersion...]}。
+  /// 版本格式为 "{mcVersion}-{forgeVersion}"，按最后一个 "-" 分割。
+  Future<Map<String, List<String>>> _fetchAllForgeVersions() async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+            'https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml'),
+      );
+      final res = await req.close();
+      final body = await res.transform(utf8.decoder).join();
+
+      // 解析 XML 中的 <version> 标签。
+      final versionPattern = RegExp(r'<version>([^<]+)</version>');
+      final matches = versionPattern.allMatches(body);
+
+      // 按 MC 版本分组。
+      final map = <String, List<String>>{};
+      for (final m in matches) {
+        final full = m.group(1)!;
+        final lastDash = full.lastIndexOf('-');
+        if (lastDash < 0) continue;
+        final mcVersion = full.substring(0, lastDash);
+        final forgeVersion = full.substring(lastDash + 1);
+        map.putIfAbsent(mcVersion, () => []).add(forgeVersion);
+      }
+
+      // 按 MC 版本号降序排列（最新版本在前）。
+      final sortedKeys = map.keys.toList()
+        ..sort((a, b) {
+          final pa = a.split('.').map(int.tryParse).toList();
+          final pb = b.split('.').map(int.tryParse).toList();
+          for (int i = 0; i < 3; i++) {
+            final va = i < pa.length ? (pa[i] ?? 0) : 0;
+            final vb = i < pb.length ? (pb[i] ?? 0) : 0;
+            if (va != vb) return vb.compareTo(va);
+          }
+          return 0;
+        });
+
+      return {for (final k in sortedKeys) k: map[k]!};
     } finally {
       client.close();
     }

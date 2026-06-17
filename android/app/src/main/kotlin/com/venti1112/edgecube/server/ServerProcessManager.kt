@@ -174,6 +174,8 @@ class ServerProcessManager private constructor(private val appContext: Context) 
             cmd.add(launchBin.absolutePath)
             // JVM 崩溃时将 hs_err 输出到 stderr，父进程能收到
             cmd.add("-XX:ErrorFile=/proc/self/fd/2")
+            // Android 上 /tmp 不可写，全局指定可写的 tmpdir
+            cmd.add("-Djava.io.tmpdir=${appContext.cacheDir.absolutePath}")
             cmd.addAll(jvmArgs)
             cmd.addAll(programArgs)
 
