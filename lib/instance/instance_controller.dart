@@ -20,13 +20,13 @@ class DuplicateInstanceNameException implements Exception {
 /// 管理服务器实例的索引、当前选中项的完整配置与磁盘文件夹。
 ///
 /// 索引（[instances]）只含 `{id, name}` 摘要，供选择列表读取；当前选中实例的
-/// 完整启动配置（[selected]）按需从其 `config.json` 加载并缓存。
+/// 完整启动配置（[selected]）按需从 `config/instances/<id>.json` 加载并缓存。
 class InstanceController extends ChangeNotifier {
   InstanceController({
     InstanceStore? store,
     InstancesRootResolver? rootResolver,
   }) : _rootResolver = rootResolver ?? defaultInstancesRoot,
-       _store = store ?? InstanceStore(rootResolver);
+       _store = store ?? InstanceStore();
 
   final InstanceStore _store;
   final InstancesRootResolver _rootResolver;
@@ -167,12 +167,13 @@ class InstanceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 删除指定实例：删除磁盘文件夹、从索引移除并持久化；若删的是当前选中项则自动选第一个。
+  /// 删除指定实例：删除磁盘文件夹与配置文件、从索引移除并持久化；若删的是当前选中项则自动选第一个。
   Future<void> deleteInstance(String id) async {
     final dir = await directoryForId(id);
     if (await dir.exists()) {
       await dir.delete(recursive: true);
     }
+    await _store.deleteConfig(id);
     _summaries = _summaries.where((i) => i.id != id).toList();
     if (_selectedId == id) {
       _selectedId = _summaries.isNotEmpty ? _summaries.first.id : null;

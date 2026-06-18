@@ -4,8 +4,8 @@ const String kRuntimePhp = 'php';
 
 /// 实例索引项：仅包含选择列表所需的 [id] 与 [name]。
 ///
-/// 实例选择列表只读取索引（`instances/index.json`），无需加载每个实例
-/// 完整的启动配置（那些存在各自的 `instances/<id>/config.json` 中）。
+/// 实例选择列表只读取索引（`config/instances.json`），无需加载每个实例
+/// 完整的启动配置（那些存在各自的 `config/instances/<id>.json` 中）。
 class InstanceSummary {
   const InstanceSummary({required this.id, required this.name});
 

@@ -7,7 +7,9 @@ import 'package:path_provider/path_provider.dart';
 /// 应用配置文件的基础读写工具。
 ///
 /// 全局配置（主题、在线服务、网络映射）各自存为文档目录 `config/` 下的独立
-/// JSON 文件；本模块只负责定位目录、读取与原子写入，不关心具体配置内容。
+/// JSON 文件；实例索引存为 `config/instances.json`，各实例配置存于
+/// `config/instances/<id>.json`。本模块只负责定位目录、读取与原子写入，
+/// 不关心具体配置内容。
 class ConfigStore {
   ConfigStore._();
 

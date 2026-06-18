@@ -1,8 +1,5 @@
-import 'dart:io';
-
 import 'package:android_cn_oaid/android_cn_oaid.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../config/config_store.dart';
 
@@ -12,13 +9,13 @@ import '../config/config_store.dart';
 /// - 若设备支持 OAID / AAID，则获取后加上前缀 `AA`；
 /// - 若不支持，则回退到 GUID 并加上前缀 `GG`。
 ///
-/// ID 保存在应用文档目录下的 `device_id.txt`，只要开关打开且文件
-/// 不存在就自动获取并保存；已有则直接复用（对应“开→关→开”场景）。
+/// 开关状态与设备 ID 一并保存在 `config/online.json`，只要开关打开且尚无
+/// 设备 ID 就自动获取并保存；已有则直接复用（对应"开→关→开"场景）。
 class OnlineService extends ChangeNotifier {
   static const _fileName = 'online.json';
   static const _enabledKey = 'enabled';
   static const _askedKey = 'asked';
-  static const _idFileName = 'device_id.txt';
+  static const _deviceIdKey = 'deviceId';
 
   bool _enabled = false;
   bool _asked = false;
@@ -46,6 +43,7 @@ class OnlineService extends ChangeNotifier {
     final m = await ConfigStore.readConfig(_fileName);
     _enabled = m[_enabledKey] as bool? ?? false;
     _asked = m[_askedKey] as bool? ?? false;
+    _deviceId = m[_deviceIdKey] as String?;
     if (_enabled) {
       await _ensureDeviceId();
     }
@@ -71,22 +69,14 @@ class OnlineService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 若设备 ID 文件已存在则读取，否则获取新 ID 并写入文件。
+  /// 若已有设备 ID 则直接复用，否则获取新 ID 并写入 `config/online.json`。
   Future<void> _ensureDeviceId() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/$_idFileName');
-    if (await file.exists()) {
-      final content = (await file.readAsString()).trim();
-      if (content.isNotEmpty) {
-        _deviceId = content;
-        return;
-      }
-    }
-    await _generateAndSaveDeviceId(file);
+    if (_deviceId != null && _deviceId!.isNotEmpty) return;
+    await _generateAndSaveDeviceId();
   }
 
-  /// 调用 android_cn_oaid 获取设备标识并持久化。
-  Future<void> _generateAndSaveDeviceId(File file) async {
+  /// 调用 android_cn_oaid 获取设备标识并持久化到 `config/online.json`。
+  Future<void> _generateAndSaveDeviceId() async {
     final plugin = AndroidCnOaid();
     // 隐私合规：在用户同意后才调用 register()。
     await plugin.register();
@@ -114,6 +104,8 @@ class OnlineService extends ChangeNotifier {
     }
 
     _deviceId = id;
-    await file.writeAsString(id);
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_deviceIdKey] = id;
+    await ConfigStore.writeConfig(_fileName, m);
   }
 }

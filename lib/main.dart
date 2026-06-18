@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'config/config_migration.dart';
 import 'config/network_store.dart';
+import 'config/version_store.dart';
 import 'home_shell.dart';
 import 'instance/instance_controller.dart';
 import 'instance/instance_scope.dart';
@@ -19,6 +20,8 @@ Future<void> main() async {
   // 把旧版 SharedPreferences 中的历史配置迁移到新的文件式布局（只执行一次），
   // 必须先于下面任何新配置读取。
   await ConfigMigration.run();
+  // 记录本次启动的版本到 config/version.json（更新 lastVersion 并追加历史）。
+  await VersionStore.recordOpen();
   final initialThemeMode = await ThemeStore.load();
   final initialSeedColor = await ThemeStore.loadSeedColor();
   final initialUseDynamicColor = await ThemeStore.loadUseDynamicColor();

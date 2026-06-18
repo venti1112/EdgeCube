@@ -66,7 +66,7 @@ class ServerController extends ChangeNotifier {
   final TunnelService _tunnel;
   late final StreamSubscription<ServerEvent> _sub;
 
-  /// 异步解析指定实例是否启用兼容模式。由外层（main）注入，读取实例的 config.json。
+  /// 异步解析指定实例是否启用兼容模式。由外层（main）注入，读取实例的配置文件。
   /// 用于应用被回收后原生状态回放（未经过本会话 [start]）时恢复兼容模式标志。
   Future<bool> Function(String instanceId)? compatModeResolver;
 
