@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'archive_service.dart';
 import 'file_entry.dart';
 
 /// 当目标位置已存在同名条目、且操作不允许覆盖时抛出。
@@ -148,6 +149,21 @@ class FileService {
   /// 以 UTF-8 将 [content] 覆盖写入文件，并在返回前刷新到磁盘。
   Future<void> writeText(String path, String content) async {
     await File(path).writeAsString(content, flush: true);
+  }
+
+  /// 解压归档：在 [destDir] 下创建以 [subfolderName] 命名的子文件夹（重名时
+  /// 自动追加 ` (n)` 后缀），把 [archivePath] 的内容解压进去。返回创建的子文件夹路径。
+  ///
+  /// 支持格式与原生实现见 `ArchiveExtractor.kt`；路径穿越防护在原生侧完成。
+  Future<String> extract(
+    String archivePath,
+    Directory destDir,
+    String subfolderName,
+  ) async {
+    final targetPath = await _uniqueTarget(destDir.path, subfolderName);
+    await Directory(targetPath).create(recursive: true);
+    await ArchiveService.extract(archivePath, targetPath);
+    return targetPath;
   }
 
   // —— 内部工具 ——

@@ -224,6 +224,32 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // 归档解压通道：zip/tar/tar.*/7z/rar 等格式统一在原生侧解压。
+        MethodChannel(messenger, "com.venti1112.edgecube/archive").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "extract" -> {
+                    val archivePath = call.argument<String>("archivePath")
+                    val destDir = call.argument<String>("destDir")
+                    if (archivePath == null || destDir == null) {
+                        result.error("BAD_ARGS", "缺少 archivePath/destDir", null)
+                    } else {
+                        // 解压可能耗时，放后台线程；完成后回主线程返回结果。
+                        thread {
+                            try {
+                                val count = com.venti1112.edgecube.files.ArchiveExtractor.extract(
+                                    archivePath, destDir,
+                                )
+                                runOnUiThread { result.success(count) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("EXTRACT_FAILED", e.message, null) }
+                            }
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         EventChannel(messenger, serverEventChannel).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {

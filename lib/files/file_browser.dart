@@ -11,7 +11,7 @@ import 'storage_permission.dart';
 import 'system_picker.dart';
 import 'text_editor_page.dart';
 
-enum _FileAction { edit, rename, move, copy, export, delete }
+enum _FileAction { edit, rename, move, copy, extract, export, delete }
 
 /// 多选模式下可对多个条目一起执行的操作。
 enum _BulkAction { move, copy, export }
@@ -27,6 +27,33 @@ const _textExtensions = <String>{
 
 /// 超过该大小的文件不在内置编辑器中打开，避免一次性载入内存造成卡顿。
 const _maxEditableBytes = 2 * 1024 * 1024; // 2 MiB
+
+/// 可解压的归档文件扩展名（小写，含点）。
+const _archiveExtensions = <String>{
+  '.zip',
+  '.xz',
+  '.7z',
+  '.tar',
+  '.gz',
+  '.tgz',
+  '.txz',
+  '.tbz2',
+  '.bz2',
+  '.zst',
+  '.tzst',
+  '.lz4',
+  '.rar',
+};
+
+/// 归档文件名需做特殊处理的复合扩展名（小写），用于推断解压子文件夹名：
+/// 例如 `world.tar.gz` → `world`，而非 `world.tar`。
+const _compoundArchiveExtensions = <String>[
+  '.tar.gz',
+  '.tar.xz',
+  '.tar.bz2',
+  '.tar.zst',
+  '.tar.lz4',
+];
 
 /// 浏览并管理单个实例文件夹内的文件。
 ///
@@ -121,6 +148,14 @@ class _FileBrowserState extends State<FileBrowser> {
     return _textExtensions.contains(p.extension(entry.name).toLowerCase());
   }
 
+  /// 是否为可解压的归档文件（按扩展名判断，支持复合扩展名如 .tar.gz）。
+  bool _isArchive(FileEntry entry) {
+    if (entry.isDirectory) return false;
+    final lower = entry.name.toLowerCase();
+    if (_compoundArchiveExtensions.any(lower.endsWith)) return true;
+    return _archiveExtensions.contains(p.extension(lower));
+  }
+
   /// 在内置文本编辑器中打开 [entry]；过大文件拒绝打开。返回后刷新列表以更新大小。
   Future<void> _openEditor(FileEntry entry) async {
     if (entry.isDirectory) return;
@@ -213,6 +248,8 @@ class _FileBrowserState extends State<FileBrowser> {
         await _moveOrCopy(entry, isMove: true);
       case _FileAction.copy:
         await _moveOrCopy(entry, isMove: false);
+      case _FileAction.extract:
+        await _extract(entry);
       case _FileAction.export:
         await _export(entry);
       case _FileAction.delete:
@@ -275,6 +312,54 @@ class _FileBrowserState extends State<FileBrowser> {
     } catch (e) {
       _showError(e);
     }
+  }
+
+  /// 解压归档文件到以文件名（去全部归档扩展名）命名的子文件夹中。
+  Future<void> _extract(FileEntry entry) async {
+    final instances = InstanceScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final subfolderName = _archiveBaseName(entry.name);
+    // 解压可能耗时，显示不可取消的加载对话框。
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: const Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('正在解压…'),
+            ],
+          ),
+        ),
+      ),
+    );
+    try {
+      await _service.extract(entry.path, _current, subfolderName);
+      if (mounted) Navigator.of(context).pop(); // 关闭加载对话框
+      await _load();
+      // 解压出的文件可能含 jar，通知服务器页重新扫描。
+      instances.notifyInstanceFilesChanged();
+      messenger.showSnackBar(const SnackBar(content: Text('解压完成')));
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop(); // 关闭加载对话框
+      _showError(e);
+    }
+  }
+
+  /// 去掉归档文件名的全部扩展名作为解压子文件夹名。
+  /// 复合扩展名（.tar.gz 等）整体去掉；单层扩展名去掉一层。
+  String _archiveBaseName(String name) {
+    final lower = name.toLowerCase();
+    for (final ext in _compoundArchiveExtensions) {
+      if (lower.endsWith(ext)) {
+        return name.substring(0, name.length - ext.length);
+      }
+    }
+    return p.basenameWithoutExtension(name);
   }
 
   /// 确保已获得「管理全部文件」权限；未授予则弹窗引导用户去系统设置开启。
@@ -594,6 +679,11 @@ class _FileBrowserState extends State<FileBrowser> {
                                   value: _FileAction.copy,
                                   child: Text('复制'),
                                 ),
+                                if (_isArchive(entry))
+                                  const PopupMenuItem(
+                                    value: _FileAction.extract,
+                                    child: Text('解压'),
+                                  ),
                                 const PopupMenuItem(
                                   value: _FileAction.export,
                                   child: Text('导出'),

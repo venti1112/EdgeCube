@@ -44,6 +44,11 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            // 启用 R8 混淆时的 keep 规则（见 proguard-rules.pro）。
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
@@ -73,5 +78,14 @@ flutter {
 dependencies {
     implementation("org.apache.commons:commons-compress:1.26.0")
     implementation("org.tukaani:xz:1.9")
+    // zstd / lz4 / rar 解压支持（配合 commons-compress）。
+    implementation("com.github.luben:zstd-jni:1.5.6-6")
+    implementation("org.lz4:lz4-java:1.8.0")
+    // commons-codec：FramedLZ4CompressorInputStream 依赖 XXHash32 校验。
+    implementation("commons-codec:commons-codec:1.16.1")
+    // junrar 依赖 slf4j-api；提供静态绑定实现以避免 R8 缺失类错误。
+    implementation("org.slf4j:slf4j-api:1.7.36")
+    implementation("org.slf4j:slf4j-jdk14:1.7.36")
+    implementation("com.github.junrar:junrar:7.5.5")
     implementation("androidx.core:core-ktx:1.13.1")
 }
