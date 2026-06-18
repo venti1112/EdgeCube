@@ -65,3 +65,10 @@ set_target_properties(frpcloader PROPERTIES
 target_compile_options(frpcloader PRIVATE -fPIE)
 target_link_options(frpcloader PRIVATE -fPIE -pie)
 target_link_libraries(frpcloader dl log)
+
+# ─── libecpty.so ─── 伪终端（PTY）子进程启动器（普通 JNI 共享库）
+# 与上面几个「伪装成 .so 的可执行文件」不同，这是真正的 JNI 共享库，
+# 由 Kotlin 侧 System.loadLibrary("ecpty") 加载，提供 fork+/dev/ptmx 创建
+# 带控制终端的子进程的能力（改编自 Termux 的 termux.c）。
+add_library(ecpty SHARED ecpty.c)
+target_link_libraries(ecpty log)

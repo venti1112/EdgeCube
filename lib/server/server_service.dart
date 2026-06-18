@@ -63,15 +63,37 @@ class ServerService {
     });
   }
 
-  /// 向服务端 stdin 写入一行命令。
+  /// 向服务端 stdin 写入一行命令（自动补换行，供程序化发送使用）。
   Future<void> sendCommand(String line) =>
       _method.invokeMethod('sendCommand', {'line': line});
+
+  /// 向服务端 PTY 写入原始按键字节（来自 xterm 终端的直接输入）。
+  Future<void> writeInput(Uint8List bytes) =>
+      _method.invokeMethod('writeInput', {'bytes': bytes});
+
+  /// 同步终端窗口尺寸到 PTY（字符行列 + 单元像素），连接的程序据此重排。
+  Future<void> resize({
+    required int cols,
+    required int rows,
+    int cellWidth = 0,
+    int cellHeight = 0,
+  }) =>
+      _method.invokeMethod('resize', {
+        'cols': cols,
+        'rows': rows,
+        'cellWidth': cellWidth,
+        'cellHeight': cellHeight,
+      });
 
   /// 优雅停止（发送 stop 命令）。
   Future<void> stop() => _method.invokeMethod('stop');
 
   /// 强制结束进程。
   Future<void> forceStop() => _method.invokeMethod('forceStop');
+
+  /// 开关 PTY 回显（命令行编辑模式关闭，原始终端模式开启）。
+  Future<void> setEcho(bool echo) =>
+      _method.invokeMethod('setEcho', {'echo': echo});
 
   /// 清空原生侧日志缓冲（与界面清屏同步，避免重连后又被回放）。
   Future<void> clearLog() => _method.invokeMethod('clearLog');
@@ -83,6 +105,10 @@ class ServerService {
       switch (map['type']) {
         case 'log':
           return ServerLogEvent(map['line'] as String? ?? '');
+        case 'term':
+          return ServerTermEvent(
+            (map['bytes'] as Uint8List?) ?? Uint8List(0),
+          );
         case 'state':
           return ServerStateEvent(
             status: map['status'] as String?,
@@ -102,11 +128,18 @@ sealed class ServerEvent {
   const ServerEvent();
 }
 
-/// 一行服务端输出（stdout/stderr 已合并）。
+/// 一行服务端输出（已去 ANSI 的纯文本，供状态识别/玩家解析/复制日志）。
 class ServerLogEvent extends ServerEvent {
   const ServerLogEvent(this.line);
 
   final String line;
+}
+
+/// 一段原始终端字节（含 ANSI/控制序列），交给 xterm 终端渲染。
+class ServerTermEvent extends ServerEvent {
+  const ServerTermEvent(this.bytes);
+
+  final Uint8List bytes;
 }
 
 /// 进程状态变化（也用于界面重连时的状态回放）。

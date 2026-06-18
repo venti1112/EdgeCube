@@ -139,6 +139,27 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
 
+                "writeInput" -> {
+                    val bytes = call.argument<ByteArray>("bytes")
+                    if (bytes != null) serverManager.writeInput(bytes)
+                    result.success(null)
+                }
+
+                "resize" -> {
+                    val cols = call.argument<Int>("cols") ?: 0
+                    val rows = call.argument<Int>("rows") ?: 0
+                    val cellWidth = call.argument<Int>("cellWidth") ?: 0
+                    val cellHeight = call.argument<Int>("cellHeight") ?: 0
+                    serverManager.resize(rows, cols, cellWidth, cellHeight)
+                    result.success(null)
+                }
+
+                "setEcho" -> {
+                    val echo = call.argument<Boolean>("echo") ?: true
+                    serverManager.setEcho(echo)
+                    result.success(null)
+                }
+
                 "stop" -> {
                     serverManager.stop()
                     result.success(null)

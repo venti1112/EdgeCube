@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:xterm/xterm.dart';
 
 import 'server_properties.dart';
 import 'server_service.dart';
@@ -59,12 +61,45 @@ class ServerController extends ChangeNotifier {
        _upnp = upnp ?? UpnpService(),
        _tunnel = tunnel ?? TunnelService() {
     _sub = _service.events().listen(_onEvent);
+    terminal.onOutput = _onTerminalOutput;
+    terminal.onResize = _onTerminalResize;
   }
 
   final ServerService _service;
   final UpnpService _upnp;
   final TunnelService _tunnel;
   late final StreamSubscription<ServerEvent> _sub;
+
+  /// 交互式终端（xterm）。由本控制器持有，故切页/页面重建时内容不丢失。
+  /// 所有可见输出（PTY 字节与 EdgeCube 提示）都经 [_feedTerm]/[_emitOutput] 同步写入，
+  /// 以保证服务端输出与本地命令行提示符的显示顺序正确。
+  final Terminal terminal = Terminal(maxLines: _maxLogLines);
+
+  // —— PTY 原始字节 → UTF-8 解码（allowMalformed 避免非法字节中断）——
+
+  /// 终端扩展按键栏的「粘滞修饰键」：点亮后只对下一次输入生效一次，随即自动复位
+  /// （与 Termux 的 CTRL/ALT 行为一致）。仅在原始终端模式下用于变换软键盘按键。
+  bool _ctrlDown = false;
+  bool _altDown = false;
+  bool get ctrlDown => _ctrlDown;
+  bool get altDown => _altDown;
+
+  // ——————————————————————————————————————————————————————————
+  // 输入模式：命令行编辑（默认）/ 原始终端
+  // ——————————————————————————————————————————————————————————
+
+  /// true=命令行编辑模式：App 在终端内做本地行编辑（`> ` 提示符、回显、Backspace、
+  /// ↑↓ 历史、回车整行发送），PTY 关闭回显/规范模式；对所有服务端稳定可用。
+  /// false=原始终端模式：逐键直达 PTY，回显/行编辑交给 tty 与服务端自身（如 JLine）。
+  bool _lineMode = true;
+  bool get lineMode => _lineMode;
+
+  // —— 本地命令行编辑器状态（仅 [_lineMode] 时有效）——
+  String _input = '';
+  final List<String> _history = [];
+  int _histPos = 0; // 0.._history.length；== length 表示「正在编辑的新行」
+  String _histStash = ''; // 浏览历史时暂存的在编辑内容
+  static const int _maxHistory = 200;
 
   /// 异步解析指定实例是否启用兼容模式。由外层（main）注入，读取实例的配置文件。
   /// 用于应用被回收后原生状态回放（未经过本会话 [start]）时恢复兼容模式标志。
@@ -167,7 +202,7 @@ class ServerController extends ChangeNotifier {
     _userStopping = false;
     _userForceStopping = false;
     _status = ServerStatus.preparing;
-    _appendLine('[EdgeCube] 启动 $instanceName …');
+    _notice('[EdgeCube] 启动 $instanceName …');
     notifyListeners();
     try {
       await _service.start(
@@ -192,7 +227,7 @@ class ServerController extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      _appendLine('[EdgeCube] 启动失败：$e');
+      _notice('[EdgeCube] 启动失败：$e');
       _status = ServerStatus.stopped;
       _instanceId = null;
       _instanceName = null;
@@ -205,7 +240,7 @@ class ServerController extends ChangeNotifier {
     if (_status != ServerStatus.running) return;
     _userStopping = true;
     _status = ServerStatus.stopping;
-    _appendLine('[EdgeCube] 正在停止（已发送 stop 命令）…');
+    _notice('[EdgeCube] 正在停止（已发送 stop 命令）…');
     notifyListeners();
     await _service.stop();
   }
@@ -214,11 +249,12 @@ class ServerController extends ChangeNotifier {
   Future<void> forceStop() async {
     if (_status == ServerStatus.stopped) return;
     _userForceStopping = true;
-    _appendLine('[EdgeCube] 强制结束进程…');
+    _notice('[EdgeCube] 强制结束进程…');
     await _service.forceStop();
   }
 
-  /// 发送一行控制台命令（启动中、运行中、停止中均有效，便于排查异常）。
+  /// 程序化发送一行控制台命令（如玩家管理页的 op/kick/list；启动中、运行中、
+  /// 停止中均有效）。命令写入 PTY 后，由终端行规程自行回显，无需手动回显到终端。
   Future<void> sendCommand(String line) async {
     final cmd = line.trim();
     if (cmd.isEmpty) return;
@@ -227,14 +263,291 @@ class ServerController extends ChangeNotifier {
         _status != ServerStatus.stopping) {
       return;
     }
-    _appendLine('> $cmd');
-    notifyListeners();
     await _service.sendCommand(cmd);
+  }
+
+  /// 终端按键输入入口（[terminal] 的 onOutput）：软键盘、[sendKey]、[sendText] 都汇聚于此。
+  /// 命令行编辑模式 → 交给本地行编辑器；原始模式 → 应用粘滞修饰后逐键直达 PTY。
+  void _onTerminalOutput(String data) {
+    if (_lineMode) {
+      _handleLineInput(data);
+      return;
+    }
+    final modified = (_ctrlDown || _altDown) ? _modifyChar(data) : null;
+    final bytes = modified ?? utf8.encode(data);
+    _service.writeInput(Uint8List.fromList(bytes));
+    _clearModifiers();
+  }
+
+  /// 对单个字符应用粘滞的 Ctrl/Alt：Ctrl 把 a–z / @[\]^_ 映射到 0x00–0x1f，
+  /// Alt 加 ESC 前缀。返回要写入的字节；不适用（多字符或无映射）时返回 null。
+  List<int>? _modifyChar(String data) {
+    if (data.length != 1) return null;
+    var cc = data.codeUnitAt(0);
+    if (_ctrlDown) {
+      if (cc >= 0x61 && cc <= 0x7a) cc -= 0x20; // 小写转大写
+      if (cc >= 0x40 && cc <= 0x5f) {
+        final ctrlByte = cc & 0x1f;
+        return _altDown ? [0x1b, ctrlByte] : [ctrlByte];
+      }
+    }
+    if (_altDown) return [0x1b, ...utf8.encode(data)];
+    return null;
+  }
+
+  /// 复位粘滞修饰键（每次输入消费后调用）。仅在原始终端模式下生效。
+  void _clearModifiers() {
+    if (!_ctrlDown && !_altDown) return;
+    _ctrlDown = false;
+    _altDown = false;
+    notifyListeners();
+  }
+
+  /// 切换粘滞 Ctrl（扩展按键栏的 CTRL 键）。
+  void toggleCtrl() {
+    _ctrlDown = !_ctrlDown;
+    notifyListeners();
+  }
+
+  /// 切换粘滞 Alt（扩展按键栏的 ALT 键）。
+  void toggleAlt() {
+    _altDown = !_altDown;
+    notifyListeners();
+  }
+
+  /// 切换命令行编辑模式 / 原始终端模式。
+  void toggleLineMode() => setLineMode(!_lineMode);
+
+  /// 设置输入模式并同步 PTY 回显。
+  void setLineMode(bool on) {
+    if (_lineMode == on) return;
+    _lineMode = on;
+    _service.setEcho(!on); // 行编辑模式关回显，原始模式开回显
+    if (on) {
+      // 切到行编辑：重置编辑器状态，在当前终端末行画上 prompt。
+      _input = '';
+      _histPos = _history.length;
+      _histStash = '';
+      _redrawPrompt();
+    }
+    notifyListeners();
+  }
+
+  /// 发送一个特殊键（ESC / TAB / 方向键 / HOME / END / PgUp / PgDn 等）。
+  /// 行编辑模式直接操作编辑器；原始模式经 xterm 的 inputHandler 生成转义序列。
+  void sendKey(TerminalKey key) {
+    final ctrl = _ctrlDown;
+    final alt = _altDown;
+    _clearModifiers();
+    if (_lineMode) {
+      _handleLineKey(key, ctrl: ctrl, alt: alt);
+      return;
+    }
+    terminal.keyInput(key, ctrl: ctrl, alt: alt);
+  }
+
+  /// 发送一段字面文本（扩展按键栏的 `-` `/` `|` 等）。
+  void sendText(String text) {
+    if (_lineMode) {
+      for (var i = 0; i < text.length; i++) {
+        _handleLineChar(text.codeUnitAt(i));
+      }
+      return;
+    }
+    _onTerminalOutput(text);
+  }
+
+  /// 终端尺寸变化 → 同步 PTY 窗口大小。由 [terminal] 的 onResize 触发。
+  void _onTerminalResize(int width, int height, int pixelWidth, int pixelHeight) {
+    _service.resize(
+      cols: width,
+      rows: height,
+      cellWidth: width > 0 ? pixelWidth ~/ width : 0,
+      cellHeight: height > 0 ? pixelHeight ~/ height : 0,
+    );
+  }
+
+  // ——————————————————————————————————————————————————————————
+  // 同步终端写入（替代异步 Stream，保证 prompt 与输出顺序正确）
+  // ——————————————————————————————————————————————————————————
+
+  /// 同步写 UTF-8 字符串到终端。
+  void _writeTerm(String s) {
+    if (s.isEmpty) return;
+    terminal.write(s);
+  }
+
+  /// 把 PTY 原始字节解码为 UTF-8 字符串并同步写入终端。
+  /// PTY 输出以短批次到达（通常一到数行），单次解码即可，多字节字符跨分片的概率极低
+  /// 且 allowMalformed 下也会产出 U+FFFD 不致丢数据。
+  void _feedTerm(Uint8List bytes) {
+    final str = utf8.decode(bytes, allowMalformed: true);
+    if (str.isNotEmpty) _writeTerm(str);
+    // PTY 新输出到达后重绘 prompt，保证 `> ` 始终在最末行。
+    if (_lineMode) _redrawPrompt();
+  }
+
+  // ——————————————————————————————————————————————————————————
+  // 本地命令行编辑器（仅 [_lineMode] 时生效）
+  // ——————————————————————————————————————————————————————————
+
+  /// 处理 xterm 汇聚来的终端输出（软键盘打字 / sendText）。
+  /// 在行编辑模式下，不逐键写 PTY，而是做本地行编辑。
+  void _handleLineInput(String data) {
+    for (var i = 0; i < data.length; i++) {
+      _handleLineChar(data.codeUnitAt(i));
+    }
+  }
+
+  /// 处理单个输入字符（来自软键盘）。
+  void _handleLineChar(int ch) {
+    switch (ch) {
+      case 0x0d: // '\r' — 回车提交
+        _submitLine();
+        break;
+      case 0x0a: // '\n' — 同上（某些键盘可能发 \n）
+        _submitLine();
+        break;
+      case 0x08: // '\b' — Backspace (某些 IME 发)
+      case 0x7f: // DEL — Backspace (xterm 默认)
+        if (_input.isNotEmpty) {
+          _input = _input.substring(0, _input.length - 1);
+          _histPos = _history.length;
+          _histStash = _input;
+          _redrawPrompt();
+        }
+        break;
+      case 0x03: // Ctrl-C — 在行编辑模式下清空当前行
+        _input = '';
+        _histPos = _history.length;
+        _histStash = '';
+        _redrawPrompt();
+        break;
+      case 0x04: // Ctrl-D — 空行时发 EOF，否则忽略
+        if (_input.isEmpty) {
+          _service.writeInput(Uint8List.fromList([0x04]));
+        }
+        break;
+      default:
+        if (ch >= 0x20 && ch < 0x7f) {
+          // 可打印 ASCII
+          _input += String.fromCharCode(ch);
+          _histPos = _history.length;
+          _histStash = _input;
+          _redrawPrompt();
+        }
+        // 其他控制字符 / 高位 UTF-8（含中文、emoji 等）由 onOutput 的回调保证
+        // 单次传入完整字符串，走 _handleLineInput 外层循环逐个字符处理。
+        // 这里对 >= 0x80 的码点追加到 _input。
+        if (ch >= 0x80) {
+          _input += String.fromCharCode(ch);
+          _histPos = _history.length;
+          _histStash = _input;
+          _redrawPrompt();
+        }
+        break;
+    }
+  }
+
+  /// 处理扩展按键栏的特殊键（行编辑模式），不走 escape 序列生成/解析环路。
+  void _handleLineKey(TerminalKey key, {bool ctrl = false, bool alt = false}) {
+    switch (key) {
+      case TerminalKey.arrowUp:
+        _historyBack();
+        break;
+      case TerminalKey.arrowDown:
+        _historyForward();
+        break;
+      case TerminalKey.enter:
+        _submitLine();
+        break;
+      case TerminalKey.backspace:
+        if (_input.isNotEmpty) {
+          _input = _input.substring(0, _input.length - 1);
+          _histPos = _history.length;
+          _histStash = _input;
+          _redrawPrompt();
+        }
+        break;
+      case TerminalKey.escape:
+        // ESC 清空当前行
+        _input = '';
+        _histPos = _history.length;
+        _histStash = '';
+        _redrawPrompt();
+        break;
+      case TerminalKey.tab:
+        // TAB 在行编辑模式下插入空格（部分服有 Tab 补全的，用户可切原始终端模式）
+        _input += '\t';
+        _histPos = _history.length;
+        _histStash = _input;
+        _redrawPrompt();
+        break;
+      case TerminalKey.home:
+        // 暂不支持光标定位，忽略
+        break;
+      case TerminalKey.end:
+        break;
+      default:
+        // 其他键（PgUp/PgDn 等）忽略
+        break;
+    }
+  }
+
+  /// 历史命令上翻。
+  void _historyBack() {
+    if (_history.isEmpty || _histPos <= 0) return;
+    if (_histPos == _history.length) {
+      _histStash = _input; // 保存正在编辑的行
+    }
+    _histPos--;
+    _input = _history[_histPos];
+    _redrawPrompt();
+  }
+
+  /// 历史命令下翻。
+  void _historyForward() {
+    if (_histPos >= _history.length) return;
+    _histPos++;
+    _input = _histPos < _history.length ? _history[_histPos] : _histStash;
+    _redrawPrompt();
+  }
+
+  /// 提交当前行到服务端：写入 PTY + 进历史。
+  void _submitLine() {
+    final line = _input.trim();
+    // 先擦掉 prompt 行（终端上不再显示），让命令由 PTY 回显或服务端输出自然出现。
+    _writeTerm('\r\x1b[K'); // 擦掉当前 prompt 行
+    if (line.isNotEmpty) {
+      // 去重：连续相同命令不重复入历史
+      if (_history.isEmpty || _history.last != line) {
+        _history.add(line);
+        if (_history.length > _maxHistory) _history.removeAt(0);
+      }
+      // 也进日志缓冲（供复制 / 崩溃报告），与旧版 `> cmd` 格式一致
+      _appendLogLine('> $line');
+      // 写入 PTY：命令行编辑模式下 echo 已关闭，故不会有重复回显。
+      _service.sendCommand(line);
+    }
+    _input = '';
+    _histPos = _history.length;
+    _histStash = '';
+    // 等 PTY 回显（若有）或下一段输出到达后，由 _feedTerm 重绘 prompt。
+    // 此处先不急着画，避免在回显到达前出现短暂的空白 prompt。
+  }
+
+  /// 重绘命令行提示符：擦掉当前行，画上 `> _input`。
+  void _redrawPrompt() {
+    // \r 回到行首，\x1b[K 擦到行尾，然后画 prompt
+    _writeTerm('\r\x1b[K> $_input');
   }
 
   void clearLog() {
     _log.clear();
     _service.clearLog();
+    // 清屏 + 清滚动回看 + 光标归位，让终端与日志缓冲同步清空。
+    _writeTerm('\x1b[3J\x1b[2J\x1b[H');
+    if (_lineMode) _redrawPrompt();
     notifyListeners();
   }
 
@@ -247,8 +560,13 @@ class ServerController extends ChangeNotifier {
 
   void _onEvent(ServerEvent event) {
     switch (event) {
+      case ServerTermEvent(:final bytes):
+        // 原始终端字节：同步写入终端（不进解析），保证与后续 prompt 重绘顺序正确。
+        _feedTerm(bytes);
       case ServerLogEvent(:final line):
-        _appendLine(line);
+        // 已去 ANSI 的纯文本行：进日志缓冲并解析，但不写终端
+        //（终端内容已由对应的 term 字节呈现，避免重复）。
+        _appendLogLine(line);
         _parsePlayerEvent(line);
         notifyListeners();
       case ServerStateEvent(
@@ -284,7 +602,7 @@ class ServerController extends ChangeNotifier {
           if (_tunnelActive && !_restartingTunnel) _stopTunnel();
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
           if (exitCode != null) {
-            _appendLine('[EdgeCube] 服务端已退出（退出码 $exitCode）');
+            _notice('[EdgeCube] 服务端已退出（退出码 $exitCode）');
             // 崩溃检测：退出码不为 0 且非用户主动停止/强制停止。
             if (exitCode != 0 && !_userStopping && !_userForceStopping) {
               _handleCrash(exitCode);
@@ -369,7 +687,7 @@ class ServerController extends ChangeNotifier {
     _upnpActive = true;
     _upnp.openPort(dir).then((port) async {
       if (port != null) {
-        _appendLine('[EdgeCube] 路由器端口映射成功：$port');
+        _notice('[EdgeCube] 路由器端口映射成功：$port');
         // 尝试获取公网 IP。
         _upnpExternalIp = await _upnp.getExternalIp();
         notifyListeners();
@@ -413,12 +731,12 @@ class ServerController extends ChangeNotifier {
         // 从 config/network.json 读取（服务器启动时的路径）。
         final saved = await NetworkStore.loadFrpc();
         if (saved == null) {
-          _appendLine('[EdgeCube] FRP 隧道未配置，跳过启动');
+          _notice('[EdgeCube] FRP 隧道未配置，跳过启动');
           _tunnelActive = false;
           return;
         }
         if (saved.serverAddr.isEmpty) {
-          _appendLine('[EdgeCube] FRP 服务器地址未填写，跳过启动');
+          _notice('[EdgeCube] FRP 服务器地址未填写，跳过启动');
           _tunnelActive = false;
           return;
         }
@@ -439,10 +757,10 @@ class ServerController extends ChangeNotifier {
       final path = await _tunnel.writeConfig(finalConfig);
       await _tunnel.start(configPath: path, name: finalConfig.proxyName);
       _activeFrpcConfig = finalConfig;
-      _appendLine('[EdgeCube] FRP 隧道已启动（本地端口 $localPort）');
+      _notice('[EdgeCube] FRP 隧道已启动（本地端口 $localPort）');
       notifyListeners();
     } catch (e) {
-      _appendLine('[EdgeCube] FRP 隧道启动失败：$e');
+      _notice('[EdgeCube] FRP 隧道启动失败：$e');
       _tunnelActive = false;
     }
   }
@@ -496,11 +814,19 @@ class ServerController extends ChangeNotifier {
     _restartingTunnel = false;
   }
 
-  void _appendLine(String line) {
+  /// 追加一条纯文本日志行到缓冲（用于复制日志 / 崩溃报告 / 玩家解析），不写终端。
+  void _appendLogLine(String line) {
     _log.add(line);
     if (_log.length > _maxLogLines) {
       _log.removeRange(0, _log.length - _maxLogLines);
     }
+  }
+
+  /// EdgeCube 自身的提示：同步写入终端（保证与 PTY 输出有序），同时进日志缓冲。
+  void _notice(String msg) {
+    _writeTerm('$msg\r\n');
+    _appendLogLine(msg);
+    if (_lineMode) _redrawPrompt();
   }
 
   /// 服务端意外退出时生成崩溃数据并触发回调。

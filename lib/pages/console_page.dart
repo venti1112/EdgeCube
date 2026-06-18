@@ -1,89 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:xterm/xterm.dart';
 
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
 
-/// 控制台终端页：实时滚动日志 + 命令输入。
+/// 控制台终端页：直接交互的伪终端（PTY + xterm）+ Termux 式扩展按键栏。
 ///
-/// 日志与运行状态来自全局 [ServerController]，因此无论在哪个实例、哪个页面启动，
-/// 这里都能看到同一个正在运行的服务端输出。
-class ConsolePage extends StatefulWidget {
+/// 不再有独立输入框——用户点击终端后即可像真实终端一样直接打字、回车，按键经 PTY
+/// 送达服务端，支持 Tab 补全、命令历史、JLine 控制台与彩色输出。底部两排扩展按键
+/// 补齐手机软键盘缺失的 ESC / CTRL / ALT / TAB / 方向键等。终端对象由全局
+/// [ServerController] 持有，因此切实例 / 切页 / 页面重建时内容都不丢失。
+class ConsolePage extends StatelessWidget {
   const ConsolePage({super.key});
-
-  @override
-  State<ConsolePage> createState() => _ConsolePageState();
-}
-
-class _ConsolePageState extends State<ConsolePage> {
-  final ScrollController _scroll = ScrollController();
-  final TextEditingController _cmd = TextEditingController();
-  final FocusNode _focus = FocusNode();
-
-  /// 是否跟随到底部；用户上滑查看历史时自动暂停跟随。
-  bool _autoScroll = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _scroll.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scroll.dispose();
-    _cmd.dispose();
-    _focus.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (!_scroll.hasClients) return;
-    final atBottom =
-        _scroll.position.pixels >= _scroll.position.maxScrollExtent - 24;
-    if (atBottom != _autoScroll) {
-      setState(() => _autoScroll = atBottom);
-    }
-  }
-
-  void _scheduleAutoScroll() {
-    if (!_autoScroll) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) {
-        _scroll.jumpTo(_scroll.position.maxScrollExtent);
-      }
-    });
-  }
-
-  void _jumpToBottom() {
-    setState(() => _autoScroll = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) {
-        _scroll.jumpTo(_scroll.position.maxScrollExtent);
-      }
-    });
-  }
-
-  void _send(ServerController server) {
-    final text = _cmd.text;
-    if (text.trim().isEmpty) return;
-    server.sendCommand(text);
-    _cmd.clear();
-    _focus.requestFocus();
-  }
 
   @override
   Widget build(BuildContext context) {
     final server = ServerScope.of(context);
     final theme = Theme.of(context);
-    final log = server.log;
     final running = server.isRunning;
-    // 启动中、运行中、停止中均允许发送命令。
-    final canSend = server.status == ServerStatus.starting ||
-        server.status == ServerStatus.running ||
-        server.status == ServerStatus.stopping;
-
-    _scheduleAutoScroll();
+    final hasLog = server.log.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -92,21 +28,31 @@ class _ConsolePageState extends State<ConsolePage> {
           children: [
             const Text('控制台'),
             Text(
-              _subtitle(server),
+              '${_subtitle(server)} · ${server.lineMode ? "命令行" : "原始终端"}',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: running ? Colors.green : theme.colorScheme.onSurfaceVariant,
+                color:
+                    running ? Colors.green : theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ],
         ),
         actions: [
           IconButton(
+            icon: Icon(
+              server.lineMode ? Icons.edit : Icons.keyboard,
+            ),
+            tooltip: server.lineMode ? '命令行编辑模式（点击切换原始终端）' : '原始终端模式（点击切换命令行编辑）',
+            onPressed: server.toggleLineMode,
+          ),
+          IconButton(
             icon: const Icon(Icons.copy),
             tooltip: '复制全部日志',
-            onPressed: log.isEmpty
+            onPressed: !hasLog
                 ? null
                 : () {
-                    Clipboard.setData(ClipboardData(text: log.join('\n')));
+                    Clipboard.setData(
+                      ClipboardData(text: server.log.join('\n')),
+                    );
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('日志已复制到剪贴板')),
                     );
@@ -114,68 +60,29 @@ class _ConsolePageState extends State<ConsolePage> {
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
-            tooltip: '清空日志',
-            onPressed: log.isEmpty ? null : server.clearLog,
+            tooltip: '清空终端',
+            onPressed: !hasLog ? null : server.clearLog,
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Stack(
-              children: [
-                Container(
-                  width: double.infinity,
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  child: log.isEmpty
-                      ? Center(
-                          child: Text(
-                            '暂无输出。\n在「服务器」页启动后，日志会实时显示在这里。',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        )
-                      : SelectionArea(
-                          child: ListView.builder(
-                            controller: _scroll,
-                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                            itemCount: log.length,
-                            itemBuilder: (context, i) {
-                              final line = log[i];
-                              final isCmd = line.startsWith('> ');
-                              return Text(
-                                line,
-                                style: TextStyle(
-                                  fontFamily: 'monospace',
-                                  fontSize: 12,
-                                  height: 1.35,
-                                  color: isCmd
-                                      ? theme.colorScheme.primary
-                                      : theme.colorScheme.onSurface,
-                                  fontWeight:
-                                      isCmd ? FontWeight.w600 : FontWeight.normal,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                ),
-                if (!_autoScroll && log.isNotEmpty)
-                  Positioned(
-                    right: 16,
-                    bottom: 16,
-                    child: FloatingActionButton.small(
-                      onPressed: _jumpToBottom,
-                      child: const Icon(Icons.arrow_downward),
-                    ),
-                  ),
-              ],
+      // 键盘弹出时缩小终端区域；扩展按键栏紧贴键盘上方（Termux 式布局）。
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            Expanded(
+              child: TerminalView(
+                server.terminal,
+                theme: TerminalThemes.defaultTheme,
+                textStyle: const TerminalStyle(fontSize: 13),
+                padding: const EdgeInsets.all(8),
+                // 不自动抢焦点（页面在 IndexedStack 中常驻）；点击终端再唤起键盘。
+                autofocus: false,
+              ),
             ),
-          ),
-          _inputBar(context, server, canSend),
-        ],
+            _ExtraKeysBar(server),
+          ],
+        ),
       ),
     );
   }
@@ -184,49 +91,112 @@ class _ConsolePageState extends State<ConsolePage> {
     final name = server.runningInstanceName;
     return switch (server.status) {
       ServerStatus.preparing => '准备中 · ${name ?? ''}',
-      ServerStatus.starting  => '启动中 · ${name ?? ''}',
-      ServerStatus.running   => '运行中 · ${name ?? ''}',
-      ServerStatus.stopping  => '停止中 · ${name ?? ''}',
-      ServerStatus.stopped   =>
-        name == null ? '未运行' : '已停止 · $name',
+      ServerStatus.starting => '启动中 · ${name ?? ''}',
+      ServerStatus.running => '运行中 · ${name ?? ''}',
+      ServerStatus.stopping => '停止中 · ${name ?? ''}',
+      ServerStatus.stopped => name == null ? '未运行' : '已停止 · $name',
     };
   }
+}
 
-  Widget _inputBar(BuildContext context, ServerController server, bool canSend) {
+/// 终端扩展按键栏：两排补齐软键盘缺失的终端控制键。
+///
+/// CTRL / ALT 是粘滞修饰键（点亮后对下一次输入生效一次）；其余为瞬时键，
+/// 通过 [ServerController.sendKey] / [ServerController.sendText] 送往 PTY。
+class _ExtraKeysBar extends StatelessWidget {
+  const _ExtraKeysBar(this.server);
+
+  final ServerController server;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
+      color: theme.colorScheme.surfaceContainerHigh,
       elevation: 2,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _cmd,
-                  focusNode: _focus,
-                  enabled: canSend,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => _send(server),
-                  style: const TextStyle(fontFamily: 'monospace'),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    hintText: canSend
-                        ? '输入命令，回车发送（如 list、say hi、op <玩家>）'
-                        : '服务器已停止',
-                    border: const OutlineInputBorder(),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                _key(context, 'ESC', () => server.sendKey(TerminalKey.escape)),
+                _key(context, '/', () => server.sendText('/')),
+                _key(context, '-', () => server.sendText('-')),
+                _key(context, 'HOME', () => server.sendKey(TerminalKey.home)),
+                _key(context, '↑', () => server.sendKey(TerminalKey.arrowUp)),
+                _key(context, 'END', () => server.sendKey(TerminalKey.end)),
+                _key(context, 'PgUp', () => server.sendKey(TerminalKey.pageUp)),
+              ],
+            ),
+            Row(
+              children: [
+                _key(context, 'TAB', () => server.sendKey(TerminalKey.tab)),
+                _key(context, 'CTRL', server.toggleCtrl,
+                    active: server.ctrlDown),
+                _key(context, 'ALT', server.toggleAlt, active: server.altDown),
+                _key(context, '←', () => server.sendKey(TerminalKey.arrowLeft)),
+                _key(context, '↓', () => server.sendKey(TerminalKey.arrowDown)),
+                _key(context, '→', () => server.sendKey(TerminalKey.arrowRight)),
+                _key(context, 'PgDn', () => server.sendKey(TerminalKey.pageDown)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _key(
+    BuildContext context,
+    String label,
+    VoidCallback onTap, {
+    bool active = false,
+  }) =>
+      Expanded(child: _KeyButton(label: label, onTap: onTap, active: active));
+}
+
+class _KeyButton extends StatelessWidget {
+  const _KeyButton({
+    required this.label,
+    required this.onTap,
+    this.active = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bg = active ? scheme.primary : scheme.surfaceContainerHighest;
+    final fg = active ? scheme.onPrimary : scheme.onSurface;
+    return Padding(
+      padding: const EdgeInsets.all(2),
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: onTap,
+          // 不抢焦点，避免点击扩展键时收起软键盘 / 让终端失焦。
+          canRequestFocus: false,
+          child: Container(
+            height: 38,
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.clip,
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: fg,
               ),
-              IconButton(
-                icon: const Icon(Icons.send),
-                color: theme.colorScheme.primary,
-                onPressed: canSend ? () => _send(server) : null,
-              ),
-            ],
+            ),
           ),
         ),
       ),
