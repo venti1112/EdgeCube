@@ -3,15 +3,9 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import 'instance.dart';
 import 'instance_store.dart';
-
-/// 解析所有实例文件夹所在的根目录。
-///
-/// 默认指向应用私有文档目录下的 `instances/`；测试可注入临时目录。
-typedef InstancesRootResolver = Future<Directory> Function();
 
 /// 当新建或重命名导致出现同名实例时抛出。
 class DuplicateInstanceNameException implements Exception {
@@ -23,67 +17,65 @@ class DuplicateInstanceNameException implements Exception {
   String toString() => '已存在同名实例：$name';
 }
 
-Future<Directory> _defaultInstancesRoot() async {
-  final docs = await getApplicationDocumentsDirectory();
-  return Directory(p.join(docs.path, 'instances'));
-}
-
-/// 管理服务器实例的列表、当前选中项与磁盘文件夹。
+/// 管理服务器实例的索引、当前选中项的完整配置与磁盘文件夹。
+///
+/// 索引（[instances]）只含 `{id, name}` 摘要，供选择列表读取；当前选中实例的
+/// 完整启动配置（[selected]）按需从其 `config.json` 加载并缓存。
 class InstanceController extends ChangeNotifier {
   InstanceController({
     InstanceStore? store,
     InstancesRootResolver? rootResolver,
-  })  : _store = store ?? InstanceStore(),
-        _rootResolver = rootResolver ?? _defaultInstancesRoot;
+  }) : _rootResolver = rootResolver ?? defaultInstancesRoot,
+       _store = store ?? InstanceStore(rootResolver);
 
   final InstanceStore _store;
   final InstancesRootResolver _rootResolver;
   final Random _random = Random.secure();
 
-  List<Instance> _instances = [];
+  List<InstanceSummary> _summaries = [];
   String? _selectedId;
+  Instance? _selected;
   bool _initialized = false;
 
-  List<Instance> get instances => List.unmodifiable(_instances);
+  /// 实例索引（摘要列表），用于选择列表渲染。
+  List<InstanceSummary> get instances => List.unmodifiable(_summaries);
   bool get isInitialized => _initialized;
 
-  Instance? get selected {
-    if (_selectedId == null) return null;
-    for (final instance in _instances) {
-      if (instance.id == _selectedId) return instance;
-    }
-    return null;
-  }
+  /// 当前选中实例的完整配置；无选中项时为 null。
+  Instance? get selected => _selected;
 
-  /// 按 id 查找实例，未找到返回 null。
-  Instance? byId(String id) {
-    for (final instance in _instances) {
-      if (instance.id == id) return instance;
-    }
-    return null;
-  }
-
-  /// 从持久化存储加载实例列表与选中项，应在应用启动时调用一次。
+  /// 从持久化存储加载索引与选中项配置，应在应用启动时调用一次。
   Future<void> init() async {
-    _instances = await _store.loadInstances();
+    _summaries = await _store.loadSummaries();
     final savedId = await _store.loadSelectedId();
     // 选中项可能已被删除，回退到第一个实例。
-    if (savedId != null && _instances.any((i) => i.id == savedId)) {
+    if (savedId != null && _summaries.any((i) => i.id == savedId)) {
       _selectedId = savedId;
     } else {
-      _selectedId = _instances.isNotEmpty ? _instances.first.id : null;
+      _selectedId = _summaries.isNotEmpty ? _summaries.first.id : null;
     }
+    await _loadSelected();
     _initialized = true;
     notifyListeners();
   }
 
-  /// 解析指定实例在磁盘上的文件夹。
-  Future<Directory> directoryFor(Instance instance) async {
-    final root = await _rootResolver();
-    return Directory(p.join(root.path, instance.id));
+  /// 加载当前 [_selectedId] 对应的完整配置到 [_selected]。
+  Future<void> _loadSelected() async {
+    final id = _selectedId;
+    _selected = id == null ? null : await _store.loadConfig(id);
   }
 
-  /// 新建实例：生成随机文件夹名、创建目录、持久化并自动选中。
+  /// 解析指定实例在磁盘上的文件夹。
+  Future<Directory> directoryFor(Instance instance) =>
+      directoryForId(instance.id);
+
+  /// 按 id 解析实例在磁盘上的文件夹。
+  Future<Directory> directoryForId(String id) async {
+    final root = await _rootResolver();
+    return Directory(p.join(root.path, id));
+  }
+
+  /// 新建实例：生成随机文件夹名、创建目录、写入配置与索引并自动选中。
   ///
   /// 若已存在同名实例（忽略首尾空白），抛 [DuplicateInstanceNameException]。
   Future<Instance> createInstance(String name) async {
@@ -96,23 +88,25 @@ class InstanceController extends ChangeNotifier {
     await Directory(p.join(root.path, id)).create(recursive: true);
 
     final instance = Instance(id: id, name: trimmed);
-    _instances = [..._instances, instance];
+    await _store.saveConfig(instance);
+    _summaries = [..._summaries, InstanceSummary(id: id, name: trimmed)];
     _selectedId = id;
-    await _store.saveInstances(_instances);
-    await _store.saveSelectedId(_selectedId);
+    _selected = instance;
+    await _store.saveIndex(_summaries, _selectedId);
     notifyListeners();
     return instance;
   }
 
-  /// 切换当前选中的实例。
+  /// 切换当前选中的实例，并加载其完整配置。
   Future<void> select(String id) async {
     if (_selectedId == id) return;
     _selectedId = id;
-    await _store.saveSelectedId(id);
+    await _loadSelected();
+    await _store.saveIndex(_summaries, _selectedId);
     notifyListeners();
   }
 
-  /// 修改指定实例的名称。
+  /// 修改指定实例的名称（同步更新索引摘要与该实例的 config.json）。
   ///
   /// 若与其它实例重名（忽略首尾空白），抛 [DuplicateInstanceNameException]。
   Future<void> rename(String id, String newName) async {
@@ -121,11 +115,17 @@ class InstanceController extends ChangeNotifier {
     if (_isNameTaken(trimmed, exceptId: id)) {
       throw DuplicateInstanceNameException(trimmed);
     }
-    _instances = [
-      for (final instance in _instances)
-        if (instance.id == id) instance.copyWith(name: trimmed) else instance,
+    _summaries = [
+      for (final s in _summaries)
+        if (s.id == id) s.copyWith(name: trimmed) else s,
     ];
-    await _store.saveInstances(_instances);
+    final config = await _configFor(id);
+    if (config != null) {
+      final updated = config.copyWith(name: trimmed);
+      await _store.saveConfig(updated);
+      if (id == _selectedId) _selected = updated;
+    }
+    await _store.saveIndex(_summaries, _selectedId);
     notifyListeners();
   }
 
@@ -140,22 +140,19 @@ class InstanceController extends ChangeNotifier {
     bool? compatMode,
     bool clearCustomJvmArgs = false,
   }) async {
-    _instances = [
-      for (final instance in _instances)
-        if (instance.id == id)
-          instance.copyWith(
-            runtime: runtime,
-            maxMemory: maxMemory,
-            javaVersion: javaVersion,
-            selectedJar: selectedJar,
-            customJvmArgs: customJvmArgs,
-            compatMode: compatMode,
-            clearCustomJvmArgs: clearCustomJvmArgs,
-          )
-        else
-          instance,
-    ];
-    await _store.saveInstances(_instances);
+    final config = await _configFor(id);
+    if (config == null) return;
+    final updated = config.copyWith(
+      runtime: runtime,
+      maxMemory: maxMemory,
+      javaVersion: javaVersion,
+      selectedJar: selectedJar,
+      customJvmArgs: customJvmArgs,
+      compatMode: compatMode,
+      clearCustomJvmArgs: clearCustomJvmArgs,
+    );
+    await _store.saveConfig(updated);
+    if (id == _selectedId) _selected = updated;
     notifyListeners();
   }
 
@@ -170,27 +167,36 @@ class InstanceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 删除指定实例：从列表移除、删除磁盘文件夹、持久化；若删的是当前选中项则自动选第一个。
+  /// 删除指定实例：删除磁盘文件夹、从索引移除并持久化；若删的是当前选中项则自动选第一个。
   Future<void> deleteInstance(String id) async {
-    final dir = await _rootResolver();
-    final instanceDir = Directory(p.join(dir.path, id));
-    if (await instanceDir.exists()) {
-      await instanceDir.delete(recursive: true);
+    final dir = await directoryForId(id);
+    if (await dir.exists()) {
+      await dir.delete(recursive: true);
     }
-    _instances = _instances.where((i) => i.id != id).toList();
+    _summaries = _summaries.where((i) => i.id != id).toList();
     if (_selectedId == id) {
-      _selectedId = _instances.isNotEmpty ? _instances.first.id : null;
+      _selectedId = _summaries.isNotEmpty ? _summaries.first.id : null;
+      await _loadSelected();
     }
-    await _store.saveInstances(_instances);
-    await _store.saveSelectedId(_selectedId);
+    await _store.saveIndex(_summaries, _selectedId);
     notifyListeners();
+  }
+
+  /// 解析指定实例是否启用兼容模式（供服务端状态机在原生回放时按 id 查询）。
+  Future<bool> compatModeFor(String id) async {
+    final config = await _configFor(id);
+    return config?.compatMode ?? false;
+  }
+
+  /// 获取指定实例的完整配置：选中项直接复用缓存，否则从磁盘读取。
+  Future<Instance?> _configFor(String id) async {
+    if (id == _selectedId && _selected != null) return _selected;
+    return _store.loadConfig(id);
   }
 
   /// 是否已存在指定名称的实例；[exceptId] 用于改名时排除自身。
   bool _isNameTaken(String name, {String? exceptId}) {
-    return _instances.any(
-      (instance) => instance.id != exceptId && instance.name == name,
-    );
+    return _summaries.any((s) => s.id != exceptId && s.name == name);
   }
 
   /// 生成 16 字符的随机十六进制文件夹名。

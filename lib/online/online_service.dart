@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:android_cn_oaid/android_cn_oaid.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import '../config/config_store.dart';
 
 /// 在线服务管理器：管理在线服务总开关状态与设备唯一标识。
 ///
@@ -14,8 +15,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// ID 保存在应用文档目录下的 `device_id.txt`，只要开关打开且文件
 /// 不存在就自动获取并保存；已有则直接复用（对应“开→关→开”场景）。
 class OnlineService extends ChangeNotifier {
-  static const _enabledKey = 'online_services_enabled';
-  static const _askedKey = 'online_services_asked';
+  static const _fileName = 'online.json';
+  static const _enabledKey = 'enabled';
+  static const _askedKey = 'asked';
   static const _idFileName = 'device_id.txt';
 
   bool _enabled = false;
@@ -31,11 +33,19 @@ class OnlineService extends ChangeNotifier {
   /// 设备唯一 ID（仅在启用后才有值）。
   String? get deviceId => _deviceId;
 
-  /// 从 SharedPreferences 读取持久化状态，若已启用则同时加载 / 生成设备 ID。
+  /// 供数据迁移使用：直接写入持久化的 enabled/asked，不触发设备 ID 生成等副作用。
+  static Future<void> importState({bool? enabled, bool? asked}) async {
+    final m = await ConfigStore.readConfig(_fileName);
+    if (enabled != null) m[_enabledKey] = enabled;
+    if (asked != null) m[_askedKey] = asked;
+    await ConfigStore.writeConfig(_fileName, m);
+  }
+
+  /// 从 `config/online.json` 读取持久化状态，若已启用则同时加载 / 生成设备 ID。
   Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
-    _enabled = prefs.getBool(_enabledKey) ?? false;
-    _asked = prefs.getBool(_askedKey) ?? false;
+    final m = await ConfigStore.readConfig(_fileName);
+    _enabled = m[_enabledKey] as bool? ?? false;
+    _asked = m[_askedKey] as bool? ?? false;
     if (_enabled) {
       await _ensureDeviceId();
     }
@@ -44,15 +54,17 @@ class OnlineService extends ChangeNotifier {
   /// 标记"已询问"状态，控制首次启动弹窗只展示一次。
   Future<void> markAsked() async {
     _asked = true;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_askedKey, true);
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_askedKey] = true;
+    await ConfigStore.writeConfig(_fileName, m);
   }
 
   /// 设置在线服务总开关。开启时自动确保设备 ID 存在。
   Future<void> setEnabled(bool value) async {
     _enabled = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_enabledKey, value);
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_enabledKey] = value;
+    await ConfigStore.writeConfig(_fileName, m);
     if (value) {
       await _ensureDeviceId();
     }

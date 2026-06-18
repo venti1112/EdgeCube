@@ -1,7 +1,8 @@
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import 'config/config_migration.dart';
+import 'config/network_store.dart';
 import 'home_shell.dart';
 import 'instance/instance_controller.dart';
 import 'instance/instance_scope.dart';
@@ -15,6 +16,9 @@ import 'theme/theme_store.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 把旧版 SharedPreferences 中的历史配置迁移到新的文件式布局（只执行一次），
+  // 必须先于下面任何新配置读取。
+  await ConfigMigration.run();
   final initialThemeMode = await ThemeStore.load();
   final initialSeedColor = await ThemeStore.loadSeedColor();
   final initialUseDynamicColor = await ThemeStore.loadUseDynamicColor();
@@ -24,28 +28,23 @@ Future<void> main() async {
   await onlineService.init();
   final serverController = ServerController();
   // 让服务端状态机能查询某实例是否开启兼容模式（兼容模式跳过「启动中」标签）。
-  serverController.compatModeResolver =
-      (id) => instanceController.byId(id)?.compatMode ?? false;
-  // UPnP 端口映射开关：读取 SharedPreferences 中的持久化配置。
-  serverController.upnpEnabledResolver = () async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('upnp_enabled') ?? false;
-  };
-  // FRP 隧道开关：读取 SharedPreferences 中的持久化配置。
-  serverController.tunnelEnabledResolver = () async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('tunnel_enabled') ?? false;
-  };
+  serverController.compatModeResolver = instanceController.compatModeFor;
+  // UPnP 端口映射开关：读取 config/network.json 中的持久化配置。
+  serverController.upnpEnabledResolver = NetworkStore.loadUpnpEnabled;
+  // FRP 隧道开关：读取 config/network.json 中的持久化配置。
+  serverController.tunnelEnabledResolver = NetworkStore.loadTunnelEnabled;
   final systemMonitorController = SystemMonitorController();
-  runApp(EdgeCubeApp(
-    initialThemeMode: initialThemeMode,
-    initialSeedColor: initialSeedColor,
-    initialUseDynamicColor: initialUseDynamicColor,
-    instanceController: instanceController,
-    serverController: serverController,
-    systemMonitorController: systemMonitorController,
-    onlineService: onlineService,
-  ));
+  runApp(
+    EdgeCubeApp(
+      initialThemeMode: initialThemeMode,
+      initialSeedColor: initialSeedColor,
+      initialUseDynamicColor: initialUseDynamicColor,
+      instanceController: instanceController,
+      serverController: serverController,
+      systemMonitorController: systemMonitorController,
+      onlineService: onlineService,
+    ),
+  );
 }
 
 class EdgeCubeApp extends StatefulWidget {
@@ -118,10 +117,15 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                     ? lightDynamic
                     : ColorScheme.fromSeed(seedColor: _seedColor);
                 final darkScheme = useDynamic
-                    ? (darkDynamic ?? ColorScheme.fromSeed(
-                        seedColor: _seedColor, brightness: Brightness.dark))
+                    ? (darkDynamic ??
+                          ColorScheme.fromSeed(
+                            seedColor: _seedColor,
+                            brightness: Brightness.dark,
+                          ))
                     : ColorScheme.fromSeed(
-                        seedColor: _seedColor, brightness: Brightness.dark);
+                        seedColor: _seedColor,
+                        brightness: Brightness.dark,
+                      );
 
                 return MaterialApp(
                   title: 'EdgeCube',

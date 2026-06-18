@@ -64,6 +64,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   /// 缓存版本详情页 URL（Vanilla）。
   Map<String, String> _vanillaVersionUrls = {};
+
   /// 用户确认要下载的版本号（弹窗确认后记录，供下载和自动 Java 版本推断使用）。
   String? _selectedVersion;
 
@@ -73,9 +74,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   /// Forge 流程：缓存全量版本映射 {mcVersion: [forgeVersion...]}。
   Map<String, List<String>> _forgeVersionMap = {};
+
   /// Forge 流程中选择的 Minecraft 版本与 Forge 版本。
   String? _selectedForgeMcVersion;
   String? _selectedForgeVersion;
+
   /// Forge 安装日志输出。
   final List<String> _forgeInstallLogs = [];
   bool _forgeInstalling = false;
@@ -83,7 +86,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   StreamSubscription<dynamic>? _forgeEventSub;
 
   static const _forgeChannel = MethodChannel('com.venti1112.edgecube/forge');
-  static const _forgeEventChannel = EventChannel('com.venti1112.edgecube/forge_events');
+  static const _forgeEventChannel = EventChannel(
+    'com.venti1112.edgecube/forge_events',
+  );
 
   late InstanceController _instanceController;
 
@@ -249,17 +254,14 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     }
 
     if (!mounted) return;
-    final sourcePath =
-        await pickFromSystem(context, mode: SystemPickMode.file);
+    final sourcePath = await pickFromSystem(context, mode: SystemPickMode.file);
     if (sourcePath == null) {
       // 用户取消选择，关闭向导（dispose 会自动清理空实例）。
       _closeWizard();
       return;
     }
     try {
-      final instance = _instanceController.instances
-          .firstWhere((i) => i.id == instanceId);
-      final dir = await _instanceController.directoryFor(instance);
+      final dir = await _instanceController.directoryForId(instanceId);
       final savedPath = await _fileService.importFile(sourcePath, dir);
       final jarName = p.basename(savedPath);
       // 导入 .phar 时自动切到 PHP（PocketMine）运行环境，其余按 Java 处理。
@@ -455,9 +457,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         return;
       }
 
-      final instance = _instanceController.instances
-          .firstWhere((i) => i.id == instanceId);
-      final dir = await _instanceController.directoryFor(instance);
+      final dir = await _instanceController.directoryForId(instanceId);
       final file = File(p.join(dir.path, 'forge-installer.jar'));
 
       final contentLength = response.contentLength;
@@ -487,7 +487,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   }
 
   /// 调用原生平台运行 Forge Installer，安装完成后配置实例。
-  Future<void> _runForgeInstaller(String instanceId, String installerPath) async {
+  Future<void> _runForgeInstaller(
+    String instanceId,
+    String installerPath,
+  ) async {
     setState(() {
       _step = _WizardStep.forgeInstalling;
       _forgeInstalling = true;
@@ -496,9 +499,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     });
 
     // 监听安装器日志。
-    _forgeEventSub = _forgeEventChannel
-        .receiveBroadcastStream()
-        .listen((event) {
+    _forgeEventSub = _forgeEventChannel.receiveBroadcastStream().listen((
+      event,
+    ) {
       if (mounted && event is String) {
         setState(() {
           _forgeInstallLogs.add(event);
@@ -516,8 +519,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
       final exitCode = await _forgeChannel.invokeMethod<int>('runInstaller', {
         'installerJar': installerPath,
-        'workingDir': (await _instanceController.directoryFor(
-          _instanceController.instances.firstWhere((i) => i.id == instanceId),
+        'workingDir': (await _instanceController.directoryForId(
+          instanceId,
         )).path,
         'javaVersion': javaVer,
       });
@@ -535,9 +538,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       }
 
       // 安装成功：扫描目录找到 forge 服务端 jar。
-      final instance = _instanceController.instances
-          .firstWhere((i) => i.id == instanceId);
-      final dir = await _instanceController.directoryFor(instance);
+      final dir = await _instanceController.directoryForId(instanceId);
       final forgeJar = _findForgeServerJar(dir);
       if (forgeJar == null) {
         if (!mounted) return;
@@ -647,9 +648,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         return;
       }
 
-      final instance = _instanceController.instances
-          .firstWhere((i) => i.id == instanceId);
-      final dir = await _instanceController.directoryFor(instance);
+      final dir = await _instanceController.directoryForId(instanceId);
       final file = File(p.join(dir.path, 'server.jar'));
 
       final contentLength = response.contentLength;
@@ -825,9 +824,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           ),
           title: Text(_appBarTitle),
         ),
-        body: SafeArea(
-          child: _buildStepContent(theme),
-        ),
+        body: SafeArea(child: _buildStepContent(theme)),
       ),
     );
   }
@@ -952,8 +949,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline,
-                  size: 48, color: theme.colorScheme.error),
+              Icon(
+                Icons.error_outline,
+                size: 48,
+                color: theme.colorScheme.error,
+              ),
               const SizedBox(height: 16),
               Text(
                 _versionError!,
@@ -1032,9 +1032,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                 SizedBox(
                   width: 48,
                   height: 48,
-                  child: CircularProgressIndicator(
-                    value: _downloadProgress,
-                  ),
+                  child: CircularProgressIndicator(value: _downloadProgress),
                 ),
                 const SizedBox(height: 24),
                 Text(
@@ -1114,10 +1112,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         children: [
           const CircularProgressIndicator(),
           const SizedBox(height: 24),
-          Text(
-            '请选择要导入的服务端 jar 文件',
-            style: theme.textTheme.titleMedium,
-          ),
+          Text('请选择要导入的服务端 jar 文件', style: theme.textTheme.titleMedium),
         ],
       ),
     );
@@ -1143,21 +1138,26 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                       child: CircularProgressIndicator(),
                     )
                   else if (_forgeInstallError == null)
-                    Icon(Icons.check_circle_outline,
-                        size: 36, color: theme.colorScheme.primary)
+                    Icon(
+                      Icons.check_circle_outline,
+                      size: 36,
+                      color: theme.colorScheme.primary,
+                    )
                   else
-                    Icon(Icons.error_outline,
-                        size: 36, color: theme.colorScheme.error),
+                    Icon(
+                      Icons.error_outline,
+                      size: 36,
+                      color: theme.colorScheme.error,
+                    ),
                   const SizedBox(height: 12),
                   Text(
                     _forgeInstalling
                         ? '正在安装 Forge 服务端，请稍候…'
-                        : (_forgeInstallError != null
-                            ? '安装失败'
-                            : '安装完成'),
+                        : (_forgeInstallError != null ? '安装失败' : '安装完成'),
                     style: theme.textTheme.titleMedium,
                   ),
-                  if (_forgeInstallError != null) ...[                    const SizedBox(height: 8),
+                  if (_forgeInstallError != null) ...[
+                    const SizedBox(height: 8),
                     Text(
                       _forgeInstallError!,
                       style: TextStyle(color: theme.colorScheme.error),
@@ -1184,8 +1184,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                         FilledButton(
                           onPressed: () {
                             _deleteCreatedInstance();
-                            setState(() =>
-                                _step = _WizardStep.forgeVersionSelect);
+                            setState(
+                              () => _step = _WizardStep.forgeVersionSelect,
+                            );
                           },
                           child: const Text('重新选择'),
                         ),
@@ -1208,7 +1209,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                         itemBuilder: (_, i) => Text(
                           _forgeInstallLogs[i],
                           style: const TextStyle(
-                              fontSize: 12, fontFamily: 'monospace'),
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                          ),
                         ),
                       ),
               ),
@@ -1251,7 +1254,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     }
 
     if (!mounted) return;
-    final destDir = await pickFromSystem(context, mode: SystemPickMode.directory);
+    final destDir = await pickFromSystem(
+      context,
+      mode: SystemPickMode.directory,
+    );
     if (destDir == null) return;
 
     try {
@@ -1265,14 +1271,14 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       await file.writeAsString(content, flush: true);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('日志已导出至 $destDir/$fileName')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('日志已导出至 $destDir/$fileName')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导出失败：$e')));
     }
   }
 
@@ -1310,8 +1316,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     final client = HttpClient();
     try {
       final req = await client.getUrl(
-        Uri.parse(
-            'https://meta.fabricmc.net/v2/versions/loader/$mcVersion'),
+        Uri.parse('https://meta.fabricmc.net/v2/versions/loader/$mcVersion'),
       );
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
@@ -1333,7 +1338,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     try {
       final req = await client.getUrl(
         Uri.parse(
-            'https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml'),
+          'https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml',
+        ),
       );
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
@@ -1378,7 +1384,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     try {
       final req = await client.getUrl(
         Uri.parse(
-            'https://launchermeta.mojang.com/mc/game/version_manifest.json'),
+          'https://launchermeta.mojang.com/mc/game/version_manifest.json',
+        ),
       );
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();

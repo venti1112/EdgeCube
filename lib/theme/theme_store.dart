@@ -1,25 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-/// 主题模式的本地持久化读写。
+import '../config/config_store.dart';
+
+/// 主题配置的本地持久化读写，存于 `config/theme.json`。
 class ThemeStore {
-  static const String _key = 'theme_mode';
-  static const String _seedColorKey = 'seed_color';
-  static const String _useDynamicColorKey = 'use_dynamic_color';
+  static const String _fileName = 'theme.json';
+  static const String _modeKey = 'mode';
+  static const String _seedColorKey = 'seedColor';
+  static const String _useDynamicColorKey = 'useDynamicColor';
 
   /// 默认种子色。
   static const Color defaultSeedColor = Colors.green;
 
   /// 读取已保存的主题模式，未保存过时回退到 [ThemeMode.system]。
   static Future<ThemeMode> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    return _decode(prefs.getString(_key));
+    final m = await ConfigStore.readConfig(_fileName);
+    return _decode(m[_modeKey] as String?);
   }
 
   /// 持久化指定的主题模式。
   static Future<void> save(ThemeMode mode) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, mode.name);
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_modeKey] = mode.name;
+    await ConfigStore.writeConfig(_fileName, m);
   }
 
   static ThemeMode _decode(String? value) {
@@ -31,26 +34,28 @@ class ThemeStore {
 
   /// 读取已保存的种子色，未保存过时回退到 [defaultSeedColor]。
   static Future<Color> loadSeedColor() async {
-    final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getInt(_seedColorKey);
+    final m = await ConfigStore.readConfig(_fileName);
+    final stored = m[_seedColorKey] as int?;
     return stored != null ? Color(stored) : defaultSeedColor;
   }
 
   /// 持久化指定的种子色。
   static Future<void> saveSeedColor(Color color) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_seedColorKey, color.toARGB32());
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_seedColorKey] = color.toARGB32();
+    await ConfigStore.writeConfig(_fileName, m);
   }
 
   /// 读取是否跟随系统主题色（Android 12+ Material You），未保存过时回退到 false。
   static Future<bool> loadUseDynamicColor() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_useDynamicColorKey) ?? false;
+    final m = await ConfigStore.readConfig(_fileName);
+    return m[_useDynamicColorKey] as bool? ?? false;
   }
 
   /// 持久化是否跟随系统主题色。
   static Future<void> saveUseDynamicColor(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_useDynamicColorKey, value);
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_useDynamicColorKey] = value;
+    await ConfigStore.writeConfig(_fileName, m);
   }
 }

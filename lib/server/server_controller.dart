@@ -1,14 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'server_properties.dart';
 import 'server_service.dart';
 import 'upnp_service.dart';
+import '../config/network_store.dart';
 import '../tunnel/tunnel_service.dart';
 
 /// 匹配 Minecraft 服务端日志中玩家加入/离开的正则（兼容英文与中文输出）。
@@ -18,7 +17,6 @@ import '../tunnel/tunnel_service.dart';
 final _reJoin = RegExp(r'(\w{1,16})(?:\[/[\d.:]+\] logged in| 加入了游戏)');
 final _reLeave = RegExp(r'(\w{1,16})(?: left the game| 退出了游戏)');
 final _reListResp = RegExp(r'online(?:\s*:\s*|\s+)(.*)');
-
 
 /// 服务端进程的运行状态。
 ///
@@ -53,10 +51,13 @@ class CrashData {
 /// 单活动进程模型：同一时刻只跟踪一个正在运行的服务端，[runningInstanceId]
 /// 标识它属于哪个实例。日志为所有页面共享，故本控制器置于全局 Scope。
 class ServerController extends ChangeNotifier {
-  ServerController({ServerService? service, UpnpService? upnp, TunnelService? tunnel})
-      : _service = service ?? ServerService(),
-        _upnp = upnp ?? UpnpService(),
-        _tunnel = tunnel ?? TunnelService() {
+  ServerController({
+    ServerService? service,
+    UpnpService? upnp,
+    TunnelService? tunnel,
+  }) : _service = service ?? ServerService(),
+       _upnp = upnp ?? UpnpService(),
+       _tunnel = tunnel ?? TunnelService() {
     _sub = _service.events().listen(_onEvent);
   }
 
@@ -65,15 +66,22 @@ class ServerController extends ChangeNotifier {
   final TunnelService _tunnel;
   late final StreamSubscription<ServerEvent> _sub;
 
-  /// 解析指定实例是否启用兼容模式。兼容模式下，原生上报的「启动中」会被直接
-  /// 视为「运行中」，从而跳过「启动中」标签。由外层（main）注入，读取实例配置。
-  bool Function(String instanceId)? compatModeResolver;
+  /// 异步解析指定实例是否启用兼容模式。由外层（main）注入，读取实例的 config.json。
+  /// 用于应用被回收后原生状态回放（未经过本会话 [start]）时恢复兼容模式标志。
+  Future<bool> Function(String instanceId)? compatModeResolver;
 
-  /// 解析当前是否启用了 UPnP 端口映射。由外层（main）注入，读取 SharedPreferences。
+  /// 解析当前是否启用了 UPnP 端口映射。由外层（main）注入，读取配置文件。
   Future<bool> Function()? upnpEnabledResolver;
 
-  /// 解析当前是否启用了 FRP 隧道。由外层（main）注入，读取 SharedPreferences。
+  /// 解析当前是否启用了 FRP 隧道。由外层（main）注入，读取配置文件。
   Future<bool> Function()? tunnelEnabledResolver;
+
+  /// 当前运行实例的兼容模式标志。[start] 时由调用方传入并缓存，供状态事件
+  /// 同步判定；回放路径下若与缓存实例不符，则经 [compatModeResolver] 异步补正。
+  bool _compatMode = false;
+
+  /// [_compatMode] 当前对应的实例 id；与待判定实例不符即触发异步补正。
+  String? _compatModeId;
 
   /// 日志环形缓冲上限，超出丢弃最旧的行。
   static const int _maxLogLines = 5000;
@@ -105,8 +113,8 @@ class ServerController extends ChangeNotifier {
   void Function(CrashData crash)? onCrashExit;
 
   // —— 映射结果追踪 ——
-  String? _upnpExternalIp;   // UPnP 映射成功后的公网 IP
-  FrpcConfig? _activeFrpcConfig;  // 当前活跃的 FRP 配置
+  String? _upnpExternalIp; // UPnP 映射成功后的公网 IP
+  FrpcConfig? _activeFrpcConfig; // 当前活跃的 FRP 配置
 
   ServerStatus get status => _status;
   bool get isRunning => _status == ServerStatus.running;
@@ -145,6 +153,7 @@ class ServerController extends ChangeNotifier {
     required String runtime,
     required List<String> jvmArgs,
     required List<String> programArgs,
+    bool compatMode = false,
   }) async {
     if (_status != ServerStatus.stopped) return;
     _instanceId = instanceId;
@@ -153,6 +162,8 @@ class ServerController extends ChangeNotifier {
     _lastExitCode = null;
     _runtimeType = runtime;
     _runtimeVersion = version;
+    _compatMode = compatMode;
+    _compatModeId = instanceId;
     _userStopping = false;
     _userForceStopping = false;
     _status = ServerStatus.preparing;
@@ -231,7 +242,8 @@ class ServerController extends ChangeNotifier {
   Future<List<String>> availableVersions() => _service.availableVersions();
 
   /// 当前设备架构下可用的 PHP 运行时（不支持的架构返回空）。
-  Future<List<String>> availablePhpRuntimes() => _service.availablePhpRuntimes();
+  Future<List<String>> availablePhpRuntimes() =>
+      _service.availablePhpRuntimes();
 
   void _onEvent(ServerEvent event) {
     switch (event) {
@@ -240,11 +252,11 @@ class ServerController extends ChangeNotifier {
         _parsePlayerEvent(line);
         notifyListeners();
       case ServerStateEvent(
-          :final status,
-          :final instanceId,
-          :final instanceName,
-          :final exitCode
-        ):
+        :final status,
+        :final instanceId,
+        :final instanceName,
+        :final exitCode,
+      ):
         if (status != null) {
           // 界面重建后，从原生回放中恢复当前正在运行的实例。
           if (instanceId != null) _instanceId = instanceId;
@@ -255,9 +267,9 @@ class ServerController extends ChangeNotifier {
           // 进程存活，根据 status 字符串映射到对应状态。
           _status = switch (status) {
             'preparing' => ServerStatus.preparing,
-            'starting'  => compat ? ServerStatus.running : ServerStatus.starting,
-            'running'   => ServerStatus.running,
-            _           => compat ? ServerStatus.running : ServerStatus.starting,
+            'starting' => compat ? ServerStatus.running : ServerStatus.starting,
+            'running' => ServerStatus.running,
+            _ => compat ? ServerStatus.running : ServerStatus.starting,
           };
           // 服务端进入运行态后触发 UPnP 端口映射和 FRP 隧道。
           if (_status == ServerStatus.running) {
@@ -304,16 +316,42 @@ class ServerController extends ChangeNotifier {
       if (names.isNotEmpty) {
         _onlinePlayers
           ..clear()
-          ..addAll(names.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty));
+          ..addAll(
+            names.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty),
+          );
       } else {
         _onlinePlayers.clear();
       }
     }
   }
 
-  /// 指定实例是否启用兼容模式（未注入解析器或实例为空时返回 false）。
-  bool _compatFor(String? instanceId) =>
-      instanceId != null && (compatModeResolver?.call(instanceId) ?? false);
+  /// 指定实例是否启用兼容模式。优先用 [start] 缓存的同步值；回放路径下实例
+  /// 与缓存不符时，触发异步解析补正，先返回当前最佳值。
+  bool _compatFor(String? instanceId) {
+    if (instanceId == null) return false;
+    if (instanceId == _compatModeId) return _compatMode;
+    _resolveCompatAsync(instanceId);
+    return _compatMode;
+  }
+
+  /// 异步从实例配置解析兼容模式并补正状态（用于原生状态回放）。
+  Future<void> _resolveCompatAsync(String instanceId) async {
+    final resolver = compatModeResolver;
+    if (resolver == null) return;
+    final value = await resolver(instanceId);
+    // 期间运行实例可能已切换，丢弃过期结果。
+    if (_instanceId != instanceId) return;
+    _compatModeId = instanceId;
+    if (_compatMode == value) return;
+    _compatMode = value;
+    // 兼容模式下「启动中」应显示为「运行中」，解析完成后补正。
+    if (value && _status == ServerStatus.starting) {
+      _status = ServerStatus.running;
+      if (!_upnpActive) _triggerUpnp();
+      if (!_tunnelActive) _triggerTunnel();
+    }
+    notifyListeners();
+  }
 
   /// 触发 UPnP 端口映射（服务端进入运行态时调用）。
   void _triggerUpnp() {
@@ -358,7 +396,7 @@ class ServerController extends ChangeNotifier {
     });
   }
 
-  /// 使用指定配置启动 FRP 隧道（config 为 null 时从 SharedPreferences 读取）。
+  /// 使用指定配置启动 FRP 隧道（config 为 null 时从 config/network.json 读取）。
   void _startTunnelWithConfig(FrpcConfig? config) {
     final dir = _workingDir;
     if (dir == null || _tunnelActive) return;
@@ -372,30 +410,19 @@ class ServerController extends ChangeNotifier {
       if (config != null) {
         finalConfig = config;
       } else {
-        // 从 SharedPreferences 读取（服务器启动时的路径）。
-        final prefs = await SharedPreferences.getInstance();
-        final raw = prefs.getString('frpc_config');
-        if (raw == null) {
+        // 从 config/network.json 读取（服务器启动时的路径）。
+        final saved = await NetworkStore.loadFrpc();
+        if (saved == null) {
           _appendLine('[EdgeCube] FRP 隧道未配置，跳过启动');
           _tunnelActive = false;
           return;
         }
-        final m = jsonDecode(raw) as Map<String, dynamic>;
-        final serverAddr = m['serverAddr'] as String? ?? '';
-        if (serverAddr.isEmpty) {
+        if (saved.serverAddr.isEmpty) {
           _appendLine('[EdgeCube] FRP 服务器地址未填写，跳过启动');
           _tunnelActive = false;
           return;
         }
-        finalConfig = FrpcConfig(
-          serverAddr: serverAddr,
-          serverPort: (m['serverPort'] as int?) ?? 7000,
-          authToken: m['authToken'] as String?,
-          proxyName: (m['proxyName'] as String?) ?? 'minecraft',
-          proxyType: (m['proxyType'] as String?) ?? 'tcp',
-          localPort: 25565,
-          remotePort: (m['remotePort'] as int?) ?? 25565,
-        );
+        finalConfig = saved;
       }
       // 注入实际 localPort。
       int localPort = finalConfig.localPort;
@@ -445,7 +472,7 @@ class ServerController extends ChangeNotifier {
   }
 
   /// 立即启用 FRP 隧道（用户在 UI 中打开开关时调用）。
-  /// [config] 可选，传入当前 UI 配置；为 null 时从 SharedPreferences 读取。
+  /// [config] 可选，传入当前 UI 配置；为 null 时从 config/network.json 读取。
   void enableTunnelNow([FrpcConfig? config]) {
     if (_tunnelActive || _status != ServerStatus.running) return;
     _startTunnelWithConfig(config);
@@ -482,12 +509,14 @@ class ServerController extends ChangeNotifier {
     if (callback == null) return;
     // 复制当前日志快照，避免后续新启动覆盖。
     final snapshot = List<String>.from(_log);
-    callback(CrashData(
-      exitCode: exitCode,
-      logLines: snapshot,
-      envType: _runtimeType,
-      envVersion: _runtimeVersion,
-    ));
+    callback(
+      CrashData(
+        exitCode: exitCode,
+        logLines: snapshot,
+        envType: _runtimeType,
+        envVersion: _runtimeVersion,
+      ),
+    );
   }
 
   @override

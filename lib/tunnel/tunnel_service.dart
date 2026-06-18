@@ -12,10 +12,12 @@ import 'package:path_provider/path_provider.dart';
 ///
 /// 隧道生命周期由 [ServerController] 管理，随服务端启停而启停。
 class TunnelService {
-  static const MethodChannel _method =
-      MethodChannel('com.venti1112.edgecube/tunnel');
-  static const EventChannel _events =
-      EventChannel('com.venti1112.edgecube/tunnel_events');
+  static const MethodChannel _method = MethodChannel(
+    'com.venti1112.edgecube/tunnel',
+  );
+  static const EventChannel _events = EventChannel(
+    'com.venti1112.edgecube/tunnel_events',
+  );
 
   /// 当前设备架构是否内置了 frpc（assets 中有对应 bin 包）。
   Future<bool> isFrpcAvailable() async =>
@@ -46,8 +48,10 @@ class TunnelService {
   ///
   /// 写入 getApplicationSupportDirectory()（Android 上即 filesDir），与原生侧
   /// 解压 frpc 引擎的 runtimes/ 目录同级。
-  Future<String> writeConfig(FrpcConfig config,
-      {String fileName = 'frpc.toml'}) async {
+  Future<String> writeConfig(
+    FrpcConfig config, {
+    String fileName = 'frpc.toml',
+  }) async {
     final dir = await getApplicationSupportDirectory();
     final file = File(p.join(dir.path, fileName));
     await file.writeAsString(config.toToml(), flush: true);
@@ -55,8 +59,10 @@ class TunnelService {
   }
 
   /// 便捷方法：写入配置后立即启动。
-  Future<void> startWithConfig(FrpcConfig config,
-      {String name = 'frpc'}) async {
+  Future<void> startWithConfig(
+    FrpcConfig config, {
+    String name = 'frpc',
+  }) async {
     final path = await writeConfig(config);
     await start(configPath: path, name: name);
   }
@@ -126,16 +132,16 @@ class FrpcConfig {
 
   /// 以新的 [localPort] 生成副本。
   FrpcConfig copyWith({int? localPort}) => FrpcConfig(
-        serverAddr: serverAddr,
-        serverPort: serverPort,
-        authToken: authToken,
-        proxyName: proxyName,
-        proxyType: proxyType,
-        localIp: localIp,
-        localPort: localPort ?? this.localPort,
-        remotePort: remotePort,
-        logLevel: logLevel,
-      );
+    serverAddr: serverAddr,
+    serverPort: serverPort,
+    authToken: authToken,
+    proxyName: proxyName,
+    proxyType: proxyType,
+    localIp: localIp,
+    localPort: localPort ?? this.localPort,
+    remotePort: remotePort,
+    logLevel: logLevel,
+  );
 
   /// 序列化为 frpc 的 TOML 配置。log.to=console 确保日志输出到 stdout，
   /// 由原生侧的进程读取并回传到界面。
@@ -159,15 +165,27 @@ class FrpcConfig {
     return b.toString();
   }
 
-  /// 用于本地持久化（shared_preferences）的可序列化映射。
+  /// 用于本地持久化的可序列化映射。
   Map<String, dynamic> toJsonMap() => {
-        'serverAddr': serverAddr,
-        'serverPort': serverPort,
-        'authToken': authToken,
-        'proxyName': proxyName,
-        'proxyType': proxyType,
-        'remotePort': remotePort,
-      };
+    'serverAddr': serverAddr,
+    'serverPort': serverPort,
+    'authToken': authToken,
+    'proxyName': proxyName,
+    'proxyType': proxyType,
+    'remotePort': remotePort,
+  };
+
+  /// 从持久化映射还原配置。[localPort] 为占位值（默认 25565），
+  /// 实际运行时由 [ServerController] 按 server-port 注入。
+  factory FrpcConfig.fromJsonMap(Map<String, dynamic> m) => FrpcConfig(
+    serverAddr: m['serverAddr'] as String? ?? '',
+    serverPort: (m['serverPort'] as int?) ?? 7000,
+    authToken: m['authToken'] as String?,
+    proxyName: (m['proxyName'] as String?) ?? 'minecraft',
+    proxyType: (m['proxyType'] as String?) ?? 'tcp',
+    localPort: 25565,
+    remotePort: (m['remotePort'] as int?) ?? 25565,
+  );
 
   /// TOML 基本字符串转义。
   static String _q(String s) =>
@@ -190,11 +208,7 @@ class TunnelLogEvent extends TunnelEvent {
 ///
 /// [status] 为 `null` 表示已停止；非空时为 `preparing` / `starting` / `running`。
 class TunnelStateEvent extends TunnelEvent {
-  const TunnelStateEvent({
-    required this.status,
-    this.name,
-    this.exitCode,
-  });
+  const TunnelStateEvent({required this.status, this.name, this.exitCode});
 
   final String? status;
   final String? name;

@@ -2,6 +2,25 @@
 const String kRuntimeJava = 'java';
 const String kRuntimePhp = 'php';
 
+/// 实例索引项：仅包含选择列表所需的 [id] 与 [name]。
+///
+/// 实例选择列表只读取索引（`instances/index.json`），无需加载每个实例
+/// 完整的启动配置（那些存在各自的 `instances/<id>/config.json` 中）。
+class InstanceSummary {
+  const InstanceSummary({required this.id, required this.name});
+
+  final String id;
+  final String name;
+
+  InstanceSummary copyWith({String? name}) =>
+      InstanceSummary(id: id, name: name ?? this.name);
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name};
+
+  factory InstanceSummary.fromJson(Map<String, dynamic> json) =>
+      InstanceSummary(id: json['id'] as String, name: json['name'] as String);
+}
+
 /// 单个服务器实例的元数据。
 ///
 /// [id] 同时是该实例在磁盘上的文件夹名（随机生成、不可变）；
@@ -48,38 +67,38 @@ class Instance {
     bool clearJavaVersion = false,
     bool clearSelectedJar = false,
     bool clearCustomJvmArgs = false,
-  }) =>
-      Instance(
-        id: id,
-        name: name ?? this.name,
-        runtime: runtime ?? this.runtime,
-        maxMemory: clearMaxMemory ? null : (maxMemory ?? this.maxMemory),
-        javaVersion: clearJavaVersion ? null : (javaVersion ?? this.javaVersion),
-        selectedJar: clearSelectedJar ? null : (selectedJar ?? this.selectedJar),
-        customJvmArgs:
-            clearCustomJvmArgs ? null : (customJvmArgs ?? this.customJvmArgs),
-        compatMode: compatMode ?? this.compatMode,
-      );
+  }) => Instance(
+    id: id,
+    name: name ?? this.name,
+    runtime: runtime ?? this.runtime,
+    maxMemory: clearMaxMemory ? null : (maxMemory ?? this.maxMemory),
+    javaVersion: clearJavaVersion ? null : (javaVersion ?? this.javaVersion),
+    selectedJar: clearSelectedJar ? null : (selectedJar ?? this.selectedJar),
+    customJvmArgs: clearCustomJvmArgs
+        ? null
+        : (customJvmArgs ?? this.customJvmArgs),
+    compatMode: compatMode ?? this.compatMode,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        if (runtime != kRuntimeJava) 'runtime': runtime,
-        if (maxMemory != null) 'maxMemory': maxMemory,
-        if (javaVersion != null) 'javaVersion': javaVersion,
-        if (selectedJar != null) 'selectedJar': selectedJar,
-        if (customJvmArgs != null) 'customJvmArgs': customJvmArgs,
-        if (compatMode) 'compatMode': true,
-      };
+    'id': id,
+    'name': name,
+    if (runtime != kRuntimeJava) 'runtime': runtime,
+    if (maxMemory != null) 'maxMemory': maxMemory,
+    if (javaVersion != null) 'javaVersion': javaVersion,
+    if (selectedJar != null) 'selectedJar': selectedJar,
+    if (customJvmArgs != null) 'customJvmArgs': customJvmArgs,
+    if (compatMode) 'compatMode': true,
+  };
 
   factory Instance.fromJson(Map<String, dynamic> json) => Instance(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        runtime: json['runtime'] as String? ?? kRuntimeJava,
-        maxMemory: json['maxMemory'] as int?,
-        javaVersion: json['javaVersion'] as String?,
-        selectedJar: json['selectedJar'] as String?,
-        customJvmArgs: json['customJvmArgs'] as String?,
-        compatMode: json['compatMode'] as bool? ?? false,
-      );
+    id: json['id'] as String,
+    name: json['name'] as String,
+    runtime: json['runtime'] as String? ?? kRuntimeJava,
+    maxMemory: json['maxMemory'] as int?,
+    javaVersion: json['javaVersion'] as String?,
+    selectedJar: json['selectedJar'] as String?,
+    customJvmArgs: json['customJvmArgs'] as String?,
+    compatMode: json['compatMode'] as bool? ?? false,
+  );
 }

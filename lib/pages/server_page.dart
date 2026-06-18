@@ -40,10 +40,7 @@ class ServerPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('服务器'),
         actions: [
-          _InstanceSelectorButton(
-            controller: controller,
-            selected: selected,
-          ),
+          _InstanceSelectorButton(controller: controller, selected: selected),
           const SizedBox(width: 4),
         ],
       ),
@@ -136,10 +133,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _CrashDialog(
-        crash: crash,
-        onlineService: widget.onlineService,
-      ),
+      builder: (ctx) =>
+          _CrashDialog(crash: crash, onlineService: widget.onlineService),
     );
   }
 
@@ -156,9 +151,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     // 实例配置变化（如下载完成后 selectedJar/javaVersion 更新、导入 phar 改变 runtime）时，同步表单值。
     final configChanged =
         oldWidget.instance.selectedJar != widget.instance.selectedJar ||
-            oldWidget.instance.javaVersion != widget.instance.javaVersion ||
-            oldWidget.instance.runtime != widget.instance.runtime ||
-            oldWidget.instance.compatMode != widget.instance.compatMode;
+        oldWidget.instance.javaVersion != widget.instance.javaVersion ||
+        oldWidget.instance.runtime != widget.instance.runtime ||
+        oldWidget.instance.compatMode != widget.instance.compatMode;
     if (configChanged) {
       _runtime = widget.instance.runtime;
       _version = widget.instance.javaVersion ?? 'jre21';
@@ -208,8 +203,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           _selectedJar = files.isNotEmpty ? files.first : null;
         }
         if (!ctx.versions.contains(_version) && ctx.versions.isNotEmpty) {
-          _version =
-              ctx.versions.contains('jre21') ? 'jre21' : ctx.versions.first;
+          _version = ctx.versions.contains('jre21')
+              ? 'jre21'
+              : ctx.versions.first;
         }
       });
     });
@@ -292,9 +288,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     // PHP（PocketMine）：用 PHP 运行时执行选中的 .phar。
     if (_isPhp) {
       if (ctx.phpRuntimes.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('当前设备架构不支持 PHP 运行环境。')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('当前设备架构不支持 PHP 运行环境。')));
         return;
       }
       if (file == null) {
@@ -313,6 +309,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         runtime: kRuntimePhp,
         jvmArgs: const [],
         programArgs: [file],
+        compatMode: _compatMode,
       );
       return;
     }
@@ -320,9 +317,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     // Java：用 JRE 执行选中的 .jar。
     if (file == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('未在实例目录找到 .jar，请先在「文件」页放入服务端 jar。'),
-        ),
+        const SnackBar(content: Text('未在实例目录找到 .jar，请先在「文件」页放入服务端 jar。')),
       );
       return;
     }
@@ -342,16 +337,14 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       runtime: kRuntimeJava,
       jvmArgs: jvmArgs,
       programArgs: ['-jar', file, 'nogui'],
+      compatMode: _compatMode,
     );
   }
 
   /// 解析自定义 JVM 参数文本（每行或空格分隔）为参数列表。
   static List<String> _parseCustomJvmArgs(String? raw) {
     if (raw == null || raw.trim().isEmpty) return const [];
-    return raw
-        .split(RegExp(r'\s+'))
-        .where((s) => s.isNotEmpty)
-        .toList();
+    return raw.split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
   }
 
   @override
@@ -368,7 +361,13 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _statusCard(context, server, ctx, status, active ? server.lastExitCode : null),
+            _statusCard(
+              context,
+              server,
+              ctx,
+              status,
+              active ? server.lastExitCode : null,
+            ),
             if (status == ServerStatus.running) ...[
               const SizedBox(height: 16),
               _ConnectionCard(server: server),
@@ -383,15 +382,24 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     );
   }
 
-  Widget _statusCard(BuildContext context, ServerController server, _LaunchContext? ctx, ServerStatus status, int? exitCode) {
+  Widget _statusCard(
+    BuildContext context,
+    ServerController server,
+    _LaunchContext? ctx,
+    ServerStatus status,
+    int? exitCode,
+  ) {
     final theme = Theme.of(context);
     final (IconData icon, Color color, String text) = switch (status) {
-      ServerStatus.stopped   => (Icons.stop_circle_outlined,
-          theme.colorScheme.outline, '已停止'),
+      ServerStatus.stopped => (
+        Icons.stop_circle_outlined,
+        theme.colorScheme.outline,
+        '已停止',
+      ),
       ServerStatus.preparing => (Icons.hourglass_empty, Colors.orange, '准备中…'),
-      ServerStatus.starting  => (Icons.hourglass_top, Colors.orange, '启动中…'),
-      ServerStatus.running   => (Icons.play_circle, Colors.green, '运行中'),
-      ServerStatus.stopping  => (Icons.hourglass_bottom, Colors.orange, '停止中…'),
+      ServerStatus.starting => (Icons.hourglass_top, Colors.orange, '启动中…'),
+      ServerStatus.running => (Icons.play_circle, Colors.green, '运行中'),
+      ServerStatus.stopping => (Icons.hourglass_bottom, Colors.orange, '停止中…'),
     };
     return Card(
       child: Padding(
@@ -404,7 +412,10 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(widget.instance.name, style: theme.textTheme.titleMedium),
+                  Text(
+                    widget.instance.name,
+                    style: theme.textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     status == ServerStatus.stopped && exitCode != null
@@ -427,7 +438,11 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   }
 
   /// 打开启动配置对话框。
-  Future<void> _openSettings(BuildContext context, ServerController server, _LaunchContext? ctx) async {
+  Future<void> _openSettings(
+    BuildContext context,
+    ServerController server,
+    _LaunchContext? ctx,
+  ) async {
     if (ctx == null) return;
     final nameController = TextEditingController(text: widget.instance.name);
     final controller = InstanceScope.of(context);
@@ -475,11 +490,13 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                           _runtime = v;
                           // 切换运行环境后，把服务端文件/版本回退到该环境下的有效默认值。
                           if (_isPhp) {
-                            _selectedJar =
-                                ctx.phars.isNotEmpty ? ctx.phars.first : null;
+                            _selectedJar = ctx.phars.isNotEmpty
+                                ? ctx.phars.first
+                                : null;
                           } else {
-                            _selectedJar =
-                                ctx.jars.isNotEmpty ? ctx.jars.first : null;
+                            _selectedJar = ctx.jars.isNotEmpty
+                                ? ctx.jars.first
+                                : null;
                             if (!ctx.versions.contains(_version) &&
                                 ctx.versions.isNotEmpty) {
                               _version = ctx.versions.contains('jre21')
@@ -493,8 +510,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                     const SizedBox(height: 16),
                     if (!_isPhp) ...[
                       DropdownButtonFormField<String>(
-                        initialValue:
-                            ctx.versions.contains(_version) ? _version : null,
+                        initialValue: ctx.versions.contains(_version)
+                            ? _version
+                            : null,
                         decoration: const InputDecoration(
                           labelText: 'Java 版本',
                           border: OutlineInputBorder(),
@@ -534,7 +552,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                         child: Text(
                           ctx.phpRuntimes.isNotEmpty
                               ? (_kVersionLabels[ctx.phpRuntimes.first] ??
-                                  ctx.phpRuntimes.first)
+                                    ctx.phpRuntimes.first)
                               : '当前设备架构不支持 PHP',
                         ),
                       ),
@@ -553,7 +571,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                         ),
                         decoration: const InputDecoration(
                           labelText: '自定义 JVM 参数',
-                          hintText: '每行或空格分隔一个参数，例如：\n-Dfml.ignoreInvalidMinecraftCertificates=true\n-XX:+UseG1GC',
+                          hintText:
+                              '每行或空格分隔一个参数，例如：\n-Dfml.ignoreInvalidMinecraftCertificates=true\n-XX:+UseG1GC',
                           alignLabelWithHint: true,
                           border: OutlineInputBorder(),
                           isDense: true,
@@ -564,8 +583,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       value: _compatMode,
-                      onChanged: (v) =>
-                          setDialogState(() => _compatMode = v),
+                      onChanged: (v) => setDialogState(() => _compatMode = v),
                       title: const Text('兼容模式'),
                       subtitle: const Text(
                         '准备完成、服务端进程启动后立即标记为「运行中」，跳过「启动中」。'
@@ -655,10 +673,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         for (final f in files)
           DropdownMenuItem<String>(
             value: f,
-            child: Text(
-              f,
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: Text(f, overflow: TextOverflow.ellipsis),
           ),
       ],
       onChanged: (v) {
@@ -749,10 +764,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(
-          '强制停止',
-          style: TextStyle(color: theme.colorScheme.error),
-        ),
+        title: Text('强制停止', style: TextStyle(color: theme.colorScheme.error)),
         content: const Text('强制结束可能导致服务端数据丢失，确认继续？'),
         actions: [
           TextButton(
@@ -814,10 +826,8 @@ class _InstanceSelectorButton extends StatelessWidget {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (sheetContext) => _InstanceListSheet(
-        controller: controller,
-        server: server,
-      ),
+      builder: (sheetContext) =>
+          _InstanceListSheet(controller: controller, server: server),
     );
   }
 }
@@ -885,7 +895,8 @@ class _InstanceListSheet extends StatelessWidget {
                           color: theme.colorScheme.error,
                         ),
                         tooltip: '删除实例',
-                        onPressed: () => _confirmDelete(context, instance, theme),
+                        onPressed: () =>
+                            _confirmDelete(context, instance, theme),
                       ),
                     ),
                 ],
@@ -898,9 +909,7 @@ class _InstanceListSheet extends StatelessWidget {
             onTap: () async {
               final navigator = Navigator.of(context);
               final result = await navigator.push<CreateInstanceResult>(
-                MaterialPageRoute(
-                  builder: (_) => const CreateInstancePage(),
-                ),
+                MaterialPageRoute(builder: (_) => const CreateInstancePage()),
               );
               if (result == CreateInstanceResult.done) {
                 navigator.pop();
@@ -915,7 +924,7 @@ class _InstanceListSheet extends StatelessWidget {
   /// 两次确认后删除实例：第一次普通确认，第二次强调不可恢复。
   Future<void> _confirmDelete(
     BuildContext context,
-    Instance instance,
+    InstanceSummary instance,
     ThemeData theme,
   ) async {
     final navigator = Navigator.of(context);
@@ -949,13 +958,8 @@ class _InstanceListSheet extends StatelessWidget {
     final second = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(
-          '不可恢复',
-          style: TextStyle(color: theme.colorScheme.error),
-        ),
-        content: Text(
-          '删除后实例「${instance.name}」的所有文件将永久丢失，确认继续？',
-        ),
+        title: Text('不可恢复', style: TextStyle(color: theme.colorScheme.error)),
+        content: Text('删除后实例「${instance.name}」的所有文件将永久丢失，确认继续？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -998,7 +1002,8 @@ class _MonitorCard extends StatelessWidget {
 
     final server = ServerScope.of(context);
     final serverStatus = server.status;
-    final serverProcessAlive = serverStatus == ServerStatus.starting ||
+    final serverProcessAlive =
+        serverStatus == ServerStatus.starting ||
         serverStatus == ServerStatus.running ||
         serverStatus == ServerStatus.stopping;
 
@@ -1092,11 +1097,7 @@ class _MonitorRow extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        _AnimatedProgressBar(
-          percent: percent,
-          color: color,
-          theme: theme,
-        ),
+        _AnimatedProgressBar(percent: percent, color: color, theme: theme),
       ],
     );
   }
@@ -1124,7 +1125,11 @@ class _ServerMemRow extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(Icons.dns, size: 18, color: theme.colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.dns,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 6),
             Text('服务端内存', style: theme.textTheme.bodyMedium),
             const Spacer(),
@@ -1138,11 +1143,7 @@ class _ServerMemRow extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        _AnimatedProgressBar(
-          percent: percent,
-          color: color,
-          theme: theme,
-        ),
+        _AnimatedProgressBar(percent: percent, color: color, theme: theme),
       ],
     );
   }
@@ -1185,9 +1186,7 @@ class _AnimatedProgressBar extends StatelessWidget {
                 FractionallySizedBox(
                   widthFactor: v.clamp(0.0, 1.0),
                   alignment: Alignment.centerLeft,
-                  child: SizedBox.expand(
-                    child: ColoredBox(color: color),
-                  ),
+                  child: SizedBox.expand(child: ColoredBox(color: color)),
                 ),
               ],
             ),
@@ -1201,7 +1200,9 @@ class _AnimatedProgressBar extends StatelessWidget {
 /// 获取设备局域网 IP 地址（优先 WiFi，其次有线）。
 Future<String?> _getLocalIp() async {
   try {
-    final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4);
+    final interfaces = await NetworkInterface.list(
+      type: InternetAddressType.IPv4,
+    );
     for (final iface in interfaces) {
       // 跳过回环接口。
       if (iface.name == 'lo' || iface.name == 'lo0') continue;
@@ -1245,9 +1246,12 @@ class _ConnectionCard extends StatelessWidget {
               children: [
                 Icon(Icons.link, size: 20, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
-                Text('连接信息',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.primary)),
+                Text(
+                  '连接信息',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -1258,7 +1262,8 @@ class _ConnectionCard extends StatelessWidget {
               builder: (context, snapshot) {
                 final localIp = snapshot.data ?? '…';
                 return _infoRow(
-                  context, theme,
+                  context,
+                  theme,
                   icon: Icons.lan_outlined,
                   label: '内网地址',
                   value: '$localIp:${upnpPort ?? 25565}',
@@ -1295,7 +1300,8 @@ class _ConnectionCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: _infoRow(
-                  context, theme,
+                  context,
+                  theme,
                   icon: Icons.public,
                   label: 'UPnP 公网',
                   value: '$upnpIp:$upnpPort',
@@ -1308,7 +1314,8 @@ class _ConnectionCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: _infoRow(
-                  context, theme,
+                  context,
+                  theme,
                   icon: Icons.cloud_outlined,
                   label: 'FRP 公网',
                   value: '${frpConfig.serverAddr}:${frpConfig.remotePort}',
@@ -1322,18 +1329,24 @@ class _ConnectionCard extends StatelessWidget {
   }
 
   /// 信息行：图标 + 标签 + 值，可选复制按钮。
-  Widget _infoRow(BuildContext context, ThemeData theme,
-      {required IconData icon,
-      required String label,
-      required String value,
-      bool canCopy = false}) {
+  Widget _infoRow(
+    BuildContext context,
+    ThemeData theme, {
+    required IconData icon,
+    required String label,
+    required String value,
+    bool canCopy = false,
+  }) {
     return Row(
       children: [
         Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
         const SizedBox(width: 8),
-        Text(label,
-            style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant)),
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
@@ -1351,8 +1364,11 @@ class _ConnectionCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(4),
             child: Padding(
               padding: const EdgeInsets.all(4),
-              child: Icon(Icons.copy, size: 16,
-                  color: theme.colorScheme.onSurfaceVariant),
+              child: Icon(
+                Icons.copy,
+                size: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
       ],
@@ -1360,11 +1376,13 @@ class _ConnectionCard extends StatelessWidget {
   }
 
   /// 状态芯片：显示映射功能的启用状态。
-  Widget _statusChip(ThemeData theme,
-      {required IconData icon,
-      required String label,
-      required bool active,
-      required bool success}) {
+  Widget _statusChip(
+    ThemeData theme, {
+    required IconData icon,
+    required String label,
+    required bool active,
+    required bool success,
+  }) {
     final Color color;
     final String statusText;
     if (!active) {
@@ -1388,8 +1406,10 @@ class _ConnectionCard extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: color),
           const SizedBox(width: 4),
-          Text('$label $statusText',
-              style: theme.textTheme.labelSmall?.copyWith(color: color)),
+          Text(
+            '$label $statusText',
+            style: theme.textTheme.labelSmall?.copyWith(color: color),
+          ),
         ],
       ),
     );
@@ -1414,10 +1434,7 @@ class _ConnectionCard extends StatelessWidget {
 ///
 /// 提供导出日志（通过系统分享）和上传日志（在线服务启用时）功能。
 class _CrashDialog extends StatefulWidget {
-  const _CrashDialog({
-    required this.crash,
-    required this.onlineService,
-  });
+  const _CrashDialog({required this.crash, required this.onlineService});
 
   final CrashData crash;
   final OnlineService onlineService;
@@ -1493,15 +1510,14 @@ class _CrashDialogState extends State<_CrashDialog> {
       final file = File(p.join(dir.path, 'edgecube_crash_$ts.log'));
       await file.writeAsString(_buildFullLog());
       if (!mounted) return;
-      await SharePlus.instance.share(ShareParams(
-        files: [XFile(file.path)],
-        text: 'EdgeCube 服务端崩溃日志',
-      ));
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)], text: 'EdgeCube 服务端崩溃日志'),
+      );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败：$e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('导出失败：$e')));
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -1559,13 +1575,12 @@ class _CrashDialogState extends State<_CrashDialog> {
             '您可以导出日志用于排查，'
             '${onlineEnabled ? '或上传日志帮助我们改进。' : '或启用在线服务以上传日志帮助我们改进。'}',
           ),
-          if (_uploadResult != null) ...[            const SizedBox(height: 8),
+          if (_uploadResult != null) ...[
+            const SizedBox(height: 8),
             Text(
               _uploadResult!,
               style: TextStyle(
-                color: _uploadOk
-                    ? Colors.green
-                    : theme.colorScheme.error,
+                color: _uploadOk ? Colors.green : theme.colorScheme.error,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1581,7 +1596,8 @@ class _CrashDialogState extends State<_CrashDialog> {
           onPressed: _exporting ? null : _exportLog,
           icon: _exporting
               ? const SizedBox(
-                  width: 16, height: 16,
+                  width: 16,
+                  height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.download),
@@ -1592,7 +1608,8 @@ class _CrashDialogState extends State<_CrashDialog> {
             onPressed: _uploading ? null : _uploadLog,
             icon: _uploading
                 ? const SizedBox(
-                    width: 16, height: 16,
+                    width: 16,
+                    height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.cloud_upload),

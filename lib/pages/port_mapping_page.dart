@@ -1,16 +1,15 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/network_store.dart';
 import '../server/server_scope.dart';
 import '../tunnel/tunnel_service.dart';
 
 /// 网络映射页：UPnP 自动端口映射 + FRP 隧道，均随服务器自动启停。
 ///
-/// 所有配置持久化到 SharedPreferences。
+/// 所有配置持久化到 config/network.json。
 class PortMappingPage extends StatefulWidget {
   const PortMappingPage({super.key});
 
@@ -19,8 +18,6 @@ class PortMappingPage extends StatefulWidget {
 }
 
 class _PortMappingPageState extends State<PortMappingPage> {
-  static const _frpcPrefsKey = 'frpc_config';
-
   final _tunnel = TunnelService();
 
   // —— UPnP / FRP 开关状态 ——
@@ -52,7 +49,13 @@ class _PortMappingPageState extends State<PortMappingPage> {
   void dispose() {
     _sub?.cancel();
     _logScroll.dispose();
-    for (final c in [_serverAddr, _serverPort, _token, _proxyName, _remotePort]) {
+    for (final c in [
+      _serverAddr,
+      _serverPort,
+      _token,
+      _proxyName,
+      _remotePort,
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -61,29 +64,22 @@ class _PortMappingPageState extends State<PortMappingPage> {
   // —— 加载 ——
 
   Future<void> _loadAll() async {
-    final prefs = await SharedPreferences.getInstance();
+    final upnp = await NetworkStore.loadUpnpEnabled();
+    final tunnel = await NetworkStore.loadTunnelEnabled();
+    final frpc = await NetworkStore.loadFrpc();
     if (!mounted) return;
     setState(() {
-      _upnpEnabled = prefs.getBool('upnp_enabled') ?? false;
-      _tunnelEnabled = prefs.getBool('tunnel_enabled') ?? false;
+      _upnpEnabled = upnp;
+      _tunnelEnabled = tunnel;
+      if (frpc != null) {
+        _serverAddr.text = frpc.serverAddr;
+        _serverPort.text = '${frpc.serverPort}';
+        _token.text = frpc.authToken ?? '';
+        _proxyName.text = frpc.proxyName;
+        _proxyType = frpc.proxyType;
+        _remotePort.text = '${frpc.remotePort}';
+      }
     });
-    // 加载 FRP 配置。
-    final raw = prefs.getString(_frpcPrefsKey);
-    if (raw == null) return;
-    try {
-      final m = jsonDecode(raw) as Map<String, dynamic>;
-      if (!mounted) return;
-      setState(() {
-        _serverAddr.text = m['serverAddr'] as String? ?? '';
-        _serverPort.text = '${m['serverPort'] ?? 7000}';
-        _token.text = m['authToken'] as String? ?? '';
-        _proxyName.text = m['proxyName'] as String? ?? 'minecraft';
-        _proxyType = m['proxyType'] as String? ?? 'tcp';
-        _remotePort.text = '${m['remotePort'] ?? 25565}';
-      });
-    } catch (_) {
-      // 损坏的配置忽略。
-    }
   }
 
   // —— 保存 + 即时生效 ——
@@ -96,7 +92,9 @@ class _PortMappingPageState extends State<PortMappingPage> {
       serverAddr: _serverAddr.text.trim(),
       serverPort: port(_serverPort, 7000),
       authToken: _token.text.trim().isEmpty ? null : _token.text.trim(),
-      proxyName: _proxyName.text.trim().isEmpty ? 'minecraft' : _proxyName.text.trim(),
+      proxyName: _proxyName.text.trim().isEmpty
+          ? 'minecraft'
+          : _proxyName.text.trim(),
       proxyType: _proxyType,
       localPort: 25565,
       remotePort: port(_remotePort, 25565),
@@ -104,8 +102,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
   }
 
   Future<void> _setUpnp(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('upnp_enabled', value);
+    await NetworkStore.saveUpnpEnabled(value);
     if (!mounted) return;
     setState(() => _upnpEnabled = value);
     final server = ServerScope.of(context);
@@ -117,8 +114,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
   }
 
   Future<void> _setTunnel(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('tunnel_enabled', value);
+    await NetworkStore.saveTunnelEnabled(value);
     if (!mounted) return;
     setState(() => _tunnelEnabled = value);
     final server = ServerScope.of(context);
@@ -130,10 +126,9 @@ class _PortMappingPageState extends State<PortMappingPage> {
   }
 
   Future<void> _saveFrpcConfig() async {
-    // 持久化到 SharedPreferences。
+    // 持久化到 config/network.json。
     final config = _buildFrpcConfig();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_frpcPrefsKey, jsonEncode(config.toJsonMap()));
+    await NetworkStore.saveFrpc(config);
     if (!mounted) return;
     // 若隧道正在运行，即时重启以应用新配置。
     final server = ServerScope.of(context);
@@ -177,9 +172,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('网络映射'),
-      ),
+      appBar: AppBar(title: const Text('网络映射')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -210,12 +203,18 @@ class _PortMappingPageState extends State<PortMappingPage> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Row(
                 children: [
-                  Icon(Icons.router_outlined, size: 20,
-                      color: theme.colorScheme.primary),
+                  Icon(
+                    Icons.router_outlined,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
                   const SizedBox(width: 8),
-                  Text('路由器端口映射',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                          color: theme.colorScheme.primary)),
+                  Text(
+                    '路由器端口映射',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -253,24 +252,27 @@ class _PortMappingPageState extends State<PortMappingPage> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Row(
                 children: [
-                  Icon(Icons.cloud_outlined, size: 20,
-                      color: theme.colorScheme.primary),
+                  Icon(
+                    Icons.cloud_outlined,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text('FRP 隧道',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                            color: theme.colorScheme.primary)),
+                    child: Text(
+                      'FRP 隧道',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
                   ),
-                  if (statusText != null)
-                    _statusChip(theme, statusText),
+                  if (statusText != null) _statusChip(theme, statusText),
                 ],
               ),
             ),
             SwitchListTile(
               title: const Text('启用 FRP 隧道'),
-              subtitle: const Text(
-                '通过 frps 服务器将本地服务映射到公网\n服务器启动时自动连接，停止时自动断开',
-              ),
+              subtitle: const Text('通过 frps 服务器将本地服务映射到公网\n服务器启动时自动连接，停止时自动断开'),
               value: _tunnelEnabled,
               onChanged: _setTunnel,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -279,9 +281,12 @@ class _PortMappingPageState extends State<PortMappingPage> {
               const Divider(indent: 16, endIndent: 16),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text('frps 服务器',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.primary)),
+                child: Text(
+                  'frps 服务器',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
               ),
               _px(_field(_serverAddr, '服务器地址', hint: '例如 frp.example.com')),
               const SizedBox(height: 8),
@@ -298,9 +303,12 @@ class _PortMappingPageState extends State<PortMappingPage> {
               const SizedBox(height: 12),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text('代理',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.primary)),
+                child: Text(
+                  '代理',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -324,8 +332,11 @@ class _PortMappingPageState extends State<PortMappingPage> {
                     padding: const EdgeInsets.all(12),
                     child: Row(
                       children: [
-                        Icon(Icons.info_outline, size: 18,
-                            color: theme.colorScheme.primary),
+                        Icon(
+                          Icons.info_outline,
+                          size: 18,
+                          color: theme.colorScheme.primary,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -367,8 +378,10 @@ class _PortMappingPageState extends State<PortMappingPage> {
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(text,
-          style: theme.textTheme.labelSmall?.copyWith(color: color)),
+      child: Text(
+        text,
+        style: theme.textTheme.labelSmall?.copyWith(color: color),
+      ),
     );
   }
 
@@ -382,9 +395,12 @@ class _PortMappingPageState extends State<PortMappingPage> {
           padding: const EdgeInsets.only(bottom: 8),
           child: Row(
             children: [
-              Text('隧道日志',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                      color: theme.colorScheme.primary)),
+              Text(
+                '隧道日志',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.cleaning_services_outlined, size: 18),
@@ -406,9 +422,12 @@ class _PortMappingPageState extends State<PortMappingPage> {
           padding: const EdgeInsets.all(8),
           child: _logs.isEmpty
               ? Center(
-                  child: Text('暂无日志',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant)),
+                  child: Text(
+                    '暂无日志',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 )
               : ListView.builder(
                   controller: _logScroll,
@@ -416,7 +435,10 @@ class _PortMappingPageState extends State<PortMappingPage> {
                   itemBuilder: (_, i) => Text(
                     _logs[i],
                     style: const TextStyle(
-                        fontFamily: 'monospace', fontSize: 11, height: 1.3),
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      height: 1.3,
+                    ),
                   ),
                 ),
         ),
@@ -424,8 +446,10 @@ class _PortMappingPageState extends State<PortMappingPage> {
     );
   }
 
-  Widget _px(Widget child) =>
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: child);
+  Widget _px(Widget child) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: child,
+  );
 
   Widget _field(
     TextEditingController c,
@@ -436,8 +460,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
     return TextField(
       controller: c,
       keyboardType: number ? TextInputType.number : TextInputType.text,
-      inputFormatters:
-          number ? [FilteringTextInputFormatter.digitsOnly] : null,
+      inputFormatters: number ? [FilteringTextInputFormatter.digitsOnly] : null,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
