@@ -9,3 +9,9 @@
 
 # junrar 使用 slf4j，其静态绑定实现可能被裁剪（已显式依赖 slf4j-jdk14）。
 -dontwarn org.slf4j.impl.StaticLoggerBinder
+
+# Apache FTPServer 及其依赖 mina-core 使用反射与 slf4j，保留实现类。
+-dontwarn org.apache.ftpserver.**
+-dontwarn org.apache.mina.**
+-keep class org.apache.ftpserver.** { *; }
+-keep class org.apache.mina.** { *; }

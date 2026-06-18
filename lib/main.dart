@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'config/config_migration.dart';
 import 'config/network_store.dart';
 import 'config/version_store.dart';
+import 'ftp/ftp_controller.dart';
+import 'ftp/ftp_scope.dart';
 import 'home_shell.dart';
 import 'instance/instance_controller.dart';
 import 'instance/instance_scope.dart';
@@ -37,6 +39,12 @@ Future<void> main() async {
   // FRP 隧道开关：读取 config/network.json 中的持久化配置。
   serverController.tunnelEnabledResolver = NetworkStore.loadTunnelEnabled;
   final systemMonitorController = SystemMonitorController();
+  final ftpController = FtpController();
+  await ftpController.init();
+  await _syncFtpRootDir(instanceController, ftpController);
+  instanceController.addListener(() {
+    _syncFtpRootDir(instanceController, ftpController);
+  });
   runApp(
     EdgeCubeApp(
       initialThemeMode: initialThemeMode,
@@ -46,8 +54,24 @@ Future<void> main() async {
       serverController: serverController,
       systemMonitorController: systemMonitorController,
       onlineService: onlineService,
+      ftpController: ftpController,
     ),
   );
+}
+
+/// 将当前选中实例的工作目录同步为 FTP 根目录。
+/// 实例切换后调用，FTP 正在运行时会自动重启以应用新根目录。
+Future<void> _syncFtpRootDir(
+  InstanceController instances,
+  FtpController ftp,
+) async {
+  final selected = instances.selected;
+  if (selected == null) {
+    await ftp.setRootDir(null);
+    return;
+  }
+  final dir = await instances.directoryFor(selected);
+  await ftp.setRootDir(dir.path);
 }
 
 class EdgeCubeApp extends StatefulWidget {
@@ -60,6 +84,7 @@ class EdgeCubeApp extends StatefulWidget {
     required this.serverController,
     required this.systemMonitorController,
     required this.onlineService,
+    required this.ftpController,
   });
 
   final ThemeMode initialThemeMode;
@@ -69,6 +94,7 @@ class EdgeCubeApp extends StatefulWidget {
   final ServerController serverController;
   final SystemMonitorController systemMonitorController;
   final OnlineService onlineService;
+  final FtpController ftpController;
 
   @override
   State<EdgeCubeApp> createState() => _EdgeCubeAppState();
@@ -108,36 +134,39 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
       setUseDynamicColor: _setUseDynamicColor,
       child: InstanceScope(
         controller: widget.instanceController,
-        child: ServerScope(
-          controller: widget.serverController,
-          child: SystemMonitorScope(
-            controller: widget.systemMonitorController,
-            child: DynamicColorBuilder(
-              builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
-                // 当用户开启「跟随系统主题色」且设备支持动态色时使用系统取色。
-                final useDynamic = _useDynamicColor && lightDynamic != null;
-                final lightScheme = useDynamic
-                    ? lightDynamic
-                    : ColorScheme.fromSeed(seedColor: _seedColor);
-                final darkScheme = useDynamic
-                    ? (darkDynamic ??
-                          ColorScheme.fromSeed(
-                            seedColor: _seedColor,
-                            brightness: Brightness.dark,
-                          ))
-                    : ColorScheme.fromSeed(
-                        seedColor: _seedColor,
-                        brightness: Brightness.dark,
-                      );
+        child: FtpScope(
+          controller: widget.ftpController,
+          child: ServerScope(
+            controller: widget.serverController,
+            child: SystemMonitorScope(
+              controller: widget.systemMonitorController,
+              child: DynamicColorBuilder(
+                builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
+                  // 当用户开启「跟随系统主题色」且设备支持动态色时使用系统取色。
+                  final useDynamic = _useDynamicColor && lightDynamic != null;
+                  final lightScheme = useDynamic
+                      ? lightDynamic
+                      : ColorScheme.fromSeed(seedColor: _seedColor);
+                  final darkScheme = useDynamic
+                      ? (darkDynamic ??
+                            ColorScheme.fromSeed(
+                              seedColor: _seedColor,
+                              brightness: Brightness.dark,
+                            ))
+                      : ColorScheme.fromSeed(
+                          seedColor: _seedColor,
+                          brightness: Brightness.dark,
+                        );
 
-                return MaterialApp(
-                  title: 'EdgeCube',
-                  theme: ThemeData(colorScheme: lightScheme),
-                  darkTheme: ThemeData(colorScheme: darkScheme),
-                  themeMode: _themeMode,
-                  home: HomeShell(onlineService: widget.onlineService),
-                );
-              },
+                  return MaterialApp(
+                    title: 'EdgeCube',
+                    theme: ThemeData(colorScheme: lightScheme),
+                    darkTheme: ThemeData(colorScheme: darkScheme),
+                    themeMode: _themeMode,
+                    home: HomeShell(onlineService: widget.onlineService),
+                  );
+                },
+              ),
             ),
           ),
         ),

@@ -62,6 +62,18 @@ android {
         jniLibs {
             useLegacyPackaging = true
         }
+        // Apache 库（ftpserver/mina/ftplet 等）的 JAR 内含同名元数据文件，
+        // 合并时冲突，排除这些不运行时不需要的文件。
+        resources {
+            excludes += setOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/*.kotlin_module",
+            )
+        }
     }
 }
 
@@ -87,5 +99,7 @@ dependencies {
     implementation("org.slf4j:slf4j-api:1.7.36")
     implementation("org.slf4j:slf4j-jdk14:1.7.36")
     implementation("com.github.junrar:junrar:7.5.5")
+    // FTP 服务器（ftpserver-core 依赖 mina-core 与 slf4j，slf4j 已引入）。
+    implementation("org.apache.ftpserver:ftpserver-core:1.2.0")
     implementation("androidx.core:core-ktx:1.13.1")
 }

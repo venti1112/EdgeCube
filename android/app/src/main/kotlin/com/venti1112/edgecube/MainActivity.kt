@@ -250,6 +250,39 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // FTP 文件管理通道：对外开放指定根目录的 FTP 访问。
+        MethodChannel(messenger, "com.venti1112.edgecube/ftp").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> {
+                    val rootDir = call.argument<String>("rootDir")
+                    val port = call.argument<Int>("port")
+                    val username = call.argument<String>("username") ?: ""
+                    val password = call.argument<String>("password") ?: ""
+                    val writable = call.argument<Boolean>("writable") ?: true
+                    if (rootDir == null || port == null) {
+                        result.error("BAD_ARGS", "缺少 rootDir/port", null)
+                    } else {
+                        try {
+                            com.venti1112.edgecube.ftp.FtpServerManager.start(
+                                rootDir, port, username, password, writable,
+                            )
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("FTP_START_FAILED", e.message, null)
+                        }
+                    }
+                }
+                "stop" -> {
+                    com.venti1112.edgecube.ftp.FtpServerManager.stop()
+                    result.success(null)
+                }
+                "isRunning" -> {
+                    result.success(com.venti1112.edgecube.ftp.FtpServerManager.isRunning)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         EventChannel(messenger, serverEventChannel).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
