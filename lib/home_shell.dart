@@ -3,11 +3,13 @@ import 'package:flutter/services.dart';
 
 import 'files/file_browser.dart';
 import 'online/online_service.dart';
+import 'online/update_service.dart';
 import 'pages/console_page.dart';
 import 'pages/files_page.dart';
 import 'pages/manage_page.dart';
 import 'pages/server_page.dart';
 import 'pages/settings_page.dart';
+import 'widgets/update_dialog.dart';
 
 /// 应用主壳：底部导航栏 + 页面切换。
 class HomeShell extends StatefulWidget {
@@ -35,6 +37,22 @@ class _HomeShellState extends State<HomeShell> {
     super.initState();
     // 首次启动弹窗：询问是否启用在线服务。
     WidgetsBinding.instance.addPostFrameCallback((_) => _showFirstLaunchDialog());
+    // 启动时后台检查更新；检查失败静默忽略，仅在检查成功且有更新时提示。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkUpdatesInBackground());
+  }
+
+  /// 后台检查更新。失败不提示；有更新则弹出更新对话框。
+  Future<void> _checkUpdatesInBackground() async {
+    final info = await UpdateService.checkForUpdates();
+    if (info == null) return; // 检查失败，静默处理。
+    if (!mounted) return;
+    final hasUpdate = await UpdateService.hasUpdate(info);
+    if (!mounted || !hasUpdate) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => UpdateDialog(info: info),
+    );
   }
 
   Future<void> _showFirstLaunchDialog() async {

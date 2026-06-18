@@ -283,6 +283,26 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // APK 安装通道：触发系统安装界面安装下载好的更新包。
+        MethodChannel(messenger, "com.venti1112.edgecube/update").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "installApk" -> {
+                    val apkPath = call.argument<String>("apkPath")
+                    if (apkPath == null) {
+                        result.error("BAD_ARGS", "缺少 apkPath", null)
+                    } else {
+                        try {
+                            com.venti1112.edgecube.update.ApkInstaller.install(applicationContext, apkPath)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("INSTALL_FAILED", e.message, null)
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         EventChannel(messenger, serverEventChannel).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {

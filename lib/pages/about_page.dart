@@ -3,6 +3,9 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../online/update_service.dart';
+import '../widgets/update_dialog.dart';
+
 /// 「关于」页面：展示应用版本、简介、开源许可等信息。
 class AboutPage extends StatefulWidget {
   const AboutPage({super.key});
@@ -14,6 +17,7 @@ class AboutPage extends StatefulWidget {
 class _AboutPageState extends State<AboutPage> {
   String _version = '';
   String _buildNumber = '';
+  bool _checking = false;
 
   @override
   void initState() {
@@ -28,6 +32,42 @@ class _AboutPageState extends State<AboutPage> {
       _version = info.version;
       _buildNumber = info.buildNumber;
     });
+  }
+
+  /// 手动检查更新。检查失败时提示出错；无更新时提示已是最新。
+  Future<void> _checkUpdates() async {
+    if (_checking) return;
+    setState(() => _checking = true);
+    try {
+      final info = await UpdateService.checkForUpdates();
+      if (info == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('检查更新失败，请稍后重试')),
+        );
+        return;
+      }
+      final hasUpdate = await UpdateService.hasUpdate(info);
+      if (!mounted) return;
+      if (hasUpdate) {
+        _showUpdateDialog(info);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前已是最新版本')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  /// 展示更新提示对话框，用户确认后下载并安装。
+  void _showUpdateDialog(UpdateInfo info) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => UpdateDialog(info: info),
+    );
   }
 
   @override
@@ -76,6 +116,23 @@ class _AboutPageState extends State<AboutPage> {
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // ── 检查更新 ──
+          Center(
+            child: OutlinedButton.icon(
+              onPressed: _checking ? null : _checkUpdates,
+              icon: _checking
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.system_update, size: 18),
+              label: Text(_checking ? '检查中…' : '检查更新'),
             ),
           ),
 
