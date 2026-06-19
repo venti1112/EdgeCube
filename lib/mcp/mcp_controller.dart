@@ -6,6 +6,7 @@ import '../config/mcp_store.dart';
 import '../instance/instance_controller.dart';
 import '../server/server_controller.dart';
 import '../server/system_monitor_controller.dart';
+import '../shell/shell_service.dart';
 import 'mcp_service.dart';
 import 'mcp_tools.dart';
 
@@ -29,6 +30,12 @@ class McpController extends ChangeNotifier {
   final InstanceController instanceController;
   final SystemMonitorController systemMonitorController;
   final McpService _service;
+
+  /// 一次性 shell 命令执行（供 MCP shell 工具），与交互终端互不影响。
+  final ShellService _shell = ShellService();
+
+  /// MCP shell 工具的会话状态（持久 cwd），供 shell_cd/run_shell 跨调用共享。
+  final McpShellSession _shellSession = McpShellSession();
 
   McpConfig _config = const McpConfig();
   bool _running = false;
@@ -102,7 +109,10 @@ class McpController extends ChangeNotifier {
           server: serverController,
           instances: instanceController,
           monitor: systemMonitorController,
+          shell: _shell,
+          shellSession: _shellSession,
           allowControl: _config.allowControl,
+          allowShell: _config.allowShell,
         ),
       );
       _running = true;

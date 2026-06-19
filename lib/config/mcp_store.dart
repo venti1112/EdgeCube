@@ -11,29 +11,34 @@ import 'config_store.dart';
 ///   为空表示不鉴权（不推荐）；
 /// - [allowControl]：是否允许控制类操作（启动/停止服务端、发送命令、切换实例）。
 ///   关闭后仅暴露只读工具。
+/// - [allowShell]：是否允许 Shell 命令执行工具（高风险：AI 可执行任意命令）。默认关闭。
 class McpConfig {
   const McpConfig({
     this.enabled = false,
     this.port = 8765,
     this.token = '',
     this.allowControl = true,
+    this.allowShell = false,
   });
 
   final bool enabled;
   final int port;
   final String token;
   final bool allowControl;
+  final bool allowShell;
 
   McpConfig copyWith({
     bool? enabled,
     int? port,
     String? token,
     bool? allowControl,
+    bool? allowShell,
   }) => McpConfig(
     enabled: enabled ?? this.enabled,
     port: port ?? this.port,
     token: token ?? this.token,
     allowControl: allowControl ?? this.allowControl,
+    allowShell: allowShell ?? this.allowShell,
   );
 
   Map<String, dynamic> toJson() => {
@@ -41,6 +46,7 @@ class McpConfig {
     'port': port,
     'token': token,
     'allowControl': allowControl,
+    'allowShell': allowShell,
   };
 
   factory McpConfig.fromJson(Map<String, dynamic> json) => McpConfig(
@@ -48,6 +54,7 @@ class McpConfig {
     port: (json['port'] as int?) ?? 8765,
     token: json['token'] as String? ?? '',
     allowControl: json['allowControl'] as bool? ?? true,
+    allowShell: json['allowShell'] as bool? ?? false,
   );
 }
 

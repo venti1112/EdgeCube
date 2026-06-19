@@ -25,6 +25,7 @@ class _McpPageState extends State<McpPage> {
 
   final _port = TextEditingController(text: '8765');
   bool _allowControl = true;
+  bool _allowShell = false;
 
   @override
   void initState() {
@@ -46,6 +47,7 @@ class _McpPageState extends State<McpPage> {
       _localIp = ip;
       _port.text = '${mcp.config.port}';
       _allowControl = mcp.config.allowControl;
+      _allowShell = mcp.config.allowShell;
     });
   }
 
@@ -72,6 +74,7 @@ class _McpPageState extends State<McpPage> {
     return current.copyWith(
       port: int.tryParse(_port.text.trim()) ?? 8765,
       allowControl: _allowControl,
+      allowShell: _allowShell,
     );
   }
 
@@ -302,6 +305,15 @@ class _McpPageState extends State<McpPage> {
               subtitle: const Text('关闭后 AI 仅能读取数据，不能启停服务端、发送命令或切换实例'),
               value: _allowControl,
               onChanged: (v) => setState(() => _allowControl = v),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            SwitchListTile(
+              title: const Text('允许 Shell 命令执行（高风险）'),
+              subtitle: const Text(
+                '开启后 AI 可在设备上执行任意 shell 命令（run_shell/shell_cd）',
+              ),
+              value: _allowShell,
+              onChanged: (v) => setState(() => _allowShell = v),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
             Padding(

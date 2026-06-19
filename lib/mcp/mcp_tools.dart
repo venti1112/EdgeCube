@@ -9,15 +9,21 @@ import '../instance/instance_controller.dart';
 import '../server/server_controller.dart';
 import '../server/system_monitor_controller.dart';
 import '../server/system_monitor_service.dart';
+import '../shell/shell_service.dart';
 
 /// MCP 服务器版本（仅作为协议元数据展示）。
 const String _kMcpServerVersion = '1.0.0';
 
+/// MCP shell 工具的会话状态：持久的当前工作目录，供 shell_cd / run_shell 跨调用共享。
+class McpShellSession {
+  String? cwd;
+}
+
 /// 构造一个注册好全部工具的 [McpServer]，供 [StreamableMcpServer] 按会话创建。
 ///
 /// 读取类工具始终注册；控制类工具（启动/停止服务端、发送命令、切换实例）仅在
-/// [allowControl] 为 true 时注册——这样控制开关关闭时，AI 端 `tools/list` 直接
-/// 看不到这些工具，最直观安全。
+/// [allowControl] 为 true 时注册；Shell 命令执行工具仅在 [allowShell] 为 true 时注册
+/// （高风险，独立开关）——开关关闭时 AI 端 `tools/list` 直接看不到这些工具，最直观安全。
 ///
 /// 所有工具回调运行在主 isolate，调用控制器（其内部经 MethodChannel 与原生通信）
 /// 是安全的。
@@ -25,7 +31,10 @@ McpServer buildMcpServer({
   required ServerController server,
   required InstanceController instances,
   required SystemMonitorController monitor,
+  required ShellService shell,
+  required McpShellSession shellSession,
   required bool allowControl,
+  required bool allowShell,
 }) {
   final mcp = McpServer(
     const Implementation(name: 'edgecube', version: _kMcpServerVersion),
@@ -39,6 +48,9 @@ McpServer buildMcpServer({
   );
   if (allowControl) {
     _registerControlTools(mcp, server: server, instances: instances);
+  }
+  if (allowShell) {
+    _registerShellTools(mcp, shell: shell, session: shellSession);
   }
 
   return mcp;
@@ -296,6 +308,100 @@ void _registerControlTools(
       }
       await instances.select(id);
       return _ok({'selected': id, 'name': instances.selected?.name});
+    },
+  );
+}
+
+// ——————————————————————————————————————————————————————————
+// Shell 命令执行工具（仅当 allowShell 时注册，高风险：任意命令执行）
+// ——————————————————————————————————————————————————————————
+
+void _registerShellTools(
+  McpServer mcp, {
+  required ShellService shell,
+  required McpShellSession session,
+}) {
+  mcp.registerTool(
+    'run_shell',
+    description:
+        '在设备上执行一条 shell 命令（<shell> -c），返回退出码与合并的 stdout/stderr。'
+        '缺省在会话当前目录执行（见 shell_cd/shell_pwd），也可用 cwd 参数覆盖。'
+        '注意：单纯的 cd 不跨调用持久，切换目录请用 shell_cd，或在命令内用 "cd x && ..."。',
+    inputSchema: JsonSchema.object(
+      properties: {
+        'command': JsonSchema.string(description: '要执行的 shell 命令。'),
+        'cwd': JsonSchema.string(description: '可选：本次执行的工作目录（绝对路径）。'),
+      },
+      required: ['command'],
+    ),
+    annotations: const ToolAnnotations(openWorldHint: false),
+    callback: (args, extra) async {
+      final command = (args['command'] as String?)?.trim() ?? '';
+      if (command.isEmpty) return _err('command 不能为空');
+      final cwdArg = (args['cwd'] as String?)?.trim();
+      final res = await shell.runCommand(
+        command,
+        cwd: (cwdArg != null && cwdArg.isNotEmpty) ? cwdArg : session.cwd,
+      );
+      return _ok({
+        'exitCode': res['exitCode'],
+        'output': res['output'],
+        'cwd': res['cwd'],
+        'shell': res['shell'],
+      });
+    },
+  );
+
+  mcp.registerTool(
+    'shell_cd',
+    description: '切换 MCP shell 会话的当前工作目录（持久，影响后续 run_shell）。支持相对路径。',
+    inputSchema: JsonSchema.object(
+      properties: {'path': JsonSchema.string(description: '目标目录（绝对或相对当前目录）。')},
+      required: ['path'],
+    ),
+    annotations: const ToolAnnotations(openWorldHint: false),
+    callback: (args, extra) async {
+      final path = (args['path'] as String?)?.trim() ?? '';
+      if (path.isEmpty) return _err('path 不能为空');
+      // 用 `cd && pwd` 校验目录可进入并解析为绝对路径。
+      final res = await shell.runCommand('cd "$path" && pwd', cwd: session.cwd);
+      final code = res['exitCode'] as int? ?? -1;
+      final out = (res['output'] as String? ?? '').trim();
+      if (code != 0 || out.isEmpty) return _err('无法进入目录：$path');
+      session.cwd = out;
+      return _ok({'cwd': session.cwd});
+    },
+  );
+
+  mcp.registerTool(
+    'shell_pwd',
+    description: '返回 MCP shell 会话的当前工作目录。',
+    annotations: const ToolAnnotations(
+      readOnlyHint: true,
+      openWorldHint: false,
+    ),
+    callback: (args, extra) async {
+      if (session.cwd != null) return _ok({'cwd': session.cwd});
+      final res = await shell.runCommand('pwd', cwd: null);
+      final out = (res['output'] as String? ?? '').trim();
+      if (out.isNotEmpty) session.cwd = out;
+      return _ok({'cwd': session.cwd ?? out});
+    },
+  );
+
+  mcp.registerTool(
+    'which_shell',
+    description: '返回当前可用的 shell 列表（按优先级，第一个为生效的）。',
+    annotations: const ToolAnnotations(
+      readOnlyHint: true,
+      openWorldHint: false,
+    ),
+    callback: (args, extra) async {
+      final shells = await shell.availableShells();
+      return _ok({
+        'available': shells,
+        'active': shells.isNotEmpty ? shells.first : null,
+      });
     },
   );
 }

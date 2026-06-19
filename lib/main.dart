@@ -16,6 +16,8 @@ import 'server/server_controller.dart';
 import 'server/server_scope.dart';
 import 'server/system_monitor_controller.dart';
 import 'server/system_monitor_scope.dart';
+import 'shell/shell_controller.dart';
+import 'shell/shell_scope.dart';
 import 'theme/theme_scope.dart';
 import 'theme/theme_store.dart';
 
@@ -55,6 +57,9 @@ Future<void> main() async {
     systemMonitorController: systemMonitorController,
   );
   await mcpController.init();
+  // 交互式 shell 终端：进程在原生侧为单例，控制器只负责终端 I/O 与状态同步。
+  final shellController = ShellController();
+  await shellController.init();
   runApp(
     EdgeCubeApp(
       initialThemeMode: initialThemeMode,
@@ -66,6 +71,7 @@ Future<void> main() async {
       onlineService: onlineService,
       ftpController: ftpController,
       mcpController: mcpController,
+      shellController: shellController,
     ),
   );
 }
@@ -97,6 +103,7 @@ class EdgeCubeApp extends StatefulWidget {
     required this.onlineService,
     required this.ftpController,
     required this.mcpController,
+    required this.shellController,
   });
 
   final ThemeMode initialThemeMode;
@@ -108,6 +115,7 @@ class EdgeCubeApp extends StatefulWidget {
   final OnlineService onlineService;
   final FtpController ftpController;
   final McpController mcpController;
+  final ShellController shellController;
 
   @override
   State<EdgeCubeApp> createState() => _EdgeCubeAppState();
@@ -155,34 +163,39 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
               controller: widget.systemMonitorController,
               child: McpScope(
                 controller: widget.mcpController,
-                child: DynamicColorBuilder(
-                  builder:
-                      (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
-                        // 当用户开启「跟随系统主题色」且设备支持动态色时使用系统取色。
-                        final useDynamic =
-                            _useDynamicColor && lightDynamic != null;
-                        final lightScheme = useDynamic
-                            ? lightDynamic
-                            : ColorScheme.fromSeed(seedColor: _seedColor);
-                        final darkScheme = useDynamic
-                            ? (darkDynamic ??
-                                  ColorScheme.fromSeed(
-                                    seedColor: _seedColor,
-                                    brightness: Brightness.dark,
-                                  ))
-                            : ColorScheme.fromSeed(
-                                seedColor: _seedColor,
-                                brightness: Brightness.dark,
-                              );
+                child: ShellScope(
+                  controller: widget.shellController,
+                  child: DynamicColorBuilder(
+                    builder:
+                        (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
+                          // 当用户开启「跟随系统主题色」且设备支持动态色时使用系统取色。
+                          final useDynamic =
+                              _useDynamicColor && lightDynamic != null;
+                          final lightScheme = useDynamic
+                              ? lightDynamic
+                              : ColorScheme.fromSeed(seedColor: _seedColor);
+                          final darkScheme = useDynamic
+                              ? (darkDynamic ??
+                                    ColorScheme.fromSeed(
+                                      seedColor: _seedColor,
+                                      brightness: Brightness.dark,
+                                    ))
+                              : ColorScheme.fromSeed(
+                                  seedColor: _seedColor,
+                                  brightness: Brightness.dark,
+                                );
 
-                        return MaterialApp(
-                          title: 'EdgeCube',
-                          theme: ThemeData(colorScheme: lightScheme),
-                          darkTheme: ThemeData(colorScheme: darkScheme),
-                          themeMode: _themeMode,
-                          home: HomeShell(onlineService: widget.onlineService),
-                        );
-                      },
+                          return MaterialApp(
+                            title: 'EdgeCube',
+                            theme: ThemeData(colorScheme: lightScheme),
+                            darkTheme: ThemeData(colorScheme: darkScheme),
+                            themeMode: _themeMode,
+                            home: HomeShell(
+                              onlineService: widget.onlineService,
+                            ),
+                          );
+                        },
+                  ),
                 ),
               ),
             ),

@@ -18,6 +18,9 @@ import com.venti1112.edgecube.server.JreLayout
 import com.venti1112.edgecube.server.RuntimeInstaller
 import com.venti1112.edgecube.server.ServerProcessManager
 import com.venti1112.edgecube.server.TunnelProcessManager
+import com.venti1112.edgecube.shell.ShellCommandRunner
+import com.venti1112.edgecube.shell.ShellProcessManager
+import com.venti1112.edgecube.shell.ShellResolver
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -44,6 +47,8 @@ class MainActivity : FlutterActivity() {
     private val tunnelChannel = "com.venti1112.edgecube/tunnel"
     private val tunnelEventChannel = "com.venti1112.edgecube/tunnel_events"
     private val forgeEventChannel = "com.venti1112.edgecube/forge_events"
+    private val shellChannel = "com.venti1112.edgecube/shell"
+    private val shellEventChannel = "com.venti1112.edgecube/shell_events"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,6 +67,7 @@ class MainActivity : FlutterActivity() {
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         val serverManager = ServerProcessManager.getInstance(applicationContext)
         val tunnelManager = TunnelProcessManager.getInstance(applicationContext)
+        val shellManager = ShellProcessManager.getInstance(applicationContext)
 
         MethodChannel(messenger, storageChannel).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -332,6 +338,99 @@ class MainActivity : FlutterActivity() {
 
                 override fun onCancel(arguments: Any?) {
                     serverManager.setEventSink(null)
+                }
+            },
+        )
+
+        // Shell 终端通道：交互式 PTY shell（writeInput/resize 等）与一次性命令执行（runCommand）。
+        MethodChannel(messenger, shellChannel).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "availableShells" -> {
+                    val nativeDir = applicationContext.applicationInfo.nativeLibraryDir
+                    result.success(ShellResolver.availableLabels(nativeDir))
+                }
+
+                "isRunning" -> result.success(shellManager.isRunning)
+
+                "start" -> {
+                    try {
+                        shellManager.start(call.argument<String>("cwd"))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SHELL_START_FAILED", e.message, null)
+                    }
+                }
+
+                "writeInput" -> {
+                    val bytes = call.argument<ByteArray>("bytes")
+                    if (bytes != null) shellManager.writeInput(bytes)
+                    result.success(null)
+                }
+
+                "sendCommand" -> {
+                    shellManager.sendCommand(call.argument<String>("line") ?: "")
+                    result.success(null)
+                }
+
+                "resize" -> {
+                    val cols = call.argument<Int>("cols") ?: 0
+                    val rows = call.argument<Int>("rows") ?: 0
+                    val cellWidth = call.argument<Int>("cellWidth") ?: 0
+                    val cellHeight = call.argument<Int>("cellHeight") ?: 0
+                    shellManager.resize(rows, cols, cellWidth, cellHeight)
+                    result.success(null)
+                }
+
+                "setEcho" -> {
+                    shellManager.setEcho(call.argument<Boolean>("echo") ?: true)
+                    result.success(null)
+                }
+
+                "stop" -> {
+                    shellManager.stop()
+                    result.success(null)
+                }
+
+                "forceStop" -> {
+                    shellManager.forceStop()
+                    result.success(null)
+                }
+
+                "clearLog" -> {
+                    shellManager.clearLog()
+                    result.success(null)
+                }
+
+                "runCommand" -> {
+                    val command = call.argument<String>("command")
+                    if (command == null) {
+                        result.error("BAD_ARGS", "缺少 command", null)
+                    } else {
+                        val cwd = call.argument<String>("cwd")
+                        // 命令可能阻塞，放后台线程；完成后回主线程返回结果。
+                        thread {
+                            try {
+                                val res = ShellCommandRunner.runOnce(applicationContext, command, cwd)
+                                runOnUiThread { result.success(res) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("RUN_FAILED", e.message, null) }
+                            }
+                        }
+                    }
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+
+        EventChannel(messenger, shellEventChannel).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    shellManager.setEventSink(events)
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    shellManager.setEventSink(null)
                 }
             },
         )
