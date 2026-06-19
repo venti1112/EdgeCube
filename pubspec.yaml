@@ -50,6 +50,7 @@ dependencies:
   share_plus: ^13.1.0
   android_cn_oaid: ^0.0.2
   xterm: ^4.0.0
+  mcp_dart: ^2.2.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

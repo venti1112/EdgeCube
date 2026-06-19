@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'players_page.dart';
 import 'port_mapping_page.dart';
 import 'ftp_page.dart';
+import 'mcp_page.dart';
 import 'server_properties_page.dart';
 
 /// 「管理」入口页：以卡片选择进入各管理子页面（玩家管理 / 端口映射），
@@ -22,9 +23,9 @@ class ManagePage extends StatelessWidget {
               icon: Icons.people_outline,
               title: '玩家管理',
               subtitle: '在线玩家、白名单、封禁与 OP',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PlayersPage()),
-              ),
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const PlayersPage())),
             ),
             const SizedBox(height: 12),
             _ManageEntryTile(
@@ -49,9 +50,18 @@ class ManagePage extends StatelessWidget {
               icon: Icons.folder_shared_outlined,
               title: 'FTP 文件管理',
               subtitle: '通过 FTP 对外开放实例目录访问',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const FtpPage()),
-              ),
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const FtpPage())),
+            ),
+            const SizedBox(height: 12),
+            _ManageEntryTile(
+              icon: Icons.hub_outlined,
+              title: 'MCP 服务',
+              subtitle: '供 AI Agent 获取数据与操作服务',
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const McpPage())),
             ),
           ],
         ),

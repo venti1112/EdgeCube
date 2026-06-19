@@ -288,6 +288,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.13.0"
+  mcp_dart:
+    dependency: "direct main"
+    description:
+      name: mcp_dart
+      sha256: "5fda27b4c775fc25601facf76902bf13bd832f1f67dce854c87b16b173f079d0"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.2.1"
   meta:
     dependency: transitive
     description:
