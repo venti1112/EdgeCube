@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config/network_store.dart';
+import '../files/text_editor_page.dart';
 import '../server/server_scope.dart';
 import '../tunnel/tunnel_service.dart';
 
@@ -23,6 +24,9 @@ class _PortMappingPageState extends State<PortMappingPage> {
   // —— UPnP / FRP 开关状态 ——
   bool _upnpEnabled = false;
   bool _tunnelEnabled = false;
+
+  // —— 自定义配置文件模式 ——
+  bool _useCustomFrpc = false;
 
   // —— FRP 表单控制器 ——
   final _serverAddr = TextEditingController();
@@ -67,10 +71,12 @@ class _PortMappingPageState extends State<PortMappingPage> {
     final upnp = await NetworkStore.loadUpnpEnabled();
     final tunnel = await NetworkStore.loadTunnelEnabled();
     final frpc = await NetworkStore.loadFrpc();
+    final useCustom = await NetworkStore.loadUseCustomFrpc();
     if (!mounted) return;
     setState(() {
       _upnpEnabled = upnp;
       _tunnelEnabled = tunnel;
+      _useCustomFrpc = useCustom;
       if (frpc != null) {
         _serverAddr.text = frpc.serverAddr;
         _serverPort.text = '${frpc.serverPort}';
@@ -139,6 +145,47 @@ class _PortMappingPageState extends State<PortMappingPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('已保存'), duration: Duration(seconds: 2)),
     );
+  }
+
+  // —— 自定义配置文件模式 ——
+
+  /// 切换「使用自定义配置文件」开关。开启时若隧道运行中会重启以应用。
+  Future<void> _setUseCustomFrpc(bool value) async {
+    if (value) {
+      // 开启时确保自定义文件存在，以当前表单配置生成初始内容。
+      await NetworkStore.ensureCustomFrpcFile(_buildFrpcConfig());
+    }
+    await NetworkStore.saveUseCustomFrpc(value);
+    if (!mounted) return;
+    setState(() => _useCustomFrpc = value);
+    final server = ServerScope.of(context);
+    if (server.isRunning) {
+      await server.restartTunnel();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(value ? '已切换为自定义配置并重启隧道' : '已切换为表单配置并重启隧道'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  /// 打开内置文本编辑器直接编辑 `config/frpc.toml`。返回后若隧道运行中则重启。
+  Future<void> _editCustomFrpcFile() async {
+    // 确保文件存在（首次以当前表单配置生成）。
+    final file = await NetworkStore.ensureCustomFrpcFile(_buildFrpcConfig());
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TextEditorPage(path: file.path, name: 'frpc.toml'),
+      ),
+    );
+    if (!mounted) return;
+    // 编辑返回后，若处于自定义模式且隧道运行中，重启以应用最新内容。
+    if (_useCustomFrpc && ServerScope.of(context).isRunning) {
+      await ServerScope.of(context).restartTunnel();
+    }
   }
 
   // —— 隧道状态订阅 ——
@@ -278,6 +325,35 @@ class _PortMappingPageState extends State<PortMappingPage> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
             if (_tunnelEnabled) ...[
+              if (_useCustomFrpc)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Card(
+                    color: theme.colorScheme.tertiaryContainer,
+                    margin: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.warning_amber_outlined,
+                            size: 18,
+                            color: theme.colorScheme.onTertiaryContainer,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '已启用自定义配置文件，下方表单配置将被忽略',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onTertiaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               const Divider(indent: 16, endIndent: 16),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -355,12 +431,62 @@ class _PortMappingPageState extends State<PortMappingPage> {
                 child: SizedBox(
                   width: double.infinity,
                   child: FilledButton.tonalIcon(
-                    onPressed: _saveFrpcConfig,
+                    onPressed: _useCustomFrpc ? null : _saveFrpcConfig,
                     icon: const Icon(Icons.save, size: 18),
                     label: const Text('保存配置'),
                   ),
                 ),
               ),
+              const SizedBox(height: 8),
+              const Divider(indent: 16, endIndent: 16),
+              SwitchListTile(
+                title: const Text('使用自定义配置文件'),
+                subtitle: const Text('启用后以上方表单将被忽略，直接使用下方编辑的 frpc.toml'),
+                value: _useCustomFrpc,
+                onChanged: _setUseCustomFrpc,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              if (_useCustomFrpc) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Card(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    margin: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 18,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '自定义模式下本地端口不会被自动注入，请自行在配置文件中填写正确的 localPort。',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                      onPressed: _editCustomFrpcFile,
+                      icon: const Icon(Icons.edit_note, size: 18),
+                      label: const Text('直接编辑配置文件'),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ],
         ),

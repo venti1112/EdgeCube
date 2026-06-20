@@ -311,6 +311,58 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // SSH 服务通道：同一 SSH 服务器同时提供 SFTP 文件访问与 SSH 终端，与 FTP 独立。
+        MethodChannel(messenger, "com.venti1112.edgecube/ssh").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> {
+                    val rootDir = call.argument<String>("rootDir")
+                    val port = call.argument<Int>("port")
+                    val username = call.argument<String>("username") ?: ""
+                    val password = call.argument<String>("password") ?: ""
+                    val writable = call.argument<Boolean>("writable") ?: true
+                    val sftpEnabled = call.argument<Boolean>("sftpEnabled") ?: true
+                    val shellEnabled = call.argument<Boolean>("shellEnabled") ?: true
+                    val ipv6 = call.argument<Boolean>("ipv6") ?: false
+                    if (rootDir == null || port == null) {
+                        result.error("BAD_ARGS", "缺少 rootDir/port", null)
+                    } else {
+                        // 首次启动需生成 RSA 主机密钥（数百 ms），放后台线程；完成后回主线程返回。
+                        thread {
+                            try {
+                                com.venti1112.edgecube.ssh.SshServerManager.start(
+                                    applicationContext, rootDir, port, username, password,
+                                    writable, sftpEnabled, shellEnabled, ipv6,
+                                )
+                                runOnUiThread { result.success(true) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("SSH_START_FAILED", e.message, null) }
+                            }
+                        }
+                    }
+                }
+                "stop" -> {
+                    com.venti1112.edgecube.ssh.SshServerManager.stop()
+                    result.success(null)
+                }
+                "isRunning" -> {
+                    result.success(com.venti1112.edgecube.ssh.SshServerManager.isRunning)
+                }
+                "hostKeyFingerprint" -> {
+                    // 首次可能需生成主机密钥（数百 ms），放后台线程；完成后回主线程返回。
+                    thread {
+                        try {
+                            val fp = com.venti1112.edgecube.ssh.SshServerManager
+                                .hostKeyFingerprint(applicationContext)
+                            runOnUiThread { result.success(fp) }
+                        } catch (e: Exception) {
+                            runOnUiThread { result.error("SSH_FP_FAILED", e.message, null) }
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         // APK 安装通道：触发系统安装界面安装下载好的更新包。
         MethodChannel(messenger, "com.venti1112.edgecube/update").setMethodCallHandler { call, result ->
             when (call.method) {

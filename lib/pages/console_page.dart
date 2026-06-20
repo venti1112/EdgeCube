@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:xterm/xterm.dart';
 
+import '../config/terminal_store.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
+import '../widgets/terminal_zoom.dart';
 
 /// 控制台终端页：直接交互的伪终端（PTY + xterm）+ Termux 式扩展按键栏。
 ///
@@ -11,8 +13,35 @@ import '../server/server_scope.dart';
 /// 送达服务端，支持 Tab 补全、命令历史、JLine 控制台与彩色输出。底部两排扩展按键
 /// 补齐手机软键盘缺失的 ESC / CTRL / ALT / TAB / 方向键等。终端对象由全局
 /// [ServerController] 持有，因此切实例 / 切页 / 页面重建时内容都不丢失。
-class ConsolePage extends StatelessWidget {
+class ConsolePage extends StatefulWidget {
   const ConsolePage({super.key});
+
+  @override
+  State<ConsolePage> createState() => _ConsolePageState();
+}
+
+class _ConsolePageState extends State<ConsolePage> {
+  /// 终端字号（控制台独立记忆，持久化于 config/terminal.json）。
+  double _fontSize = kDefaultTerminalFontSize;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFontSize();
+  }
+
+  Future<void> _loadFontSize() async {
+    final size = await TerminalStore.loadConsoleFontSize();
+    if (!mounted) return;
+    setState(() => _fontSize = size);
+  }
+
+  void _setFontSize(double size) {
+    if (size == _fontSize) return;
+    setState(() => _fontSize = size);
+  }
+
+  void _saveFontSize() => TerminalStore.saveConsoleFontSize(_fontSize);
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +66,13 @@ class ConsolePage extends StatelessWidget {
           ],
         ),
         actions: [
+          TerminalZoomButton(
+            fontSize: _fontSize,
+            onChanged: (size) {
+              _setFontSize(size);
+              _saveFontSize();
+            },
+          ),
           IconButton(
             icon: Icon(
               server.lineMode ? Icons.edit : Icons.keyboard,
@@ -71,13 +107,11 @@ class ConsolePage extends StatelessWidget {
         child: Column(
           children: [
             Expanded(
-              child: TerminalView(
-                server.terminal,
-                theme: TerminalThemes.defaultTheme,
-                textStyle: const TerminalStyle(fontSize: 13),
-                padding: const EdgeInsets.all(8),
-                // 不自动抢焦点（页面在 IndexedStack 中常驻）；点击终端再唤起键盘。
-                autofocus: false,
+              child: ZoomableTerminal(
+                terminal: server.terminal,
+                fontSize: _fontSize,
+                onFontSizeChanged: _setFontSize,
+                onFontSizeChangeEnd: _saveFontSize,
               ),
             ),
             _ExtraKeysBar(server),

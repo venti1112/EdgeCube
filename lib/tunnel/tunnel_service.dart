@@ -58,6 +58,20 @@ class TunnelService {
     return file.path;
   }
 
+  /// 将原始 TOML 文本写入应用私有目录的 frpc.toml，返回绝对路径。
+  ///
+  /// 供「直接编辑配置文件」使用：用户编辑的自定义内容不经 [FrpcConfig] 结构化
+  /// 校验，原样写入并交由 frpc 解析。
+  Future<String> writeRawConfig(
+    String toml, {
+    String fileName = 'frpc.toml',
+  }) async {
+    final dir = await getApplicationSupportDirectory();
+    final file = File(p.join(dir.path, fileName));
+    await file.writeAsString(toml, flush: true);
+    return file.path;
+  }
+
   /// 便捷方法：写入配置后立即启动。
   Future<void> startWithConfig(
     FrpcConfig config, {

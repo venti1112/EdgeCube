@@ -15,3 +15,15 @@
 -dontwarn org.apache.mina.**
 -keep class org.apache.ftpserver.** { *; }
 -keep class org.apache.mina.** { *; }
+
+# Apache MINA SSHD（SSH/SFTP 服务器）与 BouncyCastle 大量使用反射、ServiceLoader
+# 与安全 provider 注册，R8 minify 时会误删；全量保留并忽略可选依赖告警。
+# 注意：上面的 org.apache.mina.** 是 FTPServer 的 mina-core，并不覆盖 org.apache.sshd。
+-keep class org.apache.sshd.** { *; }
+-dontwarn org.apache.sshd.**
+-keep class org.bouncycastle.** { *; }
+-dontwarn org.bouncycastle.**
+# SSHD 通过 ServiceLoader 发现安全 provider 注册器与 IO 工厂，保留其实现类。
+-keep class * implements org.apache.sshd.common.util.security.SecurityProviderRegistrar { *; }
+-keep class * implements org.apache.sshd.common.io.IoServiceFactoryFactory { *; }
+-dontwarn java.nio.file.**

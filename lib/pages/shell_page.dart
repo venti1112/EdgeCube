@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 
+import '../config/terminal_store.dart';
 import '../shell/shell_controller.dart';
 import '../shell/shell_scope.dart';
+import '../widgets/terminal_zoom.dart';
 
 /// Shell 终端页：在设备上运行一个交互式 shell（系统 sh 或自带 busybox/bash）。
 ///
@@ -17,9 +19,13 @@ class ShellPage extends StatefulWidget {
 }
 
 class _ShellPageState extends State<ShellPage> {
+  /// 终端字号（Shell 独立记忆，持久化于 config/terminal.json）。
+  double _fontSize = kDefaultTerminalFontSize;
+
   @override
   void initState() {
     super.initState();
+    _loadFontSize();
     // 打开页面时若未运行则自动启动一个 shell（在 build 之后访问 InheritedWidget）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -27,6 +33,19 @@ class _ShellPageState extends State<ShellPage> {
       if (!shell.isRunning) shell.start();
     });
   }
+
+  Future<void> _loadFontSize() async {
+    final size = await TerminalStore.loadShellFontSize();
+    if (!mounted) return;
+    setState(() => _fontSize = size);
+  }
+
+  void _setFontSize(double size) {
+    if (size == _fontSize) return;
+    setState(() => _fontSize = size);
+  }
+
+  void _saveFontSize() => TerminalStore.saveShellFontSize(_fontSize);
 
   @override
   Widget build(BuildContext context) {
@@ -53,6 +72,13 @@ class _ShellPageState extends State<ShellPage> {
           ],
         ),
         actions: [
+          TerminalZoomButton(
+            fontSize: _fontSize,
+            onChanged: (size) {
+              _setFontSize(size);
+              _saveFontSize();
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.restart_alt),
             tooltip: '重启 shell',
@@ -71,12 +97,11 @@ class _ShellPageState extends State<ShellPage> {
         child: Column(
           children: [
             Expanded(
-              child: TerminalView(
-                shell.terminal,
-                theme: TerminalThemes.defaultTheme,
-                textStyle: const TerminalStyle(fontSize: 13),
-                padding: const EdgeInsets.all(8),
-                autofocus: false,
+              child: ZoomableTerminal(
+                terminal: shell.terminal,
+                fontSize: _fontSize,
+                onFontSizeChanged: _setFontSize,
+                onFontSizeChangeEnd: _saveFontSize,
               ),
             ),
             _ExtraKeysBar(shell),

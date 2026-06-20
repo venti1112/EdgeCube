@@ -18,6 +18,8 @@ import 'server/system_monitor_controller.dart';
 import 'server/system_monitor_scope.dart';
 import 'shell/shell_controller.dart';
 import 'shell/shell_scope.dart';
+import 'ssh/ssh_controller.dart';
+import 'ssh/ssh_scope.dart';
 import 'theme/theme_scope.dart';
 import 'theme/theme_store.dart';
 
@@ -60,6 +62,13 @@ Future<void> main() async {
   // 交互式 shell 终端：进程在原生侧为单例，控制器只负责终端 I/O 与状态同步。
   final shellController = ShellController();
   await shellController.init();
+  // SSH 服务：同一服务器提供 SFTP 文件访问与 SSH 终端，根目录跟随当前实例目录。
+  final sshController = SshController();
+  await sshController.init();
+  await _syncSshRootDir(instanceController, sshController);
+  instanceController.addListener(() {
+    _syncSshRootDir(instanceController, sshController);
+  });
   runApp(
     EdgeCubeApp(
       initialThemeMode: initialThemeMode,
@@ -72,6 +81,7 @@ Future<void> main() async {
       ftpController: ftpController,
       mcpController: mcpController,
       shellController: shellController,
+      sshController: sshController,
     ),
   );
 }
@@ -91,6 +101,21 @@ Future<void> _syncFtpRootDir(
   await ftp.setRootDir(dir.path);
 }
 
+/// 将当前选中实例的工作目录同步为 SSH 服务根目录。
+/// 实例切换后调用，SSH 服务正在运行时会自动重启以应用新根目录。
+Future<void> _syncSshRootDir(
+  InstanceController instances,
+  SshController ssh,
+) async {
+  final selected = instances.selected;
+  if (selected == null) {
+    await ssh.setRootDir(null);
+    return;
+  }
+  final dir = await instances.directoryFor(selected);
+  await ssh.setRootDir(dir.path);
+}
+
 class EdgeCubeApp extends StatefulWidget {
   const EdgeCubeApp({
     super.key,
@@ -104,6 +129,7 @@ class EdgeCubeApp extends StatefulWidget {
     required this.ftpController,
     required this.mcpController,
     required this.shellController,
+    required this.sshController,
   });
 
   final ThemeMode initialThemeMode;
@@ -116,6 +142,7 @@ class EdgeCubeApp extends StatefulWidget {
   final FtpController ftpController;
   final McpController mcpController;
   final ShellController shellController;
+  final SshController sshController;
 
   @override
   State<EdgeCubeApp> createState() => _EdgeCubeAppState();
@@ -165,36 +192,42 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                 controller: widget.mcpController,
                 child: ShellScope(
                   controller: widget.shellController,
-                  child: DynamicColorBuilder(
-                    builder:
-                        (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
-                          // 当用户开启「跟随系统主题色」且设备支持动态色时使用系统取色。
-                          final useDynamic =
-                              _useDynamicColor && lightDynamic != null;
-                          final lightScheme = useDynamic
-                              ? lightDynamic
-                              : ColorScheme.fromSeed(seedColor: _seedColor);
-                          final darkScheme = useDynamic
-                              ? (darkDynamic ??
-                                    ColorScheme.fromSeed(
-                                      seedColor: _seedColor,
-                                      brightness: Brightness.dark,
-                                    ))
-                              : ColorScheme.fromSeed(
-                                  seedColor: _seedColor,
-                                  brightness: Brightness.dark,
-                                );
+                  child: SshScope(
+                    controller: widget.sshController,
+                    child: DynamicColorBuilder(
+                      builder:
+                          (
+                            ColorScheme? lightDynamic,
+                            ColorScheme? darkDynamic,
+                          ) {
+                            // 当用户开启「跟随系统主题色」且设备支持动态色时使用系统取色。
+                            final useDynamic =
+                                _useDynamicColor && lightDynamic != null;
+                            final lightScheme = useDynamic
+                                ? lightDynamic
+                                : ColorScheme.fromSeed(seedColor: _seedColor);
+                            final darkScheme = useDynamic
+                                ? (darkDynamic ??
+                                      ColorScheme.fromSeed(
+                                        seedColor: _seedColor,
+                                        brightness: Brightness.dark,
+                                      ))
+                                : ColorScheme.fromSeed(
+                                    seedColor: _seedColor,
+                                    brightness: Brightness.dark,
+                                  );
 
-                          return MaterialApp(
-                            title: 'EdgeCube',
-                            theme: ThemeData(colorScheme: lightScheme),
-                            darkTheme: ThemeData(colorScheme: darkScheme),
-                            themeMode: _themeMode,
-                            home: HomeShell(
-                              onlineService: widget.onlineService,
-                            ),
-                          );
-                        },
+                            return MaterialApp(
+                              title: 'EdgeCube',
+                              theme: ThemeData(colorScheme: lightScheme),
+                              darkTheme: ThemeData(colorScheme: darkScheme),
+                              themeMode: _themeMode,
+                              home: HomeShell(
+                                onlineService: widget.onlineService,
+                              ),
+                            );
+                          },
+                    ),
                   ),
                 ),
               ),

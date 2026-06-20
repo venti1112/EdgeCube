@@ -1,3 +1,7 @@
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+
 import '../tunnel/tunnel_service.dart';
 import 'config_store.dart';
 
@@ -5,6 +9,9 @@ import 'config_store.dart';
 ///
 /// 全部存于 `config/network.json`，取代旧版散落在 SharedPreferences 中的
 /// `upnp_enabled` / `tunnel_enabled` / `frpc_config` 三个键。
+///
+/// 另支持「直接编辑配置文件」：用户可编辑原始 TOML 存于 `config/frpc.toml`，
+/// 启用 [loadUseCustomFrpc] 后隧道将使用该文件覆盖表单生成的配置。
 class NetworkStore {
   NetworkStore._();
 
@@ -12,6 +19,39 @@ class NetworkStore {
   static const String _upnpKey = 'upnpEnabled';
   static const String _tunnelKey = 'tunnelEnabled';
   static const String _frpcKey = 'frpc';
+  static const String _useCustomFrpcKey = 'useCustomFrpc';
+
+  /// 用户可直接编辑的自定义 frpc.toml 文件路径（`config/frpc.toml`）。
+  static Future<File> customFrpcFile() async {
+    final dir = await ConfigStore.configDir();
+    return File(p.join(dir.path, 'frpc.toml'));
+  }
+
+  /// 确保自定义配置文件存在；不存在时以 [base] 生成的 TOML 作为初始内容写入。
+  /// 返回该文件。
+  static Future<File> ensureCustomFrpcFile(FrpcConfig base) async {
+    final file = await customFrpcFile();
+    if (!await file.exists()) {
+      final parent = file.parent;
+      if (!await parent.exists()) {
+        await parent.create(recursive: true);
+      }
+      await file.writeAsString(base.toToml(), flush: true);
+    }
+    return file;
+  }
+
+  /// 是否启用「使用自定义配置文件」模式。
+  static Future<bool> loadUseCustomFrpc() async {
+    final m = await ConfigStore.readConfig(_fileName);
+    return m[_useCustomFrpcKey] as bool? ?? false;
+  }
+
+  static Future<void> saveUseCustomFrpc(bool value) async {
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_useCustomFrpcKey] = value;
+    await ConfigStore.writeConfig(_fileName, m);
+  }
 
   static Future<bool> loadUpnpEnabled() async {
     final m = await ConfigStore.readConfig(_fileName);

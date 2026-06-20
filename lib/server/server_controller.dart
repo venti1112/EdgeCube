@@ -724,6 +724,31 @@ class ServerController extends ChangeNotifier {
 
   Future<void> _doStartTunnel(FrpcConfig? config, String dir) async {
     try {
+      // 优先处理「直接编辑配置文件」模式：使用用户编辑的原始 TOML，
+      // 不再注入 localPort（由用户在配置文件中自行维护）。
+      final useCustom = await NetworkStore.loadUseCustomFrpc();
+      if (config == null && useCustom) {
+        final file = await NetworkStore.customFrpcFile();
+        if (await file.exists()) {
+          final raw = await file.readAsString();
+          if (raw.trim().isEmpty) {
+            _notice('[EdgeCube] 自定义 frpc.toml 为空，跳过启动');
+            _tunnelActive = false;
+            return;
+          }
+          if (_status != ServerStatus.running) {
+            _tunnelActive = false;
+            return;
+          }
+          final path = await _tunnel.writeRawConfig(raw);
+          await _tunnel.start(configPath: path, name: 'frpc');
+          _activeFrpcConfig = null;
+          _notice('[EdgeCube] FRP 隧道已启动（自定义配置）');
+          notifyListeners();
+          return;
+        }
+      }
+
       FrpcConfig finalConfig;
       if (config != null) {
         finalConfig = config;
@@ -810,6 +835,20 @@ class ServerController extends ChangeNotifier {
     await Future.delayed(const Duration(milliseconds: 300));
     if (_status == ServerStatus.running && _workingDir != null) {
       _doStartTunnel(config, _workingDir!);
+    }
+    _restartingTunnel = false;
+  }
+
+  /// 重启 FRP 隧道以应用最新配置（自定义模式读取 `config/frpc.toml`，
+  /// 表单模式读取 `config/network.json`）。用户在运行中编辑自定义配置或切换
+  /// 模式后调用。
+  Future<void> restartTunnel() async {
+    if (!_tunnelActive || _status != ServerStatus.running) return;
+    _restartingTunnel = true;
+    await _tunnel.stop();
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (_status == ServerStatus.running && _workingDir != null) {
+      _doStartTunnel(null, _workingDir!);
     }
     _restartingTunnel = false;
   }

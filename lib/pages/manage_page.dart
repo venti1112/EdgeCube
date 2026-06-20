@@ -6,6 +6,7 @@ import 'ftp_page.dart';
 import 'mcp_page.dart';
 import 'server_properties_page.dart';
 import 'shell_page.dart';
+import 'ssh_page.dart';
 
 /// 「管理」入口页：以卡片选择进入各管理子页面（玩家管理 / 端口映射），
 /// 风格与新建实例向导中的选项卡一致。
@@ -54,6 +55,15 @@ class ManagePage extends StatelessWidget {
               onTap: () => Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const FtpPage())),
+            ),
+            const SizedBox(height: 12),
+            _ManageEntryTile(
+              icon: Icons.dns_outlined,
+              title: 'SSH 服务',
+              subtitle: 'SFTP 文件访问与 SSH 远程终端',
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const SshPage())),
             ),
             const SizedBox(height: 12),
             _ManageEntryTile(
