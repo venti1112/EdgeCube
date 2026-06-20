@@ -1,11 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config/mcp_store.dart';
 import '../mcp/mcp_controller.dart';
 import '../mcp/mcp_scope.dart';
+import '../net/network_address.dart';
 
 /// MCP 服务页：对外开放一个 Streamable HTTP 的 MCP 服务，
 /// 供外部 AI Agent 获取数据（服务器状态、系统资源、在线玩家、控制台日志等）
@@ -22,10 +21,12 @@ class McpPage extends StatefulWidget {
 
 class _McpPageState extends State<McpPage> {
   String? _localIp;
+  String? _localIpv6;
 
   final _port = TextEditingController(text: '8765');
   bool _allowControl = true;
   bool _allowShell = false;
+  bool _ipv6 = false;
 
   @override
   void initState() {
@@ -41,31 +42,19 @@ class _McpPageState extends State<McpPage> {
 
   Future<void> _loadAll() async {
     final mcp = McpScope.of(context);
-    final ip = await _detectLocalIp();
+    final addrs = await Future.wait([
+      NetworkAddress.detectIPv4(),
+      NetworkAddress.detectStableIPv6(),
+    ]);
     if (!mounted) return;
     setState(() {
-      _localIp = ip;
+      _localIp = addrs[0];
+      _localIpv6 = addrs[1];
       _port.text = '${mcp.config.port}';
       _allowControl = mcp.config.allowControl;
       _allowShell = mcp.config.allowShell;
+      _ipv6 = mcp.config.ipv6Enabled;
     });
-  }
-
-  /// 获取本机局域网 IPv4 地址（排除回环）。
-  Future<String?> _detectLocalIp() async {
-    try {
-      final interfaces = await NetworkInterface.list(
-        type: InternetAddressType.IPv4,
-      );
-      for (final iface in interfaces) {
-        for (final addr in iface.addresses) {
-          if (!addr.isLoopback) return addr.address;
-        }
-      }
-    } catch (_) {
-      // 忽略
-    }
-    return null;
   }
 
   /// 从表单构造当前配置（保留 enabled 与 token 不变）。
@@ -75,6 +64,7 @@ class _McpPageState extends State<McpPage> {
       port: int.tryParse(_port.text.trim()) ?? 8765,
       allowControl: _allowControl,
       allowShell: _allowShell,
+      ipv6Enabled: _ipv6,
     );
   }
 
@@ -103,7 +93,10 @@ class _McpPageState extends State<McpPage> {
   Future<void> _saveConfig() async {
     final mcp = McpScope.of(context);
     await mcp.applyConfig(_buildConfig());
+    // 重新检测地址：开启 IPv6 后可即时展示稳定 IPv6 地址。
+    final ipv6 = await NetworkAddress.detectStableIPv6();
     if (!mounted) return;
+    setState(() => _localIpv6 = ipv6);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(mcp.isRunning ? '已保存并重启 MCP 服务' : '已保存'),
@@ -165,9 +158,7 @@ class _McpPageState extends State<McpPage> {
 
   Widget _buildStatusCard(ThemeData theme, McpController mcp) {
     final running = mcp.isRunning;
-    final addr = running && _localIp != null
-        ? 'http://$_localIp:${mcp.config.port}/mcp'
-        : null;
+    final port = mcp.config.port;
     return Card(
       child: Padding(
         padding: const EdgeInsets.only(bottom: 8),
@@ -205,28 +196,12 @@ class _McpPageState extends State<McpPage> {
               onChanged: _toggleMcp,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
-            if (addr != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: SelectableText(
-                        addr,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontFamily: 'monospace',
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.copy, size: 18),
-                      tooltip: '复制地址',
-                      onPressed: () => _copy(addr, '已复制地址'),
-                    ),
-                  ],
-                ),
-              ),
+            if (running) ...[
+              if (_localIp != null)
+                _addrRow(theme, 'http://$_localIp:$port/mcp'),
+              if (mcp.config.ipv6Enabled && _localIpv6 != null)
+                _addrRow(theme, 'http://[$_localIpv6]:$port/mcp'),
+            ],
           ],
         ),
       ),
@@ -316,6 +291,13 @@ class _McpPageState extends State<McpPage> {
               onChanged: (v) => setState(() => _allowShell = v),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
+            SwitchListTile(
+              title: const Text('启用 IPv6 访问'),
+              subtitle: const Text('开启后同时监听 IPv6（双栈），可经稳定 IPv6 地址访问'),
+              value: _ipv6,
+              onChanged: (v) => setState(() => _ipv6 = v),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: SizedBox(
@@ -356,6 +338,8 @@ class _McpPageState extends State<McpPage> {
                 '「Bearer <令牌>」进行鉴权。\n'
                 '「允许控制操作」开启时，AI 可启动/停止服务端、发送控制台命令、切换实例；'
                 '关闭时仅能读取状态、系统资源、在线玩家与日志等信息。\n'
+                '开启 IPv6 后可经稳定的 IPv6 地址直接访问（同一网络内可用，'
+                '外网访问取决于运营商 IPv6 公网可达性）。\n'
                 '保存新配置时，若服务正在运行将自动重启以应用变更。',
                 style: theme.textTheme.bodySmall,
               ),
@@ -372,6 +356,31 @@ class _McpPageState extends State<McpPage> {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(hint), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  /// 单行地址展示（等宽字体 + 复制按钮）。IPv6 地址由调用方用方括号包裹。
+  Widget _addrRow(ThemeData theme, String addr) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: SelectableText(
+              addr,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontFamily: 'monospace',
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy, size: 18),
+            tooltip: '复制地址',
+            onPressed: () => _copy(addr, '已复制地址'),
+          ),
+        ],
+      ),
     );
   }
 

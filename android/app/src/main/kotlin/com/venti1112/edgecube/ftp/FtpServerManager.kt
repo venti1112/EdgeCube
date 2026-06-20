@@ -31,9 +31,10 @@ object FtpServerManager {
      * @param username 登录用户名（空则启用匿名访问）。
      * @param password 登录密码（匿名访问时忽略）。
      * @param writable 是否允许写入（上传/删除/重命名）。
+     * @param ipv6 是否启用 IPv6（双栈）监听；关闭时仅监听 IPv4。
      */
     @Synchronized
-    fun start(rootDir: String, port: Int, username: String, password: String, writable: Boolean) {
+    fun start(rootDir: String, port: Int, username: String, password: String, writable: Boolean, ipv6: Boolean) {
         if (isRunning) throw IllegalStateException("FTP 服务已在运行")
 
         val root = File(rootDir)
@@ -41,9 +42,13 @@ object FtpServerManager {
 
         val serverFactory = FtpServerFactory()
 
-        // 配置监听器（端口）。
+        // 配置监听器（端口与绑定地址）。
+        // serverAddress="::" 绑定 IPv6 通配地址，在 Android（内核 bindv6only=0）上为双栈，
+        // 可同时接受 IPv4 与 IPv6 连接；"0.0.0.0" 则仅监听 IPv4。IPv6 客户端通过 EPSV
+        // 协商被动数据连接（FTPServer 默认支持），无需额外配置。
         val listenerFactory = ListenerFactory()
         listenerFactory.port = port
+        listenerFactory.serverAddress = if (ipv6) "::" else "0.0.0.0"
         serverFactory.addListener("default", listenerFactory.createListener())
 
         // 配置用户：匿名或具名，home 目录限定为 rootDir。

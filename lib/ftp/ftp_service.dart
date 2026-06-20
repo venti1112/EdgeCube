@@ -13,13 +13,14 @@ class FtpService {
   ///
   /// [rootDir] 为 FTP 根目录（通常是当前实例的工作目录）；
   /// [port] 监听端口；[username]/[password] 登录凭据（用户名为空启用匿名）；
-  /// [writable] 是否允许写入。
+  /// [writable] 是否允许写入；[ipv6] 是否启用 IPv6（双栈）监听（关闭时仅 IPv4）。
   static Future<void> start({
     required String rootDir,
     required int port,
     required String username,
     required String password,
     required bool writable,
+    required bool ipv6,
   }) async {
     await _channel.invokeMethod<void>('start', {
       'rootDir': rootDir,
@@ -27,6 +28,7 @@ class FtpService {
       'username': username,
       'password': password,
       'writable': writable,
+      'ipv6': ipv6,
     });
   }
 

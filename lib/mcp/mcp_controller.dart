@@ -105,6 +105,7 @@ class McpController extends ChangeNotifier {
       await _service.start(
         port: _config.port,
         token: _config.token,
+        ipv6: _config.ipv6Enabled,
         serverFactory: (sessionId) => buildMcpServer(
           server: serverController,
           instances: instanceController,

@@ -12,6 +12,7 @@ import 'config_store.dart';
 /// - [allowControl]：是否允许控制类操作（启动/停止服务端、发送命令、切换实例）。
 ///   关闭后仅暴露只读工具。
 /// - [allowShell]：是否允许 Shell 命令执行工具（高风险：AI 可执行任意命令）。默认关闭。
+/// - [ipv6Enabled]：是否启用 IPv6（双栈）监听，独立开关；关闭时仅监听 IPv4。
 class McpConfig {
   const McpConfig({
     this.enabled = false,
@@ -19,6 +20,7 @@ class McpConfig {
     this.token = '',
     this.allowControl = true,
     this.allowShell = false,
+    this.ipv6Enabled = false,
   });
 
   final bool enabled;
@@ -26,6 +28,7 @@ class McpConfig {
   final String token;
   final bool allowControl;
   final bool allowShell;
+  final bool ipv6Enabled;
 
   McpConfig copyWith({
     bool? enabled,
@@ -33,12 +36,14 @@ class McpConfig {
     String? token,
     bool? allowControl,
     bool? allowShell,
+    bool? ipv6Enabled,
   }) => McpConfig(
     enabled: enabled ?? this.enabled,
     port: port ?? this.port,
     token: token ?? this.token,
     allowControl: allowControl ?? this.allowControl,
     allowShell: allowShell ?? this.allowShell,
+    ipv6Enabled: ipv6Enabled ?? this.ipv6Enabled,
   );
 
   Map<String, dynamic> toJson() => {
@@ -47,6 +52,7 @@ class McpConfig {
     'token': token,
     'allowControl': allowControl,
     'allowShell': allowShell,
+    'ipv6Enabled': ipv6Enabled,
   };
 
   factory McpConfig.fromJson(Map<String, dynamic> json) => McpConfig(
@@ -55,6 +61,7 @@ class McpConfig {
     token: json['token'] as String? ?? '',
     allowControl: json['allowControl'] as bool? ?? true,
     allowShell: json['allowShell'] as bool? ?? false,
+    ipv6Enabled: json['ipv6Enabled'] as bool? ?? false,
   );
 }
 

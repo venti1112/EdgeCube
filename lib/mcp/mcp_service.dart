@@ -22,19 +22,21 @@ class McpService {
   /// [port] 监听端口；[token] 访问令牌（为空则不鉴权）；[serverFactory] 为每个
   /// 会话创建一个已注册工具的 [McpServer]。
   ///
-  /// 绑定到 `0.0.0.0` 以便局域网设备可达；关闭 DNS 重绑定保护，因为客户端会以
-  /// 任意局域网 IP 连接（默认开启会因 Host 头不在白名单而返回 403），访问安全
-  /// 由 Bearer Token 保证。
+  /// [ipv6] 为 true 时绑定 IPv6 通配地址 `::`（在 Android 上为双栈，IPv4/IPv6 均可达）；
+  /// 否则绑定 `0.0.0.0`（仅 IPv4）。关闭 DNS 重绑定保护，因为客户端会以任意局域网/
+  /// 公网 IP 连接（默认开启会因 Host 头不在白名单而返回 403），访问安全由 Bearer
+  /// Token 保证。
   Future<void> start({
     required int port,
     required String token,
+    required bool ipv6,
     required McpServer Function(String sessionId) serverFactory,
   }) async {
     if (_running) return;
     final expected = token.isEmpty ? null : 'Bearer $token';
     final server = StreamableMcpServer(
       serverFactory: serverFactory,
-      host: '0.0.0.0',
+      host: ipv6 ? '::' : '0.0.0.0',
       port: port,
       path: '/mcp',
       enableDnsRebindingProtection: false,

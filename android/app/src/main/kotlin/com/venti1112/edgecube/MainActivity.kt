@@ -286,12 +286,13 @@ class MainActivity : FlutterActivity() {
                     val username = call.argument<String>("username") ?: ""
                     val password = call.argument<String>("password") ?: ""
                     val writable = call.argument<Boolean>("writable") ?: true
+                    val ipv6 = call.argument<Boolean>("ipv6") ?: false
                     if (rootDir == null || port == null) {
                         result.error("BAD_ARGS", "缺少 rootDir/port", null)
                     } else {
                         try {
                             com.venti1112.edgecube.ftp.FtpServerManager.start(
-                                rootDir, port, username, password, writable,
+                                rootDir, port, username, password, writable, ipv6,
                             )
                             result.success(true)
                         } catch (e: Exception) {

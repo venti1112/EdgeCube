@@ -7,7 +7,8 @@ import 'config_store.dart';
 /// - [port]：监听端口，默认 2121；
 /// - [username]：登录用户名，空表示匿名访问；
 /// - [password]：登录密码（匿名访问时忽略）；
-/// - [writable]：是否允许写入（上传/删除/重命名）。
+/// - [writable]：是否允许写入（上传/删除/重命名）；
+/// - [ipv6Enabled]：是否启用 IPv6（双栈）监听，独立开关；关闭时仅监听 IPv4。
 class FtpConfig {
   const FtpConfig({
     this.enabled = false,
@@ -15,6 +16,7 @@ class FtpConfig {
     this.username = '',
     this.password = '',
     this.writable = true,
+    this.ipv6Enabled = false,
   });
 
   final bool enabled;
@@ -22,6 +24,7 @@ class FtpConfig {
   final String username;
   final String password;
   final bool writable;
+  final bool ipv6Enabled;
 
   /// 是否为匿名访问（用户名为空）。
   bool get isAnonymous => username.isEmpty;
@@ -32,12 +35,14 @@ class FtpConfig {
     String? username,
     String? password,
     bool? writable,
+    bool? ipv6Enabled,
   }) => FtpConfig(
     enabled: enabled ?? this.enabled,
     port: port ?? this.port,
     username: username ?? this.username,
     password: password ?? this.password,
     writable: writable ?? this.writable,
+    ipv6Enabled: ipv6Enabled ?? this.ipv6Enabled,
   );
 
   Map<String, dynamic> toJson() => {
@@ -46,6 +51,7 @@ class FtpConfig {
     'username': username,
     'password': password,
     'writable': writable,
+    'ipv6Enabled': ipv6Enabled,
   };
 
   factory FtpConfig.fromJson(Map<String, dynamic> json) => FtpConfig(
@@ -54,6 +60,7 @@ class FtpConfig {
     username: json['username'] as String? ?? '',
     password: json['password'] as String? ?? '',
     writable: json['writable'] as bool? ?? true,
+    ipv6Enabled: json['ipv6Enabled'] as bool? ?? false,
   );
 }
 

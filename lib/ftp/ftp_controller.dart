@@ -87,6 +87,7 @@ class FtpController extends ChangeNotifier {
       username: _config.username,
       password: _config.password,
       writable: _config.writable,
+      ipv6: _config.ipv6Enabled,
     );
     _running = true;
   }
