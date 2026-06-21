@@ -18,8 +18,8 @@ class SshConfig {
     this.username = '',
     this.password = '',
     this.writable = true,
-    this.sftpEnabled = true,
-    this.shellEnabled = true,
+    this.sftpEnabled = false,
+    this.shellEnabled = false,
     this.ipv6Enabled = false,
   });
 
