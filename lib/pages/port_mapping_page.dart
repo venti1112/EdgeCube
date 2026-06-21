@@ -372,7 +372,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
                   children: [
                     Expanded(child: _field(_serverPort, '端口', number: true)),
                     const SizedBox(width: 12),
-                    Expanded(child: _field(_token, 'Token（可选）')),
+                    Expanded(child: _field(_token, 'Token（可选）', obscure: true)),
                   ],
                 ),
               ),
@@ -582,9 +582,11 @@ class _PortMappingPageState extends State<PortMappingPage> {
     String label, {
     String? hint,
     bool number = false,
+    bool obscure = false,
   }) {
     return TextField(
       controller: c,
+      obscureText: obscure,
       keyboardType: number ? TextInputType.number : TextInputType.text,
       inputFormatters: number ? [FilteringTextInputFormatter.digitsOnly] : null,
       decoration: InputDecoration(

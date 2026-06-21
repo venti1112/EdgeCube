@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'precipitation_effect_mode.dart';
+
 /// 向子树暴露当前主题模式、种子色与修改入口。
 ///
 /// 设置页通过 [ThemeScope.of] 读取 [themeMode] / [seedColor] / [useDynamicColor]
@@ -15,6 +17,8 @@ class ThemeScope extends InheritedWidget {
     required this.setUseDynamicColor,
     required this.snowfallEnabled,
     required this.setSnowfallEnabled,
+    required this.precipitationMode,
+    required this.setPrecipitationMode,
     required super.child,
   });
 
@@ -30,6 +34,9 @@ class ThemeScope extends InheritedWidget {
   final bool snowfallEnabled;
   final ValueChanged<bool> setSnowfallEnabled;
 
+  final PrecipitationEffectMode precipitationMode;
+  final ValueChanged<PrecipitationEffectMode> setPrecipitationMode;
+
   static ThemeScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<ThemeScope>();
     assert(scope != null, 'ThemeScope 未在 widget 树中找到');
@@ -41,5 +48,6 @@ class ThemeScope extends InheritedWidget {
       themeMode != oldWidget.themeMode ||
       seedColor != oldWidget.seedColor ||
       useDynamicColor != oldWidget.useDynamicColor ||
-      snowfallEnabled != oldWidget.snowfallEnabled;
+      snowfallEnabled != oldWidget.snowfallEnabled ||
+      precipitationMode != oldWidget.precipitationMode;
 }

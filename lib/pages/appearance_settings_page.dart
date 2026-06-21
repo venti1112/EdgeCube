@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../theme/precipitation_effect_mode.dart';
 import '../theme/theme_scope.dart';
 
 /// 外观设置子页面：主题模式、种子色、跟随系统主题色。
@@ -96,11 +97,38 @@ class AppearanceSettingsPage extends StatelessWidget {
 
           _sectionHeader(theme, '界面效果'),
           SwitchListTile(
-            title: const Text('雪花飘落效果'),
-            subtitle: const Text('开启后在整个 App 界面显示雪花飘落'),
+            title: const Text('飘落效果'),
+            subtitle: const Text('开启后在整个 App 界面显示所选效果'),
             secondary: const Icon(Icons.ac_unit),
             value: themeScope.snowfallEnabled,
             onChanged: (v) => themeScope.setSnowfallEnabled(v),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: SegmentedButton<PrecipitationEffectMode>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                  value: PrecipitationEffectMode.snow,
+                  icon: Icon(Icons.ac_unit),
+                  label: Text('雪花'),
+                ),
+                ButtonSegment(
+                  value: PrecipitationEffectMode.rain,
+                  icon: Icon(Icons.water_drop_outlined),
+                  label: Text('雨点'),
+                ),
+                ButtonSegment(
+                  value: PrecipitationEffectMode.hail,
+                  icon: Icon(Icons.circle_outlined),
+                  label: Text('冰雹'),
+                ),
+              ],
+              selected: {themeScope.precipitationMode},
+              onSelectionChanged: (selected) {
+                themeScope.setPrecipitationMode(selected.first);
+              },
+            ),
           ),
         ],
       ),

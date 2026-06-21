@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../config/config_store.dart';
+import 'precipitation_effect_mode.dart';
 
 /// 主题配置的本地持久化读写，存于 `config/theme.json`。
 class ThemeStore {
@@ -9,6 +10,7 @@ class ThemeStore {
   static const String _seedColorKey = 'seedColor';
   static const String _useDynamicColorKey = 'useDynamicColor';
   static const String _snowfallEnabledKey = 'snowfallEnabled';
+  static const String _precipitationModeKey = 'precipitationMode';
 
   /// 默认种子色。
   static const Color defaultSeedColor = Colors.green;
@@ -68,6 +70,22 @@ class ThemeStore {
   static Future<void> saveSnowfallEnabled(bool value) async {
     final m = await ConfigStore.readConfig(_fileName);
     m[_snowfallEnabledKey] = value;
+    await ConfigStore.writeConfig(_fileName, m);
+  }
+
+  static Future<PrecipitationEffectMode> loadPrecipitationMode() async {
+    final m = await ConfigStore.readConfig(_fileName);
+    return PrecipitationEffectMode.values.firstWhere(
+      (mode) => mode.name == m[_precipitationModeKey],
+      orElse: () => PrecipitationEffectMode.snow,
+    );
+  }
+
+  static Future<void> savePrecipitationMode(
+    PrecipitationEffectMode mode,
+  ) async {
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_precipitationModeKey] = mode.name;
     await ConfigStore.writeConfig(_fileName, m);
   }
 }
