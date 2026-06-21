@@ -67,8 +67,8 @@ class SshConfig {
     username: json['username'] as String? ?? '',
     password: json['password'] as String? ?? '',
     writable: json['writable'] as bool? ?? true,
-    sftpEnabled: json['sftpEnabled'] as bool? ?? true,
-    shellEnabled: json['shellEnabled'] as bool? ?? true,
+    sftpEnabled: json['sftpEnabled'] as bool? ?? false,
+    shellEnabled: json['shellEnabled'] as bool? ?? false,
     ipv6Enabled: json['ipv6Enabled'] as bool? ?? false,
   );
 }
