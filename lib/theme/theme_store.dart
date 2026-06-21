@@ -8,6 +8,7 @@ class ThemeStore {
   static const String _modeKey = 'mode';
   static const String _seedColorKey = 'seedColor';
   static const String _useDynamicColorKey = 'useDynamicColor';
+  static const String _snowfallEnabledKey = 'snowfallEnabled';
 
   /// 默认种子色。
   static const Color defaultSeedColor = Colors.green;
@@ -56,6 +57,17 @@ class ThemeStore {
   static Future<void> saveUseDynamicColor(bool value) async {
     final m = await ConfigStore.readConfig(_fileName);
     m[_useDynamicColorKey] = value;
+    await ConfigStore.writeConfig(_fileName, m);
+  }
+
+  static Future<bool> loadSnowfallEnabled() async {
+    final m = await ConfigStore.readConfig(_fileName);
+    return m[_snowfallEnabledKey] as bool? ?? false;
+  }
+
+  static Future<void> saveSnowfallEnabled(bool value) async {
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_snowfallEnabledKey] = value;
     await ConfigStore.writeConfig(_fileName, m);
   }
 }

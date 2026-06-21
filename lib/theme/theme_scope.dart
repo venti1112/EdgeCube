@@ -13,6 +13,8 @@ class ThemeScope extends InheritedWidget {
     required this.setSeedColor,
     required this.useDynamicColor,
     required this.setUseDynamicColor,
+    required this.snowfallEnabled,
+    required this.setSnowfallEnabled,
     required super.child,
   });
 
@@ -25,6 +27,9 @@ class ThemeScope extends InheritedWidget {
   final bool useDynamicColor;
   final ValueChanged<bool> setUseDynamicColor;
 
+  final bool snowfallEnabled;
+  final ValueChanged<bool> setSnowfallEnabled;
+
   static ThemeScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<ThemeScope>();
     assert(scope != null, 'ThemeScope 未在 widget 树中找到');
@@ -35,5 +40,6 @@ class ThemeScope extends InheritedWidget {
   bool updateShouldNotify(ThemeScope oldWidget) =>
       themeMode != oldWidget.themeMode ||
       seedColor != oldWidget.seedColor ||
-      useDynamicColor != oldWidget.useDynamicColor;
+      useDynamicColor != oldWidget.useDynamicColor ||
+      snowfallEnabled != oldWidget.snowfallEnabled;
 }

@@ -91,6 +91,17 @@ class AppearanceSettingsPage extends StatelessWidget {
                 ? null
                 : () => _showSeedColorPicker(context, themeScope),
           ),
+
+          const Divider(),
+
+          _sectionHeader(theme, '界面效果'),
+          SwitchListTile(
+            title: const Text('雪花飘落效果'),
+            subtitle: const Text('开启后在整个 App 界面显示雪花飘落'),
+            secondary: const Icon(Icons.ac_unit),
+            value: themeScope.snowfallEnabled,
+            onChanged: (v) => themeScope.setSnowfallEnabled(v),
+          ),
         ],
       ),
     );
@@ -196,7 +207,8 @@ class _SeedColorPickerDialogState extends State<_SeedColorPickerDialog>
                       final isSelected =
                           _pickedColor.toARGB32() == option.color.toARGB32();
                       return GestureDetector(
-                        onTap: () => setState(() => _pickedColor = option.color),
+                        onTap: () =>
+                            setState(() => _pickedColor = option.color),
                         child: Tooltip(
                           message: option.label,
                           child: AnimatedContainer(
@@ -210,14 +222,20 @@ class _SeedColorPickerDialogState extends State<_SeedColorPickerDialog>
                               boxShadow: isSelected
                                   ? [
                                       BoxShadow(
-                                        color: option.color.withValues(alpha: 0.6),
+                                        color: option.color.withValues(
+                                          alpha: 0.6,
+                                        ),
                                         blurRadius: 8,
-                                      )
+                                      ),
                                     ]
                                   : null,
                             ),
                             child: isSelected
-                                ? const Icon(Icons.check, color: Colors.white, size: 22)
+                                ? const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                    size: 22,
+                                  )
                                 : null,
                           ),
                         ),
@@ -248,9 +266,7 @@ class _SeedColorPickerDialogState extends State<_SeedColorPickerDialog>
                       colorCodeHasColor: true,
                       showRecentColors: false,
                       enableTonalPalette: false,
-                      pickerTypeLabels: const {
-                        ColorPickerType.wheel: '色轮',
-                      },
+                      pickerTypeLabels: const {ColorPickerType.wheel: '色轮'},
                       pickersEnabled: const <ColorPickerType, bool>{
                         ColorPickerType.both: false,
                         ColorPickerType.primary: false,

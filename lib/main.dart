@@ -22,6 +22,7 @@ import 'ssh/ssh_controller.dart';
 import 'ssh/ssh_scope.dart';
 import 'theme/theme_scope.dart';
 import 'theme/theme_store.dart';
+import 'widgets/snowfall_overlay.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +34,7 @@ Future<void> main() async {
   final initialThemeMode = await ThemeStore.load();
   final initialSeedColor = await ThemeStore.loadSeedColor();
   final initialUseDynamicColor = await ThemeStore.loadUseDynamicColor();
+  final initialSnowfallEnabled = await ThemeStore.loadSnowfallEnabled();
   final instanceController = InstanceController();
   await instanceController.init();
   final onlineService = OnlineService();
@@ -74,6 +76,7 @@ Future<void> main() async {
       initialThemeMode: initialThemeMode,
       initialSeedColor: initialSeedColor,
       initialUseDynamicColor: initialUseDynamicColor,
+      initialSnowfallEnabled: initialSnowfallEnabled,
       instanceController: instanceController,
       serverController: serverController,
       systemMonitorController: systemMonitorController,
@@ -122,6 +125,7 @@ class EdgeCubeApp extends StatefulWidget {
     this.initialThemeMode = ThemeMode.system,
     this.initialSeedColor = ThemeStore.defaultSeedColor,
     this.initialUseDynamicColor = false,
+    this.initialSnowfallEnabled = false,
     required this.instanceController,
     required this.serverController,
     required this.systemMonitorController,
@@ -135,6 +139,7 @@ class EdgeCubeApp extends StatefulWidget {
   final ThemeMode initialThemeMode;
   final Color initialSeedColor;
   final bool initialUseDynamicColor;
+  final bool initialSnowfallEnabled;
   final InstanceController instanceController;
   final ServerController serverController;
   final SystemMonitorController systemMonitorController;
@@ -152,6 +157,7 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
   late ThemeMode _themeMode = widget.initialThemeMode;
   late Color _seedColor = widget.initialSeedColor;
   late bool _useDynamicColor = widget.initialUseDynamicColor;
+  late bool _snowfallEnabled = widget.initialSnowfallEnabled;
 
   void _setThemeMode(ThemeMode mode) {
     if (mode == _themeMode) return;
@@ -171,6 +177,12 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
     ThemeStore.saveUseDynamicColor(value);
   }
 
+  void _setSnowfallEnabled(bool value) {
+    if (value == _snowfallEnabled) return;
+    setState(() => _snowfallEnabled = value);
+    ThemeStore.saveSnowfallEnabled(value);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ThemeScope(
@@ -180,6 +192,8 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
       setSeedColor: _setSeedColor,
       useDynamicColor: _useDynamicColor,
       setUseDynamicColor: _setUseDynamicColor,
+      snowfallEnabled: _snowfallEnabled,
+      setSnowfallEnabled: _setSnowfallEnabled,
       child: InstanceScope(
         controller: widget.instanceController,
         child: FtpScope(
@@ -222,6 +236,19 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                               theme: ThemeData(colorScheme: lightScheme),
                               darkTheme: ThemeData(colorScheme: darkScheme),
                               themeMode: _themeMode,
+                              builder: (context, child) {
+                                final content =
+                                    child ?? const SizedBox.shrink();
+                                if (!_snowfallEnabled) return content;
+                                return Stack(
+                                  children: [
+                                    content,
+                                    const Positioned.fill(
+                                      child: SnowfallOverlay(),
+                                    ),
+                                  ],
+                                );
+                              },
                               home: HomeShell(
                                 onlineService: widget.onlineService,
                               ),
