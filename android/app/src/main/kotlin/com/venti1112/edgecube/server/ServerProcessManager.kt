@@ -50,9 +50,9 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         private const val DEFAULT_CELL_W = 8
         private const val DEFAULT_CELL_H = 16
 
-        /** 服务端初始化完成标志：匹配英文 “Done (Xs)! For help” 或中文 “启动完成 (Xs)”。 */
+        /** 服务端初始化完成标志：匹配英文 "Done (Xs)!"（Velocity/Paper）或中文 "启动完成 (Xs)"。 */
         private val DONE_PATTERN =
-            Regex("""Done\s*\([0-9.]+s\)!\s*For help|启动完成\s*\([0-9.]+s\)""")
+            Regex("""Done\s*\([0-9.]+s\)!|启动完成\s*\([0-9.]+s\)""")
 
         /** 日志中的 ANSI 转义序列（CSI，如颜色码 \x1B[36m）；按行解析前剔除。 */
         private val ANSI_PATTERN = Regex("\\x1B\\[[0-?]*[ -/]*[@-~]")

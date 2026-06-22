@@ -931,7 +931,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
       final mcVersion = _serverType == 'fabric'
           ? (_selectedMcVersion ?? '')
-          : (_selectedVersion ?? '');
+          : (_serverType == 'velocity' ? '1.21' : (_selectedVersion ?? ''));
       final javaVer = _javaVersionForMc(mcVersion);
       await _instanceController.updateConfig(
         instanceId,
@@ -1146,7 +1146,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           _ServerTypeTile(
             icon: Icons.cloud_download_outlined,
             title: '下载服务端',
-            subtitle: '从官方端、Paper 端、Fabric 端、Forge 端或 NeoForge 端选择版本下载',
+            subtitle: '从官方端、Paper 端、Velocity 端、Fabric 端、Forge 端或 NeoForge 端选择版本下载',
             onTap: _goToServerType,
           ),
           const SizedBox(height: 12),
@@ -1186,6 +1186,13 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           title: 'Paper 端',
           subtitle: '插件服务端',
           onTap: () => _selectServerType('paper'),
+        ),
+        const SizedBox(height: 12),
+        _ServerTypeTile(
+          icon: Icons.speed_outlined,
+          title: 'Velocity 端',
+          subtitle: '代理服务端（PaperMC）',
+          onTap: () => _selectServerType('velocity'),
         ),
         const SizedBox(height: 12),
         _ServerTypeTile(
@@ -1581,8 +1588,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   Future<List<String>> _fetchVersions(String type) async {
     if (type == 'vanilla') {
       return _fetchVanillaVersions();
-    } else {
+    } else if (type == 'paper') {
       return _fetchPaperVersions();
+    } else {
+      return _fetchVelocityVersions();
     }
   }
 
@@ -1763,21 +1772,24 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     final client = HttpClient();
     try {
       final req = await client.getUrl(
-        Uri.parse('https://api.papermc.io/v2/projects/paper'),
+        Uri.parse('https://fill.papermc.io/v3/projects/paper'),
       );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
-      final versions = json['versions'] as List<dynamic>;
-      return versions
-          .where((v) {
-            final lower = (v as String).toLowerCase();
-            return !lower.contains('rc') && !lower.contains('pre');
-          })
-          .toList()
-          .reversed
-          .map<String>((v) => v as String)
-          .toList();
+      final versions = json['versions'] as Map<String, dynamic>;
+      final result = <String>[];
+      for (final group in versions.keys) {
+        final groupVersions = versions[group] as List<dynamic>;
+        for (final v in groupVersions) {
+          final lower = (v as String).toLowerCase();
+          if (!lower.contains('rc') && !lower.contains('pre')) {
+            result.add(v);
+          }
+        }
+      }
+      return result;
     } finally {
       client.close();
     }
@@ -1787,6 +1799,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   Future<_DownloadInfo> _fetchDownloadInfo(String version) async {
     if (_serverType == 'vanilla') {
       return _fetchVanillaDownloadInfo(version);
+    } else if (_serverType == 'velocity') {
+      return _fetchVelocityDownloadInfo(version);
     } else {
       return _fetchPaperDownloadInfo(version);
     }
@@ -1842,39 +1856,75 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     }
   }
 
-  /// 通过 Paper API 获取最新构建的下载 URL 和 SHA-256。
-  Future<_DownloadInfo> _fetchPaperDownloadInfo(String version) async {
-    const base = 'https://api.papermc.io/v2/projects/paper';
+  /// 获取 Velocity 端版本列表，显示快照版本（过滤 rc/pre）。
+  Future<List<String>> _fetchVelocityVersions() async {
     final client = HttpClient();
     try {
-      // 获取该版本的构建列表。
-      final verReq = await client.getUrl(Uri.parse('$base/versions/$version'));
-      final verRes = await verReq.close();
-      final verBody = await verRes.transform(utf8.decoder).join();
-      final verJson = jsonDecode(verBody) as Map<String, dynamic>;
-      final builds = verJson['builds'] as List<dynamic>;
-      if (builds.isEmpty) {
-        throw Exception('该版本没有任何构建');
-      }
-      final latestBuild = builds.cast<int>().reduce((a, b) => a > b ? a : b);
-
-      // 获取最新构建的下载信息。
-      final buildReq = await client.getUrl(
-        Uri.parse('$base/versions/$version/builds/$latestBuild'),
+      final req = await client.getUrl(
+        Uri.parse('https://fill.papermc.io/v3/projects/velocity'),
       );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final versions = json['versions'] as Map<String, dynamic>;
+      final result = <String>[];
+      for (final group in versions.keys) {
+        final groupVersions = versions[group] as List<dynamic>;
+        for (final v in groupVersions) {
+          final lower = (v as String).toLowerCase();
+          if (!lower.contains('rc') && !lower.contains('pre')) {
+            result.add(v);
+          }
+        }
+      }
+      return result;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 通过 PaperMC Fill v3 API 获取 Velocity 最新构建的下载 URL 和 SHA-256。
+  Future<_DownloadInfo> _fetchVelocityDownloadInfo(String version) async {
+    final client = HttpClient();
+    try {
+      final buildReq = await client.getUrl(
+        Uri.parse('https://fill.papermc.io/v3/projects/velocity/versions/$version/builds/latest'),
+      );
+      buildReq.headers.set('User-Agent', 'EdgeCube/1.0');
       final buildRes = await buildReq.close();
       final buildBody = await buildRes.transform(utf8.decoder).join();
       final buildJson = jsonDecode(buildBody) as Map<String, dynamic>;
-      final app = buildJson['downloads']?['application'];
-      if (app == null) {
-        throw Exception('该构建没有 application JAR');
-      }
-      final jarName = app['name'] as String;
-      final sha256 = app['sha256'] as String?;
-      return _DownloadInfo(
-        url: '$base/versions/$version/builds/$latestBuild/downloads/$jarName',
-        sha256: sha256,
+      final serverDefault =
+          (buildJson['downloads'] as Map<String, dynamic>)['server:default']
+              as Map<String, dynamic>;
+      final sha256 =
+          (serverDefault['checksums'] as Map<String, dynamic>)['sha256'] as String;
+      final downloadUrl = serverDefault['url'] as String;
+      return _DownloadInfo(url: downloadUrl, sha256: sha256);
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 通过 PaperMC Fill v3 API 获取 Paper 最新构建的下载 URL 和 SHA-256。
+  Future<_DownloadInfo> _fetchPaperDownloadInfo(String version) async {
+    final client = HttpClient();
+    try {
+      final buildReq = await client.getUrl(
+        Uri.parse('https://fill.papermc.io/v3/projects/paper/versions/$version/builds/latest'),
       );
+      buildReq.headers.set('User-Agent', 'EdgeCube/1.0');
+      final buildRes = await buildReq.close();
+      final buildBody = await buildRes.transform(utf8.decoder).join();
+      final buildJson = jsonDecode(buildBody) as Map<String, dynamic>;
+      final serverDefault =
+          (buildJson['downloads'] as Map<String, dynamic>)['server:default']
+              as Map<String, dynamic>;
+      final sha256 =
+          (serverDefault['checksums'] as Map<String, dynamic>)['sha256'] as String;
+      final downloadUrl = serverDefault['url'] as String;
+      return _DownloadInfo(url: downloadUrl, sha256: sha256);
     } finally {
       client.close();
     }
