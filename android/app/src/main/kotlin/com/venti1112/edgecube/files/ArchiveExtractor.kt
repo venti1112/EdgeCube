@@ -18,6 +18,7 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Locale
+import java.util.zip.Deflater
 
 /**
  * 归档解压器：在 Android 原生侧统一处理所有压缩/归档格式。
@@ -47,6 +48,9 @@ object ArchiveExtractor {
         ZipArchiveOutputStream(archive).use { zip ->
             zip.setEncoding("UTF-8")
             zip.setUseLanguageEncodingFlag(true)
+            // 显式使用最高压缩级别，对可压缩内容（文本、未压缩存档）提升压缩率；
+            // 对已压缩格式（jar/png/mca 等）仍无明显效果——这是 deflate 算法本质限制。
+            zip.setLevel(Deflater.BEST_COMPRESSION)
             for (path in sourcePaths) {
                 val source = File(path)
                 if (!source.exists()) continue

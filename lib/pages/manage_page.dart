@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'instance_export_page.dart';
 import 'players_page.dart';
 import 'port_mapping_page.dart';
 import 'ftp_page.dart';
@@ -82,6 +83,15 @@ class ManagePage extends StatelessWidget {
               onTap: () => Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const ShellPage())),
+            ),
+            const SizedBox(height: 12),
+            _ManageEntryTile(
+              icon: Icons.archive_outlined,
+              title: '实例导出',
+              subtitle: '将实例全部文件压缩为 zip 导出',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const InstanceExportPage()),
+              ),
             ),
           ],
         ),

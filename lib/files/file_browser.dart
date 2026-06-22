@@ -669,6 +669,20 @@ class _FileBrowserState extends State<FileBrowser> {
     final entries = _selectedEntries;
     if (entries.isEmpty) return;
     final messenger = ScaffoldMessenger.of(context);
+
+    // 让用户输入压缩包名称（可取消）；自动补 .zip 后缀。
+    final inputName = await _promptText(
+      context,
+      title: '压缩为',
+      label: '压缩包名称',
+      initialValue: '压缩文件',
+    );
+    if (inputName == null || inputName.isEmpty) return;
+    if (!mounted) return;
+    final archiveName = inputName.toLowerCase().endsWith('.zip')
+        ? inputName
+        : '$inputName.zip';
+
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -689,7 +703,7 @@ class _FileBrowserState extends State<FileBrowser> {
       await _service.compressMany(
         entries.map((e) => e.path).toList(),
         _current,
-        '压缩文件.zip',
+        archiveName,
       );
       if (mounted) Navigator.of(context).pop();
       _clearSelection();
