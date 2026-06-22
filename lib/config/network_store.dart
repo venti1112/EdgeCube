@@ -20,6 +20,8 @@ class NetworkStore {
   static const String _tunnelKey = 'tunnelEnabled';
   static const String _frpcKey = 'frpc';
   static const String _useCustomFrpcKey = 'useCustomFrpc';
+  static const String _useMirrorKey = 'useMirror';
+  static const String _mirrorAskedKey = 'mirrorAsked';
 
   /// 用户可直接编辑的自定义 frpc.toml 文件路径（`config/frpc.toml`）。
   static Future<File> customFrpcFile() async {
@@ -50,6 +52,30 @@ class NetworkStore {
   static Future<void> saveUseCustomFrpc(bool value) async {
     final m = await ConfigStore.readConfig(_fileName);
     m[_useCustomFrpcKey] = value;
+    await ConfigStore.writeConfig(_fileName, m);
+  }
+
+  /// 是否使用镜像源（MSL 开服器）下载服务端，默认关闭。
+  static Future<bool> loadUseMirror() async {
+    final m = await ConfigStore.readConfig(_fileName);
+    return m[_useMirrorKey] as bool? ?? false;
+  }
+
+  static Future<void> saveUseMirror(bool value) async {
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_useMirrorKey] = value;
+    await ConfigStore.writeConfig(_fileName, m);
+  }
+
+  /// 是否已询问过用户「是否启用镜像源」（首次启动弹窗只展示一次）。
+  static Future<bool> loadMirrorAsked() async {
+    final m = await ConfigStore.readConfig(_fileName);
+    return m[_mirrorAskedKey] as bool? ?? false;
+  }
+
+  static Future<void> saveMirrorAsked(bool value) async {
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_mirrorAskedKey] = value;
     await ConfigStore.writeConfig(_fileName, m);
   }
 

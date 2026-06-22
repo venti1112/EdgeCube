@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'config/network_store.dart';
 import 'files/file_browser.dart';
 import 'online/online_service.dart';
 import 'online/update_service.dart';
@@ -55,7 +56,14 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  /// 首次启动依次询问：在线服务、镜像源（各自只询问一次）。
   Future<void> _showFirstLaunchDialog() async {
+    await _maybeAskOnlineService();
+    await _maybeAskMirror();
+  }
+
+  /// 询问是否启用在线服务（仅首次）。
+  Future<void> _maybeAskOnlineService() async {
     if (widget.onlineService.asked) return;
     if (!mounted) return;
 
@@ -85,6 +93,53 @@ class _HomeShellState extends State<HomeShell> {
     await widget.onlineService.markAsked();
     if (result == true) {
       await widget.onlineService.setEnabled(true);
+    }
+  }
+
+  /// 询问是否启用镜像源下载服务端（仅首次）。
+  Future<void> _maybeAskMirror() async {
+    if (await NetworkStore.loadMirrorAsked()) return;
+    if (!mounted) return;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/images/msl_logo.png',
+                width: 32,
+                height: 32,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(child: Text('使用镜像源下载')),
+          ],
+        ),
+        content: const Text(
+          '下载服务端时可使用 MSL 镜像源加速，国内网络下载更快、更稳定；'
+          '镜像不可用时会自动回退官方源。\n'
+          '是否启用镜像源下载？\n\n'
+          '镜像源服务由 MSL 开服器（mslmc.cn）提供，可随时在「设置 → 网络设置」中更改。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('暂不启用'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('启用'),
+          ),
+        ],
+      ),
+    );
+
+    await NetworkStore.saveMirrorAsked(true);
+    if (result == true) {
+      await NetworkStore.saveUseMirror(true);
     }
   }
 

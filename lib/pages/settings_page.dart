@@ -7,6 +7,7 @@ import '../server/power_service.dart';
 import '../theme/theme_scope.dart';
 import 'about_page.dart';
 import 'appearance_settings_page.dart';
+import 'network_settings_page.dart';
 import 'online_services_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -115,6 +116,21 @@ class _SettingsPageState extends State<SettingsPage>
                 );
               },
             ),
+          ),
+          const Divider(),
+          _sectionHeader(theme, '网络'),
+          ListTile(
+            leading: const Icon(Icons.lan_outlined),
+            title: const Text('网络设置'),
+            subtitle: const Text('镜像源下载'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const NetworkSettingsPage(),
+                ),
+              );
+            },
           ),
           const Divider(),
           _sectionHeader(theme, '其他'),

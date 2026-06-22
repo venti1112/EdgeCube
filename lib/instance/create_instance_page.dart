@@ -9,12 +9,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
+import '../config/network_store.dart';
 import '../files/file_service.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
+import '../net/msl_mirror.dart';
 
 enum _WizardStep {
   nameEntry,
@@ -466,9 +468,12 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
     final mcVersion = _selectedForgeMcVersion!;
     final forgeVersion = _selectedForgeVersion!;
-    final url =
-        'https://maven.minecraftforge.net/net/minecraftforge/forge/$mcVersion-$forgeVersion/forge-$mcVersion-$forgeVersion-installer.jar';
-    final info = _DownloadInfo(url: url);
+    // 镜像开启时按所选 MC 版本走 MSL（installer），失败回退官方 Maven。
+    final info = await _tryMirrorDownloadInfo('forge', mcVersion) ??
+        _DownloadInfo(
+          url:
+              'https://maven.minecraftforge.net/net/minecraftforge/forge/$mcVersion-$forgeVersion/forge-$mcVersion-$forgeVersion-installer.jar',
+        );
 
     await _downloadForgeJar(instanceId, info);
   }
@@ -685,9 +690,13 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     });
 
     final neoforgeVersion = _selectedNeoforgeVersion!;
-    final url =
-        'https://maven.neoforged.net/releases/net/neoforged/neoforge/$neoforgeVersion/neoforge-$neoforgeVersion-installer.jar';
-    final info = _DownloadInfo(url: url);
+    // 镜像开启时按所选 MC 版本走 MSL（installer），失败回退官方 Maven。
+    final mslVersion = _neoforgeMcToMslVersion(_selectedNeoforgeMcVersion!);
+    final info = await _tryMirrorDownloadInfo('neoforge', mslVersion) ??
+        _DownloadInfo(
+          url:
+              'https://maven.neoforged.net/releases/net/neoforged/neoforge/$neoforgeVersion/neoforge-$neoforgeVersion-installer.jar',
+        );
 
     await _downloadNeoforgeJar(instanceId, info);
   }
@@ -855,7 +864,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
     _DownloadInfo info;
     try {
-      info = await _fetchDownloadInfo(version);
+      // 镜像开启时优先走 MSL，失败回退官方源。
+      info = await _tryMirrorDownloadInfo(_serverType!, version) ??
+          await _fetchDownloadInfo(version);
     } catch (e) {
       if (!mounted) return;
       setState(() => _downloadError = '获取下载信息失败：$e');
@@ -874,7 +885,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
     _DownloadInfo info;
     try {
-      info = await _fetchFabricDownloadInfo();
+      // 镜像开启时按所选 MC 版本走 MSL，失败回退官方源。
+      info = await _tryMirrorDownloadInfo('fabric', _selectedMcVersion!) ??
+          await _fetchFabricDownloadInfo();
     } catch (e) {
       if (!mounted) return;
       setState(() => _downloadError = '获取下载信息失败：$e');
@@ -1793,6 +1806,24 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     } finally {
       client.close();
     }
+  }
+
+  /// 镜像开启且成功时返回 MSL 下载信息，否则返回 null（调用方回退官方源）。
+  Future<_DownloadInfo?> _tryMirrorDownloadInfo(
+    String serverType,
+    String version,
+  ) async {
+    if (!await NetworkStore.loadUseMirror()) return null;
+    final info = await MslMirror.fetchDownloadInfo(serverType, version);
+    if (info == null) return null;
+    return _DownloadInfo(url: info.url, sha256: info.sha256);
+  }
+
+  /// 将 NeoForge 流程中的 MC 版本键转换为 MSL 镜像所用的版本格式。
+  /// 旧命名（如 `21.1`）加 `1.` 前缀得 `1.21.1`；年份命名（如 `26.1.2`）直接沿用。
+  String _neoforgeMcToMslVersion(String key) {
+    final major = int.tryParse(key.split('.').first) ?? 0;
+    return major >= 26 ? key : '1.$key';
   }
 
   /// 根据服务端类型获取指定版本的下载信息。
