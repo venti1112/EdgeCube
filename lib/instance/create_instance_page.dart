@@ -24,6 +24,8 @@ enum _WizardStep {
   fabricLoaderVersionSelect,
   forgeMcVersionSelect,
   forgeVersionSelect,
+  neoforgeMcVersionSelect,
+  neoforgeVersionSelect,
   downloading,
   forgeInstalling,
   importFile,
@@ -79,11 +81,21 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   String? _selectedForgeMcVersion;
   String? _selectedForgeVersion;
 
-  /// Forge 安装日志输出。
+  /// NeoForge 流程：缓存全量版本映射 {mcVersion: [neoforgeVersion...]}。
+  Map<String, List<String>> _neoforgeVersionMap = {};
+
+  /// NeoForge 流程中选择的 Minecraft 版本与 NeoForge 版本。
+  String? _selectedNeoforgeMcVersion;
+  String? _selectedNeoforgeVersion;
+
+  /// Forge/NeoForge 安装日志输出。
   final List<String> _forgeInstallLogs = [];
   bool _forgeInstalling = false;
   String? _forgeInstallError;
   StreamSubscription<dynamic>? _forgeEventSub;
+
+  /// 当前安装器类型（'forge' 或 'neoforge'），用于 UI 文案和日志文件名区分。
+  String _installerType = 'forge';
 
   static const _forgeChannel = MethodChannel('com.venti1112.edgecube/forge');
   static const _forgeEventChannel = EventChannel(
@@ -102,6 +114,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   void dispose() {
     _nameController.dispose();
     _forgeEventSub?.cancel();
+    _forgeEventSub = null;
     // 如果向导未完成且已创建了实例，清理空实例。
     if (!_completed && _instanceId != null) {
       _instanceController.deleteInstance(_instanceId!);
@@ -166,6 +179,27 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         setState(() {
           _loadingVersions = false;
           _versionError = '获取 Forge 版本列表失败：$e';
+        });
+      }
+      return;
+    }
+    if (type == 'neoforge') {
+      setState(() {
+        _step = _WizardStep.neoforgeMcVersionSelect;
+        _loadingVersions = true;
+        _versionError = null;
+        _versions = [];
+      });
+      try {
+        _neoforgeVersionMap = await _fetchAllNeoforgeVersions();
+        _versions = _neoforgeVersionMap.keys.toList();
+        if (!mounted) return;
+        setState(() => _loadingVersions = false);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _loadingVersions = false;
+          _versionError = '获取 NeoForge 版本列表失败：$e';
         });
       }
       return;
@@ -491,6 +525,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     String instanceId,
     String installerPath,
   ) async {
+    _installerType = 'forge';
     setState(() {
       _step = _WizardStep.forgeInstalling;
       _forgeInstalling = true;
@@ -576,8 +611,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     }
   }
 
-  /// 在实例目录中查找 Forge 安装后生成的服务端 jar。
-  String? _findForgeServerJar(Directory dir) {
+  /// 在实例目录中查找 Forge/NeoForge 安装后生成的服务端 jar。
+  String? _findForgeServerJar(Directory dir, {String prefix = 'forge-'}) {
     final files = dir.listSync();
     String? forgeJar;
     for (final f in files) {
@@ -586,11 +621,229 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       // 跳过 installer、不相关的 jar。
       if (name == 'forge-installer.jar') continue;
       if (name == 'server.jar') continue;
-      if (name.startsWith('forge-') && name.endsWith('.jar')) {
+      if (name.startsWith(prefix) && name.endsWith('.jar')) {
         forgeJar = name;
       }
     }
     return forgeJar;
+  }
+
+  /// NeoForge 流程：选择 MC 版本后进入 NeoForge 版本选择。
+  Future<void> _selectNeoforgeMcVersion(String mcVersion) async {
+    _selectedNeoforgeMcVersion = mcVersion;
+    final neoforgeVersions = _neoforgeVersionMap[mcVersion] ?? [];
+    setState(() {
+      _step = _WizardStep.neoforgeVersionSelect;
+      _versions = neoforgeVersions;
+      _loadingVersions = false;
+      _versionError = null;
+    });
+  }
+
+  /// NeoForge 流程：选择 NeoForge 版本后确认并下载。
+  Future<void> _selectNeoforgeVersion(String neoforgeVersion) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认版本'),
+        content: Text(
+          '确定要安装 Minecraft $_selectedNeoforgeMcVersion + NeoForge $neoforgeVersion 吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final name = _nameController.text.trim();
+    try {
+      final instance = await _instanceController.createInstance(name);
+      if (!mounted) return;
+      _instanceId = instance.id;
+      _selectedNeoforgeVersion = neoforgeVersion;
+      setState(() => _step = _WizardStep.downloading);
+      await _fetchAndDownloadNeoforge(instance.id);
+    } on DuplicateInstanceNameException {
+      if (!mounted) return;
+      _showDuplicateDialog(name);
+    }
+  }
+
+  /// NeoForge 下载流程：下载 Installer jar，然后进入安装步骤。
+  Future<void> _fetchAndDownloadNeoforge(String instanceId) async {
+    setState(() {
+      _downloadProgress = null;
+      _downloadError = null;
+    });
+
+    final neoforgeVersion = _selectedNeoforgeVersion!;
+    final url =
+        'https://maven.neoforged.net/releases/net/neoforged/neoforge/$neoforgeVersion/neoforge-$neoforgeVersion-installer.jar';
+    final info = _DownloadInfo(url: url);
+
+    await _downloadNeoforgeJar(instanceId, info);
+  }
+
+  /// 下载 NeoForge Installer jar 到实例目录，完成后启动安装。
+  Future<void> _downloadNeoforgeJar(
+    String instanceId,
+    _DownloadInfo info,
+  ) async {
+    setState(() {
+      _downloadProgress = null;
+      _downloadError = null;
+    });
+
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(Uri.parse(info.url));
+      final response = await request.close();
+
+      if (response.statusCode != 200) {
+        if (!mounted) return;
+        setState(() => _downloadError = '下载失败（HTTP ${response.statusCode}）');
+        return;
+      }
+
+      final dir = await _instanceController.directoryForId(instanceId);
+      final file = File(p.join(dir.path, 'neoforge-installer.jar'));
+
+      final contentLength = response.contentLength;
+      int received = 0;
+
+      final sink = file.openWrite();
+      final allBytes = BytesBuilder(copy: false);
+      await for (final chunk in response) {
+        received += chunk.length;
+        allBytes.add(chunk);
+        if (contentLength > 0 && mounted) {
+          setState(() => _downloadProgress = received / contentLength);
+        }
+        sink.add(chunk);
+      }
+      await sink.close();
+
+      // 下载完成，进入安装步骤。
+      if (!mounted) return;
+      await _runNeoforgeInstaller(instanceId, file.path);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _downloadError = '下载失败：$e');
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 调用原生平台运行 NeoForge Installer，安装完成后配置实例。
+  Future<void> _runNeoforgeInstaller(
+    String instanceId,
+    String installerPath,
+  ) async {
+    _installerType = 'neoforge';
+    setState(() {
+      _step = _WizardStep.forgeInstalling;
+      _forgeInstalling = true;
+      _forgeInstallError = null;
+      _forgeInstallLogs.clear();
+    });
+
+    // 监听安装器日志。
+    _forgeEventSub = _forgeEventChannel.receiveBroadcastStream().listen((
+      event,
+    ) {
+      if (mounted && event is String) {
+        setState(() {
+          _forgeInstallLogs.add(event);
+          // 保留最近 200 行。
+          if (_forgeInstallLogs.length > 200) {
+            _forgeInstallLogs.removeRange(0, _forgeInstallLogs.length - 200);
+          }
+        });
+      }
+    });
+
+    try {
+      final mcVersion = _selectedNeoforgeMcVersion!;
+      // NeoForge MC 版本格式为 "major.minor.patch"（如 21.1.0），
+      // 转换为 Minecraft 版本格式 "1.major.minor"（如 1.21.1）以供 Java 版本推断。
+      // MC 26+（年份命名）直接使用 _javaVersionForMc 的原生逻辑。
+      final nfParts = mcVersion.split('.');
+      final nfMajor = int.tryParse(nfParts[0]) ?? 1;
+      final String mcVerForJava;
+      if (nfMajor >= 26) {
+        mcVerForJava = mcVersion; // 26.1.2 → 直接传入，major≥26 走 jre25 分支
+      } else {
+        mcVerForJava = nfParts.length >= 2
+            ? '1.${nfParts[0]}.${nfParts[1]}'
+            : mcVersion;
+      }
+      final javaVer = _javaVersionForMc(mcVerForJava);
+
+      final exitCode = await _forgeChannel.invokeMethod<int>('runInstaller', {
+        'installerJar': installerPath,
+        'workingDir': (await _instanceController.directoryForId(
+          instanceId,
+        )).path,
+        'javaVersion': javaVer,
+      });
+
+      await _forgeEventSub?.cancel();
+      _forgeEventSub = null;
+
+      if (exitCode != 0) {
+        if (!mounted) return;
+        setState(() {
+          _forgeInstalling = false;
+          _forgeInstallError = 'NeoForge 安装器退出，退出码：$exitCode';
+        });
+        return;
+      }
+
+      // 安装成功：扫描目录找到 neoforge 服务端 jar。
+      final dir = await _instanceController.directoryForId(instanceId);
+      final neoforgeJar = _findForgeServerJar(dir, prefix: 'neoforge-');
+      if (neoforgeJar == null) {
+        if (!mounted) return;
+        setState(() {
+          _forgeInstalling = false;
+          _forgeInstallError = '安装完成但未找到服务端 jar 文件';
+        });
+        return;
+      }
+
+      await _instanceController.updateConfig(
+        instanceId,
+        selectedJar: neoforgeJar,
+        javaVersion: javaVer,
+      );
+
+      // 清理 installer jar。
+      try {
+        await File(p.join(dir.path, 'neoforge-installer.jar')).delete();
+      } catch (_) {}
+
+      _completed = true;
+      if (mounted) {
+        setState(() => _forgeInstalling = false);
+        _finishWizard();
+      }
+    } catch (e) {
+      await _forgeEventSub?.cancel();
+      _forgeEventSub = null;
+      if (!mounted) return;
+      setState(() {
+        _forgeInstalling = false;
+        _forgeInstallError = 'NeoForge 安装失败：$e';
+      });
+    }
   }
 
   /// 在下载页中先获取下载信息，再执行下载（Vanilla / Paper）。
@@ -759,6 +1012,16 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           _step = _WizardStep.forgeMcVersionSelect;
           _selectedForgeVersion = null;
         });
+      case _WizardStep.neoforgeMcVersionSelect:
+        setState(() {
+          _step = _WizardStep.serverType;
+          _selectedNeoforgeMcVersion = null;
+        });
+      case _WizardStep.neoforgeVersionSelect:
+        setState(() {
+          _step = _WizardStep.neoforgeMcVersionSelect;
+          _selectedNeoforgeVersion = null;
+        });
       case _WizardStep.importFile:
         _deleteCreatedInstance();
         _closeWizard();
@@ -838,8 +1101,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _WizardStep.fabricLoaderVersionSelect => '选择 Fabric Loader 版本',
       _WizardStep.forgeMcVersionSelect => '选择 Minecraft 版本',
       _WizardStep.forgeVersionSelect => '选择 Forge 版本',
+      _WizardStep.neoforgeMcVersionSelect => '选择 Minecraft 版本',
+      _WizardStep.neoforgeVersionSelect => '选择 NeoForge 版本',
       _WizardStep.downloading => '下载中',
-      _WizardStep.forgeInstalling => '安装 Forge',
+      _WizardStep.forgeInstalling =>
+        _installerType == 'neoforge' ? '安装 NeoForge' : '安装 Forge',
       _WizardStep.importFile => '导入服务端',
     };
   }
@@ -853,6 +1119,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _WizardStep.fabricLoaderVersionSelect => _buildVersionSelect(theme),
       _WizardStep.forgeMcVersionSelect => _buildVersionSelect(theme),
       _WizardStep.forgeVersionSelect => _buildVersionSelect(theme),
+      _WizardStep.neoforgeMcVersionSelect => _buildVersionSelect(theme),
+      _WizardStep.neoforgeVersionSelect => _buildVersionSelect(theme),
       _WizardStep.downloading => _buildDownloading(theme),
       _WizardStep.forgeInstalling => _buildForgeInstalling(theme),
       _WizardStep.importFile => _buildImporting(theme),
@@ -878,7 +1146,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           _ServerTypeTile(
             icon: Icons.cloud_download_outlined,
             title: '下载服务端',
-            subtitle: '从官方端、Paper 端、Fabric 端或 Forge 端选择版本下载',
+            subtitle: '从官方端、Paper 端、Fabric 端、Forge 端或 NeoForge 端选择版本下载',
             onTap: _goToServerType,
           ),
           const SizedBox(height: 12),
@@ -933,6 +1201,13 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           subtitle: 'Forge 模组服务端',
           onTap: () => _selectServerType('forge'),
         ),
+        const SizedBox(height: 12),
+        _ServerTypeTile(
+          icon: Icons.extension_outlined,
+          title: 'NeoForge 端',
+          subtitle: 'NeoForge 模组服务端',
+          onTap: () => _selectServerType('neoforge'),
+        ),
       ],
     );
   }
@@ -975,6 +1250,12 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                     if (_selectedForgeMcVersion != null) {
                       _selectForgeMcVersion(_selectedForgeMcVersion!);
                     }
+                  } else if (_step == _WizardStep.neoforgeMcVersionSelect) {
+                    _selectServerType('neoforge');
+                  } else if (_step == _WizardStep.neoforgeVersionSelect) {
+                    if (_selectedNeoforgeMcVersion != null) {
+                      _selectNeoforgeMcVersion(_selectedNeoforgeMcVersion!);
+                    }
                   } else {
                     _selectServerType(_serverType!);
                   }
@@ -1009,6 +1290,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                 _selectForgeMcVersion(v);
               case _WizardStep.forgeVersionSelect:
                 _selectForgeVersion(v);
+              case _WizardStep.neoforgeMcVersionSelect:
+                _selectNeoforgeMcVersion(v);
+              case _WizardStep.neoforgeVersionSelect:
+                _selectNeoforgeVersion(v);
               default:
                 break;
             }
@@ -1077,6 +1362,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                               _step = _selectedForgeVersion != null
                                   ? _WizardStep.forgeVersionSelect
                                   : _WizardStep.forgeMcVersionSelect;
+                            } else if (_serverType == 'neoforge') {
+                              _step = _selectedNeoforgeVersion != null
+                                  ? _WizardStep.neoforgeVersionSelect
+                                  : _WizardStep.neoforgeMcVersionSelect;
                             } else {
                               _step = _WizardStep.versionSelect;
                             }
@@ -1152,7 +1441,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                   const SizedBox(height: 12),
                   Text(
                     _forgeInstalling
-                        ? '正在安装 Forge 服务端，请稍候…'
+                        ? (_installerType == 'neoforge'
+                            ? '正在安装 NeoForge 服务端，请稍候…'
+                            : '正在安装 Forge 服务端，请稍候…')
                         : (_forgeInstallError != null ? '安装失败' : '安装完成'),
                     style: theme.textTheme.titleMedium,
                   ),
@@ -1185,7 +1476,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                           onPressed: () {
                             _deleteCreatedInstance();
                             setState(
-                              () => _step = _WizardStep.forgeVersionSelect,
+                              () => _step = _installerType == 'neoforge'
+                                  ? _WizardStep.neoforgeVersionSelect
+                                  : _WizardStep.forgeVersionSelect,
                             );
                           },
                           child: const Text('重新选择'),
@@ -1265,7 +1558,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       final ts =
           '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_'
           '${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
-      final fileName = 'forge_install_log_$ts.txt';
+      final fileName =
+          '${_installerType == 'neoforge' ? 'neoforge' : 'forge'}_install_log_$ts.txt';
       final content = _forgeInstallLogs.join('\n');
       final file = File(p.join(destDir, fileName));
       await file.writeAsString(content, flush: true);
@@ -1357,6 +1651,67 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         final mcVersion = full.substring(0, lastDash);
         final forgeVersion = full.substring(lastDash + 1);
         map.putIfAbsent(mcVersion, () => []).add(forgeVersion);
+      }
+
+      // 按 MC 版本号降序排列（最新版本在前）。
+      final sortedKeys = map.keys.toList()
+        ..sort((a, b) {
+          final pa = a.split('.').map(int.tryParse).toList();
+          final pb = b.split('.').map(int.tryParse).toList();
+          for (int i = 0; i < 3; i++) {
+            final va = i < pa.length ? (pa[i] ?? 0) : 0;
+            final vb = i < pb.length ? (pb[i] ?? 0) : 0;
+            if (va != vb) return vb.compareTo(va);
+          }
+          return 0;
+        });
+
+      return {for (final k in sortedKeys) k: map[k]!};
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 解析 NeoForge Maven 元数据 XML，返回 {mcVersion: [neoforgeVersion...]}。
+  /// NeoForge 版本格式为 "major.minor.patch.build[-beta]"，
+  /// 其中 major.minor.patch 对应 MC 版本号（1.major.minor.patch 或 major.minor.patch）。
+  Future<Map<String, List<String>>> _fetchAllNeoforgeVersions() async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml',
+        ),
+      );
+      final res = await req.close();
+      final body = await res.transform(utf8.decoder).join();
+
+      // 解析 XML 中的 <version> 标签。
+      final versionPattern = RegExp(r'<version>([^<]+)</version>');
+      final matches = versionPattern.allMatches(body);
+
+      // 按 MC 版本分组。
+      // NeoForge 版本格式：
+      //   三段式 major.minor.build[-beta]（如 21.1.234 → MC 1.21.1）
+      //   四段式 major.minor.patch.build[-beta]（如 26.1.2.71 → MC 26.1.2）
+      final map = <String, List<String>>{};
+      for (final m in matches) {
+        final full = m.group(1)!;
+        // 过滤掉 beta 版本。
+        if (full.contains('-beta')) continue;
+        // 分割版本号段（去掉可能的 -beta 后缀）。
+        final cleanFull = full.split('-').first;
+        final parts = cleanFull.split('.');
+        if (parts.length < 3) continue;
+        final String mcVersion;
+        if (parts.length >= 4) {
+          // 四段式：MC 版本 = 前三段。
+          mcVersion = '${parts[0]}.${parts[1]}.${parts[2]}';
+        } else {
+          // 三段式：MC 版本 = 前两段。
+          mcVersion = '${parts[0]}.${parts[1]}';
+        }
+        map.putIfAbsent(mcVersion, () => []).add(full);
       }
 
       // 按 MC 版本号降序排列（最新版本在前）。
