@@ -5,8 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../files/file_service.dart';
+import '../files/storage_permission.dart';
+import '../files/system_picker.dart';
 import '../instance/instance_scope.dart';
 import '../server/server_properties.dart';
+import 'server_icon_crop_page.dart';
 
 /// server.properties 可视化编辑页面。
 ///
@@ -421,6 +424,12 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
   /// 跟踪哪些 key 被修改过（用于脏状态判定）。
   final Set<String> _dirtyKeys = {};
 
+  /// 实例目录路径（加载时缓存）。
+  String? _instanceDir;
+
+  /// 当前 server-icon.png 的字节数据（用于预览）。
+  Uint8List? _iconBytes;
+
   bool get _isDirty => _dirtyKeys.isNotEmpty;
 
   @override
@@ -441,6 +450,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
         return;
       }
       final dir = await instanceCtrl.directoryFor(instance);
+      _instanceDir = dir.path;
       final filePath = p.join(dir.path, 'server.properties');
       final file = File(filePath);
       if (!await file.exists()) {
@@ -465,6 +475,8 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
         _props = parsed;
         _loading = false;
       });
+      // 加载服务器图标预览
+      _loadIconPreview(dir.path);
     } catch (e) {
       setState(() {
         _loading = false;
@@ -616,6 +628,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
+        _buildServerIconCard(),
         for (final section in _sections) _buildSection(section),
       ],
     );
@@ -782,6 +795,178 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
     return _controllers.putIfAbsent(
       key,
       () => TextEditingController(text: _getValue(key)),
+    );
+  }
+
+  // —— 服务器图标 ——
+
+  /// 确保已获得「管理全部文件」权限；已授权直接返回 true，
+  /// 未授权则弹窗引导用户去系统设置开启，与文件导入的体验一致。
+  Future<bool> _ensureStoragePermission() async {
+    if (await StoragePermission.isGranted()) return true;
+    if (!mounted) return false;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('需要文件访问权'),
+        content: const Text('需要「所有文件访问权限」才能选择图片'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('去设置'),
+          ),
+        ],
+      ),
+    );
+    if (go == true) {
+      await StoragePermission.request();
+    }
+    return false;
+  }
+
+  Future<void> _loadIconPreview(String dirPath) async {
+    final iconFile = File(p.join(dirPath, 'server-icon.png'));
+    if (await iconFile.exists()) {
+      final bytes = await iconFile.readAsBytes();
+      if (mounted) setState(() => _iconBytes = bytes);
+    }
+  }
+
+  Future<void> _pickAndCropIcon() async {
+    final dir = _instanceDir;
+    if (dir == null) return;
+    // 确保存储权限（已授权则跳过）
+    if (!await _ensureStoragePermission()) return;
+    if (!mounted) return;
+    // 从系统选择图片
+    final sourcePath = await pickFromSystem(context, mode: SystemPickMode.file);
+    if (sourcePath == null) return;
+    if (!mounted) return;
+    // 跳转到裁剪页面
+    final outputPath = p.join(dir, 'server-icon.png');
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ServerIconCropPage(
+          imagePath: sourcePath,
+          outputPath: outputPath,
+        ),
+      ),
+    );
+    if (result == true && mounted) {
+      // 重新加载图标预览
+      final iconFile = File(outputPath);
+      if (await iconFile.exists()) {
+        final bytes = await iconFile.readAsBytes();
+        if (mounted) {
+          setState(() => _iconBytes = bytes);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('图标已保存'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Widget _buildServerIconCard() {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.image_outlined,
+                      size: 20, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    '服务器图标',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  // 图标预览
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: theme.colorScheme.outlineVariant,
+                      ),
+                      color: theme.colorScheme.surfaceContainerHighest,
+                    ),
+                    child: _iconBytes != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: Image.memory(
+                              _iconBytes!,
+                              filterQuality: FilterQuality.none,
+                              fit: BoxFit.contain,
+                            ),
+                          )
+                        : Icon(
+                            Icons.image_not_supported_outlined,
+                            size: 32,
+                            color: theme.colorScheme.onSurfaceVariant
+                                .withValues(alpha: 0.5),
+                          ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'server-icon.png',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '64×64 像素，显示在服务器列表中',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant
+                                .withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: _pickAndCropIcon,
+                    icon: Icon(
+                      _iconBytes != null
+                          ? Icons.edit_outlined
+                          : Icons.add_photo_alternate_outlined,
+                      size: 18,
+                    ),
+                    label: Text(
+                      _iconBytes != null ? '更换' : '导入',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
