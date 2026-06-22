@@ -2,9 +2,12 @@ package com.venti1112.edgecube
 
 import android.annotation.SuppressLint
 import android.app.ActivityManager
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -12,7 +15,9 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.MediaStore
 import android.provider.Settings
+import android.util.Size
 import androidx.annotation.NonNull
 import com.venti1112.edgecube.server.JreLayout
 import com.venti1112.edgecube.server.RuntimeInstaller
@@ -26,8 +31,10 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
 import kotlin.concurrent.thread
@@ -40,6 +47,7 @@ import kotlin.concurrent.thread
  */
 class MainActivity : FlutterActivity() {
     private val storageChannel = "com.venti1112.edgecube/storage"
+    private val photoChannel = "com.venti1112.edgecube/photos"
     private val powerChannel = "com.venti1112.edgecube/power"
     private val serverChannel = "com.venti1112.edgecube/server"
     private val serverEventChannel = "com.venti1112.edgecube/server_events"
@@ -49,6 +57,7 @@ class MainActivity : FlutterActivity() {
     private val forgeEventChannel = "com.venti1112.edgecube/forge_events"
     private val shellChannel = "com.venti1112.edgecube/shell"
     private val shellEventChannel = "com.venti1112.edgecube/shell_events"
+    private var pendingPhotoPermissionResult: MethodChannel.Result? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,6 +68,18 @@ class MainActivity : FlutterActivity() {
             ) {
                 requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
             }
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1002) {
+            pendingPhotoPermissionResult?.success(hasPhotoPermission())
+            pendingPhotoPermissionResult = null
         }
     }
 
@@ -78,6 +99,71 @@ class MainActivity : FlutterActivity() {
                 }
                 "externalStorageRoot" ->
                     result.success(Environment.getExternalStorageDirectory()?.absolutePath)
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(messenger, photoChannel).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isGranted" -> result.success(hasPhotoPermission())
+                "request" -> requestPhotoPermission(result)
+                "list" -> {
+                    thread {
+                        try {
+                            val photos = queryPhotos()
+                            runOnUiThread { result.success(photos) }
+                        } catch (e: Exception) {
+                            runOnUiThread { result.error("PHOTO_LIST_FAILED", e.message, null) }
+                        }
+                    }
+                }
+                "bytes" -> {
+                    val uri = call.argument<String>("uri")
+                    val maxSize = call.argument<Int>("maxSize") ?: 512
+                    if (uri == null) {
+                        result.error("BAD_ARGS", "缺少 uri", null)
+                    } else {
+                        thread {
+                            try {
+                                val bytes = readPhotoBytes(uri, maxSize)
+                                runOnUiThread { result.success(bytes) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("PHOTO_BYTES_FAILED", e.message, null) }
+                            }
+                        }
+                    }
+                }
+                "originalBytes" -> {
+                    val uri = call.argument<String>("uri")
+                    if (uri == null) {
+                        result.error("BAD_ARGS", "缺少 uri", null)
+                    } else {
+                        thread {
+                            try {
+                                val bytes = readOriginalBytes(uri)
+                                runOnUiThread { result.success(bytes) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("PHOTO_ORIGINAL_FAILED", e.message, null) }
+                            }
+                        }
+                    }
+                }
+                "copyToCache" -> {
+                    val uri = call.argument<String>("uri")
+                    val name = call.argument<String>("name")
+                    if (uri == null) {
+                        result.error("BAD_ARGS", "缺少 uri", null)
+                    } else {
+                        thread {
+                            try {
+                                val path = copyPhotoToCache(uri, name)
+                                runOnUiThread { result.success(path) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("PHOTO_COPY_FAILED", e.message, null) }
+                            }
+                        }
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -584,6 +670,134 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
         }
+    }
+
+    private fun hasPhotoPermission(): Boolean {
+        return when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+                checkSelfPermission(android.Manifest.permission.READ_MEDIA_IMAGES) ==
+                    PackageManager.PERMISSION_GRANTED
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ->
+                checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) ==
+                    PackageManager.PERMISSION_GRANTED
+            else -> true
+        }
+    }
+
+    private fun requestPhotoPermission(result: MethodChannel.Result) {
+        if (hasPhotoPermission()) {
+            result.success(true)
+            return
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            result.success(true)
+            return
+        }
+        if (pendingPhotoPermissionResult != null) {
+            result.error("REQUEST_PENDING", "已有照片权限请求正在进行", null)
+            return
+        }
+        pendingPhotoPermissionResult = result
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            android.Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            android.Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        requestPermissions(arrayOf(permission), 1002)
+    }
+
+    private fun queryPhotos(): List<Map<String, Any?>> {
+        if (!hasPhotoPermission()) return emptyList()
+        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(
+            MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.DISPLAY_NAME,
+            MediaStore.Images.Media.SIZE,
+            MediaStore.Images.Media.DATE_MODIFIED,
+            MediaStore.Images.Media.WIDTH,
+            MediaStore.Images.Media.HEIGHT,
+        )
+        val photos = ArrayList<Map<String, Any?>>()
+        contentResolver.query(
+            collection,
+            projection,
+            null,
+            null,
+            "${MediaStore.Images.Media.DATE_MODIFIED} DESC",
+        )?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+            val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+            val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
+            val modifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
+            val widthColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.WIDTH)
+            val heightColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.HEIGHT)
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(idColumn)
+                val uri = ContentUris.withAppendedId(collection, id).toString()
+                photos.add(
+                    mapOf(
+                        "id" to id,
+                        "uri" to uri,
+                        "name" to cursor.getString(nameColumn),
+                        "size" to cursor.getLong(sizeColumn),
+                        "modified" to cursor.getLong(modifiedColumn),
+                        "width" to cursor.getInt(widthColumn),
+                        "height" to cursor.getInt(heightColumn),
+                    ),
+                )
+            }
+        }
+        return photos
+    }
+
+    private fun readOriginalBytes(uriString: String): ByteArray {
+        val uri = Uri.parse(uriString)
+        return ByteArrayOutputStream().use { output ->
+            contentResolver.openInputStream(uri)?.use { input ->
+                input.copyTo(output)
+            } ?: throw IllegalArgumentException("无法打开图片")
+            output.toByteArray()
+        }
+    }
+
+    private fun readPhotoBytes(uriString: String, maxSize: Int): ByteArray {
+        val uri = Uri.parse(uriString)
+        val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            contentResolver.loadThumbnail(uri, Size(maxSize, maxSize), null)
+        } else {
+            decodeScaledBitmap(uri, maxSize)
+        }
+        return ByteArrayOutputStream().use { output ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 88, output)
+            output.toByteArray()
+        }
+    }
+
+    private fun decodeScaledBitmap(uri: Uri, maxSize: Int): Bitmap {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, bounds)
+        }
+        val largest = maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1)
+        var sampleSize = 1
+        while (largest / sampleSize > maxSize) sampleSize *= 2
+        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        contentResolver.openInputStream(uri)?.use { input ->
+            return BitmapFactory.decodeStream(input, null, options)
+                ?: throw IllegalArgumentException("无法解码图片")
+        }
+        throw IllegalArgumentException("无法打开图片")
+    }
+
+    private fun copyPhotoToCache(uriString: String, name: String?): String {
+        val uri = Uri.parse(uriString)
+        val safeName = (name ?: "photo").replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val suffix = File(safeName).extension.let { if (it.isNotEmpty()) ".$it" else ".jpg" }
+        val target = File.createTempFile("selected_photo_", suffix, cacheDir)
+        contentResolver.openInputStream(uri)?.use { input ->
+            FileOutputStream(target).use { output -> input.copyTo(output) }
+        } ?: throw IllegalArgumentException("无法打开图片")
+        return target.absolutePath
     }
 
     /** 本应用是否已被加入电池优化白名单。低于 Android 6.0 无此机制，视为已忽略。 */

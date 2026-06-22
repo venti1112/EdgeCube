@@ -5,8 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../files/file_service.dart';
-import '../files/storage_permission.dart';
-import '../files/system_picker.dart';
+import '../files/photo_picker.dart';
 import '../instance/instance_scope.dart';
 import '../server/server_properties.dart';
 import 'server_icon_crop_page.dart';
@@ -800,34 +799,6 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
 
   // —— 服务器图标 ——
 
-  /// 确保已获得「管理全部文件」权限；已授权直接返回 true，
-  /// 未授权则弹窗引导用户去系统设置开启，与文件导入的体验一致。
-  Future<bool> _ensureStoragePermission() async {
-    if (await StoragePermission.isGranted()) return true;
-    if (!mounted) return false;
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('需要文件访问权'),
-        content: const Text('需要「所有文件访问权限」才能选择图片'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton.tonal(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('去设置'),
-          ),
-        ],
-      ),
-    );
-    if (go == true) {
-      await StoragePermission.request();
-    }
-    return false;
-  }
-
   Future<void> _loadIconPreview(String dirPath) async {
     final iconFile = File(p.join(dirPath, 'server-icon.png'));
     if (await iconFile.exists()) {
@@ -839,11 +810,8 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
   Future<void> _pickAndCropIcon() async {
     final dir = _instanceDir;
     if (dir == null) return;
-    // 确保存储权限（已授权则跳过）
-    if (!await _ensureStoragePermission()) return;
-    if (!mounted) return;
-    // 从系统选择图片
-    final sourcePath = await pickFromSystem(context, mode: SystemPickMode.file);
+    // 从专门的照片选择器选择并预览图片。
+    final sourcePath = await pickPhoto(context);
     if (sourcePath == null) return;
     if (!mounted) return;
     // 跳转到裁剪页面
@@ -916,7 +884,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
                             borderRadius: BorderRadius.circular(4),
                             child: Image.memory(
                               _iconBytes!,
-                              filterQuality: FilterQuality.none,
+                              filterQuality: FilterQuality.medium,
                               fit: BoxFit.contain,
                             ),
                           )

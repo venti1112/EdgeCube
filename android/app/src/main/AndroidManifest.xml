@@ -4,6 +4,8 @@
     <!-- 兼容 Android 10 及更低版本的传统存储访问。 -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- Android 13+ 读取用户照片/图片，用于图片选择与预览。 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
