@@ -1,5 +1,6 @@
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'config/config_migration.dart';
 import 'config/network_store.dart';
@@ -248,6 +249,16 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
 
                             return MaterialApp(
                               title: 'EdgeCube',
+                              localizationsDelegates: [
+                                GlobalMaterialLocalizations.delegate,
+                                GlobalWidgetsLocalizations.delegate,
+                                GlobalCupertinoLocalizations.delegate,
+                              ],
+                              supportedLocales: [
+                                const Locale('zh', 'CN'),
+                                const Locale('en', 'US'),
+                              ],
+                              locale: const Locale('zh', 'CN'),
                               theme: ThemeData(colorScheme: lightScheme),
                               darkTheme: ThemeData(colorScheme: darkScheme),
                               themeMode: _themeMode,

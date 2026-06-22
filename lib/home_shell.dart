@@ -24,18 +24,18 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _selectedIndex = 0;
-
-  List<Widget> get _tabPages => [
-    ServerPage(onlineService: widget.onlineService),
-    const ConsolePage(),
-    const ManagePage(),
-    const FilesPage(),
-    SettingsPage(onlineService: widget.onlineService),
-  ];
+  late final List<Widget> _tabPages;
 
   @override
   void initState() {
     super.initState();
+    _tabPages = [
+      ServerPage(onlineService: widget.onlineService),
+      const ConsolePage(),
+      const ManagePage(),
+      const FilesPage(),
+      SettingsPage(onlineService: widget.onlineService),
+    ];
     // 首次启动弹窗：询问是否启用在线服务。
     WidgetsBinding.instance.addPostFrameCallback((_) => _showFirstLaunchDialog());
     // 启动时后台检查更新；检查失败静默忽略，仅在检查成功且有更新时提示。
