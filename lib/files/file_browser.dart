@@ -11,18 +11,45 @@ import 'storage_permission.dart';
 import 'system_picker.dart';
 import 'text_editor_page.dart';
 
-enum _FileAction { edit, rename, move, copy, extract, export, delete }
+enum _FileAction { edit, rename, move, copy, compress, extract, export, delete }
 
 /// 多选模式下可对多个条目一起执行的操作。
-enum _BulkAction { move, copy, export }
+enum _BulkAction { move, copy, compress, export }
 
 /// 可用内置编辑器打开的文本文件扩展名（小写，含点）。
 const _textExtensions = <String>{
-  '.txt', '.text', '.md', '.markdown', '.log',
-  '.properties', '.conf', '.cfg', '.ini', '.toml', '.env', '.list',
-  '.yml', '.yaml', '.json', '.json5', '.xml', '.html', '.htm', '.css',
-  '.js', '.ts', '.sh', '.bat', '.cmd', '.py', '.lua',
-  '.csv', '.tsv', '.lang', '.mcmeta', '.snbt',
+  '.txt',
+  '.text',
+  '.md',
+  '.markdown',
+  '.log',
+  '.properties',
+  '.conf',
+  '.cfg',
+  '.ini',
+  '.toml',
+  '.env',
+  '.list',
+  '.yml',
+  '.yaml',
+  '.json',
+  '.json5',
+  '.xml',
+  '.html',
+  '.htm',
+  '.css',
+  '.js',
+  '.ts',
+  '.sh',
+  '.bat',
+  '.cmd',
+  '.py',
+  '.lua',
+  '.csv',
+  '.tsv',
+  '.lang',
+  '.mcmeta',
+  '.snbt',
 };
 
 /// 超过该大小的文件不在内置编辑器中打开，避免一次性载入内存造成卡顿。
@@ -132,8 +159,9 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   void _showError(Object error) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(error.toString())));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(error.toString())));
   }
 
   void _enter(FileEntry entry) {
@@ -188,8 +216,7 @@ class _FileBrowserState extends State<FileBrowser> {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final instances = InstanceScope.of(context);
-    final sourcePath =
-        await pickFromSystem(context, mode: SystemPickMode.file);
+    final sourcePath = await pickFromSystem(context, mode: SystemPickMode.file);
     if (sourcePath == null) return;
     try {
       await _service.importFile(sourcePath, _current);
@@ -248,6 +275,8 @@ class _FileBrowserState extends State<FileBrowser> {
         await _moveOrCopy(entry, isMove: true);
       case _FileAction.copy:
         await _moveOrCopy(entry, isMove: false);
+      case _FileAction.compress:
+        await _compress(entry);
       case _FileAction.extract:
         await _extract(entry);
       case _FileAction.export:
@@ -303,13 +332,46 @@ class _FileBrowserState extends State<FileBrowser> {
     if (!await _ensurePermission()) return;
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    final destDir =
-        await pickFromSystem(context, mode: SystemPickMode.directory);
+    final destDir = await pickFromSystem(
+      context,
+      mode: SystemPickMode.directory,
+    );
     if (destDir == null) return;
     try {
       await _service.exportTo(entry.path, destDir);
       messenger.showSnackBar(const SnackBar(content: Text('导出完成')));
     } catch (e) {
+      _showError(e);
+    }
+  }
+
+  /// 压缩单个文件或文件夹为同名 zip，输出到当前目录。
+  Future<void> _compress(FileEntry entry) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: const Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('正在压缩…'),
+            ],
+          ),
+        ),
+      ),
+    );
+    try {
+      await _service.compress(entry.path, _current);
+      if (mounted) Navigator.of(context).pop();
+      await _load();
+      messenger.showSnackBar(const SnackBar(content: Text('压缩完成')));
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
       _showError(e);
     }
   }
@@ -397,7 +459,9 @@ class _FileBrowserState extends State<FileBrowser> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('删除'),
-        content: Text('确定删除「${entry.name}」吗？${entry.isDirectory ? '该文件夹及其内容将被删除。' : ''}'),
+        content: Text(
+          '确定删除「${entry.name}」吗？${entry.isDirectory ? '该文件夹及其内容将被删除。' : ''}',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -479,6 +543,8 @@ class _FileBrowserState extends State<FileBrowser> {
         _moveSelected();
       case _BulkAction.copy:
         _copySelected();
+      case _BulkAction.compress:
+        _compressSelected();
       case _BulkAction.export:
         _exportSelected();
     }
@@ -490,8 +556,7 @@ class _FileBrowserState extends State<FileBrowser> {
     final msg = failed.isEmpty
         ? '$action完成'
         : '$action完成，${failed.length} 项失败：${failed.join('、')}';
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _deleteSelected() async {
@@ -583,8 +648,10 @@ class _FileBrowserState extends State<FileBrowser> {
     if (entries.isEmpty) return;
     if (!await _ensurePermission()) return;
     if (!mounted) return;
-    final destDir =
-        await pickFromSystem(context, mode: SystemPickMode.directory);
+    final destDir = await pickFromSystem(
+      context,
+      mode: SystemPickMode.directory,
+    );
     if (destDir == null) return;
     final failed = <String>[];
     for (final entry in entries) {
@@ -596,6 +663,42 @@ class _FileBrowserState extends State<FileBrowser> {
     }
     _clearSelection();
     _reportBulkResult('导出', failed);
+  }
+
+  Future<void> _compressSelected() async {
+    final entries = _selectedEntries;
+    if (entries.isEmpty) return;
+    final messenger = ScaffoldMessenger.of(context);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: const Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('正在压缩…'),
+            ],
+          ),
+        ),
+      ),
+    );
+    try {
+      await _service.compressMany(
+        entries.map((e) => e.path).toList(),
+        _current,
+        '压缩文件.zip',
+      );
+      if (mounted) Navigator.of(context).pop();
+      _clearSelection();
+      await _load();
+      messenger.showSnackBar(const SnackBar(content: Text('压缩完成')));
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
+      _showError(e);
+    }
   }
 
   @override
@@ -620,84 +723,90 @@ class _FileBrowserState extends State<FileBrowser> {
           child: _loading
               ? const Center(child: CircularProgressIndicator())
               : _entries.isEmpty
-                  ? Center(
-                      child: Text(
-                        '此文件夹为空',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView.builder(
-                        itemCount: _entries.length,
-                        itemBuilder: (_, i) {
-                          final entry = _entries[i];
-                          final selected = _selectedPaths.contains(entry.path);
-                          return ListTile(
-                            selected: _selectionMode && selected,
-                            leading: _selectionMode
-                                ? Checkbox(
-                                    value: selected,
-                                    onChanged: (_) => _toggleSelected(entry),
-                                  )
-                                : Icon(entry.isDirectory
-                                    ? Icons.folder
-                                    : Icons.insert_drive_file_outlined),
-                            title: Text(entry.name),
-                            subtitle: Text(_subtitle(entry)),
-                            onTap: _selectionMode
-                                ? () => _toggleSelected(entry)
-                                : entry.isDirectory
-                                    ? () => _enter(entry)
-                                    : _isEditableText(entry)
-                                        ? () => _openEditor(entry)
-                                        : null,
-                            onLongPress: _selectionMode
-                                ? null
-                                : () => _enterSelection(entry),
-                            trailing: _selectionMode
-                                ? null
-                                : PopupMenuButton<_FileAction>(
-                              onSelected: (a) => _onAction(a, entry),
-                              itemBuilder: (_) => [
-                                if (!entry.isDirectory)
-                                  const PopupMenuItem(
-                                    value: _FileAction.edit,
-                                    child: Text('编辑'),
-                                  ),
-                                const PopupMenuItem(
-                                  value: _FileAction.rename,
-                                  child: Text('重命名'),
-                                ),
-                                const PopupMenuItem(
-                                  value: _FileAction.move,
-                                  child: Text('移动'),
-                                ),
-                                const PopupMenuItem(
-                                  value: _FileAction.copy,
-                                  child: Text('复制'),
-                                ),
-                                if (_isArchive(entry))
-                                  const PopupMenuItem(
-                                    value: _FileAction.extract,
-                                    child: Text('解压'),
-                                  ),
-                                const PopupMenuItem(
-                                  value: _FileAction.export,
-                                  child: Text('导出'),
-                                ),
-                                const PopupMenuItem(
-                                  value: _FileAction.delete,
-                                  child: Text('删除'),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+              ? Center(
+                  child: Text(
+                    '此文件夹为空',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.builder(
+                    itemCount: _entries.length,
+                    itemBuilder: (_, i) {
+                      final entry = _entries[i];
+                      final selected = _selectedPaths.contains(entry.path);
+                      return ListTile(
+                        selected: _selectionMode && selected,
+                        leading: _selectionMode
+                            ? Checkbox(
+                                value: selected,
+                                onChanged: (_) => _toggleSelected(entry),
+                              )
+                            : Icon(
+                                entry.isDirectory
+                                    ? Icons.folder
+                                    : Icons.insert_drive_file_outlined,
+                              ),
+                        title: Text(entry.name),
+                        subtitle: Text(_subtitle(entry)),
+                        onTap: _selectionMode
+                            ? () => _toggleSelected(entry)
+                            : entry.isDirectory
+                            ? () => _enter(entry)
+                            : _isEditableText(entry)
+                            ? () => _openEditor(entry)
+                            : null,
+                        onLongPress: _selectionMode
+                            ? null
+                            : () => _enterSelection(entry),
+                        trailing: _selectionMode
+                            ? null
+                            : PopupMenuButton<_FileAction>(
+                                onSelected: (a) => _onAction(a, entry),
+                                itemBuilder: (_) => [
+                                  if (!entry.isDirectory)
+                                    const PopupMenuItem(
+                                      value: _FileAction.edit,
+                                      child: Text('编辑'),
+                                    ),
+                                  const PopupMenuItem(
+                                    value: _FileAction.rename,
+                                    child: Text('重命名'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: _FileAction.move,
+                                    child: Text('移动'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: _FileAction.copy,
+                                    child: Text('复制'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: _FileAction.compress,
+                                    child: Text('压缩'),
+                                  ),
+                                  if (_isArchive(entry))
+                                    const PopupMenuItem(
+                                      value: _FileAction.extract,
+                                      child: Text('解压'),
+                                    ),
+                                  const PopupMenuItem(
+                                    value: _FileAction.export,
+                                    child: Text('导出'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: _FileAction.delete,
+                                    child: Text('删除'),
+                                  ),
+                                ],
+                              ),
+                      );
+                    },
+                  ),
+                ),
         ),
       ],
     );
@@ -740,6 +849,7 @@ class _FileBrowserState extends State<FileBrowser> {
             itemBuilder: (_) => const [
               PopupMenuItem(value: _BulkAction.move, child: Text('移动')),
               PopupMenuItem(value: _BulkAction.copy, child: Text('复制')),
+              PopupMenuItem(value: _BulkAction.compress, child: Text('压缩')),
               PopupMenuItem(value: _BulkAction.export, child: Text('导出')),
             ],
           ),

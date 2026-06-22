@@ -2,11 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
-/// 归档解压的平台通道封装。
+/// 归档压缩/解压的平台通道封装。
 ///
 /// 实际解压在 Android 原生侧完成（见 `ArchiveExtractor.kt`），统一支持
 /// zip / tar / tar.gz / tar.xz / tar.bz2 / tar.zst / tar.lz4 / 7z / rar，
 /// 以及单文件压缩流 xz / gz / bz2 / zst / lz4。
+/// 压缩目前统一创建 zip 文件。
 class ArchiveService {
   ArchiveService._();
 
@@ -20,6 +21,19 @@ class ArchiveService {
     final count = await _channel.invokeMethod<int>('extract', {
       'archivePath': archivePath,
       'destDir': destDir,
+    });
+    return count ?? 0;
+  }
+
+  /// 把 [sourcePaths] 压缩为 [archivePath] 指向的 zip 文件。
+  /// 返回写入归档的文件数量。
+  static Future<int> compress(
+    List<String> sourcePaths,
+    String archivePath,
+  ) async {
+    final count = await _channel.invokeMethod<int>('compress', {
+      'sourcePaths': sourcePaths,
+      'archivePath': archivePath,
     });
     return count ?? 0;
   }

@@ -139,6 +139,24 @@ class FileService {
     return target;
   }
 
+  /// 把单个文件或目录压缩为 zip，输出到 [destDir]，重名自动加后缀。
+  Future<String> compress(String sourcePath, Directory destDir) async {
+    final target = await _uniqueTarget(destDir.path, _zipNameFor(sourcePath));
+    await ArchiveService.compress([sourcePath], target);
+    return target;
+  }
+
+  /// 把多个文件或目录压缩为 zip，输出到 [destDir]，重名自动加后缀。
+  Future<String> compressMany(
+    List<String> sourcePaths,
+    Directory destDir,
+    String archiveName,
+  ) async {
+    final target = await _uniqueTarget(destDir.path, archiveName);
+    await ArchiveService.compress(sourcePaths, target);
+    return target;
+  }
+
   /// 以 UTF-8 读取文本文件内容。
   ///
   /// 内容不是合法 UTF-8（例如二进制文件）时会抛出异常，交由调用方提示用户。
@@ -171,6 +189,15 @@ class FileService {
   Future<bool> _exists(String path) async =>
       FileSystemEntity.typeSync(path) != FileSystemEntityType.notFound;
 
+  String _zipNameFor(String sourcePath) {
+    final type = FileSystemEntity.typeSync(sourcePath);
+    final name = p.basename(sourcePath);
+    final base = type == FileSystemEntityType.directory
+        ? name
+        : p.basenameWithoutExtension(name);
+    return '$base.zip';
+  }
+
   /// 防止把目录移动/复制到它自身或其子目录中。
   void _guardNotIntoSelf(String sourcePath, String destDirPath) {
     if (FileSystemEntity.typeSync(sourcePath) !=
@@ -191,7 +218,7 @@ class FileService {
 
     final ext = p.extension(name);
     final base = p.basenameWithoutExtension(name);
-    for (var i = 1;; i++) {
+    for (var i = 1; ; i++) {
       candidate = p.join(dirPath, '$base ($i)$ext');
       if (!await _exists(candidate)) return candidate;
     }
@@ -202,8 +229,9 @@ class FileService {
     final type = FileSystemEntity.typeSync(sourcePath);
     if (type == FileSystemEntityType.directory) {
       await Directory(targetPath).create(recursive: true);
-      await for (final child
-          in Directory(sourcePath).list(followLinks: false)) {
+      await for (final child in Directory(
+        sourcePath,
+      ).list(followLinks: false)) {
         await _copyEntity(
           child.path,
           p.join(targetPath, p.basename(child.path)),

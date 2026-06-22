@@ -337,9 +337,28 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // 归档解压通道：zip/tar/tar.*/7z/rar 等格式统一在原生侧解压。
+        // 归档通道：zip/tar/tar.*/7z/rar 等格式统一在原生侧处理。
         MethodChannel(messenger, "com.venti1112.edgecube/archive").setMethodCallHandler { call, result ->
             when (call.method) {
+                "compress" -> {
+                    val sourcePaths = call.argument<List<String>>("sourcePaths")
+                    val archivePath = call.argument<String>("archivePath")
+                    if (sourcePaths == null || archivePath == null) {
+                        result.error("BAD_ARGS", "缺少 sourcePaths/archivePath", null)
+                    } else {
+                        // 压缩可能耗时，放后台线程；完成后回主线程返回结果。
+                        thread {
+                            try {
+                                val count = com.venti1112.edgecube.files.ArchiveExtractor.compressToZip(
+                                    sourcePaths, archivePath,
+                                )
+                                runOnUiThread { result.success(count) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("COMPRESS_FAILED", e.message, null) }
+                            }
+                        }
+                    }
+                }
                 "extract" -> {
                     val archivePath = call.argument<String>("archivePath")
                     val destDir = call.argument<String>("destDir")

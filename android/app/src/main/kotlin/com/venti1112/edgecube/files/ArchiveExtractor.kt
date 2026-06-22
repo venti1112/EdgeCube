@@ -3,6 +3,8 @@ package com.venti1112.edgecube.files
 import com.github.junrar.Archive
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
+import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
 import org.apache.commons.compress.archivers.zip.ZipFile
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
@@ -22,11 +24,37 @@ import java.util.Locale
  *
  * 支持格式：zip、tar、tar.gz/tgz、tar.xz/txz、tar.bz2/tbz2、tar.zst、tar.lz4、
  * 7z、rar，以及单文件压缩流 xz / gz / bz2 / zst / lz4。
+ * 压缩格式：zip。
  *
  * 安全性：所有条目在写入前都经过路径穿越检查（[resolveSafe]），跳过任何
  * 会逃逸出目标目录的条目，防止 Zip Slip 等攻击。
  */
 object ArchiveExtractor {
+
+    /**
+     * 把 [sourcePaths] 中的文件/目录压缩为 zip 文件 [archivePath]。
+     *
+     * @return 写入归档的文件数量；空目录不计入。
+     */
+    fun compressToZip(sourcePaths: List<String>, archivePath: String): Int {
+        if (sourcePaths.isEmpty()) {
+            throw IllegalArgumentException("没有可压缩的文件")
+        }
+        val archive = File(archivePath)
+        archive.parentFile?.mkdirs()
+        val archiveCanon = archive.canonicalFile
+        var count = 0
+        ZipArchiveOutputStream(archive).use { zip ->
+            zip.setEncoding("UTF-8")
+            zip.setUseLanguageEncodingFlag(true)
+            for (path in sourcePaths) {
+                val source = File(path)
+                if (!source.exists()) continue
+                count += addToZip(zip, source, source.name, archiveCanon)
+            }
+        }
+        return count
+    }
 
     /**
      * 解压 [archivePath] 到 [destDir]。
@@ -87,6 +115,31 @@ object ArchiveExtractor {
     private fun stripExt(name: String, ext: String): String {
         val lower = name.lowercase(Locale.ROOT)
         return if (lower.endsWith(ext)) name.substring(0, name.length - ext.length) else name
+    }
+
+    private fun addToZip(
+        zip: ZipArchiveOutputStream,
+        source: File,
+        entryName: String,
+        archiveFile: File,
+    ): Int {
+        if (source.canonicalFile == archiveFile) return 0
+        val normalizedName = entryName.replace('\\', '/')
+        if (source.isDirectory) {
+            val dirName = normalizedName.trimEnd('/') + "/"
+            zip.putArchiveEntry(ZipArchiveEntry(dirName))
+            zip.closeArchiveEntry()
+            var count = 0
+            source.listFiles()?.sortedBy { it.name.lowercase(Locale.ROOT) }?.forEach { child ->
+                count += addToZip(zip, child, dirName + child.name, archiveFile)
+            }
+            return count
+        }
+
+        zip.putArchiveEntry(ZipArchiveEntry(normalizedName))
+        FileInputStream(source).use { input -> input.copyTo(zip) }
+        zip.closeArchiveEntry()
+        return 1
     }
 
     /** zip：用 ZipFile 随机访问解压，能正确处理条目顺序与目录创建。 */
