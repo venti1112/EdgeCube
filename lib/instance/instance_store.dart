@@ -4,16 +4,27 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../config/config_store.dart';
+import '../files/storage_permission.dart';
 import 'instance.dart';
 
 /// 解析所有实例文件夹所在的根目录。
 ///
-/// 默认指向应用私有文档目录下的 `instances/`；测试可注入临时目录。
+/// 默认指向共享内部存储 `EdgeCube/instances/`；测试可注入临时目录。
 /// 该目录存放各实例的服务端工作文件夹（jar、世界存档等），与配置文件分离。
 typedef InstancesRootResolver = Future<Directory> Function();
 
-/// 默认实例根目录 `<documents>/instances`。
+/// 默认实例根目录 `<storage>/EdgeCube/instances`。
 Future<Directory> defaultInstancesRoot() async {
+  final externalRoot = await StoragePermission.externalStorageRoot();
+  if (externalRoot != null && externalRoot.isNotEmpty) {
+    return Directory(p.join(externalRoot, 'EdgeCube', 'instances'));
+  }
+  final docs = await getApplicationDocumentsDirectory();
+  return Directory(p.join(docs.path, 'EdgeCube', 'instances'));
+}
+
+/// 旧版实例根目录 `<documents>/instances`，用于一次性数据迁移。
+Future<Directory> legacyPrivateInstancesRoot() async {
   final docs = await getApplicationDocumentsDirectory();
   return Directory(p.join(docs.path, 'instances'));
 }

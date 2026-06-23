@@ -1,8 +1,12 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../files/storage_permission.dart';
 import '../i18n/locale_scope.dart';
+import '../instance/instance_migration.dart';
+import '../instance/instance_scope.dart';
 import '../online/online_service.dart';
 import '../server/power_service.dart';
 import '../theme/theme_scope.dart';
@@ -25,6 +29,8 @@ class _SettingsPageState extends State<SettingsPage>
     with WidgetsBindingObserver {
   bool _ignoringBattery = true;
   bool _batteryLoaded = false;
+  bool _migratingInstances = false;
+  Completer<void>? _resumeWaiter;
 
   @override
   void initState() {
@@ -36,6 +42,7 @@ class _SettingsPageState extends State<SettingsPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _resumeWaiter?.complete();
     super.dispose();
   }
 
@@ -43,6 +50,11 @@ class _SettingsPageState extends State<SettingsPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // 从系统电池设置页返回前台时刷新状态。
     if (state == AppLifecycleState.resumed) _refreshBattery();
+    if (state == AppLifecycleState.resumed) {
+      final waiter = _resumeWaiter;
+      _resumeWaiter = null;
+      if (waiter != null && !waiter.isCompleted) waiter.complete();
+    }
   }
 
   Future<void> _refreshBattery() async {
@@ -58,6 +70,100 @@ class _SettingsPageState extends State<SettingsPage>
     await PowerService.requestIgnoreBatteryOptimizations();
     // 请求后立即刷新一次；返回前台时还会再刷新。
     await _refreshBattery();
+  }
+
+  Future<void> _migrateInstances() async {
+    if (_migratingInstances) return;
+    setState(() => _migratingInstances = true);
+    final instances = InstanceScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      if (!await _ensureMigrationStoragePermission()) return;
+      if (!mounted) return;
+      final result = await showDialog<InstanceMigrationResult>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const _ManualInstanceMigrationDialog(),
+      );
+      if (!mounted) return;
+      if (result == null) return;
+      await instances.init();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(_migrationMessage(context, result))),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            context.tr('settings.storage.migrateFailed', {
+              'error': error.toString(),
+            }),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _migratingInstances = false);
+    }
+  }
+
+  Future<bool> _ensureMigrationStoragePermission() async {
+    if (await StoragePermission.isGranted()) return true;
+    if (!mounted) return false;
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.tr('instance.storagePermissionTitle')),
+        content: Text(ctx.tr('settings.storage.permissionMessage')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.tr('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.tr('instance.goGrant')),
+          ),
+        ],
+      ),
+    );
+    if (go != true) return false;
+    final resumeWaiter = Completer<void>();
+    _resumeWaiter = resumeWaiter;
+    await StoragePermission.request();
+    await resumeWaiter.future;
+    await _waitForStoragePermissionGranted();
+    if (!mounted) return false;
+    return StoragePermission.isGranted();
+  }
+
+  Future<void> _waitForStoragePermissionGranted() async {
+    for (var i = 0; mounted && i < 25; i++) {
+      if (await StoragePermission.isGranted()) return;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+  }
+
+  String _migrationMessage(
+    BuildContext context,
+    InstanceMigrationResult result,
+  ) {
+    if (!result.hasWork) {
+      return context.tr('settings.storage.migrateNoData');
+    }
+    if (!result.success) {
+      return context.tr('settings.storage.migratePartial', {
+        'migrated': '${result.migrated}',
+        'skipped': '${result.skipped}',
+        'failed': '${result.failed}',
+      });
+    }
+    return context.tr('settings.storage.migrateSuccess', {
+      'migrated': '${result.migrated}',
+      'skipped': '${result.skipped}',
+    });
   }
 
   String _themeModeLabel(BuildContext context, ThemeMode mode) {
@@ -114,6 +220,24 @@ class _SettingsPageState extends State<SettingsPage>
             _sectionHeader(theme, context.tr('settings.section.keepAlive')),
             _buildBatteryTile(context, theme),
           ],
+          const Divider(),
+          _sectionHeader(theme, context.tr('settings.section.storage')),
+          ListTile(
+            leading: const Icon(Icons.drive_file_move_outline),
+            title: Text(context.tr('settings.storage.migrateTitle')),
+            subtitle: Text(context.tr('settings.storage.migrateSubtitle')),
+            trailing: _migratingInstances
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : FilledButton.tonal(
+                    onPressed: _migrateInstances,
+                    child: Text(context.tr('settings.storage.migrateAction')),
+                  ),
+            onTap: _migratingInstances ? null : _migrateInstances,
+          ),
           const Divider(),
           _sectionHeader(theme, context.tr('settings.section.online')),
           ListenableBuilder(
@@ -206,6 +330,73 @@ class _SettingsPageState extends State<SettingsPage>
       onTap: (!_batteryLoaded || _ignoringBattery)
           ? null
           : _requestIgnoreBattery,
+    );
+  }
+}
+
+class _ManualInstanceMigrationDialog extends StatefulWidget {
+  const _ManualInstanceMigrationDialog();
+
+  @override
+  State<_ManualInstanceMigrationDialog> createState() =>
+      _ManualInstanceMigrationDialogState();
+}
+
+class _ManualInstanceMigrationDialogState
+    extends State<_ManualInstanceMigrationDialog> {
+  int _processed = 0;
+  int _total = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _migrate());
+  }
+
+  Future<void> _migrate() async {
+    final result = await InstanceMigration.migrateLegacyInstances(
+      onProgress: (processed, total) {
+        if (!mounted) return;
+        setState(() {
+          _processed = processed;
+          _total = total;
+        });
+      },
+    );
+    if (mounted) Navigator.of(context).pop(result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = _total == 0 ? null : _processed / _total;
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircularProgressIndicator(value: progress),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Text(
+                    _total == 0
+                        ? context.tr('settings.storage.migrating')
+                        : context.tr('settings.storage.migratingProgress', {
+                            'processed': '$_processed',
+                            'total': '$_total',
+                          }),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(context.tr('settings.storage.migratingDoNotClose')),
+          ],
+        ),
+      ),
     );
   }
 }

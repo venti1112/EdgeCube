@@ -138,7 +138,32 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       await _showDuplicateDialog(name);
       return false;
     }
-    return true;
+    return _ensureInstanceStoragePermission();
+  }
+
+  Future<bool> _ensureInstanceStoragePermission() async {
+    if (await StoragePermission.isGranted()) return true;
+    if (!mounted) return false;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.tr('instance.storagePermissionTitle')),
+        content: Text(ctx.tr('instance.createStoragePermissionMessage')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.tr('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.tr('instance.goGrant')),
+          ),
+        ],
+      ),
+    );
+    if (go != true) return false;
+    await StoragePermission.request();
+    return false;
   }
 
   Future<void> _goToServerType() async {

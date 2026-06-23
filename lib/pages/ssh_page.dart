@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config/ssh_store.dart';
+import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
 import '../net/network_address.dart';
@@ -103,7 +104,7 @@ class _SshPageState extends State<SshPage> {
         await ssh.setShellEnabled(value);
       }
     } catch (e) {
-      _snack(context.tr('ssh.operationFailed', {'error': e.toString()}));
+      _snack(tr('ssh.operationFailed', {'error': e.toString()}));
     }
   }
 

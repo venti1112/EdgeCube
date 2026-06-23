@@ -11,6 +11,7 @@ import 'home_shell.dart';
 import 'i18n/locale_controller.dart';
 import 'i18n/locale_scope.dart';
 import 'instance/instance_controller.dart';
+import 'instance/instance_migration.dart';
 import 'instance/instance_scope.dart';
 import 'mcp/mcp_controller.dart';
 import 'mcp/mcp_scope.dart';
@@ -33,8 +34,12 @@ Future<void> main() async {
   // 把旧版 SharedPreferences 中的历史配置迁移到新的文件式布局（只执行一次），
   // 必须先于下面任何新配置读取。
   await ConfigMigration.run();
+  final lastVersion = await VersionStore.loadLastVersion();
   // 记录本次启动的版本到 config/version.json（更新 lastVersion 并追加历史）。
-  await VersionStore.recordOpen();
+  // 自动迁移需在首帧后显示进度，因此迁移完成后由应用内流程记录。
+  if (!InstanceMigration.shouldAutoMigrateFrom(lastVersion)) {
+    await VersionStore.recordOpen();
+  }
   // 多语言：加载已选语言与内置/自定义翻译表，须先于首帧渲染。
   final localeController = LocaleController();
   await localeController.init();
@@ -95,6 +100,7 @@ Future<void> main() async {
       mcpController: mcpController,
       shellController: shellController,
       sshController: sshController,
+      lastVersion: lastVersion,
     ),
   );
 }
@@ -146,6 +152,7 @@ class EdgeCubeApp extends StatefulWidget {
     required this.mcpController,
     required this.shellController,
     required this.sshController,
+    required this.lastVersion,
   });
 
   final ThemeMode initialThemeMode;
@@ -162,6 +169,7 @@ class EdgeCubeApp extends StatefulWidget {
   final McpController mcpController;
   final ShellController shellController;
   final SshController sshController;
+  final String? lastVersion;
 
   @override
   State<EdgeCubeApp> createState() => _EdgeCubeAppState();
@@ -304,6 +312,7 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                                 },
                                 home: HomeShell(
                                   onlineService: widget.onlineService,
+                                  lastVersion: widget.lastVersion,
                                 ),
                               );
                             },

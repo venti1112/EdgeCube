@@ -217,6 +217,7 @@ class _FileBrowserState extends State<FileBrowser> {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final instances = InstanceScope.of(context);
+    final successMessage = context.tr('fileBrowser.importSuccess');
     final sourcePath = await pickFromSystem(context, mode: SystemPickMode.file);
     if (sourcePath == null) return;
     try {
@@ -224,9 +225,7 @@ class _FileBrowserState extends State<FileBrowser> {
       await _load();
       // 通知服务器页重新扫描，新导入的 jar 可被立即识别。
       instances.notifyInstanceFilesChanged();
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('fileBrowser.importSuccess'))),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
       _showError(e);
     }
@@ -345,6 +344,7 @@ class _FileBrowserState extends State<FileBrowser> {
     if (!await _ensurePermission()) return;
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    final successMessage = context.tr('fileBrowser.exportSuccess');
     final destDir = await pickFromSystem(
       context,
       mode: SystemPickMode.directory,
@@ -352,9 +352,7 @@ class _FileBrowserState extends State<FileBrowser> {
     if (destDir == null) return;
     try {
       await _service.exportTo(entry.path, destDir);
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('fileBrowser.exportSuccess'))),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
       _showError(e);
     }
@@ -363,6 +361,8 @@ class _FileBrowserState extends State<FileBrowser> {
   /// 压缩单个文件或文件夹为同名 zip，输出到当前目录。
   Future<void> _compress(FileEntry entry) async {
     final messenger = ScaffoldMessenger.of(context);
+    final compressingMessage = context.tr('fileBrowser.compressing');
+    final successMessage = context.tr('fileBrowser.compressSuccess');
     if (!mounted) return;
     showDialog<void>(
       context: context,
@@ -374,7 +374,7 @@ class _FileBrowserState extends State<FileBrowser> {
             children: [
               const CircularProgressIndicator(),
               const SizedBox(width: 20),
-              Text(context.tr('fileBrowser.compressing')),
+              Text(compressingMessage),
             ],
           ),
         ),
@@ -384,9 +384,7 @@ class _FileBrowserState extends State<FileBrowser> {
       await _service.compress(entry.path, _current);
       if (mounted) Navigator.of(context).pop();
       await _load();
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('fileBrowser.compressSuccess'))),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e);
@@ -397,6 +395,8 @@ class _FileBrowserState extends State<FileBrowser> {
   Future<void> _extract(FileEntry entry) async {
     final instances = InstanceScope.of(context);
     final messenger = ScaffoldMessenger.of(context);
+    final extractingMessage = context.tr('fileBrowser.extracting');
+    final successMessage = context.tr('fileBrowser.extractSuccess');
     final subfolderName = _archiveBaseName(entry.name);
     // 解压可能耗时，显示不可取消的加载对话框。
     if (!mounted) return;
@@ -410,7 +410,7 @@ class _FileBrowserState extends State<FileBrowser> {
             children: [
               const CircularProgressIndicator(),
               const SizedBox(width: 20),
-              Text(context.tr('fileBrowser.extracting')),
+              Text(extractingMessage),
             ],
           ),
         ),
@@ -422,9 +422,7 @@ class _FileBrowserState extends State<FileBrowser> {
       await _load();
       // 解压出的文件可能含 jar，通知服务器页重新扫描。
       instances.notifyInstanceFilesChanged();
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('fileBrowser.extractSuccess'))),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
       if (mounted) Navigator.of(context).pop(); // 关闭加载对话框
       _showError(e);
@@ -589,6 +587,7 @@ class _FileBrowserState extends State<FileBrowser> {
     final entries = _selectedEntries;
     if (entries.isEmpty) return;
     final instances = InstanceScope.of(context);
+    final deleteLabel = context.tr('common.delete');
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -622,13 +621,14 @@ class _FileBrowserState extends State<FileBrowser> {
     _clearSelection();
     await _load();
     instances.notifyInstanceFilesChanged();
-    _reportBulkResult(context.tr('common.delete'), failed);
+    _reportBulkResult(deleteLabel, failed);
   }
 
   Future<void> _moveSelected() async {
     final entries = _selectedEntries;
     if (entries.isEmpty) return;
     final instances = InstanceScope.of(context);
+    final moveLabel = context.tr('fileBrowser.move');
     final dest = await pickFolder(
       context,
       rootDir: widget.rootDir,
@@ -648,13 +648,14 @@ class _FileBrowserState extends State<FileBrowser> {
     _clearSelection();
     await _load();
     instances.notifyInstanceFilesChanged();
-    _reportBulkResult(context.tr('fileBrowser.move'), failed);
+    _reportBulkResult(moveLabel, failed);
   }
 
   Future<void> _copySelected() async {
     final entries = _selectedEntries;
     if (entries.isEmpty) return;
     final instances = InstanceScope.of(context);
+    final copyLabel = context.tr('common.copy');
     final dest = await pickFolder(
       context,
       rootDir: widget.rootDir,
@@ -674,7 +675,7 @@ class _FileBrowserState extends State<FileBrowser> {
     _clearSelection();
     await _load();
     instances.notifyInstanceFilesChanged();
-    _reportBulkResult(context.tr('common.copy'), failed);
+    _reportBulkResult(copyLabel, failed);
   }
 
   Future<void> _exportSelected() async {
@@ -682,6 +683,7 @@ class _FileBrowserState extends State<FileBrowser> {
     if (entries.isEmpty) return;
     if (!await _ensurePermission()) return;
     if (!mounted) return;
+    final exportLabel = context.tr('fileBrowser.export');
     final destDir = await pickFromSystem(
       context,
       mode: SystemPickMode.directory,
@@ -696,13 +698,15 @@ class _FileBrowserState extends State<FileBrowser> {
       }
     }
     _clearSelection();
-    _reportBulkResult(context.tr('fileBrowser.export'), failed);
+    _reportBulkResult(exportLabel, failed);
   }
 
   Future<void> _compressSelected() async {
     final entries = _selectedEntries;
     if (entries.isEmpty) return;
     final messenger = ScaffoldMessenger.of(context);
+    final compressingMessage = context.tr('fileBrowser.compressing');
+    final successMessage = context.tr('fileBrowser.compressSuccess');
 
     // 让用户输入压缩包名称（可取消）；自动补 .zip 后缀。
     final inputName = await _promptText(
@@ -727,7 +731,7 @@ class _FileBrowserState extends State<FileBrowser> {
             children: [
               const CircularProgressIndicator(),
               const SizedBox(width: 20),
-              Text(context.tr('fileBrowser.compressing')),
+              Text(compressingMessage),
             ],
           ),
         ),
@@ -742,9 +746,7 @@ class _FileBrowserState extends State<FileBrowser> {
       if (mounted) Navigator.of(context).pop();
       _clearSelection();
       await _load();
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('fileBrowser.compressSuccess'))),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e);

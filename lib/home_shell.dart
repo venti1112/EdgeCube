@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'config/network_store.dart';
+import 'config/version_store.dart';
 import 'files/file_browser.dart';
+import 'files/storage_permission.dart';
 import 'i18n/locale_scope.dart';
+import 'instance/instance_migration.dart';
+import 'instance/instance_scope.dart';
 import 'online/online_service.dart';
 import 'online/update_service.dart';
 import 'pages/console_page.dart';
@@ -15,21 +21,25 @@ import 'widgets/update_dialog.dart';
 
 /// 应用主壳：底部导航栏 + 页面切换。
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key, required this.onlineService});
+  const HomeShell({super.key, required this.onlineService, this.lastVersion});
 
   final OnlineService onlineService;
+  final String? lastVersion;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   late final List<Widget> _tabPages;
+  Completer<void>? _resumeWaiter;
+  bool _checkingStoragePermission = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabPages = [
       ServerPage(onlineService: widget.onlineService),
       const ConsolePage(),
@@ -37,13 +47,100 @@ class _HomeShellState extends State<HomeShell> {
       const FilesPage(),
       SettingsPage(onlineService: widget.onlineService),
     ];
-    // 首次启动弹窗：询问是否启用在线服务。
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _showFirstLaunchDialog(),
+    WidgetsBinding.instance.addPostFrameCallback((_) => _runStartupTasks());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _resumeWaiter?.complete();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final waiter = _resumeWaiter;
+      _resumeWaiter = null;
+      if (waiter != null && !waiter.isCompleted) waiter.complete();
+      if (waiter == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _ensureStoragePermissionGuard();
+        });
+      }
+    }
+  }
+
+  Future<void> _runStartupTasks() async {
+    final storageReady = await _ensureStoragePermissionGuard();
+    if (!storageReady || !mounted) return;
+    await _maybeAutoMigrateInstances();
+    if (!mounted) return;
+    await _showFirstLaunchDialog();
+    if (!mounted) return;
+    await _checkUpdatesInBackground();
+  }
+
+  Future<bool> _ensureStoragePermissionGuard() async {
+    if (_checkingStoragePermission) return StoragePermission.isGranted();
+    _checkingStoragePermission = true;
+    try {
+      while (mounted && !await StoragePermission.isGranted()) {
+        final go = await _showStartupStoragePermissionDialog();
+        if (go != true) return false;
+        final resumeWaiter = Completer<void>();
+        _resumeWaiter = resumeWaiter;
+        await StoragePermission.request();
+        await resumeWaiter.future;
+        await _waitForStoragePermissionGranted();
+      }
+      return mounted;
+    } finally {
+      _checkingStoragePermission = false;
+    }
+  }
+
+  Future<void> _waitForStoragePermissionGranted() async {
+    for (var i = 0; mounted && i < 25; i++) {
+      if (await StoragePermission.isGranted()) return;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+  }
+
+  Future<bool?> _showStartupStoragePermissionDialog() {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.tr('instance.storagePermissionTitle')),
+        content: Text(ctx.tr('settings.storage.startupPermissionMessage')),
+        actions: [
+          TextButton(
+            onPressed: () => SystemNavigator.pop(),
+            child: Text(ctx.tr('common.close')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.tr('instance.goGrant')),
+          ),
+        ],
+      ),
     );
-    // 启动时后台检查更新；检查失败静默忽略，仅在检查成功且有更新时提示。
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _checkUpdatesInBackground(),
+  }
+
+  Future<void> _maybeAutoMigrateInstances() async {
+    if (!InstanceMigration.shouldAutoMigrateFrom(widget.lastVersion)) return;
+    if (!mounted) return;
+    final instances = InstanceScope.of(context);
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _InstanceMigrationDialog(
+        onComplete: () async {
+          await instances.init();
+          await VersionStore.recordOpen();
+        },
+      ),
     );
   }
 
@@ -222,5 +319,101 @@ class _HomeShellState extends State<HomeShell> {
         ),
       );
     }
+  }
+}
+
+class _InstanceMigrationDialog extends StatefulWidget {
+  const _InstanceMigrationDialog({required this.onComplete});
+
+  final Future<void> Function() onComplete;
+
+  @override
+  State<_InstanceMigrationDialog> createState() =>
+      _InstanceMigrationDialogState();
+}
+
+class _InstanceMigrationDialogState extends State<_InstanceMigrationDialog> {
+  int _processed = 0;
+  int _total = 0;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _migrate());
+  }
+
+  Future<void> _migrate() async {
+    try {
+      final result = await InstanceMigration.migrateLegacyInstances(
+        onProgress: (processed, total) {
+          if (!mounted) return;
+          setState(() {
+            _processed = processed;
+            _total = total;
+          });
+        },
+      );
+      if (!result.success) {
+        throw result.error ?? StateError('Instance migration failed');
+      }
+      await widget.onComplete();
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      await VersionStore.recordOpen();
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = _total == 0 ? null : _processed / _total;
+    return PopScope(
+      canPop: _error != null,
+      child: AlertDialog(
+        title: Text(context.tr('settings.storage.autoMigrateTitle')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_error == null) ...[
+              Row(
+                children: [
+                  CircularProgressIndicator(value: progress),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Text(
+                      _total == 0
+                          ? context.tr('settings.storage.migrating')
+                          : context.tr('settings.storage.migratingProgress', {
+                              'processed': '$_processed',
+                              'total': '$_total',
+                            }),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(context.tr('settings.storage.migratingDoNotClose')),
+            ] else ...[
+              Text(
+                context.tr('settings.storage.migrateFailed', {
+                  'error': _error!,
+                }),
+              ),
+            ],
+          ],
+        ),
+        actions: _error == null
+            ? null
+            : [
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(context.tr('common.ok')),
+                ),
+              ],
+      ),
+    );
   }
 }
