@@ -61,12 +61,29 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Android 13+ 显示前台 Service 通知需要运行时授权；未授权也不影响保活，仅不显示通知。
+        requestPostNotifications()
+    }
+
+    /** 请求通知权限（Android 13+）；授权后自动接着请求本地网络权限。 */
+    private fun requestPostNotifications() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED
             ) {
                 requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+                return
+            }
+        }
+        requestLocalNetworkPermission()
+    }
+
+    /** Android 17+ 需要 ACCESS_LOCAL_NETWORK 权限才能访问局域网（Minecraft 服务端、FTP、SSH、UPnP）。 */
+    private fun requestLocalNetworkPermission() {
+        if (Build.VERSION.SDK_INT >= 37) {
+            if (checkSelfPermission(android.Manifest.permission.ACCESS_LOCAL_NETWORK)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(arrayOf(android.Manifest.permission.ACCESS_LOCAL_NETWORK), 1004)
             }
         }
     }
@@ -77,9 +94,15 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 1002) {
-            pendingPhotoPermissionResult?.success(hasPhotoPermission())
-            pendingPhotoPermissionResult = null
+        when (requestCode) {
+            1001 -> {
+                // 通知权限对话框关闭后，接着请求本地网络权限。
+                requestLocalNetworkPermission()
+            }
+            1002 -> {
+                pendingPhotoPermissionResult?.success(hasPhotoPermission())
+                pendingPhotoPermissionResult = null
+            }
         }
     }
 
