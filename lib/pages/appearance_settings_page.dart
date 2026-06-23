@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../i18n/locale_scope.dart';
 import '../theme/precipitation_effect_mode.dart';
 import '../theme/theme_scope.dart';
 
@@ -10,16 +11,16 @@ import '../theme/theme_scope.dart';
 class AppearanceSettingsPage extends StatelessWidget {
   const AppearanceSettingsPage({super.key});
 
-  /// 预设种子色列表。
+  /// 预设种子色列表（标签存翻译 key，展示时经 context.tr 解析）。
   static const List<_SeedColorOption> _presetColors = [
-    _SeedColorOption('绿色', Colors.green),
-    _SeedColorOption('蓝色', Colors.blue),
-    _SeedColorOption('紫色', Colors.purple),
-    _SeedColorOption('红色', Colors.red),
-    _SeedColorOption('橙色', Colors.orange),
-    _SeedColorOption('青色', Colors.teal),
-    _SeedColorOption('粉色', Colors.pink),
-    _SeedColorOption('靛蓝', Colors.indigo),
+    _SeedColorOption('appearance.color.green', Colors.green),
+    _SeedColorOption('appearance.color.blue', Colors.blue),
+    _SeedColorOption('appearance.color.purple', Colors.purple),
+    _SeedColorOption('appearance.color.red', Colors.red),
+    _SeedColorOption('appearance.color.orange', Colors.orange),
+    _SeedColorOption('appearance.color.teal', Colors.teal),
+    _SeedColorOption('appearance.color.pink', Colors.pink),
+    _SeedColorOption('appearance.color.indigo', Colors.indigo),
   ];
 
   @override
@@ -28,31 +29,31 @@ class AppearanceSettingsPage extends StatelessWidget {
     final themeScope = ThemeScope.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('外观设置')),
+      appBar: AppBar(title: Text(context.tr('appearance.title'))),
       body: ListView(
         children: [
           // ── 主题模式 ──
-          _sectionHeader(theme, '主题模式'),
+          _sectionHeader(theme, context.tr('appearance.themeModeSection')),
           RadioGroup<ThemeMode>(
             groupValue: themeScope.themeMode,
             onChanged: (mode) {
               if (mode != null) themeScope.setThemeMode(mode);
             },
-            child: const Column(
+            child: Column(
               children: [
                 RadioListTile<ThemeMode>(
-                  title: Text('跟随系统'),
-                  secondary: Icon(Icons.brightness_auto),
+                  title: Text(context.tr('themeMode.system')),
+                  secondary: const Icon(Icons.brightness_auto),
                   value: ThemeMode.system,
                 ),
                 RadioListTile<ThemeMode>(
-                  title: Text('深色模式'),
-                  secondary: Icon(Icons.dark_mode),
+                  title: Text(context.tr('themeMode.dark')),
+                  secondary: const Icon(Icons.dark_mode),
                   value: ThemeMode.dark,
                 ),
                 RadioListTile<ThemeMode>(
-                  title: Text('浅色模式'),
-                  secondary: Icon(Icons.light_mode),
+                  title: Text(context.tr('themeMode.light')),
+                  secondary: const Icon(Icons.light_mode),
                   value: ThemeMode.light,
                 ),
               ],
@@ -62,13 +63,13 @@ class AppearanceSettingsPage extends StatelessWidget {
           const Divider(),
 
           // ── 主题色 ──
-          _sectionHeader(theme, '主题色'),
+          _sectionHeader(theme, context.tr('appearance.themeColorSection')),
 
           // 跟随系统主题色（仅 Android 12+ 支持）。
           if (Platform.isAndroid)
             SwitchListTile(
-              title: const Text('跟随系统主题色'),
-              subtitle: const Text('使用系统壁纸取色 (Android 12+)'),
+              title: Text(context.tr('appearance.dynamicColor')),
+              subtitle: Text(context.tr('appearance.dynamicColorSubtitle')),
               secondary: const Icon(Icons.auto_awesome),
               value: themeScope.useDynamicColor,
               onChanged: (v) => themeScope.setUseDynamicColor(v),
@@ -77,11 +78,11 @@ class AppearanceSettingsPage extends StatelessWidget {
           // 自定义种子色（当跟随系统主题色关闭时可用）。
           ListTile(
             leading: const Icon(Icons.palette),
-            title: const Text('自定义种子色'),
+            title: Text(context.tr('appearance.customSeed')),
             subtitle: Text(
               themeScope.useDynamicColor
-                  ? '已跟随系统主题色，自定义种子色不可用'
-                  : _currentSeedLabel(themeScope.seedColor),
+                  ? context.tr('appearance.dynamicColorOnHint')
+                  : context.tr(_currentSeedLabel(themeScope.seedColor)),
             ),
             trailing: CircleAvatar(
               radius: 14,
@@ -95,10 +96,10 @@ class AppearanceSettingsPage extends StatelessWidget {
 
           const Divider(),
 
-          _sectionHeader(theme, '界面效果'),
+          _sectionHeader(theme, context.tr('appearance.effectSection')),
           SwitchListTile(
-            title: const Text('飘落效果'),
-            subtitle: const Text('开启后在整个 App 界面显示所选效果'),
+            title: Text(context.tr('appearance.precipitation')),
+            subtitle: Text(context.tr('appearance.precipitationSubtitle')),
             secondary: const Icon(Icons.ac_unit),
             value: themeScope.snowfallEnabled,
             onChanged: (v) => themeScope.setSnowfallEnabled(v),
@@ -107,21 +108,21 @@ class AppearanceSettingsPage extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
             child: SegmentedButton<PrecipitationEffectMode>(
               showSelectedIcon: false,
-              segments: const [
+              segments: [
                 ButtonSegment(
                   value: PrecipitationEffectMode.snow,
-                  icon: Icon(Icons.ac_unit),
-                  label: Text('雪花'),
+                  icon: const Icon(Icons.ac_unit),
+                  label: Text(context.tr('appearance.effect.snow')),
                 ),
                 ButtonSegment(
                   value: PrecipitationEffectMode.rain,
-                  icon: Icon(Icons.water_drop_outlined),
-                  label: Text('雨点'),
+                  icon: const Icon(Icons.water_drop_outlined),
+                  label: Text(context.tr('appearance.effect.rain')),
                 ),
                 ButtonSegment(
                   value: PrecipitationEffectMode.hail,
-                  icon: Icon(Icons.circle_outlined),
-                  label: Text('冰雹'),
+                  icon: const Icon(Icons.circle_outlined),
+                  label: Text(context.tr('appearance.effect.hail')),
                 ),
               ],
               selected: {themeScope.precipitationMode},
@@ -138,9 +139,10 @@ class AppearanceSettingsPage extends StatelessWidget {
   String _currentSeedLabel(Color c) {
     final match = _presetColors.firstWhere(
       (o) => o.color.toARGB32() == c.toARGB32(),
-      orElse: () => const _SeedColorOption('自定义', Colors.transparent),
+      orElse: () =>
+          const _SeedColorOption('appearance.color.custom', Colors.transparent),
     );
-    return match.label;
+    return match.labelKey;
   }
 
   Widget _sectionHeader(ThemeData theme, String text) {
@@ -205,7 +207,7 @@ class _SeedColorPickerDialogState extends State<_SeedColorPickerDialog>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AlertDialog(
-      title: const Text('选择种子色'),
+      title: Text(context.tr('appearance.seedPickerTitle')),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -213,9 +215,9 @@ class _SeedColorPickerDialogState extends State<_SeedColorPickerDialog>
           children: [
             TabBar(
               controller: _tabCtrl,
-              tabs: const [
-                Tab(text: '预设'),
-                Tab(text: '色盘'),
+              tabs: [
+                Tab(text: context.tr('appearance.seedTab.preset')),
+                Tab(text: context.tr('appearance.seedTab.wheel')),
               ],
             ),
             const SizedBox(height: 16),
@@ -238,7 +240,7 @@ class _SeedColorPickerDialogState extends State<_SeedColorPickerDialog>
                         onTap: () =>
                             setState(() => _pickedColor = option.color),
                         child: Tooltip(
-                          message: option.label,
+                          message: context.tr(option.labelKey),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 180),
                             decoration: BoxDecoration(
@@ -278,15 +280,24 @@ class _SeedColorPickerDialogState extends State<_SeedColorPickerDialog>
                       onColorChanged: (c) => setState(() => _pickedColor = c),
                       heading: Padding(
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: Text('自由取色', style: theme.textTheme.titleSmall),
+                        child: Text(
+                          context.tr('appearance.freeColor'),
+                          style: theme.textTheme.titleSmall,
+                        ),
                       ),
                       subheading: Padding(
                         padding: const EdgeInsets.only(top: 8, bottom: 4),
-                        child: Text('色调明度', style: theme.textTheme.labelSmall),
+                        child: Text(
+                          context.tr('appearance.hueBrightness'),
+                          style: theme.textTheme.labelSmall,
+                        ),
                       ),
                       wheelSubheading: Padding(
                         padding: const EdgeInsets.only(top: 8, bottom: 4),
-                        child: Text('色相环', style: theme.textTheme.labelSmall),
+                        child: Text(
+                          context.tr('appearance.hueRing'),
+                          style: theme.textTheme.labelSmall,
+                        ),
                       ),
                       showMaterialName: false,
                       showColorName: true,
@@ -294,7 +305,11 @@ class _SeedColorPickerDialogState extends State<_SeedColorPickerDialog>
                       colorCodeHasColor: true,
                       showRecentColors: false,
                       enableTonalPalette: false,
-                      pickerTypeLabels: const {ColorPickerType.wheel: '色轮'},
+                      pickerTypeLabels: {
+                        ColorPickerType.wheel: context.tr(
+                          'appearance.colorWheel',
+                        ),
+                      },
                       pickersEnabled: const <ColorPickerType, bool>{
                         ColorPickerType.both: false,
                         ColorPickerType.primary: false,
@@ -314,11 +329,11 @@ class _SeedColorPickerDialogState extends State<_SeedColorPickerDialog>
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(null),
-          child: const Text('取消'),
+          child: Text(context.tr('common.cancel')),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(_pickedColor),
-          child: const Text('确认'),
+          child: Text(context.tr('common.confirm')),
         ),
       ],
     );
@@ -326,7 +341,7 @@ class _SeedColorPickerDialogState extends State<_SeedColorPickerDialog>
 }
 
 class _SeedColorOption {
-  const _SeedColorOption(this.label, this.color);
-  final String label;
+  const _SeedColorOption(this.labelKey, this.color);
+  final String labelKey;
   final Color color;
 }

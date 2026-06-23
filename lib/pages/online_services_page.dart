@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/locale_scope.dart';
 import '../online/online_service.dart';
 
 /// 在线服务设置页面：提供总开关控制所有在线服务的启用状态。
@@ -33,13 +34,13 @@ class _OnlineServicesPageState extends State<OnlineServicesPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('在线服务')),
+      appBar: AppBar(title: Text(context.tr('online.title'))),
       body: ListView(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              '总开关',
+              context.tr('online.masterSwitch'),
               style: theme.textTheme.titleSmall?.copyWith(
                 color: theme.colorScheme.primary,
               ),
@@ -47,8 +48,8 @@ class _OnlineServicesPageState extends State<OnlineServicesPage> {
           ),
           SwitchListTile(
             secondary: const Icon(Icons.cloud_outlined),
-            title: const Text('启用在线服务'),
-            subtitle: const Text('关闭后将停止在线服务'),
+            title: Text(context.tr('online.enableService')),
+            subtitle: Text(context.tr('online.disableHint')),
             value: _svc.enabled,
             onChanged: _switching ? null : _onToggle,
           ),
@@ -57,7 +58,7 @@ class _OnlineServicesPageState extends State<OnlineServicesPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text(
-                '设备标识',
+                context.tr('online.deviceIdSection'),
                 style: theme.textTheme.titleSmall?.copyWith(
                   color: theme.colorScheme.primary,
                 ),
@@ -65,7 +66,7 @@ class _OnlineServicesPageState extends State<OnlineServicesPage> {
             ),
             ListTile(
               leading: const Icon(Icons.fingerprint),
-              title: const Text('设备 ID'),
+              title: Text(context.tr('online.deviceId')),
               subtitle: SelectableText(
                 _svc.deviceId!,
                 style: theme.textTheme.bodySmall,
@@ -76,7 +77,7 @@ class _OnlineServicesPageState extends State<OnlineServicesPage> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              '服务列表',
+              context.tr('online.serviceList'),
               style: theme.textTheme.titleSmall?.copyWith(
                 color: theme.colorScheme.primary,
               ),
@@ -84,8 +85,8 @@ class _OnlineServicesPageState extends State<OnlineServicesPage> {
           ),
           ListTile(
             leading: const Icon(Icons.extension_outlined),
-            title: const Text('暂无更多服务'),
-            subtitle: const Text('敬请期待'),
+            title: Text(context.tr('online.noMoreServices')),
+            subtitle: Text(context.tr('online.comingSoon')),
             enabled: false,
           ),
         ],

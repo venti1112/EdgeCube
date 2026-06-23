@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config/ssh_store.dart';
+import '../i18n/locale_scope.dart';
+import '../instance/instance_scope.dart';
+import '../net/network_address.dart';
 import '../ssh/ssh_controller.dart';
 import '../ssh/ssh_scope.dart';
 import '../ssh/ssh_service.dart';
-import '../instance/instance_scope.dart';
-import '../net/network_address.dart';
 
 /// SSH 服务页：对外开放当前实例目录的 SFTP 文件访问与 SSH 远程终端。
 ///
@@ -87,11 +88,11 @@ class _SshPageState extends State<SshPage> {
     final ssh = SshScope.of(context);
     if (value) {
       if (InstanceScope.of(context).selected == null) {
-        _snack('没有选中的实例，无法确定 SSH 根目录');
+        _snack(context.tr('ssh.noInstanceSelected'));
         return;
       }
       if (!ssh.config.hasCredentials) {
-        _snack('请先在下方填写用户名和密码并保存配置');
+        _snack(context.tr('ssh.credentialsRequired'));
         return;
       }
     }
@@ -102,14 +103,14 @@ class _SshPageState extends State<SshPage> {
         await ssh.setShellEnabled(value);
       }
     } catch (e) {
-      _snack('操作失败：$e');
+      _snack(context.tr('ssh.operationFailed', {'error': e.toString()}));
     }
   }
 
   /// 保存配置；若服务正在运行则自动重启以应用新配置。
   Future<void> _saveConfig() async {
     if (_username.text.trim().isEmpty || _password.text.isEmpty) {
-      _snack('请填写用户名和密码（SSH 服务不支持匿名访问）');
+      _snack(context.tr('ssh.credentialsRequiredSave'));
       return;
     }
     final ssh = SshScope.of(context);
@@ -120,7 +121,11 @@ class _SshPageState extends State<SshPage> {
     setState(() => _localIpv6 = ipv6);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ssh.isRunning ? '已保存并重启 SSH 服务' : '已保存'),
+        content: Text(
+          ssh.isRunning
+              ? context.tr('ssh.savedAndRestarted')
+              : context.tr('ssh.saved'),
+        ),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -136,7 +141,7 @@ class _SshPageState extends State<SshPage> {
     final theme = Theme.of(context);
     final ssh = SshScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('SSH 服务')),
+      appBar: AppBar(title: Text(context.tr('ssh.title'))),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -161,11 +166,11 @@ class _SshPageState extends State<SshPage> {
     final hasRoot = ssh.rootDir != null;
     final String subtitle;
     if (!hasRoot) {
-      subtitle = '请先选择一个实例';
+      subtitle = context.tr('ssh.selectInstanceFirst');
     } else if (!ssh.config.hasCredentials) {
-      subtitle = '请先在下方填写并保存账号';
+      subtitle = context.tr('ssh.fillAndSaveAccount');
     } else {
-      subtitle = '根目录：当前实例文件夹';
+      subtitle = context.tr('ssh.rootDirCurrentInstance');
     }
     return Card(
       child: Padding(
@@ -185,13 +190,13 @@ class _SshPageState extends State<SshPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'SSH 服务',
+                      context.tr('ssh.service'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         color: theme.colorScheme.primary,
                       ),
                     ),
                   ),
-                  if (running) _statusChip(theme, '运行中'),
+                  if (running) _statusChip(theme, context.tr('ssh.running')),
                 ],
               ),
             ),
@@ -200,15 +205,15 @@ class _SshPageState extends State<SshPage> {
               child: Text(subtitle, style: theme.textTheme.bodySmall),
             ),
             SwitchListTile(
-              title: const Text('启用 SFTP 文件访问'),
-              subtitle: const Text('通过 sftp 客户端安全地传输实例目录文件'),
+              title: Text(context.tr('ssh.enableSftp')),
+              subtitle: Text(context.tr('ssh.sftpHint')),
               value: ssh.config.sftpEnabled,
               onChanged: hasRoot ? _toggleSftp : null,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
             SwitchListTile(
-              title: const Text('启用 SSH 终端'),
-              subtitle: const Text('通过 ssh 客户端进入设备交互式终端'),
+              title: Text(context.tr('ssh.enableShell')),
+              subtitle: Text(context.tr('ssh.shellHint')),
               value: ssh.config.shellEnabled,
               onChanged: hasRoot ? _toggleShell : null,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -247,7 +252,7 @@ class _SshPageState extends State<SshPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text(
-                '连接配置',
+                context.tr('ssh.connectionConfig'),
                 style: theme.textTheme.titleSmall?.copyWith(
                   color: theme.colorScheme.primary,
                 ),
@@ -255,28 +260,32 @@ class _SshPageState extends State<SshPage> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _field(_port, '端口', number: true),
+              child: _field(_port, context.tr('ssh.port'), number: true),
             ),
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _field(_username, '用户名'),
+              child: _field(_username, context.tr('ssh.username')),
             ),
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _field(_password, '密码', obscure: true),
+              child: _field(
+                _password,
+                context.tr('ssh.password'),
+                obscure: true,
+              ),
             ),
             SwitchListTile(
-              title: const Text('允许写入'),
-              subtitle: const Text('仅作用于 SFTP；关闭后 SFTP 只能下载，不能上传/删除/重命名'),
+              title: Text(context.tr('ssh.allowWrite')),
+              subtitle: Text(context.tr('ssh.writeOffHint')),
               value: _writable,
               onChanged: (v) => setState(() => _writable = v),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
             SwitchListTile(
-              title: const Text('启用 IPv6 访问'),
-              subtitle: const Text('开启后同时监听 IPv6（双栈），可经稳定 IPv6 地址访问'),
+              title: Text(context.tr('ssh.enableIpv6')),
+              subtitle: Text(context.tr('ssh.ipv6Hint')),
               value: _ipv6,
               onChanged: (v) => setState(() => _ipv6 = v),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -288,7 +297,7 @@ class _SshPageState extends State<SshPage> {
                 child: FilledButton.tonalIcon(
                   onPressed: _saveConfig,
                   icon: const Icon(Icons.save, size: 18),
-                  label: const Text('保存配置'),
+                  label: Text(context.tr('ssh.saveConfig')),
                 ),
               ),
             ),
@@ -316,12 +325,7 @@ class _SshPageState extends State<SshPage> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'SFTP 根目录与 SSH 终端初始目录均为当前选中实例的文件夹。SFTP 与 SSH 终端共用同一'
-                '端口、账号与主机密钥，可分别启停。切换实例或保存新配置时，若服务正在运行将自动重启。\n'
-                'SSH 服务强制账号密码登录，不支持匿名。「允许写入」仅作用于 SFTP，SSH 终端可执行命令'
-                '不受其限制，请妥善保管账号。\n'
-                '同一局域网内的设备可使用上方地址访问；外网访问需配合端口映射。'
-                '开启 IPv6 后可经稳定的 IPv6 地址直接访问。',
+                context.tr('ssh.infoText'),
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -340,7 +344,7 @@ class _SshPageState extends State<SshPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '主机密钥指纹（首次连接时核对）',
+            context.tr('ssh.fingerprintTitle'),
             style: theme.textTheme.labelSmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -357,7 +361,7 @@ class _SshPageState extends State<SshPage> {
               ),
               IconButton(
                 icon: const Icon(Icons.copy, size: 18),
-                tooltip: '复制指纹',
+                tooltip: context.tr('ssh.copyFingerprint'),
                 onPressed: () =>
                     Clipboard.setData(ClipboardData(text: _fingerprint!)),
               ),
@@ -387,7 +391,7 @@ class _SshPageState extends State<SshPage> {
           ),
           IconButton(
             icon: const Icon(Icons.copy, size: 18),
-            tooltip: '复制命令',
+            tooltip: context.tr('ssh.copyCommand'),
             onPressed: () => Clipboard.setData(ClipboardData(text: addr)),
           ),
         ],

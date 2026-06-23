@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
+import '../i18n/i18n_service.dart';
+
 /// 错误报告上传服务：将崩溃日志上传到 EdgeCube 服务器。
 class ErrorReportService {
   static const String _endpoint =
@@ -22,9 +24,9 @@ class ErrorReportService {
   }) async {
     final bodyBytes = utf8.encode(logContent);
     if (bodyBytes.length > maxUploadBytes) {
-      return const UploadResult(
+      return UploadResult(
         success: false,
-        message: '日志超过 5 MB，无法上传',
+        message: tr('errorReport.logTooLarge'),
       );
     }
 
@@ -32,32 +34,44 @@ class ErrorReportService {
       final uri = Uri.parse(_endpoint);
       final request = http.MultipartRequest('POST', uri)
         ..headers['X-Device-Id'] = deviceId
-        ..files.add(http.MultipartFile.fromBytes(
-          'file',
-          bodyBytes,
-          filename: 'crash_${DateTime.now().millisecondsSinceEpoch}.log',
-          contentType: MediaType('text', 'plain'),
-        ));
+        ..files.add(
+          http.MultipartFile.fromBytes(
+            'file',
+            bodyBytes,
+            filename: 'crash_${DateTime.now().millisecondsSinceEpoch}.log',
+            contentType: MediaType('text', 'plain'),
+          ),
+        );
 
-      final streamedResponse =
-          await request.send().timeout(const Duration(seconds: 30));
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 30),
+      );
       final response = await http.Response.fromStream(streamedResponse);
 
       // 解析服务端返回的 JSON message。
       String serverMessage;
       try {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
-        serverMessage = (body['message'] as String?) ?? '未知错误';
+        serverMessage =
+            (body['message'] as String?) ?? tr('errorReport.unknownError');
       } catch (_) {
-        serverMessage = 'HTTP ${response.statusCode}';
+        serverMessage = tr('errorReport.httpStatus', {
+          'status': '${response.statusCode}',
+        });
       }
 
       if (response.statusCode == 200) {
-        return const UploadResult(success: true, message: '上传成功');
+        return UploadResult(
+          success: true,
+          message: tr('errorReport.uploadSuccess'),
+        );
       }
       return UploadResult(success: false, message: serverMessage);
     } catch (e) {
-      return UploadResult(success: false, message: '网络错误: $e');
+      return UploadResult(
+        success: false,
+        message: tr('errorReport.networkError', {'error': '$e'}),
+      );
     }
   }
 }

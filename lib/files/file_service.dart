@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../i18n/i18n_service.dart';
 import 'archive_service.dart';
 import 'file_entry.dart';
 
@@ -12,7 +13,7 @@ class FileConflictException implements Exception {
   final String name;
 
   @override
-  String toString() => '目标位置已存在同名文件：$name';
+  String toString() => tr('fileService.conflict', {'name': name});
 }
 
 /// 当试图把目录移动/复制到它自身或其子目录时抛出。
@@ -207,7 +208,7 @@ class FileService {
     final src = p.normalize(sourcePath);
     final dest = p.normalize(destDirPath);
     if (dest == src || p.isWithin(src, dest)) {
-      throw const InvalidDestinationException('不能把文件夹移动或复制到它自身内部。');
+      throw InvalidDestinationException(tr('fileService.cannotMoveIntoSelf'));
     }
   }
 

@@ -11,8 +11,7 @@ class FtpScope extends InheritedNotifier<FtpController> {
   }) : super(notifier: controller);
 
   static FtpController of(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<FtpScope>();
+    final scope = context.dependOnInheritedWidgetOfExactType<FtpScope>();
     assert(scope != null, 'FtpScope 未在 widget 树中找到');
     return scope!.notifier!;
   }

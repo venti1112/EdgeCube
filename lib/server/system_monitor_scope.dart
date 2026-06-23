@@ -11,8 +11,8 @@ class SystemMonitorScope extends InheritedNotifier<SystemMonitorController> {
   }) : super(notifier: controller);
 
   static SystemMonitorController of(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<SystemMonitorScope>();
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<SystemMonitorScope>();
     assert(scope != null, 'SystemMonitorScope 未在 widget 树中找到');
     return scope!.notifier!;
   }

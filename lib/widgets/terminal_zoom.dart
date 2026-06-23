@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 
 import '../config/terminal_store.dart';
+import '../i18n/locale_scope.dart';
 
 /// 可缩放终端视图：在 [TerminalView] 外包一层双指捏合缩放。
 ///
@@ -185,10 +186,7 @@ class TerminalZoomButton extends StatelessWidget {
     // 先朝缩放方向把当前字号取整，再步进，使「放大/缩小」总落到整数字号
     // （捏合可能产生小数字号，按钮在此基础上规整为整数步进）。
     final base = delta > 0 ? fontSize.floorToDouble() : fontSize.ceilToDouble();
-    final v = (base + delta).clamp(
-      kMinTerminalFontSize,
-      kMaxTerminalFontSize,
-    );
+    final v = (base + delta).clamp(kMinTerminalFontSize, kMaxTerminalFontSize);
     if (v != fontSize) onChanged(v);
   }
 
@@ -198,26 +196,39 @@ class TerminalZoomButton extends StatelessWidget {
     final canShrink = fontSize > kMinTerminalFontSize;
     return PopupMenuButton<void>(
       icon: const Icon(Icons.format_size),
-      tooltip: '调整字号',
+      tooltip: context.tr('terminal.adjustFontSize'),
       itemBuilder: (context) => [
         PopupMenuItem<void>(
           enabled: false,
-          child: Text('当前字号：${fontSize.toStringAsFixed(0)}'),
+          child: Text(
+            context.tr('terminal.currentFontSize', {
+              'size': fontSize.toStringAsFixed(0),
+            }),
+          ),
         ),
         const PopupMenuDivider(),
         PopupMenuItem<void>(
           enabled: canEnlarge,
           onTap: () => _change(_step),
-          child: const _MenuRow(icon: Icons.zoom_in, label: '放大'),
+          child: _MenuRow(
+            icon: Icons.zoom_in,
+            label: context.tr('terminal.zoomIn'),
+          ),
         ),
         PopupMenuItem<void>(
           enabled: canShrink,
           onTap: () => _change(-_step),
-          child: const _MenuRow(icon: Icons.zoom_out, label: '缩小'),
+          child: _MenuRow(
+            icon: Icons.zoom_out,
+            label: context.tr('terminal.zoomOut'),
+          ),
         ),
         PopupMenuItem<void>(
           onTap: () => onChanged(kDefaultTerminalFontSize),
-          child: const _MenuRow(icon: Icons.restart_alt, label: '重置'),
+          child: _MenuRow(
+            icon: Icons.restart_alt,
+            label: context.tr('terminal.zoomReset'),
+          ),
         ),
       ],
     );
@@ -233,11 +244,7 @@ class _MenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      children: [
-        Icon(icon, size: 20),
-        const SizedBox(width: 12),
-        Text(label),
-      ],
+      children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(label)],
     );
   }
 }

@@ -6,29 +6,32 @@ import 'package:flutter/services.dart';
 ///  - MethodChannel `com.venti1112.edgecube/server`
 ///  - EventChannel  `com.venti1112.edgecube/server_events`
 class ServerService {
-  static const MethodChannel _method =
-      MethodChannel('com.venti1112.edgecube/server');
-  static const EventChannel _events =
-      EventChannel('com.venti1112.edgecube/server_events');
+  static const MethodChannel _method = MethodChannel(
+    'com.venti1112.edgecube/server',
+  );
+  static const EventChannel _events = EventChannel(
+    'com.venti1112.edgecube/server_events',
+  );
 
   /// 当前设备架构下可用的 JRE 版本（如 ['jre17','jre21','jre25']）。
   Future<List<String>> availableVersions() async {
-    final list =
-        await _method.invokeMethod<List<dynamic>>('availableVersions');
+    final list = await _method.invokeMethod<List<dynamic>>('availableVersions');
     return list?.cast<String>() ?? const [];
   }
 
   /// 当前设备架构下可用的 PHP 运行时（如 ['php8.2']）；不支持的架构返回空。
   Future<List<String>> availablePhpRuntimes() async {
-    final list =
-        await _method.invokeMethod<List<dynamic>>('availablePhpRuntimes');
+    final list = await _method.invokeMethod<List<dynamic>>(
+      'availablePhpRuntimes',
+    );
     return list?.cast<String>() ?? const [];
   }
 
   /// 指定版本的 JRE 是否已解压就位。
   Future<bool> isRuntimeReady(String version) async {
-    final ready = await _method
-        .invokeMethod<bool>('isRuntimeReady', {'version': version});
+    final ready = await _method.invokeMethod<bool>('isRuntimeReady', {
+      'version': version,
+    });
     return ready ?? false;
   }
 
@@ -77,13 +80,12 @@ class ServerService {
     required int rows,
     int cellWidth = 0,
     int cellHeight = 0,
-  }) =>
-      _method.invokeMethod('resize', {
-        'cols': cols,
-        'rows': rows,
-        'cellWidth': cellWidth,
-        'cellHeight': cellHeight,
-      });
+  }) => _method.invokeMethod('resize', {
+    'cols': cols,
+    'rows': rows,
+    'cellWidth': cellWidth,
+    'cellHeight': cellHeight,
+  });
 
   /// 优雅停止（发送 stop 命令）。
   Future<void> stop() => _method.invokeMethod('stop');
@@ -106,9 +108,7 @@ class ServerService {
         case 'log':
           return ServerLogEvent(map['line'] as String? ?? '');
         case 'term':
-          return ServerTermEvent(
-            (map['bytes'] as Uint8List?) ?? Uint8List(0),
-          );
+          return ServerTermEvent((map['bytes'] as Uint8List?) ?? Uint8List(0));
         case 'state':
           return ServerStateEvent(
             status: map['status'] as String?,

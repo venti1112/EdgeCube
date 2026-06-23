@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'config/network_store.dart';
 import 'files/file_browser.dart';
+import 'i18n/locale_scope.dart';
 import 'online/online_service.dart';
 import 'online/update_service.dart';
 import 'pages/console_page.dart';
@@ -37,9 +38,13 @@ class _HomeShellState extends State<HomeShell> {
       SettingsPage(onlineService: widget.onlineService),
     ];
     // 首次启动弹窗：询问是否启用在线服务。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _showFirstLaunchDialog());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _showFirstLaunchDialog(),
+    );
     // 启动时后台检查更新；检查失败静默忽略，仅在检查成功且有更新时提示。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkUpdatesInBackground());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _checkUpdatesInBackground(),
+    );
   }
 
   /// 后台检查更新。失败不提示；有更新则弹出更新对话框。
@@ -70,21 +75,16 @@ class _HomeShellState extends State<HomeShell> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('启用在线服务'),
-        content: const Text(
-          'EdgeCube 提供了一些在线服务以提升使用体验。'
-          '启用后将生成唯一设备标识用于服务识别。'
-          '我们可能会收集您的设备信息以改进软件。\n'
-          '您是否同意启用在线服务？',
-        ),
+        title: Text(ctx.tr('firstLaunch.online.title')),
+        content: Text(ctx.tr('firstLaunch.online.content')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('不同意'),
+            child: Text(ctx.tr('common.disagree')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('同意'),
+            child: Text(ctx.tr('common.agree')),
           ),
         ],
       ),
@@ -115,23 +115,18 @@ class _HomeShellState extends State<HomeShell> {
               ),
             ),
             const SizedBox(width: 12),
-            const Expanded(child: Text('使用镜像源下载')),
+            Expanded(child: Text(ctx.tr('firstLaunch.mirror.title'))),
           ],
         ),
-        content: const Text(
-          '下载服务端时可使用 MSL 镜像源加速，国内网络下载更快、更稳定；'
-          '镜像不可用时会自动回退官方源。\n'
-          '是否启用镜像源下载？\n\n'
-          '镜像源服务由 MSL 开服器（mslmc.cn）提供，可随时在「设置 → 网络设置」中更改。',
-        ),
+        content: Text(ctx.tr('firstLaunch.mirror.content')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('暂不启用'),
+            child: Text(ctx.tr('firstLaunch.mirror.decline')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('启用'),
+            child: Text(ctx.tr('common.enable')),
           ),
         ],
       ),
@@ -173,38 +168,35 @@ class _HomeShellState extends State<HomeShell> {
         setState(() => _selectedIndex = 0);
       },
       child: Scaffold(
-        body: IndexedStack(
-          index: _selectedIndex,
-          children: _tabPages,
-        ),
+        body: IndexedStack(index: _selectedIndex, children: _tabPages),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _selectedIndex,
           onDestinationSelected: _onDestinationSelected,
-          destinations: const <NavigationDestination>[
+          destinations: <NavigationDestination>[
             NavigationDestination(
-              icon: Icon(Icons.dns_outlined),
-              selectedIcon: Icon(Icons.dns),
-              label: '服务器',
+              icon: const Icon(Icons.dns_outlined),
+              selectedIcon: const Icon(Icons.dns),
+              label: context.tr('nav.server'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.terminal_outlined),
-              selectedIcon: Icon(Icons.terminal),
-              label: '控制台',
+              icon: const Icon(Icons.terminal_outlined),
+              selectedIcon: const Icon(Icons.terminal),
+              label: context.tr('nav.console'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.tune_outlined),
-              selectedIcon: Icon(Icons.tune),
-              label: '管理',
+              icon: const Icon(Icons.tune_outlined),
+              selectedIcon: const Icon(Icons.tune),
+              label: context.tr('nav.manage'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.folder_outlined),
-              selectedIcon: Icon(Icons.folder),
-              label: '文件',
+              icon: const Icon(Icons.folder_outlined),
+              selectedIcon: const Icon(Icons.folder),
+              label: context.tr('nav.files'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
-              label: '设置',
+              icon: const Icon(Icons.settings_outlined),
+              selectedIcon: const Icon(Icons.settings),
+              label: context.tr('nav.settings'),
             ),
           ],
         ),
@@ -224,9 +216,9 @@ class _HomeShellState extends State<HomeShell> {
       _lastBackPress = now;
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('再按一次退出'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text(context.tr('home.exitToast')),
+          duration: const Duration(seconds: 2),
         ),
       );
     }

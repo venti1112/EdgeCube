@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../i18n/locale_scope.dart';
 import 'file_entry.dart';
 import 'file_service.dart';
 import 'storage_permission.dart';
@@ -66,7 +67,7 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '无法读取该目录：$e';
+        _error = context.tr('picker.cannotReadDir', {'error': e.toString()});
         _loading = false;
       });
     }
@@ -94,13 +95,17 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
     final pickingDir = widget.mode == SystemPickMode.directory;
     return Scaffold(
       appBar: AppBar(
-        title: Text(pickingDir ? '选择目标文件夹' : '选择要导入的文件'),
+        title: Text(
+          pickingDir
+              ? context.tr('picker.selectTargetFolder')
+              : context.tr('picker.selectFileToImport'),
+        ),
         actions: [
           if (pickingDir)
             TextButton(
               onPressed: () => Navigator.of(context).pop(_current.path),
               child: Text(
-                '选择此处',
+                context.tr('picker.selectHere'),
                 style: TextStyle(color: theme.colorScheme.onPrimary),
               ),
             ),
@@ -111,11 +116,11 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
           ListTile(
             leading: IconButton(
               icon: const Icon(Icons.arrow_upward),
-              tooltip: '上一级',
+              tooltip: context.tr('picker.upOneLevel'),
               onPressed: _canGoUp ? _goUp : null,
             ),
             title: Text(
-              _atRoot ? '内部存储' : _current.path,
+              _atRoot ? context.tr('picker.internalStorage') : _current.path,
               style: theme.textTheme.bodySmall,
               overflow: TextOverflow.ellipsis,
             ),
@@ -140,7 +145,7 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
     if (_entries.isEmpty) {
       return Center(
         child: Text(
-          '此文件夹为空',
+          context.tr('picker.emptyFolder'),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -154,16 +159,16 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
         final selectableFile =
             widget.mode == SystemPickMode.file && entry.isFile;
         return ListTile(
-          leading: Icon(entry.isDirectory
-              ? Icons.folder
-              : Icons.insert_drive_file_outlined),
+          leading: Icon(
+            entry.isDirectory ? Icons.folder : Icons.insert_drive_file_outlined,
+          ),
           title: Text(entry.name),
           trailing: entry.isDirectory ? const Icon(Icons.chevron_right) : null,
           onTap: entry.isDirectory
               ? () => _enter(entry)
               : selectableFile
-                  ? () => Navigator.of(context).pop(entry.path)
-                  : null,
+              ? () => Navigator.of(context).pop(entry.path)
+              : null,
         );
       },
     );

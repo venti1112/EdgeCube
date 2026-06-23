@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
 import 'file_entry.dart';
 import 'file_service.dart';
@@ -188,7 +189,7 @@ class _FileBrowserState extends State<FileBrowser> {
   Future<void> _openEditor(FileEntry entry) async {
     if (entry.isDirectory) return;
     if (entry.size > _maxEditableBytes) {
-      _showError('文件过大，无法在内置编辑器中打开（上限 2 MB）。');
+      _showError(context.tr('fileBrowser.fileTooLarge'));
       return;
     }
     await Navigator.of(context).push(
@@ -223,14 +224,20 @@ class _FileBrowserState extends State<FileBrowser> {
       await _load();
       // 通知服务器页重新扫描，新导入的 jar 可被立即识别。
       instances.notifyInstanceFilesChanged();
-      messenger.showSnackBar(const SnackBar(content: Text('导入完成')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(context.tr('fileBrowser.importSuccess'))),
+      );
     } catch (e) {
       _showError(e);
     }
   }
 
   Future<void> _createFolder() async {
-    final name = await _promptText(context, title: '新建文件夹', label: '文件夹名称');
+    final name = await _promptText(
+      context,
+      title: context.tr('fileBrowser.newFolderTitle'),
+      label: context.tr('fileBrowser.folderName'),
+    );
     if (name == null || name.isEmpty) return;
     try {
       await _service.createDirectory(_current, name);
@@ -243,7 +250,11 @@ class _FileBrowserState extends State<FileBrowser> {
   /// 新建一个空白文件；若为可编辑文本类型，创建后直接打开内置编辑器。
   Future<void> _createFile() async {
     final instances = InstanceScope.of(context);
-    final name = await _promptText(context, title: '新建文件', label: '文件名称');
+    final name = await _promptText(
+      context,
+      title: context.tr('fileBrowser.newFileTitle'),
+      label: context.tr('fileBrowser.fileName'),
+    );
     if (name == null || name.isEmpty) return;
     try {
       final file = await _service.createFile(_current, name);
@@ -290,8 +301,8 @@ class _FileBrowserState extends State<FileBrowser> {
     final instances = InstanceScope.of(context);
     final name = await _promptText(
       context,
-      title: '重命名',
-      label: '新名称',
+      title: context.tr('common.rename'),
+      label: context.tr('fileBrowser.newName'),
       initialValue: entry.name,
     );
     if (name == null || name.isEmpty) return;
@@ -310,7 +321,9 @@ class _FileBrowserState extends State<FileBrowser> {
     final dest = await pickFolder(
       context,
       rootDir: widget.rootDir,
-      title: isMove ? '移动到' : '复制到',
+      title: isMove
+          ? context.tr('fileBrowser.moveTo')
+          : context.tr('fileBrowser.copyTo'),
       disabledPath: entry.isDirectory ? entry.path : null,
     );
     if (dest == null) return;
@@ -339,7 +352,9 @@ class _FileBrowserState extends State<FileBrowser> {
     if (destDir == null) return;
     try {
       await _service.exportTo(entry.path, destDir);
-      messenger.showSnackBar(const SnackBar(content: Text('导出完成')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(context.tr('fileBrowser.exportSuccess'))),
+      );
     } catch (e) {
       _showError(e);
     }
@@ -355,11 +370,11 @@ class _FileBrowserState extends State<FileBrowser> {
       builder: (_) => PopScope(
         canPop: false,
         child: AlertDialog(
-          content: const Row(
+          content: Row(
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('正在压缩…'),
+              const CircularProgressIndicator(),
+              const SizedBox(width: 20),
+              Text(context.tr('fileBrowser.compressing')),
             ],
           ),
         ),
@@ -369,7 +384,9 @@ class _FileBrowserState extends State<FileBrowser> {
       await _service.compress(entry.path, _current);
       if (mounted) Navigator.of(context).pop();
       await _load();
-      messenger.showSnackBar(const SnackBar(content: Text('压缩完成')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(context.tr('fileBrowser.compressSuccess'))),
+      );
     } catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e);
@@ -389,11 +406,11 @@ class _FileBrowserState extends State<FileBrowser> {
       builder: (_) => PopScope(
         canPop: false,
         child: AlertDialog(
-          content: const Row(
+          content: Row(
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('正在解压…'),
+              const CircularProgressIndicator(),
+              const SizedBox(width: 20),
+              Text(context.tr('fileBrowser.extracting')),
             ],
           ),
         ),
@@ -405,7 +422,9 @@ class _FileBrowserState extends State<FileBrowser> {
       await _load();
       // 解压出的文件可能含 jar，通知服务器页重新扫描。
       instances.notifyInstanceFilesChanged();
-      messenger.showSnackBar(const SnackBar(content: Text('解压完成')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(context.tr('fileBrowser.extractSuccess'))),
+      );
     } catch (e) {
       if (mounted) Navigator.of(context).pop(); // 关闭加载对话框
       _showError(e);
@@ -431,18 +450,16 @@ class _FileBrowserState extends State<FileBrowser> {
     final go = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('需要文件访问权限'),
-        content: const Text(
-          '导入和导出需要「所有文件访问权限」。点击「去授权」后，请在系统设置中为本应用打开该权限，再返回重试。',
-        ),
+        title: Text(context.tr('fileBrowser.permissionTitle')),
+        content: Text(context.tr('fileBrowser.permissionContent')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr('common.cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('去授权'),
+            child: Text(context.tr('fileBrowser.grantPermission')),
           ),
         ],
       ),
@@ -458,18 +475,23 @@ class _FileBrowserState extends State<FileBrowser> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('删除'),
+        title: Text(context.tr('common.delete')),
         content: Text(
-          '确定删除「${entry.name}」吗？${entry.isDirectory ? '该文件夹及其内容将被删除。' : ''}',
+          context.tr('fileBrowser.deleteConfirm', {
+            'name': entry.name,
+            'extra': entry.isDirectory
+                ? context.tr('fileBrowser.deleteFolderExtra')
+                : '',
+          }),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr('common.cancel')),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('删除'),
+            child: Text(context.tr('common.delete')),
           ),
         ],
       ),
@@ -551,11 +573,15 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   /// 汇报批量操作结果；[failed] 为失败条目名称列表。
-  void _reportBulkResult(String action, List<String> failed) {
+  void _reportBulkResult(String actionName, List<String> failed) {
     if (!mounted) return;
     final msg = failed.isEmpty
-        ? '$action完成'
-        : '$action完成，${failed.length} 项失败：${failed.join('、')}';
+        ? context.tr('fileBrowser.bulkSuccess', {'action': actionName})
+        : context.tr('fileBrowser.bulkPartial', {
+            'action': actionName,
+            'count': failed.length.toString(),
+            'list': failed.join('、'),
+          });
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
@@ -566,16 +592,20 @@ class _FileBrowserState extends State<FileBrowser> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('删除'),
-        content: Text('确定删除选中的 ${entries.length} 项吗？其中的文件夹及其内容将一并删除。'),
+        title: Text(context.tr('common.delete')),
+        content: Text(
+          context.tr('fileBrowser.deleteSelectedConfirm', {
+            'count': entries.length.toString(),
+          }),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr('common.cancel')),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('删除'),
+            child: Text(context.tr('common.delete')),
           ),
         ],
       ),
@@ -592,7 +622,7 @@ class _FileBrowserState extends State<FileBrowser> {
     _clearSelection();
     await _load();
     instances.notifyInstanceFilesChanged();
-    _reportBulkResult('删除', failed);
+    _reportBulkResult(context.tr('common.delete'), failed);
   }
 
   Future<void> _moveSelected() async {
@@ -602,7 +632,9 @@ class _FileBrowserState extends State<FileBrowser> {
     final dest = await pickFolder(
       context,
       rootDir: widget.rootDir,
-      title: '移动 ${entries.length} 项到',
+      title: context.tr('fileBrowser.moveItemsTo', {
+        'count': entries.length.toString(),
+      }),
     );
     if (dest == null) return;
     final failed = <String>[];
@@ -616,7 +648,7 @@ class _FileBrowserState extends State<FileBrowser> {
     _clearSelection();
     await _load();
     instances.notifyInstanceFilesChanged();
-    _reportBulkResult('移动', failed);
+    _reportBulkResult(context.tr('fileBrowser.move'), failed);
   }
 
   Future<void> _copySelected() async {
@@ -626,7 +658,9 @@ class _FileBrowserState extends State<FileBrowser> {
     final dest = await pickFolder(
       context,
       rootDir: widget.rootDir,
-      title: '复制 ${entries.length} 项到',
+      title: context.tr('fileBrowser.copyItemsTo', {
+        'count': entries.length.toString(),
+      }),
     );
     if (dest == null) return;
     final failed = <String>[];
@@ -640,7 +674,7 @@ class _FileBrowserState extends State<FileBrowser> {
     _clearSelection();
     await _load();
     instances.notifyInstanceFilesChanged();
-    _reportBulkResult('复制', failed);
+    _reportBulkResult(context.tr('common.copy'), failed);
   }
 
   Future<void> _exportSelected() async {
@@ -662,7 +696,7 @@ class _FileBrowserState extends State<FileBrowser> {
       }
     }
     _clearSelection();
-    _reportBulkResult('导出', failed);
+    _reportBulkResult(context.tr('fileBrowser.export'), failed);
   }
 
   Future<void> _compressSelected() async {
@@ -673,9 +707,9 @@ class _FileBrowserState extends State<FileBrowser> {
     // 让用户输入压缩包名称（可取消）；自动补 .zip 后缀。
     final inputName = await _promptText(
       context,
-      title: '压缩为',
-      label: '压缩包名称',
-      initialValue: '压缩文件',
+      title: context.tr('fileBrowser.compressTitle'),
+      label: context.tr('fileBrowser.archiveName'),
+      initialValue: context.tr('fileBrowser.defaultArchiveName'),
     );
     if (inputName == null || inputName.isEmpty) return;
     if (!mounted) return;
@@ -689,11 +723,11 @@ class _FileBrowserState extends State<FileBrowser> {
       builder: (_) => PopScope(
         canPop: false,
         child: AlertDialog(
-          content: const Row(
+          content: Row(
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('正在压缩…'),
+              const CircularProgressIndicator(),
+              const SizedBox(width: 20),
+              Text(context.tr('fileBrowser.compressing')),
             ],
           ),
         ),
@@ -708,7 +742,9 @@ class _FileBrowserState extends State<FileBrowser> {
       if (mounted) Navigator.of(context).pop();
       _clearSelection();
       await _load();
-      messenger.showSnackBar(const SnackBar(content: Text('压缩完成')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(context.tr('fileBrowser.compressSuccess'))),
+      );
     } catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e);
@@ -725,7 +761,7 @@ class _FileBrowserState extends State<FileBrowser> {
             : _Toolbar(
                 atRoot: _atRoot,
                 relativePath: _atRoot
-                    ? '根目录'
+                    ? context.tr('fileBrowser.rootDir')
                     : p.relative(_current.path, from: widget.rootDir.path),
                 onUp: _goUp,
                 onImport: _importFile,
@@ -739,7 +775,7 @@ class _FileBrowserState extends State<FileBrowser> {
               : _entries.isEmpty
               ? Center(
                   child: Text(
-                    '此文件夹为空',
+                    context.tr('fileBrowser.emptyFolder'),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -782,38 +818,44 @@ class _FileBrowserState extends State<FileBrowser> {
                                 onSelected: (a) => _onAction(a, entry),
                                 itemBuilder: (_) => [
                                   if (!entry.isDirectory)
-                                    const PopupMenuItem(
+                                    PopupMenuItem(
                                       value: _FileAction.edit,
-                                      child: Text('编辑'),
+                                      child: Text(context.tr('common.edit')),
                                     ),
-                                  const PopupMenuItem(
+                                  PopupMenuItem(
                                     value: _FileAction.rename,
-                                    child: Text('重命名'),
+                                    child: Text(context.tr('common.rename')),
                                   ),
-                                  const PopupMenuItem(
+                                  PopupMenuItem(
                                     value: _FileAction.move,
-                                    child: Text('移动'),
+                                    child: Text(context.tr('fileBrowser.move')),
                                   ),
-                                  const PopupMenuItem(
+                                  PopupMenuItem(
                                     value: _FileAction.copy,
-                                    child: Text('复制'),
+                                    child: Text(context.tr('common.copy')),
                                   ),
-                                  const PopupMenuItem(
+                                  PopupMenuItem(
                                     value: _FileAction.compress,
-                                    child: Text('压缩'),
+                                    child: Text(
+                                      context.tr('fileBrowser.compress'),
+                                    ),
                                   ),
                                   if (_isArchive(entry))
-                                    const PopupMenuItem(
+                                    PopupMenuItem(
                                       value: _FileAction.extract,
-                                      child: Text('解压'),
+                                      child: Text(
+                                        context.tr('fileBrowser.extract'),
+                                      ),
                                     ),
-                                  const PopupMenuItem(
+                                  PopupMenuItem(
                                     value: _FileAction.export,
-                                    child: Text('导出'),
+                                    child: Text(
+                                      context.tr('fileBrowser.export'),
+                                    ),
                                   ),
-                                  const PopupMenuItem(
+                                  PopupMenuItem(
                                     value: _FileAction.delete,
-                                    child: Text('删除'),
+                                    child: Text(context.tr('common.delete')),
                                   ),
                                 ],
                               ),
@@ -836,35 +878,51 @@ class _FileBrowserState extends State<FileBrowser> {
         children: [
           IconButton(
             icon: const Icon(Icons.close),
-            tooltip: '退出多选',
+            tooltip: context.tr('fileBrowser.exitSelection'),
             onPressed: _clearSelection,
           ),
           Expanded(
             child: Text(
-              '已选 $count 项',
+              context.tr('fileBrowser.selectedCount', {
+                'count': count.toString(),
+              }),
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleMedium,
             ),
           ),
           IconButton(
             icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
-            tooltip: allSelected ? '取消全选' : '全选',
+            tooltip: allSelected
+                ? context.tr('fileBrowser.deselectAll')
+                : context.tr('fileBrowser.selectAll'),
             onPressed: _entries.isEmpty ? null : _toggleSelectAll,
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
-            tooltip: '删除',
+            tooltip: context.tr('common.delete'),
             onPressed: count == 0 ? null : _deleteSelected,
           ),
           PopupMenuButton<_BulkAction>(
             enabled: count > 0,
-            tooltip: '更多操作',
+            tooltip: context.tr('fileBrowser.moreActions'),
             onSelected: _onBulkAction,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: _BulkAction.move, child: Text('移动')),
-              PopupMenuItem(value: _BulkAction.copy, child: Text('复制')),
-              PopupMenuItem(value: _BulkAction.compress, child: Text('压缩')),
-              PopupMenuItem(value: _BulkAction.export, child: Text('导出')),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: _BulkAction.move,
+                child: Text(context.tr('fileBrowser.move')),
+              ),
+              PopupMenuItem(
+                value: _BulkAction.copy,
+                child: Text(context.tr('common.copy')),
+              ),
+              PopupMenuItem(
+                value: _BulkAction.compress,
+                child: Text(context.tr('fileBrowser.compress')),
+              ),
+              PopupMenuItem(
+                value: _BulkAction.export,
+                child: Text(context.tr('fileBrowser.export')),
+              ),
             ],
           ),
         ],
@@ -873,7 +931,7 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   String _subtitle(FileEntry entry) {
-    if (entry.isDirectory) return '文件夹';
+    if (entry.isDirectory) return context.tr('fileBrowser.folder');
     return _formatSize(entry.size);
   }
 }
@@ -915,7 +973,7 @@ class _Toolbar extends StatelessWidget {
         children: [
           IconButton(
             icon: const Icon(Icons.arrow_upward),
-            tooltip: '上一级',
+            tooltip: context.tr('fileBrowser.goUp'),
             onPressed: atRoot ? null : onUp,
           ),
           Expanded(
@@ -927,17 +985,17 @@ class _Toolbar extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.note_add_outlined),
-            tooltip: '新建文件',
+            tooltip: context.tr('fileBrowser.newFile'),
             onPressed: onNewFile,
           ),
           IconButton(
             icon: const Icon(Icons.create_new_folder_outlined),
-            tooltip: '新建文件夹',
+            tooltip: context.tr('fileBrowser.newFolder'),
             onPressed: onNewFolder,
           ),
           IconButton(
             icon: const Icon(Icons.file_upload_outlined),
-            tooltip: '导入文件',
+            tooltip: context.tr('fileBrowser.importFile'),
             onPressed: onImport,
           ),
         ],
@@ -967,12 +1025,12 @@ Future<String?> _promptText(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
-          child: const Text('取消'),
+          child: Text(context.tr('common.cancel')),
         ),
         TextButton(
           onPressed: () =>
               Navigator.of(dialogContext).pop(controller.text.trim()),
-          child: const Text('确定'),
+          child: Text(context.tr('common.ok')),
         ),
       ],
     ),

@@ -3,8 +3,9 @@ import 'package:flutter/services.dart';
 /// 与原生 `com.venti1112.edgecube/system_monitor` MethodChannel 对接，
 /// 获取设备总内存、已用内存、CPU 使用率以及服务端进程内存。
 class SystemMonitorService {
-  static const MethodChannel _channel =
-      MethodChannel('com.venti1112.edgecube/system_monitor');
+  static const MethodChannel _channel = MethodChannel(
+    'com.venti1112.edgecube/system_monitor',
+  );
 
   /// 获取一次系统状态快照。
   Future<SystemInfo> getSystemInfo() async {

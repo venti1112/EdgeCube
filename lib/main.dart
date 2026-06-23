@@ -8,6 +8,8 @@ import 'config/version_store.dart';
 import 'ftp/ftp_controller.dart';
 import 'ftp/ftp_scope.dart';
 import 'home_shell.dart';
+import 'i18n/locale_controller.dart';
+import 'i18n/locale_scope.dart';
 import 'instance/instance_controller.dart';
 import 'instance/instance_scope.dart';
 import 'mcp/mcp_controller.dart';
@@ -33,6 +35,9 @@ Future<void> main() async {
   await ConfigMigration.run();
   // 记录本次启动的版本到 config/version.json（更新 lastVersion 并追加历史）。
   await VersionStore.recordOpen();
+  // 多语言：加载已选语言与内置/自定义翻译表，须先于首帧渲染。
+  final localeController = LocaleController();
+  await localeController.init();
   final initialThemeMode = await ThemeStore.load();
   final initialSeedColor = await ThemeStore.loadSeedColor();
   final initialUseDynamicColor = await ThemeStore.loadUseDynamicColor();
@@ -81,6 +86,7 @@ Future<void> main() async {
       initialUseDynamicColor: initialUseDynamicColor,
       initialSnowfallEnabled: initialSnowfallEnabled,
       initialPrecipitationMode: initialPrecipitationMode,
+      localeController: localeController,
       instanceController: instanceController,
       serverController: serverController,
       systemMonitorController: systemMonitorController,
@@ -131,6 +137,7 @@ class EdgeCubeApp extends StatefulWidget {
     this.initialUseDynamicColor = false,
     this.initialSnowfallEnabled = false,
     this.initialPrecipitationMode = PrecipitationEffectMode.snow,
+    required this.localeController,
     required this.instanceController,
     required this.serverController,
     required this.systemMonitorController,
@@ -146,6 +153,7 @@ class EdgeCubeApp extends StatefulWidget {
   final bool initialUseDynamicColor;
   final bool initialSnowfallEnabled;
   final PrecipitationEffectMode initialPrecipitationMode;
+  final LocaleController localeController;
   final InstanceController instanceController;
   final ServerController serverController;
   final SystemMonitorController systemMonitorController;
@@ -166,6 +174,23 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
   late bool _snowfallEnabled = widget.initialSnowfallEnabled;
   late PrecipitationEffectMode _precipitationMode =
       widget.initialPrecipitationMode;
+
+  @override
+  void initState() {
+    super.initState();
+    // 语言切换时重建整棵树，使 MaterialApp.locale 与全部文案随之更新。
+    widget.localeController.addListener(_onLocaleChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.localeController.removeListener(_onLocaleChanged);
+    super.dispose();
+  }
+
+  void _onLocaleChanged() {
+    if (mounted) setState(() {});
+  }
 
   void _setThemeMode(ThemeMode mode) {
     if (mode == _themeMode) return;
@@ -199,89 +224,90 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ThemeScope(
-      themeMode: _themeMode,
-      setThemeMode: _setThemeMode,
-      seedColor: _seedColor,
-      setSeedColor: _setSeedColor,
-      useDynamicColor: _useDynamicColor,
-      setUseDynamicColor: _setUseDynamicColor,
-      snowfallEnabled: _snowfallEnabled,
-      setSnowfallEnabled: _setSnowfallEnabled,
-      precipitationMode: _precipitationMode,
-      setPrecipitationMode: _setPrecipitationMode,
-      child: InstanceScope(
-        controller: widget.instanceController,
-        child: FtpScope(
-          controller: widget.ftpController,
-          child: ServerScope(
-            controller: widget.serverController,
-            child: SystemMonitorScope(
-              controller: widget.systemMonitorController,
-              child: McpScope(
-                controller: widget.mcpController,
-                child: ShellScope(
-                  controller: widget.shellController,
-                  child: SshScope(
-                    controller: widget.sshController,
-                    child: DynamicColorBuilder(
-                      builder:
-                          (
-                            ColorScheme? lightDynamic,
-                            ColorScheme? darkDynamic,
-                          ) {
-                            // 当用户开启「跟随系统主题色」且设备支持动态色时使用系统取色。
-                            final useDynamic =
-                                _useDynamicColor && lightDynamic != null;
-                            final lightScheme = useDynamic
-                                ? lightDynamic
-                                : ColorScheme.fromSeed(seedColor: _seedColor);
-                            final darkScheme = useDynamic
-                                ? (darkDynamic ??
-                                      ColorScheme.fromSeed(
-                                        seedColor: _seedColor,
-                                        brightness: Brightness.dark,
-                                      ))
-                                : ColorScheme.fromSeed(
-                                    seedColor: _seedColor,
-                                    brightness: Brightness.dark,
-                                  );
+    return LocaleScope(
+      controller: widget.localeController,
+      child: ThemeScope(
+        themeMode: _themeMode,
+        setThemeMode: _setThemeMode,
+        seedColor: _seedColor,
+        setSeedColor: _setSeedColor,
+        useDynamicColor: _useDynamicColor,
+        setUseDynamicColor: _setUseDynamicColor,
+        snowfallEnabled: _snowfallEnabled,
+        setSnowfallEnabled: _setSnowfallEnabled,
+        precipitationMode: _precipitationMode,
+        setPrecipitationMode: _setPrecipitationMode,
+        child: InstanceScope(
+          controller: widget.instanceController,
+          child: FtpScope(
+            controller: widget.ftpController,
+            child: ServerScope(
+              controller: widget.serverController,
+              child: SystemMonitorScope(
+                controller: widget.systemMonitorController,
+                child: McpScope(
+                  controller: widget.mcpController,
+                  child: ShellScope(
+                    controller: widget.shellController,
+                    child: SshScope(
+                      controller: widget.sshController,
+                      child: DynamicColorBuilder(
+                        builder:
+                            (
+                              ColorScheme? lightDynamic,
+                              ColorScheme? darkDynamic,
+                            ) {
+                              // 当用户开启「跟随系统主题色」且设备支持动态色时使用系统取色。
+                              final useDynamic =
+                                  _useDynamicColor && lightDynamic != null;
+                              final lightScheme = useDynamic
+                                  ? lightDynamic
+                                  : ColorScheme.fromSeed(seedColor: _seedColor);
+                              final darkScheme = useDynamic
+                                  ? (darkDynamic ??
+                                        ColorScheme.fromSeed(
+                                          seedColor: _seedColor,
+                                          brightness: Brightness.dark,
+                                        ))
+                                  : ColorScheme.fromSeed(
+                                      seedColor: _seedColor,
+                                      brightness: Brightness.dark,
+                                    );
 
-                            return MaterialApp(
-                              title: 'EdgeCube',
-                              localizationsDelegates: [
-                                GlobalMaterialLocalizations.delegate,
-                                GlobalWidgetsLocalizations.delegate,
-                                GlobalCupertinoLocalizations.delegate,
-                              ],
-                              supportedLocales: [
-                                const Locale('zh', 'CN'),
-                                const Locale('en', 'US'),
-                              ],
-                              locale: const Locale('zh', 'CN'),
-                              theme: ThemeData(colorScheme: lightScheme),
-                              darkTheme: ThemeData(colorScheme: darkScheme),
-                              themeMode: _themeMode,
-                              builder: (context, child) {
-                                final content =
-                                    child ?? const SizedBox.shrink();
-                                if (!_snowfallEnabled) return content;
-                                return Stack(
-                                  children: [
-                                    content,
-                                    Positioned.fill(
-                                      child: PrecipitationOverlay(
-                                        mode: _precipitationMode,
+                              return MaterialApp(
+                                title: 'EdgeCube',
+                                localizationsDelegates: [
+                                  GlobalMaterialLocalizations.delegate,
+                                  GlobalWidgetsLocalizations.delegate,
+                                  GlobalCupertinoLocalizations.delegate,
+                                ],
+                                supportedLocales:
+                                    widget.localeController.supportedLocales,
+                                locale: widget.localeController.locale,
+                                theme: ThemeData(colorScheme: lightScheme),
+                                darkTheme: ThemeData(colorScheme: darkScheme),
+                                themeMode: _themeMode,
+                                builder: (context, child) {
+                                  final content =
+                                      child ?? const SizedBox.shrink();
+                                  if (!_snowfallEnabled) return content;
+                                  return Stack(
+                                    children: [
+                                      content,
+                                      Positioned.fill(
+                                        child: PrecipitationOverlay(
+                                          mode: _precipitationMode,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                );
-                              },
-                              home: HomeShell(
-                                onlineService: widget.onlineService,
-                              ),
-                            );
-                          },
+                                    ],
+                                  );
+                                },
+                                home: HomeShell(
+                                  onlineService: widget.onlineService,
+                                ),
+                              );
+                            },
+                      ),
                     ),
                   ),
                 ),

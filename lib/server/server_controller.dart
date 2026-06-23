@@ -358,7 +358,12 @@ class ServerController extends ChangeNotifier {
   }
 
   /// 终端尺寸变化 → 同步 PTY 窗口大小。由 [terminal] 的 onResize 触发。
-  void _onTerminalResize(int width, int height, int pixelWidth, int pixelHeight) {
+  void _onTerminalResize(
+    int width,
+    int height,
+    int pixelWidth,
+    int pixelHeight,
+  ) {
     _service.resize(
       cols: width,
       rows: height,

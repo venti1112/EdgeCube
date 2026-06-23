@@ -11,8 +11,7 @@ class InstanceScope extends InheritedNotifier<InstanceController> {
   }) : super(notifier: controller);
 
   static InstanceController of(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<InstanceScope>();
+    final scope = context.dependOnInheritedWidgetOfExactType<InstanceScope>();
     assert(scope != null, 'InstanceScope 未在 widget 树中找到');
     return scope!.notifier!;
   }

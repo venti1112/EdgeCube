@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../config/network_store.dart';
 import '../files/text_editor_page.dart';
+import '../i18n/locale_scope.dart';
 import '../server/server_scope.dart';
 import '../tunnel/tunnel_service.dart';
 
@@ -143,7 +144,10 @@ class _PortMappingPageState extends State<PortMappingPage> {
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已保存'), duration: Duration(seconds: 2)),
+      SnackBar(
+        content: Text(context.tr('portMapping.saved')),
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 
@@ -164,7 +168,11 @@ class _PortMappingPageState extends State<PortMappingPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(value ? '已切换为自定义配置并重启隧道' : '已切换为表单配置并重启隧道'),
+          content: Text(
+            value
+                ? context.tr('portMapping.switchedToCustom')
+                : context.tr('portMapping.switchedToForm'),
+          ),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -219,7 +227,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('网络映射')),
+      appBar: AppBar(title: Text(context.tr('portMapping.title'))),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -257,7 +265,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    '路由器端口映射',
+                    context.tr('portMapping.upnpCardTitle'),
                     style: theme.textTheme.titleSmall?.copyWith(
                       color: theme.colorScheme.primary,
                     ),
@@ -266,10 +274,8 @@ class _PortMappingPageState extends State<PortMappingPage> {
               ),
             ),
             SwitchListTile(
-              title: const Text('启用自动端口映射'),
-              subtitle: const Text(
-                '服务器启动后自动在路由器上开放端口\n需路由器支持 UPnP / NAT-PMP / NAT-PCP 协议',
-              ),
+              title: Text(context.tr('portMapping.enableUpnp')),
+              subtitle: Text(context.tr('portMapping.enableUpnpSubtitle')),
               value: _upnpEnabled,
               onChanged: _setUpnp,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -284,9 +290,9 @@ class _PortMappingPageState extends State<PortMappingPage> {
 
   Widget _buildFrpcCard(ThemeData theme) {
     final statusText = switch (_tunnelStatus) {
-      'running' => '隧道运行中',
-      'starting' => '隧道连接中…',
-      'preparing' => '隧道准备中…',
+      'running' => context.tr('portMapping.tunnelRunning'),
+      'starting' => context.tr('portMapping.tunnelConnecting'),
+      'preparing' => context.tr('portMapping.tunnelPreparing'),
       _ => null,
     };
     return Card(
@@ -307,7 +313,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'FRP 隧道',
+                      context.tr('portMapping.frpCardTitle'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         color: theme.colorScheme.primary,
                       ),
@@ -318,8 +324,8 @@ class _PortMappingPageState extends State<PortMappingPage> {
               ),
             ),
             SwitchListTile(
-              title: const Text('启用 FRP 隧道'),
-              subtitle: const Text('通过 frps 服务器将本地服务映射到公网\n服务器启动时自动连接，停止时自动断开'),
+              title: Text(context.tr('portMapping.enableFrp')),
+              subtitle: Text(context.tr('portMapping.enableFrpSubtitle')),
               value: _tunnelEnabled,
               onChanged: _setTunnel,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -343,7 +349,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '已启用自定义配置文件，下方表单配置将被忽略',
+                              context.tr('portMapping.customConfigWarning'),
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: theme.colorScheme.onTertiaryContainer,
                               ),
@@ -358,21 +364,39 @@ class _PortMappingPageState extends State<PortMappingPage> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(
-                  'frps 服务器',
+                  context.tr('portMapping.frpsServer'),
                   style: theme.textTheme.titleSmall?.copyWith(
                     color: theme.colorScheme.primary,
                   ),
                 ),
               ),
-              _px(_field(_serverAddr, '服务器地址', hint: '例如 frp.example.com')),
+              _px(
+                _field(
+                  _serverAddr,
+                  context.tr('portMapping.serverAddr'),
+                  hint: context.tr('portMapping.serverAddrHint'),
+                ),
+              ),
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    Expanded(child: _field(_serverPort, '端口', number: true)),
+                    Expanded(
+                      child: _field(
+                        _serverPort,
+                        context.tr('portMapping.port'),
+                        number: true,
+                      ),
+                    ),
                     const SizedBox(width: 12),
-                    Expanded(child: _field(_token, 'Token（可选）', obscure: true)),
+                    Expanded(
+                      child: _field(
+                        _token,
+                        context.tr('portMapping.tokenOptional'),
+                        obscure: true,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -380,7 +404,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(
-                  '代理',
+                  context.tr('portMapping.proxy'),
                   style: theme.textTheme.titleSmall?.copyWith(
                     color: theme.colorScheme.primary,
                   ),
@@ -392,9 +416,20 @@ class _PortMappingPageState extends State<PortMappingPage> {
                   children: [
                     Expanded(child: _typeDropdown()),
                     const SizedBox(width: 12),
-                    Expanded(child: _field(_proxyName, '代理名称')),
+                    Expanded(
+                      child: _field(
+                        _proxyName,
+                        context.tr('portMapping.proxyName'),
+                      ),
+                    ),
                     const SizedBox(width: 12),
-                    Expanded(child: _field(_remotePort, '远程端口', number: true)),
+                    Expanded(
+                      child: _field(
+                        _remotePort,
+                        context.tr('portMapping.remotePort'),
+                        number: true,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -416,7 +451,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '本地端口自动使用当前服务器的 server-port',
+                            context.tr('portMapping.localPortInfo'),
                             style: theme.textTheme.bodySmall,
                           ),
                         ),
@@ -433,15 +468,17 @@ class _PortMappingPageState extends State<PortMappingPage> {
                   child: FilledButton.tonalIcon(
                     onPressed: _useCustomFrpc ? null : _saveFrpcConfig,
                     icon: const Icon(Icons.save, size: 18),
-                    label: const Text('保存配置'),
+                    label: Text(context.tr('portMapping.saveConfig')),
                   ),
                 ),
               ),
               const SizedBox(height: 8),
               const Divider(indent: 16, endIndent: 16),
               SwitchListTile(
-                title: const Text('使用自定义配置文件'),
-                subtitle: const Text('启用后以上方表单将被忽略，直接使用下方编辑的 frpc.toml'),
+                title: Text(context.tr('portMapping.useCustomConfig')),
+                subtitle: Text(
+                  context.tr('portMapping.useCustomConfigSubtitle'),
+                ),
                 value: _useCustomFrpc,
                 onChanged: _setUseCustomFrpc,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -465,7 +502,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '自定义模式下本地端口不会被自动注入，请自行在配置文件中填写正确的 localPort。',
+                              context.tr('portMapping.customConfigInfo'),
                               style: theme.textTheme.bodySmall,
                             ),
                           ),
@@ -482,7 +519,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
                     child: FilledButton.tonalIcon(
                       onPressed: _editCustomFrpcFile,
                       icon: const Icon(Icons.edit_note, size: 18),
-                      label: const Text('直接编辑配置文件'),
+                      label: Text(context.tr('portMapping.editConfigFile')),
                     ),
                   ),
                 ),
@@ -522,7 +559,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
           child: Row(
             children: [
               Text(
-                '隧道日志',
+                context.tr('portMapping.tunnelLog'),
                 style: theme.textTheme.titleSmall?.copyWith(
                   color: theme.colorScheme.primary,
                 ),
@@ -530,7 +567,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.cleaning_services_outlined, size: 18),
-                tooltip: '清空日志',
+                tooltip: context.tr('portMapping.clearLog'),
                 onPressed: () {
                   _tunnel.clearLog();
                   setState(() => _logs.clear());
@@ -549,7 +586,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
           child: _logs.isEmpty
               ? Center(
                   child: Text(
-                    '暂无日志',
+                    context.tr('portMapping.noLogs'),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -601,10 +638,10 @@ class _PortMappingPageState extends State<PortMappingPage> {
   Widget _typeDropdown() {
     return DropdownButtonFormField<String>(
       initialValue: _proxyType,
-      decoration: const InputDecoration(
-        labelText: '类型',
+      decoration: InputDecoration(
+        labelText: context.tr('portMapping.proxyType'),
         isDense: true,
-        border: OutlineInputBorder(),
+        border: const OutlineInputBorder(),
       ),
       items: const [
         DropdownMenuItem(value: 'tcp', child: Text('TCP')),

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../i18n/locale_scope.dart';
 import 'file_entry.dart';
 import 'file_service.dart';
 
@@ -63,11 +64,10 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
     });
   }
 
-  bool get _atRoot =>
-      p.equals(_current.path, widget.rootDir.path);
+  bool get _atRoot => p.equals(_current.path, widget.rootDir.path);
 
-  String get _relativeLabel {
-    if (_atRoot) return '根目录';
+  String _relativeLabel(BuildContext context) {
+    if (_atRoot) return context.tr('folderPicker.rootDirectory');
     return p.relative(_current.path, from: widget.rootDir.path);
   }
 
@@ -108,19 +108,19 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_upward),
-                  tooltip: '上一级',
+                  tooltip: context.tr('folderPicker.upOneLevel'),
                   onPressed: _atRoot ? null : _goUp,
                 ),
                 Expanded(
                   child: Text(
-                    _relativeLabel,
+                    _relativeLabel(context),
                     style: theme.textTheme.bodyMedium,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.create_new_folder_outlined),
-                  tooltip: '新建文件夹',
+                  tooltip: context.tr('folderPicker.newFolder'),
                   onPressed: _createFolder,
                 ),
               ],
@@ -131,29 +131,30 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _folders.isEmpty
-                      ? Center(
-                          child: Text(
-                            '没有子文件夹',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: _folders.length,
-                          itemBuilder: (_, i) {
-                            final folder = _folders[i];
-                            final disabled = widget.disabledPath != null &&
-                                p.equals(folder.path, widget.disabledPath!);
-                            return ListTile(
-                              leading: const Icon(Icons.folder),
-                              title: Text(folder.name),
-                              enabled: !disabled,
-                              trailing: const Icon(Icons.chevron_right),
-                              onTap: () => _enter(folder.path),
-                            );
-                          },
+                  ? Center(
+                      child: Text(
+                        context.tr('folderPicker.noSubfolders'),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _folders.length,
+                      itemBuilder: (_, i) {
+                        final folder = _folders[i];
+                        final disabled =
+                            widget.disabledPath != null &&
+                            p.equals(folder.path, widget.disabledPath!);
+                        return ListTile(
+                          leading: const Icon(Icons.folder),
+                          title: Text(folder.name),
+                          enabled: !disabled,
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _enter(folder.path),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
@@ -161,11 +162,11 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(context.tr('common.cancel')),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(_current.path),
-          child: const Text('移动到此处'),
+          child: Text(context.tr('folderPicker.moveHere')),
         ),
       ],
     );
@@ -177,22 +178,24 @@ Future<String?> _promptFolderName(BuildContext context) async {
   final result = await showDialog<String>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('新建文件夹'),
+      title: Text(context.tr('folderPicker.newFolder')),
       content: TextField(
         controller: controller,
         autofocus: true,
-        decoration: const InputDecoration(labelText: '文件夹名称'),
+        decoration: InputDecoration(
+          labelText: context.tr('folderPicker.folderName'),
+        ),
         onSubmitted: (v) => Navigator.of(dialogContext).pop(v.trim()),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
-          child: const Text('取消'),
+          child: Text(context.tr('common.cancel')),
         ),
         TextButton(
           onPressed: () =>
               Navigator.of(dialogContext).pop(controller.text.trim()),
-          child: const Text('确定'),
+          child: Text(context.tr('common.ok')),
         ),
       ],
     ),

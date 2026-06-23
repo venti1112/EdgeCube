@@ -9,6 +9,8 @@ import '../files/archive_service.dart';
 import '../files/file_service.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
+import '../i18n/i18n_service.dart';
+import '../i18n/locale_scope.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
@@ -29,13 +31,13 @@ class InstanceExportPage extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('实例导出')),
+      appBar: AppBar(title: Text(context.tr('instanceExport.title'))),
       body: SafeArea(
         child: instances.isEmpty
-            ? const PlaceholderPage(
+            ? PlaceholderPage(
                 icon: Icons.archive_outlined,
-                title: '还没有实例',
-                description: '请先新建一个服务器实例，再导出其文件。',
+                title: context.tr('instanceExport.emptyTitle'),
+                description: context.tr('instanceExport.emptyDescription'),
               )
             : ListView(
                 padding: const EdgeInsets.all(16),
@@ -43,7 +45,7 @@ class InstanceExportPage extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Text(
-                      '选择要导出的实例，将其全部文件压缩为 zip 压缩包导出。',
+                      context.tr('instanceExport.intro'),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -105,12 +107,12 @@ class _InstanceExportTile extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: '分享压缩包',
+              tooltip: context.tr('instanceExport.shareTooltip'),
               icon: const Icon(Icons.share_outlined),
               onPressed: () => _share(context),
             ),
             IconButton(
-              tooltip: '保存到文件夹',
+              tooltip: context.tr('instanceExport.saveTooltip'),
               icon: const Icon(Icons.folder_copy_outlined),
               onPressed: () => _saveToFolder(context),
             ),
@@ -129,11 +131,15 @@ class _InstanceExportTile extends StatelessWidget {
   /// 压缩实例目录到临时文件并调起系统分享面板。
   Future<void> _share(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
+    final dirNotExistMsg = context.tr('instanceExport.dirNotExist', {
+      'name': instance.name,
+    });
+    final shareText = context.tr('instanceExport.shareText', {
+      'name': instance.name,
+    });
     final dir = await controller.directoryForId(instance.id);
     if (!await dir.exists()) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('实例目录不存在：${instance.name}')),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(dirNotExistMsg)));
       return;
     }
     if (!context.mounted) return;
@@ -143,11 +149,11 @@ class _InstanceExportTile extends StatelessWidget {
       builder: (_) => PopScope(
         canPop: false,
         child: AlertDialog(
-          content: const Row(
+          content: Row(
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('正在压缩…'),
+              const CircularProgressIndicator(),
+              const SizedBox(width: 20),
+              Text(context.tr('instanceExport.compressing')),
             ],
           ),
         ),
@@ -163,27 +169,29 @@ class _InstanceExportTile extends StatelessWidget {
       await ArchiveService.compress([dir.path], zipPath);
       if (context.mounted) Navigator.of(context).pop();
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(zipPath)],
-          text: '${instance.name} 实例压缩包',
-        ),
+        ShareParams(files: [XFile(zipPath)], text: shareText),
       );
     } catch (e) {
       if (context.mounted) Navigator.of(context).pop();
-      messenger.showSnackBar(SnackBar(content: Text('导出失败：$e')));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(tr('instanceExport.exportFailed', {'error': '$e'})),
+        ),
+      );
     }
   }
 
   /// 压缩实例目录到用户选择的外部文件夹。
   Future<void> _saveToFolder(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
+    final dirNotExistMsg = context.tr('instanceExport.dirNotExist', {
+      'name': instance.name,
+    });
     if (!await _ensurePermission(context)) return;
     if (!context.mounted) return;
     final dir = await controller.directoryForId(instance.id);
     if (!await dir.exists()) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('实例目录不存在：${instance.name}')),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(dirNotExistMsg)));
       return;
     }
     if (!context.mounted) return;
@@ -199,11 +207,11 @@ class _InstanceExportTile extends StatelessWidget {
       builder: (_) => PopScope(
         canPop: false,
         child: AlertDialog(
-          content: const Row(
+          content: Row(
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('正在压缩…'),
+              const CircularProgressIndicator(),
+              const SizedBox(width: 20),
+              Text(context.tr('instanceExport.compressing')),
             ],
           ),
         ),
@@ -218,11 +226,17 @@ class _InstanceExportTile extends StatelessWidget {
       );
       if (context.mounted) Navigator.of(context).pop();
       messenger.showSnackBar(
-        SnackBar(content: Text('已导出到：$zipPath')),
+        SnackBar(
+          content: Text(tr('instanceExport.savedTo', {'path': zipPath})),
+        ),
       );
     } catch (e) {
       if (context.mounted) Navigator.of(context).pop();
-      messenger.showSnackBar(SnackBar(content: Text('导出失败：$e')));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(tr('instanceExport.exportFailed', {'error': '$e'})),
+        ),
+      );
     }
   }
 
@@ -233,19 +247,16 @@ class _InstanceExportTile extends StatelessWidget {
     final go = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('需要文件访问权限'),
-        content: const Text(
-          '保存到文件夹需要「所有文件访问权限」。点击「去授权」后，'
-          '请在系统设置中为本应用打开该权限，再返回重试。',
-        ),
+        title: Text(context.tr('instanceExport.permissionTitle')),
+        content: Text(context.tr('instanceExport.permissionContent')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr('common.cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('去授权'),
+            child: Text(context.tr('instanceExport.grantPermission')),
           ),
         ],
       ),

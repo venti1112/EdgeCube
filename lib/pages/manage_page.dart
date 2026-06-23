@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/locale_scope.dart';
 import 'instance_export_page.dart';
 import 'players_page.dart';
 import 'port_mapping_page.dart';
@@ -17,15 +18,15 @@ class ManagePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('管理')),
+      appBar: AppBar(title: Text(context.tr('manage.title'))),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             _ManageEntryTile(
               icon: Icons.people_outline,
-              title: '玩家管理',
-              subtitle: '在线玩家、白名单、封禁与 OP',
+              title: context.tr('manage.players.title'),
+              subtitle: context.tr('manage.players.subtitle'),
               onTap: () => Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const PlayersPage())),
@@ -33,8 +34,8 @@ class ManagePage extends StatelessWidget {
             const SizedBox(height: 12),
             _ManageEntryTile(
               icon: Icons.tune,
-              title: '服务器配置',
-              subtitle: '编辑 server.properties',
+              title: context.tr('manage.serverProperties.title'),
+              subtitle: context.tr('manage.serverProperties.subtitle'),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const ServerPropertiesPage()),
               ),
@@ -42,8 +43,8 @@ class ManagePage extends StatelessWidget {
             const SizedBox(height: 12),
             _ManageEntryTile(
               icon: Icons.lan_outlined,
-              title: '网络映射',
-              subtitle: 'UPnP 端口映射与 FRP 隧道',
+              title: context.tr('manage.network.title'),
+              subtitle: context.tr('manage.network.subtitle'),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const PortMappingPage()),
               ),
@@ -51,8 +52,8 @@ class ManagePage extends StatelessWidget {
             const SizedBox(height: 12),
             _ManageEntryTile(
               icon: Icons.folder_shared_outlined,
-              title: 'FTP 文件管理',
-              subtitle: '通过 FTP 对外开放实例目录访问',
+              title: context.tr('manage.ftp.title'),
+              subtitle: context.tr('manage.ftp.subtitle'),
               onTap: () => Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const FtpPage())),
@@ -60,8 +61,8 @@ class ManagePage extends StatelessWidget {
             const SizedBox(height: 12),
             _ManageEntryTile(
               icon: Icons.dns_outlined,
-              title: 'SSH 服务',
-              subtitle: 'SFTP 文件访问与 SSH 远程终端',
+              title: context.tr('manage.ssh.title'),
+              subtitle: context.tr('manage.ssh.subtitle'),
               onTap: () => Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const SshPage())),
@@ -69,8 +70,8 @@ class ManagePage extends StatelessWidget {
             const SizedBox(height: 12),
             _ManageEntryTile(
               icon: Icons.hub_outlined,
-              title: 'MCP 服务',
-              subtitle: '供 AI Agent 获取数据与操作服务',
+              title: context.tr('manage.mcp.title'),
+              subtitle: context.tr('manage.mcp.subtitle'),
               onTap: () => Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const McpPage())),
@@ -78,8 +79,8 @@ class ManagePage extends StatelessWidget {
             const SizedBox(height: 12),
             _ManageEntryTile(
               icon: Icons.terminal,
-              title: 'Shell 终端',
-              subtitle: '在设备上运行 shell（ls / cd 等）',
+              title: context.tr('manage.shell.title'),
+              subtitle: context.tr('manage.shell.subtitle'),
               onTap: () => Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const ShellPage())),
@@ -87,8 +88,8 @@ class ManagePage extends StatelessWidget {
             const SizedBox(height: 12),
             _ManageEntryTile(
               icon: Icons.archive_outlined,
-              title: '实例导出',
-              subtitle: '将实例全部文件压缩为 zip 导出',
+              title: context.tr('manage.export.title'),
+              subtitle: context.tr('manage.export.subtitle'),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const InstanceExportPage()),
               ),

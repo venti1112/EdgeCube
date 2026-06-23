@@ -3,6 +3,8 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../i18n/i18n_service.dart';
+import '../i18n/locale_scope.dart';
 import '../online/update_service.dart';
 import '../widgets/update_dialog.dart';
 
@@ -43,7 +45,7 @@ class _AboutPageState extends State<AboutPage> {
       if (info == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('检查更新失败，请稍后重试')),
+          SnackBar(content: Text(context.tr('about.checkUpdateFailed'))),
         );
         return;
       }
@@ -53,7 +55,7 @@ class _AboutPageState extends State<AboutPage> {
         _showUpdateDialog(info);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('当前已是最新版本')),
+          SnackBar(content: Text(context.tr('about.alreadyLatest'))),
         );
       }
     } finally {
@@ -76,7 +78,7 @@ class _AboutPageState extends State<AboutPage> {
     final cs = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('关于')),
+      appBar: AppBar(title: Text(context.tr('about.title'))),
       body: ListView(
         children: [
           const SizedBox(height: 32),
@@ -111,8 +113,11 @@ class _AboutPageState extends State<AboutPage> {
           Center(
             child: Text(
               _version.isEmpty
-                  ? '加载中…'
-                  : '版本 $_version (Build $_buildNumber)',
+                  ? context.tr('common.loading')
+                  : context.tr('about.version', {
+                      'version': _version,
+                      'build': _buildNumber,
+                    }),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
@@ -132,7 +137,11 @@ class _AboutPageState extends State<AboutPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.system_update, size: 18),
-              label: Text(_checking ? '检查中…' : '检查更新'),
+              label: Text(
+                _checking
+                    ? context.tr('about.checking')
+                    : context.tr('about.checkUpdate'),
+              ),
             ),
           ),
 
@@ -141,7 +150,7 @@ class _AboutPageState extends State<AboutPage> {
           // ── 简介 ──
           Center(
             child: Text(
-              '在 Android 设备上运行 Minecraft 服务器',
+              context.tr('about.description'),
               style: theme.textTheme.bodyLarge?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
@@ -151,7 +160,7 @@ class _AboutPageState extends State<AboutPage> {
           const SizedBox(height: 32),
 
           // ── GitHub ──
-          _sectionHeader(theme, '开源仓库'),
+          _sectionHeader(theme, context.tr('about.openSourceRepo')),
           ListTile(
             leading: const Icon(Icons.code),
             title: const Text('GitHub'),
@@ -166,30 +175,29 @@ class _AboutPageState extends State<AboutPage> {
           const Divider(),
 
           // ── 开源许可 ──
-          _sectionHeader(theme, '开源许可'),
+          _sectionHeader(theme, context.tr('about.openSourceLicense')),
           ListTile(
             leading: const Icon(Icons.balance),
             title: const Text('GNU General Public License v3.0'),
-            subtitle: const Text('EdgeCube 是自由软件，遵循 GPL-3.0 开源协议'),
+            subtitle: Text(context.tr('about.gplNotice')),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const _LicenseViewerPage(),
-                ),
+                MaterialPageRoute(builder: (_) => const _LicenseViewerPage()),
               );
             },
           ),
           ListTile(
             leading: const Icon(Icons.description_outlined),
-            title: const Text('第三方依赖开源协议'),
-            subtitle: const Text('查看本项目使用的第三方库许可'),
+            title: Text(context.tr('about.thirdPartyLicenses')),
+            subtitle: Text(context.tr('about.thirdPartyLicensesDesc')),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showLicensePage(
               context: context,
               applicationName: 'EdgeCube',
-              applicationVersion:
-                  _version.isEmpty ? '' : '$_version (Build $_buildNumber)',
+              applicationVersion: _version.isEmpty
+                  ? ''
+                  : '$_version (Build $_buildNumber)',
               applicationIcon: Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: ClipRRect(
@@ -211,7 +219,7 @@ class _AboutPageState extends State<AboutPage> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
               child: Text(
-                '© 2026 venti1112\n基于 GPL-3.0 协议开源',
+                context.tr('about.copyright'),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: cs.onSurfaceVariant,
@@ -249,7 +257,7 @@ class _LicenseViewerPage extends StatefulWidget {
 }
 
 class _LicenseViewerPageState extends State<_LicenseViewerPage> {
-  String _text = '加载中…';
+  String _text = tr('common.loading');
 
   @override
   void initState() {
@@ -267,10 +275,9 @@ class _LicenseViewerPageState extends State<_LicenseViewerPage> {
         padding: const EdgeInsets.all(16),
         child: SelectableText(
           _text,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
-                height: 1.5,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace', height: 1.5),
         ),
       ),
     );

@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import '../i18n/i18n_service.dart';
 import 'instance.dart';
 import 'instance_store.dart';
 
@@ -14,7 +15,7 @@ class DuplicateInstanceNameException implements Exception {
   final String name;
 
   @override
-  String toString() => '已存在同名实例：$name';
+  String toString() => tr('instance.duplicateName', {'name': name});
 }
 
 /// 管理服务器实例的索引、当前选中项的完整配置与磁盘文件夹。

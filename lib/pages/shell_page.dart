@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 
 import '../config/terminal_store.dart';
+import '../i18n/locale_scope.dart';
 import '../shell/shell_controller.dart';
 import '../shell/shell_scope.dart';
 import '../widgets/terminal_zoom.dart';
@@ -56,13 +57,15 @@ class _ShellPageState extends State<ShellPage> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Shell 终端'),
+            Text(context.tr('shell.title')),
             Text(
               shell.isRunning
                   ? (shell.shellLabel ?? 'shell')
                   : (shell.lastExitCode != null
-                        ? '已退出（退出码 ${shell.lastExitCode}）'
-                        : '未运行'),
+                        ? context.tr('shell.exited', {
+                            'code': shell.lastExitCode.toString(),
+                          })
+                        : context.tr('shell.notRunning')),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: shell.isRunning
                     ? Colors.green
@@ -81,12 +84,12 @@ class _ShellPageState extends State<ShellPage> {
           ),
           IconButton(
             icon: const Icon(Icons.restart_alt),
-            tooltip: '重启 shell',
+            tooltip: context.tr('shell.restart'),
             onPressed: () => shell.restart(),
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
-            tooltip: '清空终端',
+            tooltip: context.tr('shell.clear'),
             onPressed: shell.clear,
           ),
         ],

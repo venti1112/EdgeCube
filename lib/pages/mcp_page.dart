@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config/mcp_store.dart';
+import '../i18n/locale_scope.dart';
 import '../mcp/mcp_controller.dart';
 import '../mcp/mcp_scope.dart';
 import '../net/network_address.dart';
@@ -75,17 +76,23 @@ class _McpPageState extends State<McpPage> {
       await mcp.setEnabled(value);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.tr('mcpPage.operationFailed', {'error': '$e'})),
+        ),
+      );
       return;
     }
     if (!mounted) return;
     // 开启失败（如端口被占用）时给出提示。
     if (value && !mcp.isRunning && mcp.lastError != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('启动失败：${mcp.lastError}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.tr('mcpPage.startFailed', {'error': mcp.lastError ?? ''}),
+          ),
+        ),
+      );
     }
   }
 
@@ -99,7 +106,11 @@ class _McpPageState extends State<McpPage> {
     setState(() => _localIpv6 = ipv6);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(mcp.isRunning ? '已保存并重启 MCP 服务' : '已保存'),
+        content: Text(
+          mcp.isRunning
+              ? context.tr('mcpPage.savedAndRestarted')
+              : context.tr('mcpPage.saved'),
+        ),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -110,16 +121,16 @@ class _McpPageState extends State<McpPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('重新生成令牌'),
-        content: const Text('生成新令牌后，旧令牌将立即失效，已连接的客户端需使用新令牌重新连接。确定继续？'),
+        title: Text(ctx.tr('mcpPage.regenerateTokenTitle')),
+        content: Text(ctx.tr('mcpPage.regenerateTokenContent')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(ctx.tr('common.cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('重新生成'),
+            child: Text(ctx.tr('mcpPage.regenerate')),
           ),
         ],
       ),
@@ -129,7 +140,10 @@ class _McpPageState extends State<McpPage> {
     await McpScope.of(context).regenerateToken();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已生成新令牌'), duration: Duration(seconds: 2)),
+      SnackBar(
+        content: Text(context.tr('mcpPage.tokenGenerated')),
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 
@@ -138,7 +152,7 @@ class _McpPageState extends State<McpPage> {
     final theme = Theme.of(context);
     final mcp = McpScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('MCP 服务')),
+      appBar: AppBar(title: Text(context.tr('mcpPage.title'))),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -177,20 +191,23 @@ class _McpPageState extends State<McpPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'MCP 服务',
+                      context.tr('mcpPage.title'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         color: theme.colorScheme.primary,
                       ),
                     ),
                   ),
-                  if (running) _statusChip(theme, '运行中'),
+                  if (running)
+                    _statusChip(theme, context.tr('mcpPage.statusRunning')),
                 ],
               ),
             ),
             SwitchListTile(
-              title: const Text('启用 MCP 服务'),
+              title: Text(context.tr('mcpPage.enableTitle')),
               subtitle: Text(
-                running ? '已对局域网开放（Streamable HTTP）' : '开启后供 AI Agent 连接',
+                running
+                    ? context.tr('mcpPage.enableSubtitleRunning')
+                    : context.tr('mcpPage.enableSubtitleStopped'),
               ),
               value: running,
               onChanged: _toggleMcp,
@@ -221,7 +238,7 @@ class _McpPageState extends State<McpPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text(
-                '连接配置',
+                context.tr('mcpPage.configTitle'),
                 style: theme.textTheme.titleSmall?.copyWith(
                   color: theme.colorScheme.primary,
                 ),
@@ -233,10 +250,10 @@ class _McpPageState extends State<McpPage> {
                 controller: _port,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(
-                  labelText: '端口',
+                decoration: InputDecoration(
+                  labelText: context.tr('mcpPage.port'),
                   isDense: true,
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                 ),
               ),
             ),
@@ -246,7 +263,7 @@ class _McpPageState extends State<McpPage> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: InputDecorator(
                 decoration: InputDecoration(
-                  labelText: '访问令牌（Bearer Token）',
+                  labelText: context.tr('mcpPage.tokenLabel'),
                   isDense: true,
                   border: const OutlineInputBorder(),
                   suffixIcon: Row(
@@ -254,21 +271,24 @@ class _McpPageState extends State<McpPage> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.copy, size: 18),
-                        tooltip: '复制令牌',
+                        tooltip: context.tr('mcpPage.copyToken'),
                         onPressed: token.isEmpty
                             ? null
-                            : () => _copy(token, '已复制令牌'),
+                            : () => _copy(
+                                token,
+                                context.tr('mcpPage.tokenCopied'),
+                              ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.refresh, size: 18),
-                        tooltip: '重新生成',
+                        tooltip: context.tr('mcpPage.regenerate'),
                         onPressed: _regenerateToken,
                       ),
                     ],
                   ),
                 ),
                 child: SelectableText(
-                  token.isEmpty ? '（未设置，不鉴权）' : token,
+                  token.isEmpty ? context.tr('mcpPage.tokenUnset') : token,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontFamily: 'monospace',
                   ),
@@ -276,24 +296,22 @@ class _McpPageState extends State<McpPage> {
               ),
             ),
             SwitchListTile(
-              title: const Text('允许控制操作'),
-              subtitle: const Text('关闭后 AI 仅能读取数据，不能启停服务端、发送命令或切换实例'),
+              title: Text(context.tr('mcpPage.allowControl')),
+              subtitle: Text(context.tr('mcpPage.allowControlSubtitle')),
               value: _allowControl,
               onChanged: (v) => setState(() => _allowControl = v),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
             SwitchListTile(
-              title: const Text('允许 Shell 命令执行（高风险）'),
-              subtitle: const Text(
-                '开启后 AI 可在设备上执行任意 shell 命令（run_shell/shell_cd）',
-              ),
+              title: Text(context.tr('mcpPage.allowShell')),
+              subtitle: Text(context.tr('mcpPage.allowShellSubtitle')),
               value: _allowShell,
               onChanged: (v) => setState(() => _allowShell = v),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
             SwitchListTile(
-              title: const Text('启用 IPv6 访问'),
-              subtitle: const Text('开启后同时监听 IPv6（双栈），可经稳定 IPv6 地址访问'),
+              title: Text(context.tr('mcpPage.enableIpv6')),
+              subtitle: Text(context.tr('mcpPage.enableIpv6Subtitle')),
               value: _ipv6,
               onChanged: (v) => setState(() => _ipv6 = v),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -305,7 +323,7 @@ class _McpPageState extends State<McpPage> {
                 child: FilledButton.tonalIcon(
                   onPressed: _saveConfig,
                   icon: const Icon(Icons.save, size: 18),
-                  label: const Text('保存配置'),
+                  label: Text(context.tr('mcpPage.saveConfig')),
                 ),
               ),
             ),
@@ -333,14 +351,7 @@ class _McpPageState extends State<McpPage> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'MCP 服务以 Streamable HTTP 协议运行于应用进程内，App 存活时持续可用。'
-                '同一局域网内的 AI 客户端使用上方地址连接，并在 Authorization 请求头携带 '
-                '「Bearer <令牌>」进行鉴权。\n'
-                '「允许控制操作」开启时，AI 可启动/停止服务端、发送控制台命令、切换实例；'
-                '关闭时仅能读取状态、系统资源、在线玩家与日志等信息。\n'
-                '开启 IPv6 后可经稳定的 IPv6 地址直接访问（同一网络内可用，'
-                '外网访问取决于运营商 IPv6 公网可达性）。\n'
-                '保存新配置时，若服务正在运行将自动重启以应用变更。',
+                context.tr('mcpPage.infoText'),
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -376,8 +387,8 @@ class _McpPageState extends State<McpPage> {
           ),
           IconButton(
             icon: const Icon(Icons.copy, size: 18),
-            tooltip: '复制地址',
-            onPressed: () => _copy(addr, '已复制地址'),
+            tooltip: context.tr('mcpPage.copyAddress'),
+            onPressed: () => _copy(addr, context.tr('mcpPage.addressCopied')),
           ),
         ],
       ),

@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 
+import '../i18n/i18n_service.dart';
+
 /// 检查更新接口返回的数据。
 class UpdateInfo {
   const UpdateInfo({required this.lastVersion, required this.downloadLink});
@@ -65,7 +67,11 @@ class UpdateService {
     final response = await http.Client().send(request);
 
     if (response.statusCode != 200) {
-      throw Exception('下载失败：HTTP ${response.statusCode}');
+      throw Exception(
+        tr('updateService.downloadFailedHttp', {
+          'status': '${response.statusCode}',
+        }),
+      );
     }
 
     final total = response.contentLength;

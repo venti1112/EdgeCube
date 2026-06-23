@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 
+import '../i18n/locale_scope.dart';
+
 /// 图片裁剪页面：将导入的图片裁剪为 1:1 并缩放至 64×64，保存为 PNG。
 ///
 /// [imagePath] 为待裁剪图片的绝对路径；[outputPath] 为保存目标路径。
@@ -57,7 +59,7 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
       if (decoded == null) {
         setState(() {
           _loading = false;
-          _error = '无法解码图片';
+          _error = context.tr('serverIcon.decodeFailed');
         });
         return;
       }
@@ -71,7 +73,7 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = '加载失败：$e';
+        _error = context.tr('serverIcon.loadFailed', {'error': e.toString()});
       });
     }
   }
@@ -99,10 +101,7 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
     final displayH = _imageHeight * _zoom;
     final maxDx = math.max(0.0, (displayW - _cropBoxSize) / 2);
     final maxDy = math.max(0.0, (displayH - _cropBoxSize) / 2);
-    _pan = Offset(
-      _pan.dx.clamp(-maxDx, maxDx),
-      _pan.dy.clamp(-maxDy, maxDy),
-    );
+    _pan = Offset(_pan.dx.clamp(-maxDx, maxDx), _pan.dy.clamp(-maxDy, maxDy));
   }
 
   // —— 手势 ——
@@ -163,7 +162,11 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败：$e')),
+          SnackBar(
+            content: Text(
+              context.tr('serverIcon.saveFailed', {'error': e.toString()}),
+            ),
+          ),
         );
         setState(() => _saving = false);
       }
@@ -179,7 +182,7 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('裁剪图标'),
+        title: Text(context.tr('serverIcon.cropIcon')),
         actions: [
           if (!_loading && _error == null)
             _saving
@@ -196,7 +199,7 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
                   )
                 : IconButton(
                     icon: const Icon(Icons.check),
-                    tooltip: '确认裁剪',
+                    tooltip: context.tr('serverIcon.confirmCrop'),
                     onPressed: _confirmCrop,
                   ),
         ],
@@ -218,9 +221,11 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
             children: [
               const Icon(Icons.error_outline, size: 48, color: Colors.white70),
               const SizedBox(height: 16),
-              Text(_error!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70)),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70),
+              ),
             ],
           ),
         ),
@@ -272,9 +277,9 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
                     ],
                   ),
                 ),
-                child: const Text(
-                  '拖动调整位置，双指缩放',
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                child: Text(
+                  context.tr('serverIcon.dragAndPinchHint'),
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
                 ),
               ),
             ),
@@ -312,7 +317,11 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
               filterQuality: FilterQuality.medium,
               gaplessPlayback: true,
               errorBuilder: (_, e, s) => const Center(
-                child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
+                child: Icon(
+                  Icons.broken_image,
+                  color: Colors.white54,
+                  size: 48,
+                ),
               ),
             ),
           ),
@@ -381,25 +390,49 @@ class _MaskPainter extends CustomPainter {
       ..strokeWidth = cornerW
       ..strokeCap = StrokeCap.round;
 
-    canvas.drawLine(cropRect.topLeft,
-        cropRect.topLeft + const Offset(cornerLen, 0), cp);
-    canvas.drawLine(cropRect.topLeft,
-        cropRect.topLeft + const Offset(0, cornerLen), cp);
+    canvas.drawLine(
+      cropRect.topLeft,
+      cropRect.topLeft + const Offset(cornerLen, 0),
+      cp,
+    );
+    canvas.drawLine(
+      cropRect.topLeft,
+      cropRect.topLeft + const Offset(0, cornerLen),
+      cp,
+    );
 
-    canvas.drawLine(cropRect.topRight,
-        cropRect.topRight + const Offset(-cornerLen, 0), cp);
-    canvas.drawLine(cropRect.topRight,
-        cropRect.topRight + const Offset(0, cornerLen), cp);
+    canvas.drawLine(
+      cropRect.topRight,
+      cropRect.topRight + const Offset(-cornerLen, 0),
+      cp,
+    );
+    canvas.drawLine(
+      cropRect.topRight,
+      cropRect.topRight + const Offset(0, cornerLen),
+      cp,
+    );
 
-    canvas.drawLine(cropRect.bottomLeft,
-        cropRect.bottomLeft + const Offset(cornerLen, 0), cp);
-    canvas.drawLine(cropRect.bottomLeft,
-        cropRect.bottomLeft + const Offset(0, -cornerLen), cp);
+    canvas.drawLine(
+      cropRect.bottomLeft,
+      cropRect.bottomLeft + const Offset(cornerLen, 0),
+      cp,
+    );
+    canvas.drawLine(
+      cropRect.bottomLeft,
+      cropRect.bottomLeft + const Offset(0, -cornerLen),
+      cp,
+    );
 
-    canvas.drawLine(cropRect.bottomRight,
-        cropRect.bottomRight + const Offset(-cornerLen, 0), cp);
-    canvas.drawLine(cropRect.bottomRight,
-        cropRect.bottomRight + const Offset(0, -cornerLen), cp);
+    canvas.drawLine(
+      cropRect.bottomRight,
+      cropRect.bottomRight + const Offset(-cornerLen, 0),
+      cp,
+    );
+    canvas.drawLine(
+      cropRect.bottomRight,
+      cropRect.bottomRight + const Offset(0, -cornerLen),
+      cp,
+    );
   }
 
   @override

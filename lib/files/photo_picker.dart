@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../i18n/locale_scope.dart';
+
 class PhotoAsset {
   const PhotoAsset({
     required this.uri,
@@ -102,16 +104,16 @@ Future<bool> _requestPhotoPermission(BuildContext context) async {
   final shouldRequest = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('需要照片权限'),
-      content: const Text('需要读取照片权限才能从相册选择服务器图标。'),
+      title: Text(context.tr('photoPicker.permissionTitle')),
+      content: Text(context.tr('photoPicker.permissionContent')),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('取消'),
+          child: Text(context.tr('common.cancel')),
         ),
         FilledButton.tonal(
           onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: const Text('允许'),
+          child: Text(context.tr('photoPicker.allow')),
         ),
       ],
     ),
@@ -148,7 +150,7 @@ class _PhotoPickerPageState extends State<_PhotoPickerPage> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('选择照片'),
+        title: Text(context.tr('photoPicker.selectPhoto')),
       ),
       body: FutureBuilder<List<PhotoAsset>>(
         future: _photosFuture,
@@ -161,7 +163,9 @@ class _PhotoPickerPageState extends State<_PhotoPickerPage> {
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  '读取照片失败：${snapshot.error}',
+                  context.tr('photoPicker.loadFailed', {
+                    'error': snapshot.error.toString(),
+                  }),
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white70),
                 ),
@@ -170,8 +174,11 @@ class _PhotoPickerPageState extends State<_PhotoPickerPage> {
           }
           final photos = snapshot.data ?? const <PhotoAsset>[];
           if (photos.isEmpty) {
-            return const Center(
-              child: Text('没有可选择的照片', style: TextStyle(color: Colors.white70)),
+            return Center(
+              child: Text(
+                context.tr('photoPicker.noPhotos'),
+                style: const TextStyle(color: Colors.white70),
+              ),
             );
           }
           return _PhotoGrid(
@@ -223,7 +230,10 @@ class _PhotoPreviewPageState extends State<_PhotoPreviewPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(_current),
-            child: const Text('使用', style: TextStyle(color: Colors.white)),
+            child: Text(
+              context.tr('photoPicker.use'),
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -269,7 +279,7 @@ class _PhotoInfo extends StatelessWidget {
   Widget build(BuildContext context) {
     final dimensions = photo.width > 0 && photo.height > 0
         ? '${photo.width} x ${photo.height}'
-        : '未知尺寸';
+        : context.tr('photoPicker.unknownDimensions');
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
@@ -291,7 +301,7 @@ class _PhotoInfo extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '$dimensions  ·  ${_formatBytes(photo.size)}',
+            '$dimensions  ·  ${_formatBytes(context, photo.size)}',
             style: const TextStyle(color: Colors.white60, fontSize: 12),
           ),
         ],
@@ -418,8 +428,8 @@ class _PhotoBytesImage extends StatelessWidget {
   }
 }
 
-String _formatBytes(int bytes) {
-  if (bytes <= 0) return '未知大小';
+String _formatBytes(BuildContext context, int bytes) {
+  if (bytes <= 0) return context.tr('photoPicker.unknownSize');
   if (bytes < 1024) return '$bytes B';
   final kib = bytes / 1024;
   if (kib < 1024) return '${kib.toStringAsFixed(1)} KB';

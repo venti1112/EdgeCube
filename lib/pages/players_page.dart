@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../i18n/locale_scope.dart';
 import '../instance/instance.dart';
 import '../instance/instance_scope.dart';
 import '../server/server_controller.dart';
@@ -38,21 +39,21 @@ class _PlayersPageState extends State<PlayersPage>
     final instance = InstanceScope.of(context).selected;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('玩家管理'),
+        title: Text(context.tr('players.title')),
         bottom: TabBar(
           controller: _tabCtrl,
           isScrollable: true,
           tabAlignment: TabAlignment.start,
-          tabs: const [
-            Tab(text: '在线'),
-            Tab(text: '白名单'),
-            Tab(text: '封禁'),
-            Tab(text: 'OP'),
+          tabs: [
+            Tab(text: context.tr('players.tab.online')),
+            Tab(text: context.tr('players.tab.whitelist')),
+            Tab(text: context.tr('players.tab.bans')),
+            Tab(text: context.tr('players.tab.ops')),
           ],
         ),
       ),
       body: instance == null
-          ? const Center(child: Text('请先在「服务器」页选择一个实例。'))
+          ? Center(child: Text(context.tr('players.noInstanceHint')))
           : TabBarView(
               controller: _tabCtrl,
               children: [
@@ -88,11 +89,13 @@ class _OnlineTabState extends State<_OnlineTab> {
   }
 
   Future<void> _loadContextSets() async {
-    final dir =
-        await InstanceScope.of(context).directoryFor(widget.instance);
+    final dir = await InstanceScope.of(context).directoryFor(widget.instance);
     Set<String> loadNames(String fileName, List<dynamic> json) {
-      return json.map((e) => (e['name'] as String? ?? '').toLowerCase()).toSet();
+      return json
+          .map((e) => (e['name'] as String? ?? '').toLowerCase())
+          .toSet();
     }
+
     Set<String> loadFile(String fileName) {
       try {
         final file = File(p.join(dir.path, fileName));
@@ -103,6 +106,7 @@ class _OnlineTabState extends State<_OnlineTab> {
         return {};
       }
     }
+
     setState(() {
       _whitelist = loadFile('whitelist.json');
       _ops = loadFile('ops.json');
@@ -119,11 +123,19 @@ class _OnlineTabState extends State<_OnlineTab> {
 
     final Widget body;
     if (!running) {
-      body = _emptyState(theme, Icons.power_settings_new, '服务端未运行',
-          '启动服务器后，在线玩家将自动显示在这里。');
+      body = _emptyState(
+        theme,
+        Icons.power_settings_new,
+        context.tr('players.offline.title'),
+        context.tr('players.offline.desc'),
+      );
     } else if (players.isEmpty) {
-      body = _emptyState(theme, Icons.person_off, '暂无在线玩家',
-          '等待玩家加入服务器…');
+      body = _emptyState(
+        theme,
+        Icons.person_off,
+        context.tr('players.online.empty'),
+        context.tr('players.online.waiting'),
+      );
     } else {
       body = ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -152,9 +164,15 @@ class _OnlineTabState extends State<_OnlineTab> {
                   if (isOp)
                     _PlayerTag(label: 'OP', color: theme.colorScheme.tertiary),
                   if (inWhitelist)
-                    _PlayerTag(label: '白名单', color: theme.colorScheme.primary),
+                    _PlayerTag(
+                      label: context.tr('players.tag.whitelist'),
+                      color: theme.colorScheme.primary,
+                    ),
                   if (isBanned)
-                    _PlayerTag(label: '已封禁', color: theme.colorScheme.error),
+                    _PlayerTag(
+                      label: context.tr('players.tag.banned'),
+                      color: theme.colorScheme.error,
+                    ),
                 ],
               ),
               trailing: PopupMenuButton<String>(
@@ -164,9 +182,11 @@ class _OnlineTabState extends State<_OnlineTab> {
                   PopupMenuItem(
                     value: 'kick',
                     child: ListTile(
-                      leading: Icon(Icons.exit_to_app,
-                          color: theme.colorScheme.error),
-                      title: const Text('踢出'),
+                      leading: Icon(
+                        Icons.exit_to_app,
+                        color: theme.colorScheme.error,
+                      ),
+                      title: Text(context.tr('players.action.kick')),
                       contentPadding: EdgeInsets.zero,
                       visualDensity: VisualDensity.compact,
                     ),
@@ -181,7 +201,11 @@ class _OnlineTabState extends State<_OnlineTab> {
                             ? theme.colorScheme.error
                             : theme.colorScheme.primary,
                       ),
-                      title: Text(inWhitelist ? '移出白名单' : '加入白名单'),
+                      title: Text(
+                        inWhitelist
+                            ? context.tr('players.action.removeFromWhitelist')
+                            : context.tr('players.action.addToWhitelist'),
+                      ),
                       contentPadding: EdgeInsets.zero,
                       visualDensity: VisualDensity.compact,
                     ),
@@ -195,7 +219,11 @@ class _OnlineTabState extends State<_OnlineTab> {
                             ? theme.colorScheme.error
                             : theme.colorScheme.primary,
                       ),
-                      title: Text(isOp ? '取消 OP' : '给予 OP'),
+                      title: Text(
+                        isOp
+                            ? context.tr('players.action.deop')
+                            : context.tr('players.action.op'),
+                      ),
                       contentPadding: EdgeInsets.zero,
                       visualDensity: VisualDensity.compact,
                     ),
@@ -204,9 +232,11 @@ class _OnlineTabState extends State<_OnlineTab> {
                   PopupMenuItem(
                     value: 'ban',
                     child: ListTile(
-                      leading: Icon(Icons.block,
-                          color: theme.colorScheme.error),
-                      title: const Text('封禁'),
+                      leading: Icon(
+                        Icons.block,
+                        color: theme.colorScheme.error,
+                      ),
+                      title: Text(context.tr('players.action.ban')),
                       contentPadding: EdgeInsets.zero,
                       visualDensity: VisualDensity.compact,
                     ),
@@ -222,8 +252,10 @@ class _OnlineTabState extends State<_OnlineTab> {
     return Column(
       children: [
         _ListHeader(
-          title: '在线（${running ? players.length : 0}）',
-          tooltip: '刷新（发送 list）',
+          title: context.tr('players.online.count', {
+            'count': '${running ? players.length : 0}',
+          }),
+          tooltip: context.tr('players.online.refreshTooltip'),
           onRefresh: running
               ? () {
                   server.sendCommand('list');
@@ -237,7 +269,11 @@ class _OnlineTabState extends State<_OnlineTab> {
   }
 
   void _handleAction(
-      BuildContext context, ServerController server, String name, String action) async {
+    BuildContext context,
+    ServerController server,
+    String name,
+    String action,
+  ) async {
     switch (action) {
       case 'kick':
         _confirmKick(context, server, name);
@@ -265,28 +301,31 @@ class _OnlineTabState extends State<_OnlineTab> {
   }
 
   Future<void> _confirmKick(
-      BuildContext context, ServerController server, String name) async {
+    BuildContext context,
+    ServerController server,
+    String name,
+  ) async {
     final reason = await showDialog<String>(
       context: context,
       builder: (ctx) {
         final ctrl = TextEditingController();
         return AlertDialog(
-          title: Text('踢出 $name'),
+          title: Text(context.tr('players.kick.title', {'name': name})),
           content: TextField(
             controller: ctrl,
-            decoration: const InputDecoration(
-              labelText: '踢出原因（可选）',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: context.tr('players.kick.reasonHint'),
+              border: const OutlineInputBorder(),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('取消'),
+              child: Text(ctx.tr('common.cancel')),
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-              child: const Text('踢出'),
+              child: Text(ctx.tr('players.action.kick')),
             ),
           ],
         );
@@ -298,30 +337,34 @@ class _OnlineTabState extends State<_OnlineTab> {
   }
 
   Future<void> _confirmBan(
-      BuildContext context, ServerController server, String name) async {
+    BuildContext context,
+    ServerController server,
+    String name,
+  ) async {
     final reason = await showDialog<String>(
       context: context,
       builder: (ctx) {
         final ctrl = TextEditingController();
         return AlertDialog(
-          title: Text('封禁 $name'),
+          title: Text(context.tr('players.ban.title', {'name': name})),
           content: TextField(
             controller: ctrl,
-            decoration: const InputDecoration(
-              labelText: '封禁原因（可选）',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: context.tr('players.ban.reasonHint'),
+              border: const OutlineInputBorder(),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('取消'),
+              child: Text(ctx.tr('common.cancel')),
             ),
             FilledButton(
               style: FilledButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.error),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
               onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-              child: const Text('封禁'),
+              child: Text(ctx.tr('players.action.ban')),
             ),
           ],
         );
@@ -354,17 +397,18 @@ class _WhitelistTabState extends State<_WhitelistTab> {
   }
 
   Future<List<_NamedEntry>> _loadWhitelist() async {
-    final dir =
-        await InstanceScope.of(context).directoryFor(widget.instance);
+    final dir = await InstanceScope.of(context).directoryFor(widget.instance);
     final file = File(p.join(dir.path, 'whitelist.json'));
     if (!await file.exists()) return [];
     try {
       final json = jsonDecode(await file.readAsString()) as List;
       return json
-          .map((e) => _NamedEntry(
-                name: e['name'] as String? ?? '',
-                uuid: e['uuid'] as String? ?? '',
-              ))
+          .map(
+            (e) => _NamedEntry(
+              name: e['name'] as String? ?? '',
+              uuid: e['uuid'] as String? ?? '',
+            ),
+          )
           .toList();
     } catch (_) {
       return [];
@@ -389,34 +433,45 @@ class _WhitelistTabState extends State<_WhitelistTab> {
         return Column(
           children: [
             _ListHeader(
-              title: '白名单（${entries.length}）',
-              tooltip: '刷新',
+              title: context.tr('players.whitelist.count', {
+                'count': '${entries.length}',
+              }),
+              tooltip: context.tr('common.refresh'),
               onRefresh: _refresh,
-              actionLabel: '添加',
+              actionLabel: context.tr('common.add'),
               actionIcon: Icons.add,
               onAction: running
                   ? () => _promptAndSend(
-                        context, server,
-                        title: '添加白名单',
-                        hint: '玩家名称',
-                        commandPrefix: 'whitelist add',
-                        onDone: _refresh,
-                      )
+                      context,
+                      server,
+                      title: context.tr('players.whitelist.addTitle'),
+                      hint: context.tr('players.addPlayerHint'),
+                      commandPrefix: 'whitelist add',
+                      onDone: _refresh,
+                    )
                   : null,
             ),
             if (!running)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
                 child: Text(
-                  '只读模式，启动服务端后可进行操作',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  context.tr('players.readonlyNote'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             Expanded(
               child: entries.isEmpty
-                  ? _emptyState(theme, Icons.how_to_reg, '白名单为空',
-                      '点击上方「添加」按钮加入玩家。')
+                  ? _emptyState(
+                      theme,
+                      Icons.how_to_reg,
+                      context.tr('players.whitelist.empty'),
+                      context.tr('players.whitelist.emptyHint'),
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: entries.length,
@@ -427,25 +482,31 @@ class _WhitelistTabState extends State<_WhitelistTab> {
                             leading: CircleAvatar(
                               backgroundColor:
                                   theme.colorScheme.secondaryContainer,
-                              child: Text(e.name[0].toUpperCase(),
-                                  style: TextStyle(
-                                      color: theme
-                                          .colorScheme.onSecondaryContainer,
-                                      fontWeight: FontWeight.bold)),
+                              child: Text(
+                                e.name[0].toUpperCase(),
+                                style: TextStyle(
+                                  color: theme.colorScheme.onSecondaryContainer,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                             title: Text(e.name),
                             subtitle: e.uuid.isNotEmpty
-                                ? Text(e.uuid,
-                                    style: theme.textTheme.bodySmall)
+                                ? Text(e.uuid, style: theme.textTheme.bodySmall)
                                 : null,
                             trailing: running
                                 ? IconButton(
-                                    icon: Icon(Icons.delete,
-                                        color: theme.colorScheme.error),
-                                    tooltip: '移除',
+                                    icon: Icon(
+                                      Icons.delete,
+                                      color: theme.colorScheme.error,
+                                    ),
+                                    tooltip: context.tr(
+                                      'players.whitelist.remove',
+                                    ),
                                     onPressed: () {
                                       server.sendCommand(
-                                          'whitelist remove ${e.name}');
+                                        'whitelist remove ${e.name}',
+                                      );
                                       _refresh();
                                     },
                                   )
@@ -482,21 +543,22 @@ class _BansTabState extends State<_BansTab> {
   }
 
   Future<List<_BanEntry>> _loadBans() async {
-    final dir =
-        await InstanceScope.of(context).directoryFor(widget.instance);
+    final dir = await InstanceScope.of(context).directoryFor(widget.instance);
     final file = File(p.join(dir.path, 'banned-players.json'));
     if (!await file.exists()) return [];
     try {
       final json = jsonDecode(await file.readAsString()) as List;
       return json
-          .map((e) => _BanEntry(
-                name: e['name'] as String? ?? '',
-                uuid: e['uuid'] as String? ?? '',
-                reason: e['reason'] as String? ?? '',
-                source: e['source'] as String? ?? '',
-                expires: e['expires'] as String? ?? '',
-                created: e['created'] as String? ?? '',
-              ))
+          .map(
+            (e) => _BanEntry(
+              name: e['name'] as String? ?? '',
+              uuid: e['uuid'] as String? ?? '',
+              reason: e['reason'] as String? ?? '',
+              source: e['source'] as String? ?? '',
+              expires: e['expires'] as String? ?? '',
+              created: e['created'] as String? ?? '',
+            ),
+          )
           .toList();
     } catch (_) {
       return [];
@@ -521,35 +583,46 @@ class _BansTabState extends State<_BansTab> {
         return Column(
           children: [
             _ListHeader(
-              title: '封禁名单（${entries.length}）',
-              tooltip: '刷新',
+              title: context.tr('players.bans.count', {
+                'count': '${entries.length}',
+              }),
+              tooltip: context.tr('common.refresh'),
               onRefresh: _refresh,
-              actionLabel: '封禁',
+              actionLabel: context.tr('players.action.ban'),
               actionIcon: Icons.add,
               onAction: running
                   ? () => _promptAndSend(
-                        context, server,
-                        title: '封禁玩家',
-                        hint: '玩家名称',
-                        commandPrefix: 'ban',
-                        onDone: _refresh,
-                        withReason: true,
-                      )
+                      context,
+                      server,
+                      title: context.tr('players.bans.addTitle'),
+                      hint: context.tr('players.addPlayerHint'),
+                      commandPrefix: 'ban',
+                      onDone: _refresh,
+                      withReason: true,
+                    )
                   : null,
             ),
             if (!running)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
                 child: Text(
-                  '只读模式，启动服务端后可进行操作',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  context.tr('players.readonlyNote'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             Expanded(
               child: entries.isEmpty
-                  ? _emptyState(theme, Icons.check_circle_outline, '暂无封禁',
-                      '没有被封禁的玩家。')
+                  ? _emptyState(
+                      theme,
+                      Icons.check_circle_outline,
+                      context.tr('players.bans.empty'),
+                      context.tr('players.bans.emptyHint'),
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: entries.length,
@@ -559,34 +632,50 @@ class _BansTabState extends State<_BansTab> {
                           child: ListTile(
                             leading: CircleAvatar(
                               backgroundColor: theme.colorScheme.errorContainer,
-                              child: Icon(Icons.block,
-                                  color: theme.colorScheme.onErrorContainer,
-                                  size: 20),
+                              child: Icon(
+                                Icons.block,
+                                color: theme.colorScheme.onErrorContainer,
+                                size: 20,
+                              ),
                             ),
                             title: Text(e.name),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                if (e.reason.isNotEmpty && e.reason != 'Banned by an operator.')
-                                  Text('原因：${e.reason}',
-                                      style: theme.textTheme.bodySmall),
-                                if (e.expires.isNotEmpty && e.expires != 'forever')
-                                  Text('到期：${e.expires}',
-                                      style: theme.textTheme.bodySmall),
+                                if (e.reason.isNotEmpty &&
+                                    e.reason != 'Banned by an operator.')
+                                  Text(
+                                    context.tr('players.bans.reason', {
+                                      'reason': e.reason,
+                                    }),
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                if (e.expires.isNotEmpty &&
+                                    e.expires != 'forever')
+                                  Text(
+                                    context.tr('players.bans.expires', {
+                                      'expires': e.expires,
+                                    }),
+                                    style: theme.textTheme.bodySmall,
+                                  ),
                                 if (e.uuid.isNotEmpty)
-                                  Text(e.uuid,
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(fontSize: 10)),
+                                  Text(
+                                    e.uuid,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      fontSize: 10,
+                                    ),
+                                  ),
                               ],
                             ),
                             trailing: running
                                 ? IconButton(
-                                    icon: Icon(Icons.delete,
-                                        color: theme.colorScheme.primary),
-                                    tooltip: '解封',
+                                    icon: Icon(
+                                      Icons.delete,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                    tooltip: context.tr('players.bans.pardon'),
                                     onPressed: () {
-                                      server
-                                          .sendCommand('pardon ${e.name}');
+                                      server.sendCommand('pardon ${e.name}');
                                       _refresh();
                                     },
                                   )
@@ -623,17 +712,18 @@ class _OpsTabState extends State<_OpsTab> {
   }
 
   Future<List<_NamedEntry>> _loadOps() async {
-    final dir =
-        await InstanceScope.of(context).directoryFor(widget.instance);
+    final dir = await InstanceScope.of(context).directoryFor(widget.instance);
     final file = File(p.join(dir.path, 'ops.json'));
     if (!await file.exists()) return [];
     try {
       final json = jsonDecode(await file.readAsString()) as List;
       return json
-          .map((e) => _NamedEntry(
-                name: e['name'] as String? ?? '',
-                uuid: e['uuid'] as String? ?? '',
-              ))
+          .map(
+            (e) => _NamedEntry(
+              name: e['name'] as String? ?? '',
+              uuid: e['uuid'] as String? ?? '',
+            ),
+          )
           .toList();
     } catch (_) {
       return [];
@@ -658,34 +748,45 @@ class _OpsTabState extends State<_OpsTab> {
         return Column(
           children: [
             _ListHeader(
-              title: 'OP 列表（${entries.length}）',
-              tooltip: '刷新',
+              title: context.tr('players.ops.count', {
+                'count': '${entries.length}',
+              }),
+              tooltip: context.tr('common.refresh'),
               onRefresh: _refresh,
-              actionLabel: '添加',
+              actionLabel: context.tr('common.add'),
               actionIcon: Icons.add,
               onAction: running
                   ? () => _promptAndSend(
-                        context, server,
-                        title: '添加 OP',
-                        hint: '玩家名称',
-                        commandPrefix: 'op',
-                        onDone: _refresh,
-                      )
+                      context,
+                      server,
+                      title: context.tr('players.ops.addTitle'),
+                      hint: context.tr('players.addPlayerHint'),
+                      commandPrefix: 'op',
+                      onDone: _refresh,
+                    )
                   : null,
             ),
             if (!running)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
                 child: Text(
-                  '只读模式，启动服务端后可进行操作',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  context.tr('players.readonlyNote'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             Expanded(
               child: entries.isEmpty
-                  ? _emptyState(theme, Icons.security, '暂无 OP',
-                      '点击上方「添加」按钮授予玩家管理权限。')
+                  ? _emptyState(
+                      theme,
+                      Icons.security,
+                      context.tr('players.ops.empty'),
+                      context.tr('players.ops.emptyHint'),
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: entries.length,
@@ -694,24 +795,27 @@ class _OpsTabState extends State<_OpsTab> {
                         return Card(
                           child: ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: theme.colorScheme.tertiaryContainer,
-                              child: Icon(Icons.star,
-                                  color: theme.colorScheme.onTertiaryContainer,
-                                  size: 20),
+                              backgroundColor:
+                                  theme.colorScheme.tertiaryContainer,
+                              child: Icon(
+                                Icons.star,
+                                color: theme.colorScheme.onTertiaryContainer,
+                                size: 20,
+                              ),
                             ),
                             title: Text(e.name),
                             subtitle: e.uuid.isNotEmpty
-                                ? Text(e.uuid,
-                                    style: theme.textTheme.bodySmall)
+                                ? Text(e.uuid, style: theme.textTheme.bodySmall)
                                 : null,
                             trailing: running
                                 ? IconButton(
-                                    icon: Icon(Icons.delete,
-                                        color: theme.colorScheme.error),
-                                    tooltip: '取消 OP',
+                                    icon: Icon(
+                                      Icons.delete,
+                                      color: theme.colorScheme.error,
+                                    ),
+                                    tooltip: context.tr('players.action.deop'),
                                     onPressed: () {
-                                      server
-                                          .sendCommand('deop ${e.name}');
+                                      server.sendCommand('deop ${e.name}');
                                       _refresh();
                                     },
                                   )
@@ -821,8 +925,9 @@ Widget _emptyState(ThemeData theme, IconData icon, String title, String desc) {
           Text(
             desc,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -869,9 +974,9 @@ Future<void> _promptAndSend(
               const SizedBox(height: 12),
               TextField(
                 controller: reasonCtrl,
-                decoration: const InputDecoration(
-                  labelText: '原因（可选）',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: ctx.tr('players.reasonHint'),
+                  border: const OutlineInputBorder(),
                 ),
                 onSubmitted: (_) => Navigator.of(ctx).pop({
                   'name': nameCtrl.text.trim(),
@@ -884,14 +989,14 @@ Future<void> _promptAndSend(
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
+            child: Text(ctx.tr('common.cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop({
               'name': nameCtrl.text.trim(),
               if (withReason) 'reason': reasonCtrl.text.trim(),
             }),
-            child: const Text('确定'),
+            child: Text(ctx.tr('common.ok')),
           ),
         ],
       );
@@ -902,7 +1007,9 @@ Future<void> _promptAndSend(
   if (result == null || result['name']!.isEmpty) return;
   final name = result['name']!;
   final reason = result['reason'] ?? '';
-  final cmd = reason.isEmpty ? '$commandPrefix $name' : '$commandPrefix $name $reason';
+  final cmd = reason.isEmpty
+      ? '$commandPrefix $name'
+      : '$commandPrefix $name $reason';
   server.sendCommand(cmd);
   // 延迟刷新，给服务端处理时间
   Future.delayed(const Duration(milliseconds: 500), onDone);

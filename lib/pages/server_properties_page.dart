@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 
 import '../files/file_service.dart';
 import '../files/photo_picker.dart';
+import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
 import '../server/server_properties.dart';
 import 'server_icon_crop_page.dart';
@@ -64,11 +65,14 @@ class _PropDef {
 
 /// 属性分组定义。
 class _Section {
-  const _Section(this.title, this.icon, this.props);
+  const _Section(this.title, this.icon, this.props, {this.titleKey});
 
   final String title;
   final IconData icon;
   final List<_PropDef> props;
+
+  /// 翻译 key（如 `sectionBasic`），用于 context.tr 查表；null 时沿用 title。
+  final String? titleKey;
 }
 
 // ---------------------------------------------------------------------------
@@ -76,20 +80,20 @@ class _Section {
 // ---------------------------------------------------------------------------
 
 const _gamemodeOptions = {
-  'survival': '生存模式',
-  'creative': '创造模式',
-  'adventure': '冒险模式',
-  'spectator': '旁观模式',
+  'survival': 'serverProps.gamemode.survival',
+  'creative': 'serverProps.gamemode.creative',
+  'adventure': 'serverProps.gamemode.adventure',
+  'spectator': 'serverProps.gamemode.spectator',
 };
 
 const _difficultyOptions = {
-  'peaceful': '和平',
-  'easy': '简单',
-  'normal': '普通',
-  'hard': '困难',
+  'peaceful': 'serverProps.difficulty.peaceful',
+  'easy': 'serverProps.difficulty.easy',
+  'normal': 'serverProps.difficulty.normal',
+  'hard': 'serverProps.difficulty.hard',
 };
 
-const _sections = <_Section>[
+final _sections = <_Section>[
   _Section('基础设置', Icons.settings_outlined, [
     _PropDef(
       key: 'motd',
@@ -116,23 +120,15 @@ const _sections = <_Section>[
       kind: _PropKind.dropdown,
       options: _difficultyOptions,
     ),
-    _PropDef(
-      key: 'level-name',
-      label: '世界名称',
-      kind: _PropKind.text,
-    ),
+    _PropDef(key: 'level-name', label: '世界名称', kind: _PropKind.text),
     _PropDef(
       key: 'level-seed',
       label: '世界种子',
       subtitle: '留空则随机生成',
       kind: _PropKind.text,
     ),
-    _PropDef(
-      key: 'level-type',
-      label: '世界类型',
-      kind: _PropKind.text,
-    ),
-  ]),
+    _PropDef(key: 'level-type', label: '世界类型', kind: _PropKind.text),
+  ], titleKey: 'sectionBasic'),
   _Section('游戏玩法', Icons.sports_esports_outlined, [
     _PropDef(
       key: 'hardcore',
@@ -217,7 +213,7 @@ const _sections = <_Section>[
       kind: _PropKind.number,
       min: 0,
     ),
-  ]),
+  ], titleKey: 'sectionGameplay'),
   _Section('网络设置', Icons.wifi_outlined, [
     _PropDef(
       key: 'server-ip',
@@ -267,12 +263,8 @@ const _sections = <_Section>[
       subtitle: '启用后非白名单玩家会被踢出',
       kind: _PropKind.toggle,
     ),
-    _PropDef(
-      key: 'white-list',
-      label: '启用白名单',
-      kind: _PropKind.toggle,
-    ),
-  ]),
+    _PropDef(key: 'white-list', label: '启用白名单', kind: _PropKind.toggle),
+  ], titleKey: 'sectionNetwork'),
   _Section('性能设置', Icons.speed_outlined, [
     _PropDef(
       key: 'view-distance',
@@ -329,7 +321,7 @@ const _sections = <_Section>[
       kind: _PropKind.number,
       min: 0,
     ),
-  ]),
+  ], titleKey: 'sectionPerformance'),
   _Section('Query 与 RCON', Icons.terminal_outlined, [
     _PropDef(
       key: 'enable-query',
@@ -350,11 +342,7 @@ const _sections = <_Section>[
       subtitle: '远程控制台协议',
       kind: _PropKind.toggle,
     ),
-    _PropDef(
-      key: 'rcon.password',
-      label: 'RCON 密码',
-      kind: _PropKind.text,
-    ),
+    _PropDef(key: 'rcon.password', label: 'RCON 密码', kind: _PropKind.text),
     _PropDef(
       key: 'rcon.port',
       label: 'RCON 端口',
@@ -362,7 +350,7 @@ const _sections = <_Section>[
       min: 1,
       max: 65535,
     ),
-  ]),
+  ], titleKey: 'sectionQueryRcon'),
   _Section('资源包', Icons.inventory_2_outlined, [
     _PropDef(
       key: 'resource-pack',
@@ -370,11 +358,7 @@ const _sections = <_Section>[
       subtitle: '资源包下载地址',
       kind: _PropKind.text,
     ),
-    _PropDef(
-      key: 'resource-pack-id',
-      label: '资源包 ID',
-      kind: _PropKind.text,
-    ),
+    _PropDef(key: 'resource-pack-id', label: '资源包 ID', kind: _PropKind.text),
     _PropDef(
       key: 'resource-pack-prompt',
       label: '资源包提示',
@@ -402,7 +386,7 @@ const _sections = <_Section>[
       label: '初始禁用数据包',
       kind: _PropKind.text,
     ),
-  ]),
+  ], titleKey: 'sectionResourcePack'),
 ];
 
 // ---------------------------------------------------------------------------
@@ -444,7 +428,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
       if (instance == null) {
         setState(() {
           _loading = false;
-          _error = '未选中任何实例';
+          _error = context.tr('serverProps.noInstance');
         });
         return;
       }
@@ -455,7 +439,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
       if (!await file.exists()) {
         setState(() {
           _loading = false;
-          _error = 'server.properties 文件不存在\n请先启动一次服务器以生成配置文件';
+          _error = context.tr('serverProps.fileNotFound');
         });
         return;
       }
@@ -479,7 +463,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = '加载失败：$e';
+        _error = context.tr('serverProps.loadFailed', {'error': e.toString()});
       });
     }
   }
@@ -500,14 +484,21 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
       _dirtyKeys.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已保存'), duration: Duration(seconds: 2)),
+          SnackBar(
+            content: Text(context.tr('serverProps.saved')),
+            duration: const Duration(seconds: 2),
+          ),
         );
         setState(() => _saving = false);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败：$e')),
+          SnackBar(
+            content: Text(
+              context.tr('serverProps.saveFailed', {'error': e.toString()}),
+            ),
+          ),
         );
         setState(() => _saving = false);
       }
@@ -537,16 +528,16 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('未保存的更改'),
-        content: const Text('有未保存的修改，是否放弃？'),
+        title: Text(context.tr('serverProps.unsavedChanges')),
+        content: Text(context.tr('serverProps.unsavedChangesMsg')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(ctx.tr('common.cancel')),
           ),
           FilledButton.tonal(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('放弃'),
+            child: Text(context.tr('serverProps.discard')),
           ),
         ],
       ),
@@ -569,7 +560,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('服务器配置'),
+          title: Text(context.tr('serverProps.title')),
           actions: [
             if (!_loading && _error == null)
               IconButton(
@@ -580,7 +571,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : Icon(_isDirty ? Icons.save : Icons.save_outlined),
-                tooltip: '保存',
+                tooltip: context.tr('common.save'),
                 onPressed: _isDirty && !_saving ? _save : null,
               ),
           ],
@@ -601,7 +592,11 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline, size: 48, color: Theme.of(context).colorScheme.error),
+              Icon(
+                Icons.error_outline,
+                size: 48,
+                color: Theme.of(context).colorScheme.error,
+              ),
               const SizedBox(height: 16),
               Text(
                 _error!,
@@ -617,7 +612,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
                   });
                   _load();
                 },
-                child: const Text('重试'),
+                child: Text(context.tr('common.retry')),
               ),
             ],
           ),
@@ -653,14 +648,19 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Row(
                   children: [
-                    Icon(section.icon, size: 20,
-                        color: Theme.of(context).colorScheme.primary),
+                    Icon(
+                      section.icon,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                     const SizedBox(width: 8),
                     Text(
-                      section.title,
+                      section.titleKey != null
+                          ? context.tr('serverProps.${section.titleKey}')
+                          : section.title,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                   ],
                 ),
@@ -691,8 +691,10 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
   Widget _buildToggle(_PropDef prop) {
     final value = _getValue(prop.key) == 'true';
     return SwitchListTile(
-      title: Text(prop.label),
-      subtitle: prop.subtitle != null ? Text(prop.subtitle!) : null,
+      title: Text(context.tr('serverProps.label.${prop.key}')),
+      subtitle: prop.subtitle != null
+          ? Text(context.tr('serverProps.subtitle.${prop.key}'))
+          : null,
       value: value,
       onChanged: (v) => _setValue(prop.key, v.toString()),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -708,17 +710,20 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
       child: TextField(
         controller: controller,
         keyboardType: TextInputType.number,
-        inputFormatters: [
-          FilteringTextInputFormatter.allow(RegExp(r'^-?\d*')),
-        ],
+        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^-?\d*'))],
         decoration: InputDecoration(
-          labelText: prop.label,
-          helperText: prop.subtitle,
+          labelText: context.tr('serverProps.label.${prop.key}'),
+          helperText: prop.subtitle != null
+              ? context.tr('serverProps.subtitle.${prop.key}')
+              : null,
           border: const OutlineInputBorder(),
           isDense: true,
           suffixIcon: _isDirtyKey(prop.key)
-              ? Icon(Icons.edit_note,
-                  color: Theme.of(context).colorScheme.primary, size: 20)
+              ? Icon(
+                  Icons.edit_note,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 20,
+                )
               : null,
         ),
         onChanged: (v) => _setValue(prop.key, v),
@@ -735,13 +740,18 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
       child: TextField(
         controller: controller,
         decoration: InputDecoration(
-          labelText: prop.label,
-          helperText: prop.subtitle,
+          labelText: context.tr('serverProps.label.${prop.key}'),
+          helperText: prop.subtitle != null
+              ? context.tr('serverProps.subtitle.${prop.key}')
+              : null,
           border: const OutlineInputBorder(),
           isDense: true,
           suffixIcon: _isDirtyKey(prop.key)
-              ? Icon(Icons.edit_note,
-                  color: Theme.of(context).colorScheme.primary, size: 20)
+              ? Icon(
+                  Icons.edit_note,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 20,
+                )
               : null,
         ),
         onChanged: (v) => _setValue(prop.key, v),
@@ -757,7 +767,10 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
     // 如果当前值不在选项中，保留原值作为额外选项。
     final items = <DropdownMenuItem<String>>[
       for (final entry in options.entries)
-        DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+        DropdownMenuItem(
+          value: entry.key,
+          child: Text(context.tr(entry.value)),
+        ),
       if (!options.containsKey(currentValue) && currentValue.isNotEmpty)
         DropdownMenuItem(value: currentValue, child: Text(currentValue)),
     ];
@@ -770,13 +783,18 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
           if (v != null) _setValue(prop.key, v);
         },
         decoration: InputDecoration(
-          labelText: prop.label,
-          helperText: prop.subtitle,
+          labelText: context.tr('serverProps.label.${prop.key}'),
+          helperText: prop.subtitle != null
+              ? context.tr('serverProps.subtitle.${prop.key}')
+              : null,
           border: const OutlineInputBorder(),
           isDense: true,
           suffixIcon: _isDirtyKey(prop.key)
-              ? Icon(Icons.edit_note,
-                  color: Theme.of(context).colorScheme.primary, size: 20)
+              ? Icon(
+                  Icons.edit_note,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 20,
+                )
               : null,
         ),
       ),
@@ -818,10 +836,8 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
     final outputPath = p.join(dir, 'server-icon.png');
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => ServerIconCropPage(
-          imagePath: sourcePath,
-          outputPath: outputPath,
-        ),
+        builder: (_) =>
+            ServerIconCropPage(imagePath: sourcePath, outputPath: outputPath),
       ),
     );
     if (result == true && mounted) {
@@ -832,9 +848,9 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
         if (mounted) {
           setState(() => _iconBytes = bytes);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('图标已保存'),
-              duration: Duration(seconds: 2),
+            SnackBar(
+              content: Text(context.tr('serverProps.iconSaved')),
+              duration: const Duration(seconds: 2),
             ),
           );
         }
@@ -854,11 +870,14 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.image_outlined,
-                      size: 20, color: theme.colorScheme.primary),
+                  Icon(
+                    Icons.image_outlined,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
                   const SizedBox(width: 8),
                   Text(
-                    '服务器图标',
+                    context.tr('serverProps.serverIcon'),
                     style: theme.textTheme.titleSmall?.copyWith(
                       color: theme.colorScheme.primary,
                     ),
@@ -908,7 +927,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '64×64 像素，显示在服务器列表中',
+                          context.tr('serverProps.serverIconDesc'),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant
                                 .withValues(alpha: 0.7),
@@ -926,7 +945,9 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
                       size: 18,
                     ),
                     label: Text(
-                      _iconBytes != null ? '更换' : '导入',
+                      _iconBytes != null
+                          ? context.tr('serverProps.replaceBtn')
+                          : context.tr('serverProps.importBtn'),
                     ),
                   ),
                 ],

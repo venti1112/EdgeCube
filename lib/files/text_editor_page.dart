@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/locale_scope.dart';
 import 'file_service.dart';
 
 /// 内置纯文本编辑器：读取文件 → 编辑 → 保存写回（UTF-8）。
@@ -74,11 +75,19 @@ class _TextEditorPageState extends State<TextEditorPage> {
         _dirty = false;
         _saving = false;
       });
-      messenger.showSnackBar(const SnackBar(content: Text('已保存')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(context.tr('textEditor.saved'))),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      messenger.showSnackBar(SnackBar(content: Text('保存失败：$e')));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            context.tr('textEditor.saveFailed', {'error': e.toString()}),
+          ),
+        ),
+      );
     }
   }
 
@@ -89,20 +98,20 @@ class _TextEditorPageState extends State<TextEditorPage> {
     final choice = await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('保存修改？'),
-        content: const Text('文件有未保存的更改。'),
+        title: Text(context.tr('textEditor.saveChangesTitle')),
+        content: Text(context.tr('textEditor.saveChangesContent')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, 0),
-            child: const Text('不保存'),
+            child: Text(context.tr('textEditor.discard')),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, 1),
-            child: const Text('取消'),
+            child: Text(context.tr('common.cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, 2),
-            child: const Text('保存'),
+            child: Text(context.tr('common.save')),
           ),
         ],
       ),
@@ -146,9 +155,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
             else
               IconButton(
                 icon: const Icon(Icons.save_outlined),
-                tooltip: '保存',
-                onPressed:
-                    (_loading || _error != null || !_dirty) ? null : _save,
+                tooltip: context.tr('common.save'),
+                onPressed: (_loading || _error != null || !_dirty)
+                    ? null
+                    : _save,
               ),
           ],
         ),
@@ -166,7 +176,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            '无法打开该文件（可能不是 UTF-8 文本）：\n$_error',
+            context.tr('textEditor.cannotOpenFile', {
+              'error': _error.toString(),
+            }),
             textAlign: TextAlign.center,
           ),
         ),
@@ -178,7 +190,11 @@ class _TextEditorPageState extends State<TextEditorPage> {
       expands: true,
       textAlignVertical: TextAlignVertical.top,
       keyboardType: TextInputType.multiline,
-      style: const TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.4),
+      style: const TextStyle(
+        fontFamily: 'monospace',
+        fontSize: 13,
+        height: 1.4,
+      ),
       decoration: const InputDecoration(
         border: InputBorder.none,
         contentPadding: EdgeInsets.all(12),

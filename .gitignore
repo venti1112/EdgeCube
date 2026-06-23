@@ -50,3 +50,6 @@ app.*.map.json
 /.deepseek
 
 /Temporary_file
+
+# i18n 迁移过程产生的临时翻译片段（由 tool/merge_i18n.dart 合并后删除）
+/.i18n_fragments

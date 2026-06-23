@@ -13,6 +13,8 @@ import '../config/network_store.dart';
 import '../files/file_service.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
+import '../i18n/locale_scope.dart';
+import '../i18n/i18n_service.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
@@ -56,7 +58,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   static const _fileService = FileService();
 
   _WizardStep _step = _WizardStep.nameEntry;
-  final _nameController = TextEditingController(text: '新实例');
+  final _nameController = TextEditingController();
   String? _instanceId;
   String? _serverType;
   List<String> _versions = [];
@@ -73,6 +75,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   String? _selectedVersion;
 
   /// Fabric 流程中选择的 Minecraft 版本与 Loader 版本。
+  List<String> _fabricMcVersions = [];
   String? _selectedMcVersion;
   String? _selectedLoaderVersion;
 
@@ -110,6 +113,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   void initState() {
     super.initState();
     _instanceController = InstanceScope.of(context);
+    _nameController.text = context.tr('instance.defaultName');
   }
 
   @override
@@ -152,14 +156,17 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         _versions = [];
       });
       try {
-        _versions = await _fetchFabricMcVersions();
+        _fabricMcVersions = await _fetchFabricMcVersions();
+        _versions = _fabricMcVersions;
         if (!mounted) return;
         setState(() => _loadingVersions = false);
       } catch (e) {
         if (!mounted) return;
         setState(() {
           _loadingVersions = false;
-          _versionError = '获取 Minecraft 版本列表失败：$e';
+          _versionError = context.tr('instance.fetchMcVersionsFailed', {
+            'error': '$e',
+          });
         });
       }
       return;
@@ -180,7 +187,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         if (!mounted) return;
         setState(() {
           _loadingVersions = false;
-          _versionError = '获取 Forge 版本列表失败：$e';
+          _versionError = context.tr('instance.fetchForgeVersionsFailed', {
+            'error': '$e',
+          });
         });
       }
       return;
@@ -201,7 +210,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         if (!mounted) return;
         setState(() {
           _loadingVersions = false;
-          _versionError = '获取 NeoForge 版本列表失败：$e';
+          _versionError = context.tr('instance.fetchNeoforgeVersionsFailed', {
+            'error': '$e',
+          });
         });
       }
       return;
@@ -220,7 +231,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       if (!mounted) return;
       setState(() {
         _loadingVersions = false;
-        _versionError = '获取版本列表失败：$e';
+        _versionError = context.tr('instance.fetchVersionsFailed', {
+          'error': '$e',
+        });
       });
     }
   }
@@ -262,18 +275,16 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       final go = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('需要文件访问权限'),
-          content: const Text(
-            '导入需要「所有文件访问权限」。点击「去授权」后，请在系统设置中为本应用打开该权限，再返回重试。',
-          ),
+          title: Text(context.tr('instance.storagePermissionTitle')),
+          content: Text(context.tr('instance.importStoragePermissionMessage')),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('取消'),
+              child: Text(context.tr('common.cancel')),
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('去授权'),
+              child: Text(context.tr('instance.goGrant')),
             ),
           ],
         ),
@@ -319,16 +330,18 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('确认版本'),
-        content: Text('确定要下载 $version 吗？'),
+        title: Text(context.tr('instance.confirmVersionTitle')),
+        content: Text(
+          context.tr('instance.confirmDownload', {'version': version}),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr('common.cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('确定'),
+            child: Text(context.tr('common.ok')),
           ),
         ],
       ),
@@ -368,7 +381,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       if (!mounted) return;
       setState(() {
         _loadingVersions = false;
-        _versionError = '获取 Fabric Loader 版本列表失败：$e';
+        _versionError = context.tr('instance.fetchFabricLoaderVersionsFailed', {
+          'error': '$e',
+        });
       });
     }
   }
@@ -378,18 +393,21 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('确认版本'),
+        title: Text(context.tr('instance.confirmVersionTitle')),
         content: Text(
-          '确定要下载 Minecraft $_selectedMcVersion + Fabric Loader $loaderVersion 吗？',
+          context.tr('instance.confirmDownloadFabric', {
+            'version': '$_selectedMcVersion',
+            'loader': loaderVersion,
+          }),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr('common.cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('确定'),
+            child: Text(context.tr('common.ok')),
           ),
         ],
       ),
@@ -427,18 +445,21 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('确认版本'),
+        title: Text(context.tr('instance.confirmVersionTitle')),
         content: Text(
-          '确定要安装 Minecraft $_selectedForgeMcVersion + Forge $forgeVersion 吗？',
+          context.tr('instance.confirmInstallForge', {
+            'version': '$_selectedForgeMcVersion',
+            'loader': forgeVersion,
+          }),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr('common.cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('确定'),
+            child: Text(context.tr('common.ok')),
           ),
         ],
       ),
@@ -469,7 +490,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     final mcVersion = _selectedForgeMcVersion!;
     final forgeVersion = _selectedForgeVersion!;
     // 镜像开启时按所选 MC 版本走 MSL（installer），失败回退官方 Maven。
-    final info = await _tryMirrorDownloadInfo('forge', mcVersion) ??
+    final info =
+        await _tryMirrorDownloadInfo('forge', mcVersion) ??
         _DownloadInfo(
           url:
               'https://maven.minecraftforge.net/net/minecraftforge/forge/$mcVersion-$forgeVersion/forge-$mcVersion-$forgeVersion-installer.jar',
@@ -492,7 +514,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
       if (response.statusCode != 200) {
         if (!mounted) return;
-        setState(() => _downloadError = '下载失败（HTTP ${response.statusCode}）');
+        setState(
+          () => _downloadError = context.tr('instance.downloadFailedHttp', {
+            'status': '${response.statusCode}',
+          }),
+        );
         return;
       }
 
@@ -519,7 +545,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       await _runForgeInstaller(instanceId, file.path);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _downloadError = '下载失败：$e');
+      setState(
+        () => _downloadError = context.tr('instance.downloadFailed', {
+          'error': '$e',
+        }),
+      );
     } finally {
       client.close();
     }
@@ -572,7 +602,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         if (!mounted) return;
         setState(() {
           _forgeInstalling = false;
-          _forgeInstallError = 'Forge 安装器退出，退出码：$exitCode';
+          _forgeInstallError = context.tr('instance.forgeInstallerExited', {
+            'code': '$exitCode',
+          });
         });
         return;
       }
@@ -584,7 +616,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         if (!mounted) return;
         setState(() {
           _forgeInstalling = false;
-          _forgeInstallError = '安装完成但未找到服务端 jar 文件';
+          _forgeInstallError = context.tr('instance.serverJarNotFound');
         });
         return;
       }
@@ -611,7 +643,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       if (!mounted) return;
       setState(() {
         _forgeInstalling = false;
-        _forgeInstallError = 'Forge 安装失败：$e';
+        _forgeInstallError = context.tr('instance.forgeInstallFailed', {
+          'error': '$e',
+        });
       });
     }
   }
@@ -650,18 +684,21 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('确认版本'),
+        title: Text(context.tr('instance.confirmVersionTitle')),
         content: Text(
-          '确定要安装 Minecraft $_selectedNeoforgeMcVersion + NeoForge $neoforgeVersion 吗？',
+          context.tr('instance.confirmInstallNeoforge', {
+            'version': '$_selectedNeoforgeMcVersion',
+            'loader': neoforgeVersion,
+          }),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr('common.cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('确定'),
+            child: Text(context.tr('common.ok')),
           ),
         ],
       ),
@@ -692,7 +729,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     final neoforgeVersion = _selectedNeoforgeVersion!;
     // 镜像开启时按所选 MC 版本走 MSL（installer），失败回退官方 Maven。
     final mslVersion = _neoforgeMcToMslVersion(_selectedNeoforgeMcVersion!);
-    final info = await _tryMirrorDownloadInfo('neoforge', mslVersion) ??
+    final info =
+        await _tryMirrorDownloadInfo('neoforge', mslVersion) ??
         _DownloadInfo(
           url:
               'https://maven.neoforged.net/releases/net/neoforged/neoforge/$neoforgeVersion/neoforge-$neoforgeVersion-installer.jar',
@@ -718,7 +756,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
       if (response.statusCode != 200) {
         if (!mounted) return;
-        setState(() => _downloadError = '下载失败（HTTP ${response.statusCode}）');
+        setState(
+          () => _downloadError = context.tr('instance.downloadFailedHttp', {
+            'status': '${response.statusCode}',
+          }),
+        );
         return;
       }
 
@@ -745,7 +787,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       await _runNeoforgeInstaller(instanceId, file.path);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _downloadError = '下载失败：$e');
+      setState(
+        () => _downloadError = context.tr('instance.downloadFailed', {
+          'error': '$e',
+        }),
+      );
     } finally {
       client.close();
     }
@@ -811,7 +857,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         if (!mounted) return;
         setState(() {
           _forgeInstalling = false;
-          _forgeInstallError = 'NeoForge 安装器退出，退出码：$exitCode';
+          _forgeInstallError = context.tr('instance.neoforgeInstallerExited', {
+            'code': '$exitCode',
+          });
         });
         return;
       }
@@ -823,7 +871,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         if (!mounted) return;
         setState(() {
           _forgeInstalling = false;
-          _forgeInstallError = '安装完成但未找到服务端 jar 文件';
+          _forgeInstallError = context.tr('instance.serverJarNotFound');
         });
         return;
       }
@@ -850,7 +898,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       if (!mounted) return;
       setState(() {
         _forgeInstalling = false;
-        _forgeInstallError = 'NeoForge 安装失败：$e';
+        _forgeInstallError = context.tr('instance.neoforgeInstallFailed', {
+          'error': '$e',
+        });
       });
     }
   }
@@ -865,11 +915,16 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     _DownloadInfo info;
     try {
       // 镜像开启时优先走 MSL，失败回退官方源。
-      info = await _tryMirrorDownloadInfo(_serverType!, version) ??
+      info =
+          await _tryMirrorDownloadInfo(_serverType!, version) ??
           await _fetchDownloadInfo(version);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _downloadError = '获取下载信息失败：$e');
+      setState(
+        () => _downloadError = context.tr('instance.fetchDownloadInfoFailed', {
+          'error': '$e',
+        }),
+      );
       return;
     }
 
@@ -886,11 +941,16 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     _DownloadInfo info;
     try {
       // 镜像开启时按所选 MC 版本走 MSL，失败回退官方源。
-      info = await _tryMirrorDownloadInfo('fabric', _selectedMcVersion!) ??
+      info =
+          await _tryMirrorDownloadInfo('fabric', _selectedMcVersion!) ??
           await _fetchFabricDownloadInfo();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _downloadError = '获取下载信息失败：$e');
+      setState(
+        () => _downloadError = context.tr('instance.fetchDownloadInfoFailed', {
+          'error': '$e',
+        }),
+      );
       return;
     }
 
@@ -910,7 +970,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
       if (response.statusCode != 200) {
         if (!mounted) return;
-        setState(() => _downloadError = '下载失败（HTTP ${response.statusCode}）');
+        setState(
+          () => _downloadError = context.tr('instance.downloadFailedHttp', {
+            'status': '${response.statusCode}',
+          }),
+        );
         return;
       }
 
@@ -938,7 +1002,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       if (!hashOk) {
         await file.delete();
         if (!mounted) return;
-        setState(() => _downloadError = '文件哈希校验失败，请重试');
+        setState(
+          () => _downloadError = context.tr('instance.hashVerifyFailed'),
+        );
         return;
       }
 
@@ -956,7 +1022,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       if (mounted) _finishWizard();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _downloadError = '下载失败：$e');
+      setState(
+        () => _downloadError = context.tr('instance.downloadFailed', {
+          'error': '$e',
+        }),
+      );
     } finally {
       client.close();
     }
@@ -1013,6 +1083,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       case _WizardStep.fabricLoaderVersionSelect:
         setState(() {
           _step = _WizardStep.fabricMcVersionSelect;
+          _versions = _fabricMcVersions;
+          _versionError = null;
+          _loadingVersions = false;
           _selectedLoaderVersion = null;
         });
       case _WizardStep.forgeMcVersionSelect:
@@ -1023,6 +1096,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       case _WizardStep.forgeVersionSelect:
         setState(() {
           _step = _WizardStep.forgeMcVersionSelect;
+          _versions = _forgeVersionMap.keys.toList();
+          _versionError = null;
+          _loadingVersions = false;
           _selectedForgeVersion = null;
         });
       case _WizardStep.neoforgeMcVersionSelect:
@@ -1033,6 +1109,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       case _WizardStep.neoforgeVersionSelect:
         setState(() {
           _step = _WizardStep.neoforgeMcVersionSelect;
+          _versions = _neoforgeVersionMap.keys.toList();
+          _versionError = null;
+          _loadingVersions = false;
           _selectedNeoforgeVersion = null;
         });
       case _WizardStep.importFile:
@@ -1070,12 +1149,12 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('提示'),
-        content: Text('已存在同名实例：$name'),
+        title: Text(context.tr('instance.noticeTitle')),
+        content: Text(context.tr('instance.duplicateName', {'name': name})),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('确定'),
+            child: Text(context.tr('common.ok')),
           ),
         ],
       ),
@@ -1107,19 +1186,33 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   String get _appBarTitle {
     return switch (_step) {
-      _WizardStep.nameEntry => '新建实例',
-      _WizardStep.serverType => '下载服务端',
-      _WizardStep.versionSelect => '选择版本',
-      _WizardStep.fabricMcVersionSelect => '选择 Minecraft 版本',
-      _WizardStep.fabricLoaderVersionSelect => '选择 Fabric Loader 版本',
-      _WizardStep.forgeMcVersionSelect => '选择 Minecraft 版本',
-      _WizardStep.forgeVersionSelect => '选择 Forge 版本',
-      _WizardStep.neoforgeMcVersionSelect => '选择 Minecraft 版本',
-      _WizardStep.neoforgeVersionSelect => '选择 NeoForge 版本',
-      _WizardStep.downloading => '下载中',
+      _WizardStep.nameEntry => context.tr('instance.titleNameEntry'),
+      _WizardStep.serverType => context.tr('instance.titleDownloadServer'),
+      _WizardStep.versionSelect => context.tr('instance.titleSelectVersion'),
+      _WizardStep.fabricMcVersionSelect => context.tr(
+        'instance.titleSelectMcVersion',
+      ),
+      _WizardStep.fabricLoaderVersionSelect => context.tr(
+        'instance.titleSelectFabricLoaderVersion',
+      ),
+      _WizardStep.forgeMcVersionSelect => context.tr(
+        'instance.titleSelectMcVersion',
+      ),
+      _WizardStep.forgeVersionSelect => context.tr(
+        'instance.titleSelectForgeVersion',
+      ),
+      _WizardStep.neoforgeMcVersionSelect => context.tr(
+        'instance.titleSelectMcVersion',
+      ),
+      _WizardStep.neoforgeVersionSelect => context.tr(
+        'instance.titleSelectNeoforgeVersion',
+      ),
+      _WizardStep.downloading => context.tr('instance.titleDownloading'),
       _WizardStep.forgeInstalling =>
-        _installerType == 'neoforge' ? '安装 NeoForge' : '安装 Forge',
-      _WizardStep.importFile => '导入服务端',
+        _installerType == 'neoforge'
+            ? context.tr('instance.titleInstallNeoforge')
+            : context.tr('instance.titleInstallForge'),
+      _WizardStep.importFile => context.tr('instance.titleImportServer'),
     };
   }
 
@@ -1149,31 +1242,31 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         children: [
           TextField(
             controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: '名称',
-              hintText: '请输入实例名称',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: context.tr('instance.nameLabel'),
+              hintText: context.tr('instance.nameHint'),
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 24),
           _ServerTypeTile(
             icon: Icons.cloud_download_outlined,
-            title: '下载服务端',
-            subtitle: '从官方端、Paper 端、Velocity 端、Fabric 端、Forge 端或 NeoForge 端选择版本下载',
+            title: context.tr('instance.titleDownloadServer'),
+            subtitle: context.tr('instance.downloadServerSubtitle'),
             onTap: _goToServerType,
           ),
           const SizedBox(height: 12),
           _ServerTypeTile(
             icon: Icons.file_upload_outlined,
-            title: '导入服务端',
-            subtitle: '从本地导入已有的 jar / phar 文件',
+            title: context.tr('instance.titleImportServer'),
+            subtitle: context.tr('instance.importServerSubtitle'),
             onTap: _startImport,
           ),
           const SizedBox(height: 12),
           _ServerTypeTile(
             icon: Icons.create_new_folder_outlined,
-            title: '创建空实例',
-            subtitle: '创建一个空实例，稍后手动添加 jar',
+            title: context.tr('instance.createEmptyTitle'),
+            subtitle: context.tr('instance.createEmptySubtitle'),
             onTap: _createEmptyInstance,
           ),
         ],
@@ -1189,43 +1282,43 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         const SizedBox(height: 8),
         _ServerTypeTile(
           icon: Icons.storage_outlined,
-          title: '官方端',
-          subtitle: 'Minecraft 原版服务端',
+          title: context.tr('instance.vanillaTitle'),
+          subtitle: context.tr('instance.vanillaSubtitle'),
           onTap: () => _selectServerType('vanilla'),
         ),
         const SizedBox(height: 12),
         _ServerTypeTile(
           icon: Icons.article_outlined,
-          title: 'Paper 端',
-          subtitle: '插件服务端',
+          title: context.tr('instance.paperTitle'),
+          subtitle: context.tr('instance.paperSubtitle'),
           onTap: () => _selectServerType('paper'),
         ),
         const SizedBox(height: 12),
         _ServerTypeTile(
           icon: Icons.speed_outlined,
-          title: 'Velocity 端',
-          subtitle: '代理服务端（PaperMC）',
+          title: context.tr('instance.velocityTitle'),
+          subtitle: context.tr('instance.velocitySubtitle'),
           onTap: () => _selectServerType('velocity'),
         ),
         const SizedBox(height: 12),
         _ServerTypeTile(
           icon: Icons.layers_outlined,
-          title: 'Fabric 端',
-          subtitle: 'Fabric 模组服务端',
+          title: context.tr('instance.fabricTitle'),
+          subtitle: context.tr('instance.fabricSubtitle'),
           onTap: () => _selectServerType('fabric'),
         ),
         const SizedBox(height: 12),
         _ServerTypeTile(
           icon: Icons.build_outlined,
-          title: 'Forge 端',
-          subtitle: 'Forge 模组服务端',
+          title: context.tr('instance.forgeTitle'),
+          subtitle: context.tr('instance.forgeSubtitle'),
           onTap: () => _selectServerType('forge'),
         ),
         const SizedBox(height: 12),
         _ServerTypeTile(
           icon: Icons.extension_outlined,
-          title: 'NeoForge 端',
-          subtitle: 'NeoForge 模组服务端',
+          title: context.tr('instance.neoforgeTitle'),
+          subtitle: context.tr('instance.neoforgeSubtitle'),
           onTap: () => _selectServerType('neoforge'),
         ),
       ],
@@ -1280,7 +1373,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                     _selectServerType(_serverType!);
                   }
                 },
-                child: const Text('重试'),
+                child: Text(context.tr('common.retry')),
               ),
             ],
           ),
@@ -1288,7 +1381,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       );
     }
     if (_versions.isEmpty) {
-      return const Center(child: Text('没有可用版本'));
+      return Center(child: Text(context.tr('instance.noVersionsAvailable')));
     }
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1341,7 +1434,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  _downloadProgress != null ? '正在下载服务端…' : '正在准备下载…',
+                  _downloadProgress != null
+                      ? context.tr('instance.downloadingServer')
+                      : context.tr('instance.preparingDownload'),
                   style: theme.textTheme.titleMedium,
                 ),
                 if (_downloadProgress != null) ...[
@@ -1367,7 +1462,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                           _deleteCreatedInstance();
                           _closeWizard();
                         },
-                        child: const Text('取消'),
+                        child: Text(context.tr('common.cancel')),
                       ),
                       const SizedBox(width: 12),
                       FilledButton(
@@ -1391,7 +1486,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                             }
                           });
                         },
-                        child: const Text('重新选择'),
+                        child: Text(context.tr('instance.reselect')),
                       ),
                     ],
                   ),
@@ -1402,7 +1497,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                       _deleteCreatedInstance();
                       _closeWizard();
                     },
-                    child: const Text('取消'),
+                    child: Text(context.tr('common.cancel')),
                   ),
                 ],
               ],
@@ -1421,7 +1516,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         children: [
           const CircularProgressIndicator(),
           const SizedBox(height: 24),
-          Text('请选择要导入的服务端 jar 文件', style: theme.textTheme.titleMedium),
+          Text(
+            context.tr('instance.selectJarPrompt'),
+            style: theme.textTheme.titleMedium,
+          ),
         ],
       ),
     );
@@ -1462,9 +1560,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                   Text(
                     _forgeInstalling
                         ? (_installerType == 'neoforge'
-                            ? '正在安装 NeoForge 服务端，请稍候…'
-                            : '正在安装 Forge 服务端，请稍候…')
-                        : (_forgeInstallError != null ? '安装失败' : '安装完成'),
+                              ? context.tr('instance.installingNeoforge')
+                              : context.tr('instance.installingForge'))
+                        : (_forgeInstallError != null
+                              ? context.tr('instance.installFailed')
+                              : context.tr('instance.installComplete')),
                     style: theme.textTheme.titleMedium,
                   ),
                   if (_forgeInstallError != null) ...[
@@ -1483,14 +1583,14 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                         OutlinedButton.icon(
                           icon: const Icon(Icons.save_outlined, size: 18),
                           onPressed: _exportForgeLogs,
-                          label: const Text('导出日志'),
+                          label: Text(context.tr('instance.exportForgeLog')),
                         ),
                         OutlinedButton(
                           onPressed: () {
                             _deleteCreatedInstance();
                             _closeWizard();
                           },
-                          child: const Text('取消'),
+                          child: Text(context.tr('common.cancel')),
                         ),
                         FilledButton(
                           onPressed: () {
@@ -1501,7 +1601,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                                   : _WizardStep.forgeVersionSelect,
                             );
                           },
-                          child: const Text('重新选择'),
+                          child: Text(context.tr('instance.reselect')),
                         ),
                       ],
                     ),
@@ -1516,7 +1616,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
               child: Padding(
                 padding: const EdgeInsets.all(8),
                 child: _forgeInstallLogs.isEmpty
-                    ? const Center(child: Text('等待安装器输出…'))
+                    ? Center(
+                        child: Text(
+                          context.tr('instance.waitingInstallerOutput'),
+                        ),
+                      )
                     : ListView.builder(
                         itemCount: _forgeInstallLogs.length,
                         itemBuilder: (_, i) => Text(
@@ -1543,18 +1647,16 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       final go = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('需要文件访问权限'),
-          content: const Text(
-            '导出日志需要「所有文件访问权限」。点击「去授权」后，请在系统设置中为本应用打开该权限，再返回重试。',
-          ),
+          title: Text(ctx.tr('instance.storagePermissionTitle')),
+          content: Text(ctx.tr('instance.exportLogPermissionMessage')),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('取消'),
+              child: Text(ctx.tr('common.cancel')),
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('去授权'),
+              child: Text(ctx.tr('instance.goGrant')),
             ),
           ],
         ),
@@ -1585,14 +1687,24 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       await file.writeAsString(content, flush: true);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('日志已导出至 $destDir/$fileName')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.tr('instance.logExportedTo', {
+              'path': '$destDir/$fileName',
+            }),
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('导出失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.tr('instance.logExportFailed', {'error': '$e'}),
+          ),
+        ),
+      );
     }
   }
 
@@ -1866,7 +1978,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   Future<_DownloadInfo> _fetchVanillaDownloadInfo(String version) async {
     final detailUrl = _vanillaVersionUrls[version];
     if (detailUrl == null) {
-      throw Exception('未找到版本 $version 的详情地址');
+      throw Exception(
+        tr('instance.versionDetailNotFound', {'version': version}),
+      );
     }
     final client = HttpClient();
     try {
@@ -1876,7 +1990,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       final json = jsonDecode(body) as Map<String, dynamic>;
       final server = json['downloads']?['server'];
       if (server == null) {
-        throw Exception('该版本没有服务端 JAR');
+        throw Exception(tr('instance.noServerJar'));
       }
       return _DownloadInfo(
         url: server['url'] as String,
@@ -1920,7 +2034,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     final client = HttpClient();
     try {
       final buildReq = await client.getUrl(
-        Uri.parse('https://fill.papermc.io/v3/projects/velocity/versions/$version/builds/latest'),
+        Uri.parse(
+          'https://fill.papermc.io/v3/projects/velocity/versions/$version/builds/latest',
+        ),
       );
       buildReq.headers.set('User-Agent', 'EdgeCube/1.0');
       final buildRes = await buildReq.close();
@@ -1930,7 +2046,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           (buildJson['downloads'] as Map<String, dynamic>)['server:default']
               as Map<String, dynamic>;
       final sha256 =
-          (serverDefault['checksums'] as Map<String, dynamic>)['sha256'] as String;
+          (serverDefault['checksums'] as Map<String, dynamic>)['sha256']
+              as String;
       final downloadUrl = serverDefault['url'] as String;
       return _DownloadInfo(url: downloadUrl, sha256: sha256);
     } finally {
@@ -1943,7 +2060,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     final client = HttpClient();
     try {
       final buildReq = await client.getUrl(
-        Uri.parse('https://fill.papermc.io/v3/projects/paper/versions/$version/builds/latest'),
+        Uri.parse(
+          'https://fill.papermc.io/v3/projects/paper/versions/$version/builds/latest',
+        ),
       );
       buildReq.headers.set('User-Agent', 'EdgeCube/1.0');
       final buildRes = await buildReq.close();
@@ -1953,7 +2072,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           (buildJson['downloads'] as Map<String, dynamic>)['server:default']
               as Map<String, dynamic>;
       final sha256 =
-          (serverDefault['checksums'] as Map<String, dynamic>)['sha256'] as String;
+          (serverDefault['checksums'] as Map<String, dynamic>)['sha256']
+              as String;
       final downloadUrl = serverDefault['url'] as String;
       return _DownloadInfo(url: downloadUrl, sha256: sha256);
     } finally {

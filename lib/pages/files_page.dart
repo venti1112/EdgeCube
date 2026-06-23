@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../files/file_browser.dart';
+import '../i18n/locale_scope.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
@@ -18,13 +19,17 @@ class FilesPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(selected == null ? '文件' : '文件 · ${selected.name}'),
+        title: Text(
+          selected == null
+              ? context.tr('filesPage.title')
+              : context.tr('filesPage.titleWithName', {'name': selected.name}),
+        ),
       ),
       body: selected == null
-          ? const PlaceholderPage(
+          ? PlaceholderPage(
               icon: Icons.folder_outlined,
-              title: '还没有实例',
-              description: '请先在「服务器」页新建并选择一个实例，再管理其文件。',
+              title: context.tr('filesPage.emptyTitle'),
+              description: context.tr('filesPage.emptyDescription'),
             )
           : _InstanceFiles(
               // 切换实例时重建浏览器，回到新实例根目录。
@@ -55,7 +60,13 @@ class _InstanceFiles extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError || !snapshot.hasData) {
-          return Center(child: Text('无法打开实例目录：${snapshot.error}'));
+          return Center(
+            child: Text(
+              context.tr('filesPage.openDirError', {
+                'error': '${snapshot.error}',
+              }),
+            ),
+          );
         }
         return FileBrowser(rootDir: snapshot.data!);
       },

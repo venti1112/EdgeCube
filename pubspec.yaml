@@ -79,6 +79,7 @@ flutter:
   assets:
     - android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
     - assets/images/msl_logo.png
+    - assets/i18n/
     - LICENSE
 
   # An image asset can refer to one or more resolution-specific "variants", see

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:xterm/xterm.dart';
 
 import '../config/terminal_store.dart';
+import '../i18n/locale_scope.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
 import '../widgets/terminal_zoom.dart';
@@ -55,12 +56,13 @@ class _ConsolePageState extends State<ConsolePage> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('控制台'),
+            Text(context.tr('console.title')),
             Text(
-              '${_subtitle(server)} · ${server.lineMode ? "命令行" : "原始终端"}',
+              '${_subtitle(context, server)} · ${server.lineMode ? context.tr('console.modeCommandLine') : context.tr('console.modeRawTerminal')}',
               style: theme.textTheme.bodySmall?.copyWith(
-                color:
-                    running ? Colors.green : theme.colorScheme.onSurfaceVariant,
+                color: running
+                    ? Colors.green
+                    : theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -74,15 +76,15 @@ class _ConsolePageState extends State<ConsolePage> {
             },
           ),
           IconButton(
-            icon: Icon(
-              server.lineMode ? Icons.edit : Icons.keyboard,
-            ),
-            tooltip: server.lineMode ? '命令行编辑模式（点击切换原始终端）' : '原始终端模式（点击切换命令行编辑）',
+            icon: Icon(server.lineMode ? Icons.edit : Icons.keyboard),
+            tooltip: server.lineMode
+                ? context.tr('console.tooltipLineModeOn')
+                : context.tr('console.tooltipLineModeOff'),
             onPressed: server.toggleLineMode,
           ),
           IconButton(
             icon: const Icon(Icons.copy),
-            tooltip: '复制全部日志',
+            tooltip: context.tr('console.tooltipCopyAllLogs'),
             onPressed: !hasLog
                 ? null
                 : () {
@@ -90,13 +92,13 @@ class _ConsolePageState extends State<ConsolePage> {
                       ClipboardData(text: server.log.join('\n')),
                     );
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('日志已复制到剪贴板')),
+                      SnackBar(content: Text(context.tr('console.logCopied'))),
                     );
                   },
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
-            tooltip: '清空终端',
+            tooltip: context.tr('console.tooltipClearTerminal'),
             onPressed: !hasLog ? null : server.clearLog,
           ),
         ],
@@ -121,14 +123,25 @@ class _ConsolePageState extends State<ConsolePage> {
     );
   }
 
-  String _subtitle(ServerController server) {
+  String _subtitle(BuildContext context, ServerController server) {
     final name = server.runningInstanceName;
     return switch (server.status) {
-      ServerStatus.preparing => '准备中 · ${name ?? ''}',
-      ServerStatus.starting => '启动中 · ${name ?? ''}',
-      ServerStatus.running => '运行中 · ${name ?? ''}',
-      ServerStatus.stopping => '停止中 · ${name ?? ''}',
-      ServerStatus.stopped => name == null ? '未运行' : '已停止 · $name',
+      ServerStatus.preparing => context.tr('console.statusPreparing', {
+        'name': name ?? '',
+      }),
+      ServerStatus.starting => context.tr('console.statusStarting', {
+        'name': name ?? '',
+      }),
+      ServerStatus.running => context.tr('console.statusRunning', {
+        'name': name ?? '',
+      }),
+      ServerStatus.stopping => context.tr('console.statusStopping', {
+        'name': name ?? '',
+      }),
+      ServerStatus.stopped =>
+        name == null
+            ? context.tr('console.statusNotRunning')
+            : context.tr('console.statusStopped', {'name': name}),
     };
   }
 }
@@ -167,13 +180,25 @@ class _ExtraKeysBar extends StatelessWidget {
             Row(
               children: [
                 _key(context, 'TAB', () => server.sendKey(TerminalKey.tab)),
-                _key(context, 'CTRL', server.toggleCtrl,
-                    active: server.ctrlDown),
+                _key(
+                  context,
+                  'CTRL',
+                  server.toggleCtrl,
+                  active: server.ctrlDown,
+                ),
                 _key(context, 'ALT', server.toggleAlt, active: server.altDown),
                 _key(context, '←', () => server.sendKey(TerminalKey.arrowLeft)),
                 _key(context, '↓', () => server.sendKey(TerminalKey.arrowDown)),
-                _key(context, '→', () => server.sendKey(TerminalKey.arrowRight)),
-                _key(context, 'PgDn', () => server.sendKey(TerminalKey.pageDown)),
+                _key(
+                  context,
+                  '→',
+                  () => server.sendKey(TerminalKey.arrowRight),
+                ),
+                _key(
+                  context,
+                  'PgDn',
+                  () => server.sendKey(TerminalKey.pageDown),
+                ),
               ],
             ),
           ],
@@ -187,8 +212,9 @@ class _ExtraKeysBar extends StatelessWidget {
     String label,
     VoidCallback onTap, {
     bool active = false,
-  }) =>
-      Expanded(child: _KeyButton(label: label, onTap: onTap, active: active));
+  }) => Expanded(
+    child: _KeyButton(label: label, onTap: onTap, active: active),
+  );
 }
 
 class _KeyButton extends StatelessWidget {

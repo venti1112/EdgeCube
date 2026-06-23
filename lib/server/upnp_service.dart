@@ -51,10 +51,7 @@ class UpnpService {
     final port = _mappedPort;
     if (port == null || _gateway == null) return;
     try {
-      await _gateway!.closePort(
-        protocol: PortType.tcp,
-        externalPort: port,
-      );
+      await _gateway!.closePort(protocol: PortType.tcp, externalPort: port);
     } catch (_) {
       // 静默处理：路由器可能已重启或映射已过期。
     } finally {

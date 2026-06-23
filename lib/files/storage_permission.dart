@@ -4,8 +4,9 @@ import 'package:flutter/services.dart';
 
 /// 「管理全部文件」权限的 Dart 封装，对接 MainActivity 中的 MethodChannel。
 class StoragePermission {
-  static const MethodChannel _channel =
-      MethodChannel('com.venti1112.edgecube/storage');
+  static const MethodChannel _channel = MethodChannel(
+    'com.venti1112.edgecube/storage',
+  );
 
   /// 是否已获得管理全部文件的权限。非 Android 平台恒为 true。
   static Future<bool> isGranted() async {

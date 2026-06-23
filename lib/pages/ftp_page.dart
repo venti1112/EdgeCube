@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../config/ftp_store.dart';
 import '../ftp/ftp_controller.dart';
 import '../ftp/ftp_scope.dart';
+import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
 import '../net/network_address.dart';
 
@@ -81,7 +82,7 @@ class _FtpPageState extends State<FtpPage> {
     if (value && instances.selected == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有选中的实例，无法确定 FTP 根目录')),
+        SnackBar(content: Text(context.tr('ftp.noInstanceSelected'))),
       );
       return;
     }
@@ -90,7 +91,11 @@ class _FtpPageState extends State<FtpPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('操作失败：$e')),
+        SnackBar(
+          content: Text(
+            context.tr('ftp.operationFailed', {'error': e.toString()}),
+          ),
+        ),
       );
     }
   }
@@ -106,7 +111,11 @@ class _FtpPageState extends State<FtpPage> {
     setState(() => _localIpv6 = ipv6);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ftp.isRunning ? '已保存并重启 FTP 服务' : '已保存'),
+        content: Text(
+          ftp.isRunning
+              ? context.tr('ftp.savedAndRestarted')
+              : context.tr('ftp.saved'),
+        ),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -117,7 +126,7 @@ class _FtpPageState extends State<FtpPage> {
     final theme = Theme.of(context);
     final ftp = FtpScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('FTP 文件管理')),
+      appBar: AppBar(title: Text(context.tr('ftp.title'))),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -148,23 +157,31 @@ class _FtpPageState extends State<FtpPage> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Row(
                 children: [
-                  Icon(Icons.folder_shared_outlined, size: 20, color: theme.colorScheme.primary),
+                  Icon(
+                    Icons.folder_shared_outlined,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'FTP 服务',
-                      style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.primary),
+                      context.tr('ftp.service'),
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
                     ),
                   ),
-                  if (running) _statusChip(theme, '运行中'),
+                  if (running) _statusChip(theme, context.tr('ftp.running')),
                 ],
               ),
             ),
             SwitchListTile(
-              title: const Text('启用 FTP 访问'),
-              subtitle: Text(ftp.rootDir != null
-                  ? '根目录：当前实例文件夹'
-                  : '请先选择一个实例'),
+              title: Text(context.tr('ftp.enableFtp')),
+              subtitle: Text(
+                ftp.rootDir != null
+                    ? context.tr('ftp.rootDirCurrentInstance')
+                    : context.tr('ftp.selectInstanceFirst'),
+              ),
               value: running,
               onChanged: ftp.rootDir == null ? null : _toggleFtp,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -192,18 +209,20 @@ class _FtpPageState extends State<FtpPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text(
-                '连接配置',
-                style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.primary),
+                context.tr('ftp.connectionConfig'),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
               ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _field(_port, '端口', number: true),
+              child: _field(_port, context.tr('ftp.port'), number: true),
             ),
             const SizedBox(height: 8),
             SwitchListTile(
-              title: const Text('匿名访问'),
-              subtitle: const Text('关闭后需填写用户名和密码'),
+              title: Text(context.tr('ftp.anonymousAccess')),
+              subtitle: Text(context.tr('ftp.anonymousOffHint')),
               value: _anonymous,
               onChanged: (v) => setState(() => _anonymous = v),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -211,24 +230,28 @@ class _FtpPageState extends State<FtpPage> {
             if (!_anonymous) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _field(_username, '用户名'),
+                child: _field(_username, context.tr('ftp.username')),
               ),
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _field(_password, '密码', obscure: true),
+                child: _field(
+                  _password,
+                  context.tr('ftp.password'),
+                  obscure: true,
+                ),
               ),
             ],
             SwitchListTile(
-              title: const Text('允许写入'),
-              subtitle: const Text('关闭后仅可下载，不能上传/删除/重命名'),
+              title: Text(context.tr('ftp.allowWrite')),
+              subtitle: Text(context.tr('ftp.writeOffHint')),
               value: _writable,
               onChanged: (v) => setState(() => _writable = v),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
             SwitchListTile(
-              title: const Text('启用 IPv6 访问'),
-              subtitle: const Text('开启后同时监听 IPv6（双栈），可经稳定 IPv6 地址访问'),
+              title: Text(context.tr('ftp.enableIpv6')),
+              subtitle: Text(context.tr('ftp.ipv6Hint')),
               value: _ipv6,
               onChanged: (v) => setState(() => _ipv6 = v),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -240,7 +263,7 @@ class _FtpPageState extends State<FtpPage> {
                 child: FilledButton.tonalIcon(
                   onPressed: _saveConfig,
                   icon: const Icon(Icons.save, size: 18),
-                  label: const Text('保存配置'),
+                  label: Text(context.tr('ftp.saveConfig')),
                 ),
               ),
             ),
@@ -260,15 +283,15 @@ class _FtpPageState extends State<FtpPage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.info_outline, size: 18, color: theme.colorScheme.primary),
+            Icon(
+              Icons.info_outline,
+              size: 18,
+              color: theme.colorScheme.primary,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'FTP 根目录为当前选中实例的文件夹。切换实例或保存新配置时，'
-                '若 FTP 正在运行将自动重启以应用变更。\n'
-                '同一局域网内的设备可使用上方 IPv4 地址访问；外网访问需配合端口映射。\n'
-                '开启 IPv6 后可经稳定的 IPv6 地址直接访问（同一网络内可用，'
-                '外网访问取决于运营商 IPv6 公网可达性，通常无需端口映射）。',
+                context.tr('ftp.infoText'),
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -297,7 +320,7 @@ class _FtpPageState extends State<FtpPage> {
           ),
           IconButton(
             icon: const Icon(Icons.copy, size: 18),
-            tooltip: '复制地址',
+            tooltip: context.tr('ftp.copyAddress'),
             onPressed: () => Clipboard.setData(ClipboardData(text: addr)),
           ),
         ],
@@ -314,7 +337,9 @@ class _FtpPageState extends State<FtpPage> {
       ),
       child: Text(
         text,
-        style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.primary),
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.primary,
+        ),
       ),
     );
   }
