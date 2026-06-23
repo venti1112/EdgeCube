@@ -58,6 +58,7 @@ class MainActivity : FlutterActivity() {
     private val shellChannel = "com.venti1112.edgecube/shell"
     private val shellEventChannel = "com.venti1112.edgecube/shell_events"
     private var pendingPhotoPermissionResult: MethodChannel.Result? = null
+    private var pendingStoragePermissionResult: MethodChannel.Result? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -103,6 +104,10 @@ class MainActivity : FlutterActivity() {
                 pendingPhotoPermissionResult?.success(hasPhotoPermission())
                 pendingPhotoPermissionResult = null
             }
+            1003 -> {
+                pendingStoragePermissionResult?.success(isGranted())
+                pendingStoragePermissionResult = null
+            }
         }
     }
 
@@ -117,8 +122,7 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "isGranted" -> result.success(isGranted())
                 "request" -> {
-                    requestAccess()
-                    result.success(null)
+                    requestAccess(result)
                 }
                 "externalStorageRoot" ->
                     result.success(Environment.getExternalStorageDirectory()?.absolutePath)
@@ -694,23 +698,37 @@ class MainActivity : FlutterActivity() {
     private fun isGranted(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Environment.isExternalStorageManager()
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+                PackageManager.PERMISSION_GRANTED
         } else {
-            // 低版本由运行时权限处理，此处视为已具备访问能力。
             true
         }
     }
 
-    private fun requestAccess() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
-        // 优先跳转到本应用的「所有文件访问权限」页；失败则退回到列表页。
-        try {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                Uri.parse("package:$packageName"),
+    private fun requestAccess(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            result.success(null)
+            try {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:$packageName"),
+                )
+                startActivity(intent)
+            } catch (e: Exception) {
+                startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            pendingStoragePermissionResult = result
+            requestPermissions(
+                arrayOf(
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                ),
+                1003,
             )
-            startActivity(intent)
-        } catch (e: Exception) {
-            startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+        } else {
+            result.success(true)
         }
     }
 

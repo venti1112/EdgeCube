@@ -130,11 +130,14 @@ class _SettingsPageState extends State<SettingsPage>
       ),
     );
     if (go != true) return false;
-    final resumeWaiter = Completer<void>();
-    _resumeWaiter = resumeWaiter;
-    await StoragePermission.request();
-    await resumeWaiter.future;
-    await _waitForStoragePermissionGranted();
+    final result = await StoragePermission.request();
+    if (result == null) {
+      // API >= 30: intent-based flow, wait for resume from system settings
+      final resumeWaiter = Completer<void>();
+      _resumeWaiter = resumeWaiter;
+      await resumeWaiter.future;
+      await _waitForStoragePermissionGranted();
+    }
     if (!mounted) return false;
     return StoragePermission.isGranted();
   }

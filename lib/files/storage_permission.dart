@@ -15,10 +15,12 @@ class StoragePermission {
     return granted ?? false;
   }
 
-  /// 跳转到系统设置页，请求授予「所有文件访问权限」。
-  static Future<void> request() async {
-    if (!Platform.isAndroid) return;
-    await _channel.invokeMethod<void>('request');
+  /// 请求存储权限。
+  /// - API < 30：返回 true/false 表示授权结果。
+  /// - API >= 30：跳转到系统设置页，返回 null（Dart 侧需等待应用恢复前台后重新查询）。
+  static Future<bool?> request() async {
+    if (!Platform.isAndroid) return true;
+    return _channel.invokeMethod<bool>('request');
   }
 
   /// 外部存储根目录（如 /storage/emulated/0）；不可用时返回 null。

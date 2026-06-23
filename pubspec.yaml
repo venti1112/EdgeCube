@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0-beta6+6
+version: 1.0.0-beta7+7
 
 environment:
   sdk: ^3.12.1
@@ -36,8 +36,6 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.9
-  # 仅用于从旧版本迁移历史配置（见 lib/config/config_migration.dart），
-  # 迁移完成后会清空并删除 SharedPreferences 数据。
   shared_preferences: ^2.5.5
   path_provider: ^2.1.6
   path: ^1.9.1
