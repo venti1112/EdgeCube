@@ -11,6 +11,7 @@ import 'server_service.dart';
 import 'upnp_service.dart';
 import '../config/network_store.dart';
 import '../tunnel/tunnel_service.dart';
+import 'runtime_service.dart';
 
 /// 匹配 Minecraft 服务端日志中玩家加入/离开的正则（兼容英文与中文输出）。
 ///
@@ -717,6 +718,12 @@ class ServerController extends ChangeNotifier {
     resolver().then((enabled) async {
       if (enabled) {
         final runtimeId = await NetworkStore.loadFrpcRuntimeId();
+        // 检查 frpc 运行时是否已安装。
+        final runtimes = await const RuntimeService().installedFrpcRuntimes();
+        if (runtimes.isEmpty) {
+          _notice('[EdgeCube] FRP 隧道未找到 frpc 运行时，跳过启动（请前往「运行环境」导入 frpc）');
+          return;
+        }
         _startTunnelWithConfig(null, runtimeId: runtimeId);
       }
     });

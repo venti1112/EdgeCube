@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
+import '../route_observer.dart';
 import 'file_entry.dart';
 import 'file_service.dart';
 import 'folder_picker.dart';
@@ -108,7 +109,7 @@ class FileBrowser extends StatefulWidget {
   State<FileBrowser> createState() => _FileBrowserState();
 }
 
-class _FileBrowserState extends State<FileBrowser> {
+class _FileBrowserState extends State<FileBrowser> with RouteAware {
   static const _service = FileService();
 
   /// 当前活跃的 FileBrowser 实例引用，供 HomeShell 处理系统返回键时查询。
@@ -130,7 +131,19 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    appRouteObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void didPopNext() {
+    if (mounted) _load();
+  }
+
+  @override
   void dispose() {
+    appRouteObserver.unsubscribe(this);
     if (_active == this) _active = null;
     super.dispose();
   }
@@ -774,96 +787,102 @@ class _FileBrowserState extends State<FileBrowser> {
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
-              : _entries.isEmpty
-              ? Center(
-                  child: Text(
-                    context.tr('fileBrowser.emptyFolder'),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                )
               : RefreshIndicator(
                   onRefresh: _load,
-                  child: ListView.builder(
-                    itemCount: _entries.length,
-                    itemBuilder: (_, i) {
-                      final entry = _entries[i];
-                      final selected = _selectedPaths.contains(entry.path);
-                      return ListTile(
-                        selected: _selectionMode && selected,
-                        leading: _selectionMode
-                            ? Checkbox(
-                                value: selected,
-                                onChanged: (_) => _toggleSelected(entry),
-                              )
-                            : Icon(
-                                entry.isDirectory
-                                    ? Icons.folder
-                                    : Icons.insert_drive_file_outlined,
+                  child: _entries.isEmpty
+                      ? LayoutBuilder(
+                          builder: (context, constraints) {
+                            return SingleChildScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minHeight: constraints.maxHeight,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    context.tr('fileBrowser.emptyFolder'),
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
                               ),
-                        title: Text(entry.name),
-                        subtitle: Text(_subtitle(entry)),
-                        onTap: _selectionMode
-                            ? () => _toggleSelected(entry)
-                            : entry.isDirectory
-                            ? () => _enter(entry)
-                            : _isEditableText(entry)
-                            ? () => _openEditor(entry)
-                            : null,
-                        onLongPress: _selectionMode
-                            ? null
-                            : () => _enterSelection(entry),
-                        trailing: _selectionMode
-                            ? null
-                            : PopupMenuButton<_FileAction>(
-                                onSelected: (a) => _onAction(a, entry),
-                                itemBuilder: (_) => [
-                                  if (!entry.isDirectory)
-                                    PopupMenuItem(
-                                      value: _FileAction.edit,
-                                      child: Text(context.tr('common.edit')),
+                            );
+                          },
+                        )
+                      : ListView.builder(
+                          itemCount: _entries.length,
+                          itemBuilder: (_, i) {
+                            final entry = _entries[i];
+                            final selected = _selectedPaths.contains(entry.path);
+                            return ListTile(
+                              selected: _selectionMode && selected,
+                              leading: _selectionMode
+                                  ? Checkbox(
+                                      value: selected,
+                                      onChanged: (_) => _toggleSelected(entry),
+                                    )
+                                  : Icon(
+                                      entry.isDirectory
+                                          ? Icons.folder
+                                          : Icons.insert_drive_file_outlined,
                                     ),
-                                  PopupMenuItem(
-                                    value: _FileAction.rename,
-                                    child: Text(context.tr('common.rename')),
-                                  ),
-                                  PopupMenuItem(
-                                    value: _FileAction.move,
-                                    child: Text(context.tr('fileBrowser.move')),
-                                  ),
-                                  PopupMenuItem(
-                                    value: _FileAction.copy,
-                                    child: Text(context.tr('common.copy')),
-                                  ),
-                                  PopupMenuItem(
-                                    value: _FileAction.compress,
-                                    child: Text(
-                                      context.tr('fileBrowser.compress'),
+                              title: Text(entry.name),
+                              subtitle: Text(_subtitle(entry)),
+                              onTap: _selectionMode
+                                  ? () => _toggleSelected(entry)
+                                  : entry.isDirectory
+                                  ? () => _enter(entry)
+                                  : _isEditableText(entry)
+                                  ? () => _openEditor(entry)
+                                  : null,
+                              onLongPress: _selectionMode
+                                  ? null
+                                  : () => _enterSelection(entry),
+                              trailing: _selectionMode
+                                  ? null
+                                  : PopupMenuButton<_FileAction>(
+                                      onSelected: (a) => _onAction(a, entry),
+                                      itemBuilder: (_) => [
+                                        if (!entry.isDirectory)
+                                          PopupMenuItem(
+                                            value: _FileAction.edit,
+                                            child: Text(context.tr('common.edit')),
+                                          ),
+                                        PopupMenuItem(
+                                          value: _FileAction.rename,
+                                          child: Text(context.tr('common.rename')),
+                                        ),
+                                        PopupMenuItem(
+                                          value: _FileAction.move,
+                                          child: Text(context.tr('fileBrowser.move')),
+                                        ),
+                                        PopupMenuItem(
+                                          value: _FileAction.copy,
+                                          child: Text(context.tr('common.copy')),
+                                        ),
+                                        PopupMenuItem(
+                                          value: _FileAction.compress,
+                                          child: Text(context.tr('fileBrowser.compress')),
+                                        ),
+                                        if (_isArchive(entry))
+                                          PopupMenuItem(
+                                            value: _FileAction.extract,
+                                            child: Text(context.tr('fileBrowser.extract')),
+                                          ),
+                                        PopupMenuItem(
+                                          value: _FileAction.export,
+                                          child: Text(context.tr('fileBrowser.export')),
+                                        ),
+                                        PopupMenuItem(
+                                          value: _FileAction.delete,
+                                          child: Text(context.tr('common.delete')),
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                  if (_isArchive(entry))
-                                    PopupMenuItem(
-                                      value: _FileAction.extract,
-                                      child: Text(
-                                        context.tr('fileBrowser.extract'),
-                                      ),
-                                    ),
-                                  PopupMenuItem(
-                                    value: _FileAction.export,
-                                    child: Text(
-                                      context.tr('fileBrowser.export'),
-                                    ),
-                                  ),
-                                  PopupMenuItem(
-                                    value: _FileAction.delete,
-                                    child: Text(context.tr('common.delete')),
-                                  ),
-                                ],
-                              ),
-                      );
-                    },
-                  ),
+                            );
+                          },
+                        ),
                 ),
         ),
       ],

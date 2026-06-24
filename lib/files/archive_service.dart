@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -12,6 +13,9 @@ class ArchiveService {
   ArchiveService._();
 
   static const _channel = MethodChannel('com.venti1112.edgecube/archive');
+  static const _eventChannel = EventChannel('com.venti1112.edgecube/archive_events');
+
+  static StreamSubscription<dynamic>? _eventSub;
 
   /// 解压 [archivePath] 到 [destDir]（目标目录必须已存在）。
   /// 返回解压出的文件数量。
@@ -23,6 +27,36 @@ class ArchiveService {
       'destDir': destDir,
     });
     return count ?? 0;
+  }
+
+  /// 解压并报告进度。返回解压出的文件数量。
+  ///
+  /// [onProgress] 回调参数为 (current, total)；
+  /// 当 total 为 -1 时表示格式不支持预知总条目数（tar/7z/rar）。
+  static Future<int> extractWithProgress(
+    String archivePath,
+    String destDir, {
+    void Function(int current, int total)? onProgress,
+  }) async {
+    _eventSub?.cancel();
+    _eventSub = _eventChannel.receiveBroadcastStream().listen((event) {
+      if (event is Map) {
+        final current = event['current'] as int? ?? 0;
+        final total = event['total'] as int? ?? -1;
+        onProgress?.call(current, total);
+      }
+    });
+
+    try {
+      final count = await _channel.invokeMethod<int>('extract', {
+        'archivePath': archivePath,
+        'destDir': destDir,
+      });
+      return count ?? 0;
+    } finally {
+      await _eventSub?.cancel();
+      _eventSub = null;
+    }
   }
 
   /// 把 [sourcePaths] 压缩为 [archivePath] 指向的 zip 文件。

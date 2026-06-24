@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../config/network_store.dart';
+import '../files/archive_service.dart';
 import '../files/file_service.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
@@ -34,6 +35,8 @@ enum _WizardStep {
   downloading,
   forgeInstalling,
   importFile,
+  importArchive,
+  extractArchive,
 }
 
 /// 新建实例向导结果。
@@ -99,6 +102,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   bool _forgeInstalling = false;
   String? _forgeInstallError;
   StreamSubscription<dynamic>? _forgeEventSub;
+
+  bool _extracting = false;
+  String? _extractError;
+  double? _extractProgress;
 
   /// 当前安装器类型（'forge' 或 'neoforge'），用于 UI 文案和日志文件名区分。
   String _installerType = 'forge';
@@ -276,6 +283,101 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     } on DuplicateInstanceNameException {
       if (!mounted) return;
       _showDuplicateDialog(name);
+    }
+  }
+
+  Future<void> _startImportArchive() async {
+    if (!await _validateName()) return;
+    final name = _nameController.text.trim();
+    try {
+      final instance = await _instanceController.createInstance(name);
+      if (!mounted) return;
+      _instanceId = instance.id;
+      setState(() => _step = _WizardStep.importArchive);
+      _doImportArchive(instance.id);
+    } on DuplicateInstanceNameException {
+      if (!mounted) return;
+      _showDuplicateDialog(name);
+    }
+  }
+
+  Future<void> _doImportArchive(String instanceId) async {
+    if (!await StoragePermission.isGranted()) {
+      if (!mounted) return;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(context.tr('instance.storagePermissionTitle')),
+          content: Text(context.tr('instance.importStoragePermissionMessage')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(context.tr('common.cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(context.tr('instance.goGrant')),
+            ),
+          ],
+        ),
+      );
+      if (go != true) {
+        _closeWizard();
+        return;
+      }
+      await StoragePermission.request();
+      if (!mounted) return;
+      _doImportArchive(instanceId);
+      return;
+    }
+
+    if (!mounted) return;
+    final sourcePath = await pickFromSystem(context, mode: SystemPickMode.file);
+    if (sourcePath == null) {
+      _closeWizard();
+      return;
+    }
+
+    setState(() {
+      _step = _WizardStep.extractArchive;
+      _extracting = true;
+      _extractError = null;
+      _extractProgress = null;
+    });
+
+    try {
+      final dir = await _instanceController.directoryForId(instanceId);
+
+      await ArchiveService.extractWithProgress(
+        sourcePath,
+        dir.path,
+        onProgress: (current, total) {
+          if (!mounted) return;
+          setState(() {
+            if (total > 0) {
+              _extractProgress = current / total;
+            } else {
+              _extractProgress = null;
+            }
+          });
+        },
+      );
+
+      _completed = true;
+      if (mounted) {
+        setState(() {
+          _extracting = false;
+          _extractProgress = null;
+        });
+        _finishWizard();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _extracting = false;
+        _extractProgress = null;
+        _extractError = context.tr('instance.extractArchiveFailed', {'error': '$e'});
+      });
     }
   }
 
@@ -1152,6 +1254,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       case _WizardStep.importFile:
         _deleteCreatedInstance();
         _closeWizard();
+      case _WizardStep.importArchive:
+        _deleteCreatedInstance();
+        _closeWizard();
+      case _WizardStep.extractArchive:
+        break;
       case _WizardStep.downloading:
         _deleteCreatedInstance();
         _closeWizard();
@@ -1248,6 +1355,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
             ? context.tr('instance.titleInstallNeoforge')
             : context.tr('instance.titleInstallForge'),
       _WizardStep.importFile => context.tr('instance.titleImportServer'),
+      _WizardStep.importArchive => context.tr('instance.titleImportServer'),
+      _WizardStep.extractArchive => context.tr('instance.titleImportArchive'),
     };
   }
 
@@ -1265,6 +1374,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _WizardStep.downloading => _buildDownloading(theme),
       _WizardStep.forgeInstalling => _buildForgeInstalling(theme),
       _WizardStep.importFile => _buildImporting(theme),
+      _WizardStep.importArchive => _buildImporting(theme),
+      _WizardStep.extractArchive => _buildExtractingArchive(theme),
     };
   }
 
@@ -1296,6 +1407,13 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
             title: context.tr('instance.titleImportServer'),
             subtitle: context.tr('instance.importServerSubtitle'),
             onTap: _startImport,
+          ),
+          const SizedBox(height: 12),
+          _ServerTypeTile(
+            icon: Icons.archive_outlined,
+            title: context.tr('instance.titleImportArchive'),
+            subtitle: context.tr('instance.importArchiveSubtitle'),
+            onTap: _startImportArchive,
           ),
           const SizedBox(height: 12),
           _ServerTypeTile(
@@ -1556,6 +1674,81 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
             style: theme.textTheme.titleMedium,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildExtractingArchive(ThemeData theme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_extracting)
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: CircularProgressIndicator(value: _extractProgress),
+                  )
+                else if (_extractError == null)
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 48,
+                    color: theme.colorScheme.primary,
+                  )
+                else
+                  Icon(
+                    Icons.error_outline,
+                    size: 48,
+                    color: theme.colorScheme.error,
+                  ),
+                const SizedBox(height: 24),
+                Text(
+                  _extracting
+                      ? context.tr('instance.extractingArchive')
+                      : (_extractError != null
+                            ? context.tr('instance.extractArchiveFailed', {'error': _extractError!})
+                            : context.tr('instance.installComplete')),
+                  style: theme.textTheme.titleMedium,
+                ),
+                if (_extracting && _extractProgress != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '${(_extractProgress! * 100).toStringAsFixed(1)}%',
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                ],
+                if (_extractError != null) ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () {
+                          _deleteCreatedInstance();
+                          _closeWizard();
+                        },
+                        child: Text(context.tr('common.cancel')),
+                      ),
+                      const SizedBox(width: 12),
+                      FilledButton(
+                        onPressed: () {
+                          _deleteCreatedInstance();
+                          setState(() => _step = _WizardStep.nameEntry);
+                        },
+                        child: Text(context.tr('instance.reselect')),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

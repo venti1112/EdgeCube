@@ -48,8 +48,6 @@ object ArchiveExtractor {
         ZipArchiveOutputStream(archive).use { zip ->
             zip.setEncoding("UTF-8")
             zip.setUseLanguageEncodingFlag(true)
-            // 显式使用最高压缩级别，对可压缩内容（文本、未压缩存档）提升压缩率；
-            // 对已压缩格式（jar/png/mca 等）仍无明显效果——这是 deflate 算法本质限制。
             zip.setLevel(Deflater.BEST_COMPRESSION)
             for (path in sourcePaths) {
                 val source = File(path)
@@ -65,9 +63,14 @@ object ArchiveExtractor {
      *
      * @param archivePath 归档文件绝对路径。
      * @param destDir 目标目录（已存在）。
+     * @param onProgress 可选的进度回调，参数为 (current, total)。
      * @return 解压出的文件数量。
      */
-    fun extract(archivePath: String, destDir: String): Int {
+    fun extract(
+        archivePath: String,
+        destDir: String,
+        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+    ): Int {
         val file = File(archivePath)
         if (!file.isFile) {
             throw IllegalArgumentException("归档文件不存在：$archivePath")
@@ -76,21 +79,20 @@ object ArchiveExtractor {
         if (!dest.isDirectory) dest.mkdirs()
         val name = file.name.lowercase(Locale.ROOT)
         return when {
-            name.endsWith(".zip") -> extractZip(file, dest)
-            name.endsWith(".tar") -> extractTar(FileInputStream(file), dest)
+            name.endsWith(".zip") -> extractZip(file, dest, onProgress)
+            name.endsWith(".tar") -> extractTar(FileInputStream(file), dest, onProgress)
             name.endsWith(".tar.gz") || name.endsWith(".tgz") ->
-                extractTar(GzipCompressorInputStream(BufferedInputStream(FileInputStream(file))), dest)
+                extractTar(GzipCompressorInputStream(BufferedInputStream(FileInputStream(file))), dest, onProgress)
             name.endsWith(".tar.xz") || name.endsWith(".txz") ->
-                extractTar(XZCompressorInputStream(BufferedInputStream(FileInputStream(file))), dest)
+                extractTar(XZCompressorInputStream(BufferedInputStream(FileInputStream(file))), dest, onProgress)
             name.endsWith(".tar.bz2") || name.endsWith(".tbz2") ->
-                extractTar(BZip2CompressorInputStream(BufferedInputStream(FileInputStream(file))), dest)
+                extractTar(BZip2CompressorInputStream(BufferedInputStream(FileInputStream(file))), dest, onProgress)
             name.endsWith(".tar.zst") || name.endsWith(".tzst") ->
-                extractTar(ZstdCompressorInputStream(BufferedInputStream(FileInputStream(file))), dest)
+                extractTar(ZstdCompressorInputStream(BufferedInputStream(FileInputStream(file))), dest, onProgress)
             name.endsWith(".tar.lz4") ->
-                extractTar(FramedLZ4CompressorInputStream(BufferedInputStream(FileInputStream(file))), dest)
-            name.endsWith(".7z") -> extract7z(file, dest)
-            name.endsWith(".rar") -> extractRar(file, dest)
-            // 单文件压缩流：解压为去掉压缩后缀的同名文件。
+                extractTar(FramedLZ4CompressorInputStream(BufferedInputStream(FileInputStream(file))), dest, onProgress)
+            name.endsWith(".7z") -> extract7z(file, dest, onProgress)
+            name.endsWith(".rar") -> extractRar(file, dest, onProgress)
             name.endsWith(".xz") -> extractSingleStream(
                 XZCompressorInputStream(BufferedInputStream(FileInputStream(file))),
                 dest, stripExt(file.name, ".xz"),
@@ -147,15 +149,18 @@ object ArchiveExtractor {
     }
 
     /** zip：用 ZipFile 随机访问解压，能正确处理条目顺序与目录创建。 */
-    private fun extractZip(file: File, dest: File): Int {
+    private fun extractZip(file: File, dest: File, onProgress: ((Int, Int) -> Unit)?): Int {
         var count = 0
         ZipFile.builder().setFile(file).get().use { zf ->
             val entries = zf.entries
+            var current = 0
             while (entries.hasMoreElements()) {
                 val entry = entries.nextElement()
                 if (entry.isDirectory) {
                     val target = resolveSafe(dest, entry.name)
                     if (target != null) target.mkdirs()
+                    current++
+                    onProgress?.invoke(current, -1)
                     continue
                 }
                 val target = resolveSafe(dest, entry.name) ?: continue
@@ -164,13 +169,15 @@ object ArchiveExtractor {
                     FileOutputStream(target).use { output -> input.copyTo(output) }
                 }
                 count++
+                current++
+                onProgress?.invoke(current, -1)
             }
         }
         return count
     }
 
     /** tar（含经压缩流包装的 tar.*）：用 TarArchiveInputStream 顺序读取。 */
-    private fun extractTar(input: InputStream, dest: File): Int {
+    private fun extractTar(input: InputStream, dest: File, onProgress: ((Int, Int) -> Unit)?): Int {
         var count = 0
         TarArchiveInputStream(input).use { tis ->
             var entry = tis.nextEntry
@@ -181,12 +188,15 @@ object ArchiveExtractor {
                 } else {
                     val target = resolveSafe(dest, entry.name) ?: run {
                         entry = tis.nextEntry
+                        count++
+                        onProgress?.invoke(count, -1)
                         continue
                     }
                     target.parentFile?.mkdirs()
                     FileOutputStream(target).use { output -> tis.copyTo(output) }
                     count++
                 }
+                onProgress?.invoke(count, -1)
                 entry = tis.nextEntry
             }
         }
@@ -194,7 +204,7 @@ object ArchiveExtractor {
     }
 
     /** 7z：用 SevenZFile 随机访问解压。 */
-    private fun extract7z(file: File, dest: File): Int {
+    private fun extract7z(file: File, dest: File, onProgress: ((Int, Int) -> Unit)?): Int {
         var count = 0
         SevenZFile.builder().setFile(file).get().use { sz ->
             var entry = sz.nextEntry
@@ -205,6 +215,8 @@ object ArchiveExtractor {
                 } else {
                     val target = resolveSafe(dest, entry.name) ?: run {
                         entry = sz.nextEntry
+                        count++
+                        onProgress?.invoke(count, -1)
                         continue
                     }
                     target.parentFile?.mkdirs()
@@ -218,6 +230,7 @@ object ArchiveExtractor {
                     }
                     count++
                 }
+                onProgress?.invoke(count, -1)
                 entry = sz.nextEntry
             }
         }
@@ -225,7 +238,7 @@ object ArchiveExtractor {
     }
 
     /** rar：用 junrar 解压。 */
-    private fun extractRar(file: File, dest: File): Int {
+    private fun extractRar(file: File, dest: File, onProgress: ((Int, Int) -> Unit)?): Int {
         var count = 0
         Archive(file).use { rar ->
             var header = rar.nextFileHeader()
@@ -236,12 +249,15 @@ object ArchiveExtractor {
                 } else {
                     val target = resolveSafe(dest, header.fileName) ?: run {
                         header = rar.nextFileHeader()
+                        count++
+                        onProgress?.invoke(count, -1)
                         continue
                     }
                     target.parentFile?.mkdirs()
                     FileOutputStream(target).use { output -> rar.extractFile(header, output) }
                     count++
                 }
+                onProgress?.invoke(count, -1)
                 header = rar.nextFileHeader()
             }
         }

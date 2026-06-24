@@ -55,6 +55,7 @@ class MainActivity : FlutterActivity() {
     private val tunnelChannel = "com.venti1112.edgecube/tunnel"
     private val tunnelEventChannel = "com.venti1112.edgecube/tunnel_events"
     private val forgeEventChannel = "com.venti1112.edgecube/forge_events"
+    private val archiveEventChannel = "com.venti1112.edgecube/archive_events"
     private val shellChannel = "com.venti1112.edgecube/shell"
     private val shellEventChannel = "com.venti1112.edgecube/shell_events"
     private var pendingPhotoPermissionResult: MethodChannel.Result? = null
@@ -365,6 +366,17 @@ class MainActivity : FlutterActivity() {
         }
 
         // 归档通道：zip/tar/tar.*/7z/rar 等格式统一在原生侧处理。
+        var archiveEventSink: EventChannel.EventSink? = null
+        EventChannel(messenger, archiveEventChannel).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    archiveEventSink = events
+                }
+                override fun onCancel(arguments: Any?) {
+                    archiveEventSink = null
+                }
+            },
+        )
         MethodChannel(messenger, "com.venti1112.edgecube/archive").setMethodCallHandler { call, result ->
             when (call.method) {
                 "compress" -> {
@@ -373,7 +385,6 @@ class MainActivity : FlutterActivity() {
                     if (sourcePaths == null || archivePath == null) {
                         result.error("BAD_ARGS", "缺少 sourcePaths/archivePath", null)
                     } else {
-                        // 压缩可能耗时，放后台线程；完成后回主线程返回结果。
                         thread {
                             try {
                                 val count = com.venti1112.edgecube.files.ArchiveExtractor.compressToZip(
@@ -392,12 +403,17 @@ class MainActivity : FlutterActivity() {
                     if (archivePath == null || destDir == null) {
                         result.error("BAD_ARGS", "缺少 archivePath/destDir", null)
                     } else {
-                        // 解压可能耗时，放后台线程；完成后回主线程返回结果。
                         thread {
                             try {
                                 val count = com.venti1112.edgecube.files.ArchiveExtractor.extract(
                                     archivePath, destDir,
-                                )
+                                ) { current, total ->
+                                    archiveEventSink?.let { sink ->
+                                        runOnUiThread {
+                                            sink.success(mapOf("current" to current, "total" to total))
+                                        }
+                                    }
+                                }
                                 runOnUiThread { result.success(count) }
                             } catch (e: Exception) {
                                 runOnUiThread { result.error("EXTRACT_FAILED", e.message, null) }

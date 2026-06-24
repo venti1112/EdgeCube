@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'config/config_migration.dart';
 import 'config/network_store.dart';
 import 'config/version_store.dart';
+import 'server/runtime_migration.dart';
 import 'route_observer.dart';
 import 'ftp/ftp_controller.dart';
 import 'ftp/ftp_scope.dart';
@@ -36,6 +37,11 @@ Future<void> main() async {
   // 必须先于下面任何新配置读取。
   await ConfigMigration.run();
   final lastVersion = await VersionStore.loadLastVersion();
+  // 旧版内置于 assets 的运行时与新版 .ecpkg 管理系统冲突，
+  // 升级时清除旧 runtimes 目录，让用户重新导入所需运行时。
+  if (RuntimeMigration.shouldClearRuntimes(lastVersion)) {
+    await RuntimeMigration.clearOldRuntimes();
+  }
   // 记录本次启动的版本到 config/version.json（更新 lastVersion 并追加历史）。
   // 自动迁移需在首帧后显示进度，因此迁移完成后由应用内流程记录。
   if (!InstanceMigration.shouldAutoMigrateFrom(lastVersion)) {

@@ -48,6 +48,7 @@ app.*.map.json
 /.opencode
 /.codex
 /.deepseek
+/.mimocode
 
-/Temporary_file
+/subsidiary
 /docs
