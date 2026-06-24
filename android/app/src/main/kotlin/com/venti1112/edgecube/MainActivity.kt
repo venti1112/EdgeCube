@@ -210,10 +210,10 @@ class MainActivity : FlutterActivity() {
         MethodChannel(messenger, serverChannel).setMethodCallHandler { call, result ->
             when (call.method) {
                 "availableVersions" ->
-                    result.success(RuntimeInstaller.availableVersions(applicationContext))
+                    result.success(RuntimeInstaller.availableJreIds(applicationContext))
 
                 "availablePhpRuntimes" ->
-                    result.success(RuntimeInstaller.availablePhpRuntimes(applicationContext))
+                    result.success(RuntimeInstaller.availablePhpIds(applicationContext))
 
                 "isRuntimeReady" -> {
                     val version = call.argument<String>("version")
@@ -627,20 +627,21 @@ class MainActivity : FlutterActivity() {
                     result.success(RuntimeInstaller.isFrpcAvailable(applicationContext))
 
                 "isFrpcReady" ->
-                    result.success(RuntimeInstaller.isFrpcInstalled(applicationContext))
+                    result.success(RuntimeInstaller.installedFrpc(applicationContext) != null)
 
                 "isRunning" -> result.success(tunnelManager.isRunning)
 
                 "start" -> {
                     val configPath = call.argument<String>("configPath")
                     val name = call.argument<String>("name") ?: "frpc"
+                    val runtimeId = call.argument<String>("runtimeId")
                     if (configPath == null) {
                         result.error("BAD_ARGS", "缺少 configPath", null)
                     } else {
                         // 含首次解压，放后台线程；完成后回主线程返回结果。
                         thread {
                             try {
-                                tunnelManager.start(configPath, name)
+                                tunnelManager.start(configPath, name, runtimeId)
                                 runOnUiThread { result.success(true) }
                             } catch (e: Exception) {
                                 runOnUiThread { result.error("START_FAILED", e.message, null) }
@@ -676,6 +677,80 @@ class MainActivity : FlutterActivity() {
                 "clearLog" -> {
                     tunnelManager.clearLog()
                     result.success(null)
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+
+        // 运行环境通道：已安装运行时的发现、导入与删除。
+        val runtimeChannel = "com.venti1112.edgecube/runtime"
+        MethodChannel(messenger, runtimeChannel).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "installedRuntimes" -> {
+                    val list = RuntimeInstaller.installedRuntimes(applicationContext).map { m ->
+                        mapOf(
+                            "id" to m.id,
+                            "type" to m.type,
+                            "name" to m.name,
+                            "version" to m.version,
+                            "description" to (m.description ?: ""),
+                            "author" to (m.author ?: ""),
+                        )
+                    }
+                    result.success(list)
+                }
+
+                "importPackage" -> {
+                    val path = call.argument<String>("path")
+                    val force = call.argument<Boolean>("force") ?: false
+                    if (path == null) {
+                        result.error("BAD_ARGS", "缺少 path", null)
+                    } else {
+                        thread {
+                            try {
+                                val manifest = RuntimeInstaller.importPackage(
+                                    applicationContext, path, force = force,
+                                )
+                                runOnUiThread {
+                                    result.success(
+                                        mapOf(
+                                            "id" to manifest.id,
+                                            "type" to manifest.type,
+                                            "name" to manifest.name,
+                                            "version" to manifest.version,
+                                            "description" to (manifest.description ?: ""),
+                                            "author" to (manifest.author ?: ""),
+                                        ),
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("IMPORT_FAILED", e.message, null) }
+                            }
+                        }
+                    }
+                }
+
+                "deleteRuntime" -> {
+                    val id = call.argument<String>("id")
+                    if (id == null) {
+                        result.error("BAD_ARGS", "缺少 id", null)
+                    } else {
+                        RuntimeInstaller.deleteRuntime(applicationContext, id)
+                        result.success(null)
+                    }
+                }
+
+                "isRuntimeRunning" -> {
+                    val id = call.argument<String>("id")
+                    if (id == null) {
+                        result.error("BAD_ARGS", "缺少 id", null)
+                    } else {
+                        val serverRunning = serverManager.activeRuntimeId == id
+                        val tunnelRunning = tunnelManager.isRunning &&
+                            RuntimeInstaller.installedFrpc(applicationContext)?.id == id
+                        result.success(serverRunning || tunnelRunning)
+                    }
                 }
 
                 else -> result.notImplemented()
@@ -1189,14 +1264,11 @@ class MainActivity : FlutterActivity() {
         val nativeDir = applicationContext.applicationInfo.nativeLibraryDir
         val tagfixLib = "$nativeDir/libtagfix.so"
 
-        // 确保 JRE 已解压。
-        if (!RuntimeInstaller.isInstalled(applicationContext, javaVersion)) {
-            emitForgeEvent(sink, mainHandler, "[EdgeCube] 正在解压 $javaVersion 运行时…")
-            RuntimeInstaller.install(applicationContext, javaVersion)
-            emitForgeEvent(sink, mainHandler, "[EdgeCube] $javaVersion 运行时就绪")
-        }
+        // 确保 JRE 已安装。
+        val manifest = RuntimeInstaller.installedRuntime(applicationContext, javaVersion)
+            ?: throw IllegalStateException("JRE 运行时 $javaVersion 未安装，请先在「管理 → 运行环境」导入")
 
-        val jreDir = RuntimeInstaller.jreDir(applicationContext, javaVersion)
+        val jreDir = RuntimeInstaller.runtimeDir(applicationContext, javaVersion)
         val resolved = JreLayout.resolve(jreDir, nativeDir)
         val launchBin = File(nativeDir, "liblaunch.so")
         if (!launchBin.exists()) {
@@ -1226,6 +1298,22 @@ class MainActivity : FlutterActivity() {
         env["FCL_NATIVEDIR"] = nativeDir
         env["POJAV_NATIVEDIR"] = nativeDir
         env["PATH"] = "${jreDir.absolutePath}/bin:${System.getenv("PATH") ?: ""}"
+        // 叠加清单 env
+        for ((key, rawValue) in manifest.env) {
+            if (key.startsWith("EC_") || key == "LD_PRELOAD" || key == "TMPDIR") continue
+            val value = rawValue.replace("\${RUNTIME_DIR}", jreDir.absolutePath)
+            when (key) {
+                "PATH" -> {
+                    val existing = env["PATH"] ?: ""
+                    env[key] = if (existing.isEmpty()) value else "$value:$existing"
+                }
+                "LD_LIBRARY_PATH" -> {
+                    val existing = env["LD_LIBRARY_PATH"] ?: ""
+                    env[key] = if (existing.isEmpty()) value else "$value:$existing"
+                }
+                else -> env[key] = value
+            }
+        }
 
         emitForgeEvent(sink, mainHandler, "[EdgeCube] 开始安装 Forge 服务端…")
         val p = pb.start()

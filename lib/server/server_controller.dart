@@ -714,20 +714,27 @@ class ServerController extends ChangeNotifier {
   void _triggerTunnel() {
     final resolver = tunnelEnabledResolver;
     if (resolver == null) return;
-    resolver().then((enabled) {
-      if (enabled) _startTunnelWithConfig(null);
+    resolver().then((enabled) async {
+      if (enabled) {
+        final runtimeId = await NetworkStore.loadFrpcRuntimeId();
+        _startTunnelWithConfig(null, runtimeId: runtimeId);
+      }
     });
   }
 
   /// 使用指定配置启动 FRP 隧道（config 为 null 时从 config/network.json 读取）。
-  void _startTunnelWithConfig(FrpcConfig? config) {
+  void _startTunnelWithConfig(FrpcConfig? config, {String? runtimeId}) {
     final dir = _workingDir;
     if (dir == null || _tunnelActive) return;
     _tunnelActive = true;
-    _doStartTunnel(config, dir);
+    _doStartTunnel(config, dir, runtimeId: runtimeId);
   }
 
-  Future<void> _doStartTunnel(FrpcConfig? config, String dir) async {
+  Future<void> _doStartTunnel(
+    FrpcConfig? config,
+    String dir, {
+    String? runtimeId,
+  }) async {
     try {
       // 优先处理「直接编辑配置文件」模式：使用用户编辑的原始 TOML，
       // 不再注入 localPort（由用户在配置文件中自行维护）。
@@ -746,7 +753,7 @@ class ServerController extends ChangeNotifier {
             return;
           }
           final path = await _tunnel.writeRawConfig(raw);
-          await _tunnel.start(configPath: path, name: 'frpc');
+          await _tunnel.start(configPath: path, name: 'frpc', runtimeId: runtimeId);
           _activeFrpcConfig = null;
           _notice('[EdgeCube] FRP 隧道已启动（自定义配置）');
           notifyListeners();
@@ -785,7 +792,11 @@ class ServerController extends ChangeNotifier {
         return;
       }
       final path = await _tunnel.writeConfig(finalConfig);
-      await _tunnel.start(configPath: path, name: finalConfig.proxyName);
+      await _tunnel.start(
+        configPath: path,
+        name: finalConfig.proxyName,
+        runtimeId: runtimeId,
+      );
       _activeFrpcConfig = finalConfig;
       _notice('[EdgeCube] FRP 隧道已启动（本地端口 $localPort）');
       notifyListeners();
@@ -821,9 +832,9 @@ class ServerController extends ChangeNotifier {
 
   /// 立即启用 FRP 隧道（用户在 UI 中打开开关时调用）。
   /// [config] 可选，传入当前 UI 配置；为 null 时从 config/network.json 读取。
-  void enableTunnelNow([FrpcConfig? config]) {
+  void enableTunnelNow([FrpcConfig? config, String? runtimeId]) {
     if (_tunnelActive || _status != ServerStatus.running) return;
-    _startTunnelWithConfig(config);
+    _startTunnelWithConfig(config, runtimeId: runtimeId);
   }
 
   /// 立即停用 FRP 隧道（用户在 UI 中关闭开关时调用）。
@@ -833,13 +844,13 @@ class ServerController extends ChangeNotifier {
   }
 
   /// 以指定配置重启 FRP 隧道（用户在运行中修改配置后调用）。
-  Future<void> applyTunnelConfig(FrpcConfig config) async {
+  Future<void> applyTunnelConfig(FrpcConfig config, [String? runtimeId]) async {
     if (!_tunnelActive || _status != ServerStatus.running) return;
     _restartingTunnel = true;
     await _tunnel.stop();
     await Future.delayed(const Duration(milliseconds: 300));
     if (_status == ServerStatus.running && _workingDir != null) {
-      _doStartTunnel(config, _workingDir!);
+      _doStartTunnel(config, _workingDir!, runtimeId: runtimeId);
     }
     _restartingTunnel = false;
   }
@@ -853,7 +864,8 @@ class ServerController extends ChangeNotifier {
     await _tunnel.stop();
     await Future.delayed(const Duration(milliseconds: 300));
     if (_status == ServerStatus.running && _workingDir != null) {
-      _doStartTunnel(null, _workingDir!);
+      final runtimeId = await NetworkStore.loadFrpcRuntimeId();
+      _doStartTunnel(null, _workingDir!, runtimeId: runtimeId);
     }
     _restartingTunnel = false;
   }

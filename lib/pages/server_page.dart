@@ -13,19 +13,14 @@ import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
 import '../online/error_report_service.dart';
 import '../online/online_service.dart';
+import '../route_observer.dart';
+import '../server/runtime_service.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
+import 'runtime_page.dart';
 import '../server/system_monitor_scope.dart';
 import '../server/system_monitor_service.dart';
 import '../widgets/placeholder_page.dart';
-
-/// 各内置运行时版本的展示名（JRE 与 PHP）。
-const Map<String, String> _kVersionLabels = {
-  'jre17': 'Java 17',
-  'jre21': 'Java 21',
-  'jre25': 'Java 25',
-  'php8.2': 'PHP 8.2',
-};
 
 class ServerPage extends StatelessWidget {
   const ServerPage({super.key, required this.onlineService});
@@ -62,7 +57,7 @@ class ServerPage extends StatelessWidget {
 }
 
 /// 启动所需的上下文：实例工作目录、可作为服务端的文件列表（.jar / .phar）、
-/// 当前架构可用的 JRE 版本与 PHP 运行时。
+/// 当前架构可用的 JRE 版本与 PHP 运行时，以及运行时 id→名称映射。
 class _LaunchContext {
   const _LaunchContext({
     required this.workingDir,
@@ -70,6 +65,7 @@ class _LaunchContext {
     required this.phars,
     required this.versions,
     required this.phpRuntimes,
+    required this.runtimeNames,
   });
 
   final String workingDir;
@@ -77,6 +73,7 @@ class _LaunchContext {
   final List<String> phars;
   final List<String> versions;
   final List<String> phpRuntimes;
+  final Map<String, String> runtimeNames;
 }
 
 /// 选中实例的服务端控制面板：状态、启动配置与启动/停止操作。
@@ -99,7 +96,8 @@ class _ServerControlPanel extends StatefulWidget {
   State<_ServerControlPanel> createState() => _ServerControlPanelState();
 }
 
-class _ServerControlPanelState extends State<_ServerControlPanel> {
+class _ServerControlPanelState extends State<_ServerControlPanel>
+    with RouteAware {
   late final TextEditingController _memController;
   late final TextEditingController _jvmArgsController;
   String _runtime = kRuntimeJava;
@@ -126,6 +124,15 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     // 设置崩溃回调：服务端意外退出时弹出报告弹窗。
     final server = ServerScope.of(context);
     server.onCrashExit = _onCrashExit;
+    // 监听运行时导入/删除，自动刷新可用运行时列表。
+    RuntimeService.refreshSignal.addListener(_onRuntimesChanged);
+  }
+
+  /// 运行时列表变化时重新加载上下文。
+  void _onRuntimesChanged() {
+    if (mounted) {
+      setState(() => _ctxFuture = _loadContext());
+    }
   }
 
   /// 服务端意外退出回调。
@@ -144,6 +151,15 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     super.didChangeDependencies();
     // key 绑定实例 id，State 在实例不变期间复用，故只加载一次。
     _ctxFuture ??= _loadContext();
+    // 订阅路由事件，从运行环境页返回时自动刷新可用运行时列表。
+    appRouteObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void didPopNext() {
+    if (mounted) {
+      setState(() => _ctxFuture = _loadContext());
+    }
   }
 
   @override
@@ -170,6 +186,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
 
   @override
   void dispose() {
+    RuntimeService.refreshSignal.removeListener(_onRuntimesChanged);
+    appRouteObserver.unsubscribe(this);
     _memController.dispose();
     _jvmArgsController.dispose();
     super.dispose();
@@ -253,12 +271,18 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     phars.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     final versions = await server.availableVersions();
     final phpRuntimes = await server.availablePhpRuntimes();
+    final runtimeService = const RuntimeService();
+    final runtimes = await runtimeService.installedRuntimes();
+    final runtimeNames = <String, String>{
+      for (final rt in runtimes) rt.id: rt.name,
+    };
     return _LaunchContext(
       workingDir: dir.path,
       jars: jars,
       phars: phars,
       versions: versions,
       phpRuntimes: phpRuntimes,
+      runtimeNames: runtimeNames,
     );
   }
 
@@ -289,9 +313,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     // PHP（PocketMine）：用 PHP 运行时执行选中的 .phar。
     if (_isPhp) {
       if (ctx.phpRuntimes.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('server.phpUnsupported'))),
-        );
+        _showRuntimeRequiredDialog(isJava: false);
         return;
       }
       if (file == null) {
@@ -310,6 +332,12 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         programArgs: [file],
         compatMode: _compatMode,
       );
+      return;
+    }
+
+    // Java：需要至少一个 JRE 运行时。
+    if (ctx.versions.isEmpty) {
+      _showRuntimeRequiredDialog(isJava: true);
       return;
     }
 
@@ -338,6 +366,39 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       programArgs: ['-jar', file, 'nogui'],
       compatMode: _compatMode,
     );
+  }
+
+  /// 未安装对应运行时，提示用户前往「运行环境」页导入。
+  Future<void> _showRuntimeRequiredDialog({required bool isJava}) async {
+    final tr = LocaleScope.of(context).translations;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr.get('server.runtimeRequiredTitle')),
+        content: Text(
+          tr.get(
+            isJava
+                ? 'server.runtimeRequiredContentJava'
+                : 'server.runtimeRequiredContentPhp',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(tr.get('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(tr.get('server.runtimeRequiredAction')),
+          ),
+        ],
+      ),
+    );
+    if (go == true && mounted) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const RuntimePage()),
+      );
+    }
   }
 
   /// 解析自定义 JVM 参数文本（每行或空格分隔）为参数列表。
@@ -486,6 +547,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                     const SizedBox(height: 16),
                     // 运行环境：Java（JVM 跑 .jar）/ PHP（PocketMine 跑 .phar）。
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       initialValue: _runtime,
                       decoration: InputDecoration(
                         labelText: context.tr('server.runtimeLabel'),
@@ -500,6 +562,22 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                         DropdownMenuItem(
                           value: kRuntimePhp,
                           child: Text(context.tr('server.runtimePhp')),
+                        ),
+                      ],
+                      selectedItemBuilder: (context) => [
+                        DropdownMenuItem<String>(
+                          value: kRuntimeJava,
+                          child: Text(
+                            context.tr('server.runtimeJava'),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        DropdownMenuItem<String>(
+                          value: kRuntimePhp,
+                          child: Text(
+                            context.tr('server.runtimePhp'),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                       onChanged: (v) {
@@ -528,6 +606,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                     const SizedBox(height: 16),
                     if (!_isPhp) ...[
                       DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: ctx.versions.contains(_version)
                             ? _version
                             : null,
@@ -540,7 +619,17 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                           for (final v in ctx.versions)
                             DropdownMenuItem(
                               value: v,
-                              child: Text(_kVersionLabels[v] ?? v),
+                              child: Text(ctx.runtimeNames[v] ?? v),
+                            ),
+                        ],
+                        selectedItemBuilder: (context) => [
+                          for (final v in ctx.versions)
+                            DropdownMenuItem<String>(
+                              value: v,
+                              child: Text(
+                                ctx.runtimeNames[v] ?? v,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                         ],
                         onChanged: (v) {
@@ -569,7 +658,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                         ),
                         child: Text(
                           ctx.phpRuntimes.isNotEmpty
-                              ? (_kVersionLabels[ctx.phpRuntimes.first] ??
+                              ? (ctx.runtimeNames[ctx.phpRuntimes.first] ??
                                     ctx.phpRuntimes.first)
                               : context.tr('server.phpArchUnsupported'),
                         ),

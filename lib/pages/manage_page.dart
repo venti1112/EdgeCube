@@ -6,6 +6,7 @@ import 'players_page.dart';
 import 'port_mapping_page.dart';
 import 'ftp_page.dart';
 import 'mcp_page.dart';
+import 'runtime_page.dart';
 import 'server_properties_page.dart';
 import 'shell_page.dart';
 import 'ssh_page.dart';
@@ -75,6 +76,15 @@ class ManagePage extends StatelessWidget {
               onTap: () => Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const McpPage())),
+            ),
+            const SizedBox(height: 12),
+            _ManageEntryTile(
+              icon: Icons.memory,
+              title: context.tr('manage.runtime.title'),
+              subtitle: context.tr('manage.runtime.subtitle'),
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const RuntimePage())),
             ),
             const SizedBox(height: 12),
             _ManageEntryTile(

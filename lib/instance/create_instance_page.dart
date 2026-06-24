@@ -19,6 +19,7 @@ import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
 import '../net/msl_mirror.dart';
+import '../server/server_service.dart';
 
 enum _WizardStep {
   nameEntry,
@@ -610,7 +611,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
     try {
       final mcVersion = _selectedForgeMcVersion!;
-      final javaVer = _javaVersionForMc(mcVersion);
+      final javaVer = await _resolveJavaVersion(mcVersion);
 
       final exitCode = await _forgeChannel.invokeMethod<int>('runInstaller', {
         'installerJar': installerPath,
@@ -865,7 +866,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
             ? '1.${nfParts[0]}.${nfParts[1]}'
             : mcVersion;
       }
-      final javaVer = _javaVersionForMc(mcVerForJava);
+      final javaVer = await _resolveJavaVersion(mcVerForJava);
 
       final exitCode = await _forgeChannel.invokeMethod<int>('runInstaller', {
         'installerJar': installerPath,
@@ -1036,7 +1037,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       final mcVersion = _serverType == 'fabric'
           ? (_selectedMcVersion ?? '')
           : (_serverType == 'velocity' ? '1.21' : (_selectedVersion ?? ''));
-      final javaVer = _javaVersionForMc(mcVersion);
+      final javaVer = await _resolveJavaVersion(mcVersion);
       await _instanceController.updateConfig(
         instanceId,
         selectedJar: 'server.jar',
@@ -1078,6 +1079,15 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       return 'jre17';
     }
     return 'jre17';
+  }
+
+  /// 根据 MC 版本推断首选 Java 版本；若该版本未安装，回退到首个已安装 JRE。
+  static Future<String> _resolveJavaVersion(String mcVersion) async {
+    final preferred = _javaVersionForMc(mcVersion);
+    final available = await ServerService().availableVersions();
+    if (available.contains(preferred)) return preferred;
+    if (available.isEmpty) return preferred;
+    return available.first;
   }
 
   /// 根据下载信息校验文件哈希（Vanilla 用 SHA-1，Paper 用 SHA-256）。

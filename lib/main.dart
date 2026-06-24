@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'config/config_migration.dart';
 import 'config/network_store.dart';
 import 'config/version_store.dart';
+import 'route_observer.dart';
 import 'ftp/ftp_controller.dart';
 import 'ftp/ftp_scope.dart';
 import 'home_shell.dart';
@@ -295,6 +296,7 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                                 theme: ThemeData(colorScheme: lightScheme),
                                 darkTheme: ThemeData(colorScheme: darkScheme),
                                 themeMode: _themeMode,
+                                navigatorObservers: [appRouteObserver],
                                 builder: (context, child) {
                                   final content =
                                       child ?? const SizedBox.shrink();

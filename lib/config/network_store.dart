@@ -19,6 +19,7 @@ class NetworkStore {
   static const String _upnpKey = 'upnpEnabled';
   static const String _tunnelKey = 'tunnelEnabled';
   static const String _frpcKey = 'frpc';
+  static const String _frpcRuntimeIdKey = 'frpcRuntimeId';
   static const String _useCustomFrpcKey = 'useCustomFrpc';
   static const String _useMirrorKey = 'useMirror';
   static const String _mirrorAskedKey = 'mirrorAsked';
@@ -112,6 +113,21 @@ class NetworkStore {
   static Future<void> saveFrpc(FrpcConfig config) async {
     final m = await ConfigStore.readConfig(_fileName);
     m[_frpcKey] = config.toJsonMap();
+    await ConfigStore.writeConfig(_fileName, m);
+  }
+
+  static Future<String?> loadFrpcRuntimeId() async {
+    final m = await ConfigStore.readConfig(_fileName);
+    return m[_frpcRuntimeIdKey] as String?;
+  }
+
+  static Future<void> saveFrpcRuntimeId(String? value) async {
+    final m = await ConfigStore.readConfig(_fileName);
+    if (value == null) {
+      m.remove(_frpcRuntimeIdKey);
+    } else {
+      m[_frpcRuntimeIdKey] = value;
+    }
     await ConfigStore.writeConfig(_fileName, m);
   }
 }

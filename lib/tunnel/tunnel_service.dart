@@ -32,8 +32,16 @@ class TunnelService {
       await _method.invokeMethod<bool>('isRunning') ?? false;
 
   /// 启动 frpc。首次运行含解压，可能耗时数秒。
-  Future<void> start({required String configPath, required String name}) =>
-      _method.invokeMethod('start', {'configPath': configPath, 'name': name});
+  Future<void> start({
+    required String configPath,
+    required String name,
+    String? runtimeId,
+  }) =>
+      _method.invokeMethod('start', {
+        'configPath': configPath,
+        'name': name,
+        'runtimeId': runtimeId,
+      });
 
   /// 优雅停止（SIGTERM，触发 frpc GracefulClose）。
   Future<void> stop() => _method.invokeMethod('stop');

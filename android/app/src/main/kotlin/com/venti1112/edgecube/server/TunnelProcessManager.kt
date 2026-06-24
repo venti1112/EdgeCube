@@ -100,24 +100,25 @@ class TunnelProcessManager private constructor(private val appContext: Context) 
      *
      * @param configPath frpc 配置文件（toml/yaml/json）的绝对路径。
      * @param name       隧道显示名（用于事件回传与通知）。
+     * @param runtimeId  指定使用的 frpc 运行时 id；null 或空时自动选取首个已安装 frpc。
      */
     @Synchronized
-    fun start(configPath: String, name: String) {
+    fun start(configPath: String, name: String, runtimeId: String? = null) {
         if (isRunning) throw IllegalStateException("隧道已在运行，请先停止")
 
         val cfg = File(configPath)
         if (!cfg.isFile) throw IllegalStateException("配置文件不存在：$configPath")
 
-        if (!RuntimeInstaller.isFrpcInstalled(appContext)) {
-            currentStatus = STATUS_PREPARING
-            emitLog("[EdgeCube] 正在解压 frpc 运行时，请稍候…")
-            RuntimeInstaller.installFrpc(appContext)
-            emitLog("[EdgeCube] frpc 运行时就绪")
+        val manifest = when {
+            !runtimeId.isNullOrEmpty() -> RuntimeInstaller.installedRuntime(appContext, runtimeId)
+                ?: throw IllegalStateException("frpc 运行时未安装：$runtimeId")
+            else -> RuntimeInstaller.installedFrpc(appContext)
+                ?: throw IllegalStateException("frpc 运行时未安装，请先在「管理 → 运行环境」导入")
         }
-
-        val frpcLib = RuntimeInstaller.frpcLib(appContext)
-        if (!frpcLib.exists()) {
-            throw IllegalStateException("未找到 frpc 引擎库：${frpcLib.absolutePath}")
+        val runtimeDir = RuntimeInstaller.runtimeDir(appContext, manifest.id)
+        val launcherLib = File(runtimeDir, manifest.launcher.lib)
+        if (!launcherLib.exists()) {
+            throw IllegalStateException("未找到 frpc 引擎库：${launcherLib.absolutePath}")
         }
 
         val nativeDir = appContext.applicationInfo.nativeLibraryDir
@@ -133,11 +134,13 @@ class TunnelProcessManager private constructor(private val appContext: Context) 
         pb.directory(workDir)
         pb.redirectErrorStream(true) // stderr 合并进 stdout，统一一条日志流
         val env = pb.environment()
-        env["EC_FRPC_LIB"] = frpcLib.absolutePath
-        env["LD_LIBRARY_PATH"] = "${RuntimeInstaller.frpcLibDir(appContext).absolutePath}:$nativeDir"
+        env["EC_FRPC_LIB"] = launcherLib.absolutePath
+        env["LD_LIBRARY_PATH"] = "${launcherLib.parentFile?.absolutePath}:$nativeDir"
         env["HOME"] = workDir.absolutePath
         env["TMPDIR"] = appContext.cacheDir.absolutePath
         env["LANG"] = "en_US.UTF-8"
+        // 叠加清单中的 env
+        applyManifestEnv(env, manifest, runtimeDir)
 
         val p = pb.start()
         process = p
@@ -175,6 +178,34 @@ class TunnelProcessManager private constructor(private val appContext: Context) 
                     currentStatus = null
                     emitState(null, name2, code)
                 }
+            }
+        }
+    }
+
+    /**
+     * 叠加清单中的 env 到基础环境。
+     * - ${RUNTIME_DIR} 替换为运行时根目录绝对路径
+     * - PATH / LD_LIBRARY_PATH 采用追加而非覆盖
+     * - EC_* / LD_PRELOAD / TMPDIR 不允许被包覆盖
+     */
+    private fun applyManifestEnv(
+        env: MutableMap<String, String>,
+        manifest: EcManifest,
+        runtimeDir: File,
+    ) {
+        for ((key, rawValue) in manifest.env) {
+            if (key.startsWith("EC_") || key == "LD_PRELOAD" || key == "TMPDIR") continue
+            val value = rawValue.replace("\${RUNTIME_DIR}", runtimeDir.absolutePath)
+            when (key) {
+                "PATH" -> {
+                    val existing = env["PATH"] ?: ""
+                    env[key] = if (existing.isEmpty()) value else "$value:$existing"
+                }
+                "LD_LIBRARY_PATH" -> {
+                    val existing = env["LD_LIBRARY_PATH"] ?: ""
+                    env[key] = if (existing.isEmpty()) value else "$value:$existing"
+                }
+                else -> env[key] = value
             }
         }
     }

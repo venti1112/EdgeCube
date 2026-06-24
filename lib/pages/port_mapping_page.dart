@@ -6,8 +6,10 @@ import 'package:flutter/services.dart';
 import '../config/network_store.dart';
 import '../files/text_editor_page.dart';
 import '../i18n/locale_scope.dart';
+import '../server/runtime_service.dart';
 import '../server/server_scope.dart';
 import '../tunnel/tunnel_service.dart';
+import 'runtime_page.dart';
 
 /// 网络映射页：UPnP 自动端口映射 + FRP 隧道，均随服务器自动启停。
 ///
@@ -37,6 +39,10 @@ class _PortMappingPageState extends State<PortMappingPage> {
   final _remotePort = TextEditingController(text: '25565');
   String _proxyType = 'tcp';
 
+  // —— frpc 运行时 ——
+  List<RuntimeInfo> _frpcRuntimes = [];
+  String? _selectedFrpcRuntimeId;
+
   // —— 隧道运行状态 ——
   String? _tunnelStatus;
   final List<String> _logs = [];
@@ -48,10 +54,12 @@ class _PortMappingPageState extends State<PortMappingPage> {
     super.initState();
     _loadAll();
     _subscribe();
+    RuntimeService.refreshSignal.addListener(_onRuntimesChanged);
   }
 
   @override
   void dispose() {
+    RuntimeService.refreshSignal.removeListener(_onRuntimesChanged);
     _sub?.cancel();
     _logScroll.dispose();
     for (final c in [
@@ -73,11 +81,20 @@ class _PortMappingPageState extends State<PortMappingPage> {
     final tunnel = await NetworkStore.loadTunnelEnabled();
     final frpc = await NetworkStore.loadFrpc();
     final useCustom = await NetworkStore.loadUseCustomFrpc();
+    final runtimeId = await NetworkStore.loadFrpcRuntimeId();
+    final runtimes = await const RuntimeService().installedFrpcRuntimes();
     if (!mounted) return;
     setState(() {
       _upnpEnabled = upnp;
       _tunnelEnabled = tunnel;
       _useCustomFrpc = useCustom;
+      _frpcRuntimes = runtimes;
+      if (runtimes.isNotEmpty) {
+        final valid = runtimes.any((r) => r.id == runtimeId);
+        _selectedFrpcRuntimeId = valid ? runtimeId : runtimes.first.id;
+      } else {
+        _selectedFrpcRuntimeId = null;
+      }
       if (frpc != null) {
         _serverAddr.text = frpc.serverAddr;
         _serverPort.text = '${frpc.serverPort}';
@@ -87,6 +104,10 @@ class _PortMappingPageState extends State<PortMappingPage> {
         _remotePort.text = '${frpc.remotePort}';
       }
     });
+  }
+
+  void _onRuntimesChanged() {
+    if (mounted) _loadAll();
   }
 
   // —— 保存 + 即时生效 ——
@@ -121,12 +142,16 @@ class _PortMappingPageState extends State<PortMappingPage> {
   }
 
   Future<void> _setTunnel(bool value) async {
+    if (value && _frpcRuntimes.isEmpty) {
+      _showFrpcRequiredDialog();
+      return;
+    }
     await NetworkStore.saveTunnelEnabled(value);
     if (!mounted) return;
     setState(() => _tunnelEnabled = value);
     final server = ServerScope.of(context);
     if (value) {
-      server.enableTunnelNow(_buildFrpcConfig());
+      server.enableTunnelNow(_buildFrpcConfig(), _selectedFrpcRuntimeId);
     } else {
       server.disableTunnelNow();
     }
@@ -136,11 +161,12 @@ class _PortMappingPageState extends State<PortMappingPage> {
     // 持久化到 config/network.json。
     final config = _buildFrpcConfig();
     await NetworkStore.saveFrpc(config);
+    await NetworkStore.saveFrpcRuntimeId(_selectedFrpcRuntimeId);
     if (!mounted) return;
     // 若隧道正在运行，即时重启以应用新配置。
     final server = ServerScope.of(context);
     if (server.isRunning) {
-      server.applyTunnelConfig(config);
+      server.applyTunnelConfig(config, _selectedFrpcRuntimeId);
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -149,6 +175,34 @@ class _PortMappingPageState extends State<PortMappingPage> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  /// 未安装 frpc 运行时，提示用户前往「运行环境」页导入。
+  Future<void> _showFrpcRequiredDialog() async {
+    final tr = LocaleScope.of(context).translations;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr.get('server.runtimeRequiredTitle')),
+        content: Text(tr.get('portMapping.frpcRequiredContent')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(tr.get('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(tr.get('server.runtimeRequiredAction')),
+          ),
+        ],
+      ),
+    );
+    if (go == true && mounted) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const RuntimePage()),
+      );
+      if (mounted) _loadAll();
+    }
   }
 
   // —— 自定义配置文件模式 ——
@@ -323,11 +377,15 @@ class _PortMappingPageState extends State<PortMappingPage> {
                 ],
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              child: _buildFrpcRuntimeSelector(theme),
+            ),
             SwitchListTile(
               title: Text(context.tr('portMapping.enableFrp')),
               subtitle: Text(context.tr('portMapping.enableFrpSubtitle')),
               value: _tunnelEnabled,
-              onChanged: _setTunnel,
+              onChanged: _frpcRuntimes.isEmpty ? null : _setTunnel,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
             if (_tunnelEnabled) ...[
@@ -528,6 +586,76 @@ class _PortMappingPageState extends State<PortMappingPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildFrpcRuntimeSelector(ThemeData theme) {
+    if (_frpcRuntimes.isEmpty) {
+      return Card(
+        color: theme.colorScheme.errorContainer,
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Icon(
+                Icons.warning_amber_outlined,
+                size: 18,
+                color: theme.colorScheme.onErrorContainer,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  context.tr('portMapping.frpcRequiredContent'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onErrorContainer,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: _showFrpcRequiredDialog,
+                child: Text(context.tr('server.runtimeRequiredAction')),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final runtimeNames = <String, String>{
+      for (final r in _frpcRuntimes) r.id: '${r.name} (${r.version})',
+    };
+
+    return DropdownButtonFormField<String>(
+      key: ValueKey(_selectedFrpcRuntimeId),
+      isExpanded: true,
+      initialValue: _selectedFrpcRuntimeId,
+      decoration: InputDecoration(
+        labelText: context.tr('portMapping.frpcRuntimeLabel'),
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      items: _frpcRuntimes.map((r) {
+        return DropdownMenuItem(
+          value: r.id,
+          child: Text(runtimeNames[r.id] ?? r.id),
+        );
+      }).toList(),
+      selectedItemBuilder: (context) => _frpcRuntimes.map((r) {
+        return DropdownMenuItem<String>(
+          value: r.id,
+          child: Text(
+            runtimeNames[r.id] ?? r.id,
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      }).toList(),
+      onChanged: (v) {
+        if (v != null) {
+          setState(() => _selectedFrpcRuntimeId = v);
+          NetworkStore.saveFrpcRuntimeId(v);
+        }
+      },
     );
   }
 

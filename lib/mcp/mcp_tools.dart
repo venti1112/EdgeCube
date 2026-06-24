@@ -462,8 +462,11 @@ Future<CallToolResult> _startInstance(
     return _err('未在实例目录找到 .jar，请先放入服务端 jar 文件');
   }
   final versions = await server.availableVersions();
+  if (versions.isEmpty) {
+    return _err('未安装任何 Java 运行环境，请先在「管理 → 运行环境」导入 JRE');
+  }
   var version = instance.javaVersion ?? 'jre21';
-  if (versions.isNotEmpty && !versions.contains(version)) {
+  if (!versions.contains(version)) {
     version = versions.contains('jre21') ? 'jre21' : versions.first;
   }
   final mem = instance.maxMemory ?? 2048;

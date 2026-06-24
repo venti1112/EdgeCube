@@ -87,6 +87,7 @@ class ServerProcessManager private constructor(private val appContext: Context) 
     @Volatile private var eventSink: EventChannel.EventSink? = null
     @Volatile private var runningInstanceId: String? = null
     @Volatile private var runningInstanceName: String? = null
+    @Volatile private var runningRuntimeId: String? = null
     @Volatile private var currentStatus: String? = null
 
     // —— 最近一次由界面上报的终端尺寸；新进程沿用，避免一闪一变。 ——
@@ -97,6 +98,9 @@ class ServerProcessManager private constructor(private val appContext: Context) 
 
     val isRunning: Boolean get() = running
     val activeInstanceId: String? get() = runningInstanceId
+
+    /** 当前正在使用的运行时 id（如 "jre21"/"php8.2"）；未运行时返回 null。 */
+    val activeRuntimeId: String? get() = runningRuntimeId
 
     /** 子进程 PID；未运行时返回 -1。 */
     val pid: Int get() = if (running) processId else -1
@@ -167,15 +171,12 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         val argv = ArrayList<String>()
 
         if (runtime == "php") {
-            if (!RuntimeInstaller.isPhpInstalled(appContext, version)) {
-                currentStatus = STATUS_PREPARING
-                emitNotice("[EdgeCube] 正在解压 PHP 运行时，请稍候…")
-                RuntimeInstaller.installPhp(appContext, version)
-                emitNotice("[EdgeCube] PHP 运行时就绪")
-            }
-            val phpLib = RuntimeInstaller.phpLib(appContext, version)
-            if (!phpLib.exists()) {
-                throw IllegalStateException("未找到 PHP wrapper 库：${phpLib.absolutePath}")
+            val manifest = RuntimeInstaller.installedRuntime(appContext, version)
+                ?: throw IllegalStateException("PHP 运行时 $version 未安装，请先在「管理 → 运行环境」导入")
+            val runtimeDir = RuntimeInstaller.runtimeDir(appContext, version)
+            val launcherLib = File(runtimeDir, manifest.launcher.lib)
+            if (!launcherLib.exists()) {
+                throw IllegalStateException("未找到 PHP wrapper 库：${launcherLib.absolutePath}")
             }
             val loaderBin = File(nativeDir, "libphploader.so")
             if (!loaderBin.exists()) {
@@ -185,24 +186,20 @@ class ServerProcessManager private constructor(private val appContext: Context) 
             argv.add(loaderBin.absolutePath)
             argv.addAll(programArgs) // 即 [phar]
 
-            env["EC_PHP_LIB"] = phpLib.absolutePath
+            env["EC_PHP_LIB"] = launcherLib.absolutePath
             env["LD_PRELOAD"] = tagfixLib
-            env["LD_LIBRARY_PATH"] = "${RuntimeInstaller.phpLibDir(appContext, version).absolutePath}:$nativeDir"
-            env["PHPRC"] = File(RuntimeInstaller.jreDir(appContext, version), "bin").absolutePath
+            env["LD_LIBRARY_PATH"] = "${launcherLib.parentFile?.absolutePath}:$nativeDir"
             env["HOME"] = workingDir
             env["TMPDIR"] = appContext.cacheDir.absolutePath
             env["LANG"] = "en_US.UTF-8"
             env["TERM"] = "xterm-256color"
+            // 叠加清单中的 env（${RUNTIME_DIR} 替换）
+            applyManifestEnv(env, manifest, runtimeDir)
         } else {
-            if (!RuntimeInstaller.isInstalled(appContext, version)) {
-                currentStatus = STATUS_PREPARING
-                emitNotice("[EdgeCube] 正在解压 $version 运行时，请稍候…")
-                RuntimeInstaller.install(appContext, version)
-                emitNotice("[EdgeCube] $version 运行时就绪")
-            }
-
-            val jreDir = RuntimeInstaller.jreDir(appContext, version)
-            val resolved = JreLayout.resolve(jreDir, nativeDir)
+            val manifest = RuntimeInstaller.installedRuntime(appContext, version)
+                ?: throw IllegalStateException("JRE 运行时 $version 未安装，请先在「管理 → 运行环境」导入")
+            val runtimeDir = RuntimeInstaller.runtimeDir(appContext, version)
+            val resolved = JreLayout.resolve(runtimeDir, nativeDir)
             val launchBin = File(nativeDir, "liblaunch.so")
             if (!launchBin.exists()) {
                 throw IllegalStateException("未找到 liblaunch.so，请确认其已随 APK 打包到 lib 目录")
@@ -218,7 +215,7 @@ class ServerProcessManager private constructor(private val appContext: Context) 
             argv.addAll(programArgs)
 
             env["LD_PRELOAD"] = tagfixLib
-            env["JAVA_HOME"] = jreDir.absolutePath
+            env["JAVA_HOME"] = runtimeDir.absolutePath
             env["EC_LIBJLI"] = resolved.libjli.absolutePath
             env["LD_LIBRARY_PATH"] = resolved.ldLibraryPath
             env["HOME"] = workingDir
@@ -229,8 +226,8 @@ class ServerProcessManager private constructor(private val appContext: Context) 
             // FCL/Pojav 修改过的 JRE 需通过这些变量定位 app 的原生库目录
             env["FCL_NATIVEDIR"] = nativeDir
             env["POJAV_NATIVEDIR"] = nativeDir
-            // 把 JRE bin 加入 PATH，供 JVM 内部查找工具
-            env["PATH"] = "${jreDir.absolutePath}/bin:${System.getenv("PATH") ?: ""}"
+            // 叠加清单中的 env（${RUNTIME_DIR} 替换；PATH/LD_LIBRARY_PATH 追加）
+            applyManifestEnv(env, manifest, runtimeDir)
         }
 
         val envp = env.map { "${it.key}=${it.value}" }.toTypedArray()
@@ -257,6 +254,7 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         running = true
         runningInstanceId = instanceId
         runningInstanceName = instanceName
+        runningRuntimeId = version
         currentStatus = STATUS_STARTING
         emitState(STATUS_STARTING, instanceId, instanceName, null)
 
@@ -306,6 +304,7 @@ class ServerProcessManager private constructor(private val appContext: Context) 
                     val name = runningInstanceName
                     runningInstanceId = null
                     runningInstanceName = null
+                    runningRuntimeId = null
                     currentStatus = null
                     emitState(null, id, name, code)
                 }
@@ -473,5 +472,34 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         map["instanceName"] = name
         if (exitCode != null) map["exitCode"] = exitCode
         return map
+    }
+
+    /**
+     * 叠加清单中的 env 到基础环境。
+     * - ${RUNTIME_DIR} 替换为运行时根目录绝对路径
+     * - PATH / LD_LIBRARY_PATH 采用追加而非覆盖
+     * - EC_* / LD_PRELOAD / TMPDIR 不允许被包覆盖
+     */
+    private fun applyManifestEnv(
+        env: HashMap<String, String>,
+        manifest: EcManifest,
+        runtimeDir: File,
+    ) {
+        for ((key, rawValue) in manifest.env) {
+            // App 内部加载器变量不可被包覆盖
+            if (key.startsWith("EC_") || key == "LD_PRELOAD" || key == "TMPDIR") continue
+            val value = rawValue.replace("\${RUNTIME_DIR}", runtimeDir.absolutePath)
+            when (key) {
+                "PATH" -> {
+                    val existing = env["PATH"] ?: ""
+                    env[key] = if (existing.isEmpty()) value else "$value:$existing"
+                }
+                "LD_LIBRARY_PATH" -> {
+                    val existing = env["LD_LIBRARY_PATH"] ?: ""
+                    env[key] = if (existing.isEmpty()) value else "$value:$existing"
+                }
+                else -> env[key] = value
+            }
+        }
     }
 }
