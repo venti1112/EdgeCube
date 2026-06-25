@@ -90,27 +90,45 @@ class _OnlineTabState extends State<_OnlineTab> {
 
   Future<void> _loadContextSets() async {
     final dir = await InstanceScope.of(context).directoryFor(widget.instance);
-    Set<String> loadNames(String fileName, List<dynamic> json) {
-      return json
-          .map((e) => (e['name'] as String? ?? '').toLowerCase())
-          .toSet();
-    }
 
-    Set<String> loadFile(String fileName) {
+    Set<String> loadJsonNames(String fileName) {
       try {
         final file = File(p.join(dir.path, fileName));
         if (!file.existsSync()) return {};
         final json = jsonDecode(file.readAsStringSync()) as List;
-        return loadNames(fileName, json);
+        return json
+            .map((e) => (e['name'] as String? ?? '').toLowerCase())
+            .toSet();
       } catch (_) {
         return {};
       }
     }
 
+    Set<String> loadPlainNames(String fileName) {
+      try {
+        final file = File(p.join(dir.path, fileName));
+        if (!file.existsSync()) return {};
+        return file
+            .readAsLinesSync()
+            .map((l) => l.trim())
+            .where((l) => l.isNotEmpty)
+            .map((l) => l.toLowerCase())
+            .toSet();
+      } catch (_) {
+        return {};
+      }
+    }
+
+    Set<String> loadWithFallback(String jsonFile, String txtFile) {
+      final jsonResult = loadJsonNames(jsonFile);
+      if (jsonResult.isNotEmpty) return jsonResult;
+      return loadPlainNames(txtFile);
+    }
+
     setState(() {
-      _whitelist = loadFile('whitelist.json');
-      _ops = loadFile('ops.json');
-      _bans = loadFile('banned-players.json');
+      _whitelist = loadWithFallback('whitelist.json', 'white-list.txt');
+      _ops = loadWithFallback('ops.json', 'ops.txt');
+      _bans = loadJsonNames('banned-players.json');
     });
   }
 
@@ -398,21 +416,37 @@ class _WhitelistTabState extends State<_WhitelistTab> {
 
   Future<List<_NamedEntry>> _loadWhitelist() async {
     final dir = await InstanceScope.of(context).directoryFor(widget.instance);
-    final file = File(p.join(dir.path, 'whitelist.json'));
-    if (!await file.exists()) return [];
-    try {
-      final json = jsonDecode(await file.readAsString()) as List;
-      return json
-          .map(
-            (e) => _NamedEntry(
-              name: e['name'] as String? ?? '',
-              uuid: e['uuid'] as String? ?? '',
-            ),
-          )
-          .toList();
-    } catch (_) {
-      return [];
+
+    // 优先读取 Java 版 whitelist.json
+    final jsonFile = File(p.join(dir.path, 'whitelist.json'));
+    if (await jsonFile.exists()) {
+      try {
+        final json = jsonDecode(await jsonFile.readAsString()) as List;
+        return json
+            .map(
+              (e) => _NamedEntry(
+                name: e['name'] as String? ?? '',
+                uuid: e['uuid'] as String? ?? '',
+              ),
+            )
+            .toList();
+      } catch (_) {}
     }
+
+    // 回退到 PNX white-list.txt
+    final txtFile = File(p.join(dir.path, 'white-list.txt'));
+    if (await txtFile.exists()) {
+      try {
+        final lines = await txtFile.readAsLines();
+        return lines
+            .map((l) => l.trim())
+            .where((l) => l.isNotEmpty)
+            .map((l) => _NamedEntry(name: l, uuid: ''))
+            .toList();
+      } catch (_) {}
+    }
+
+    return [];
   }
 
   void _refresh() => setState(() => _future = _loadWhitelist());
@@ -555,8 +589,10 @@ class _BansTabState extends State<_BansTab> {
               uuid: e['uuid'] as String? ?? '',
               reason: e['reason'] as String? ?? '',
               source: e['source'] as String? ?? '',
-              expires: e['expires'] as String? ?? '',
-              created: e['created'] as String? ?? '',
+              // PNX uses "expireDate", Java uses "expires"
+              expires: (e['expires'] ?? e['expireDate'] ?? '') as String,
+              // PNX uses "creationDate", Java uses "created"
+              created: (e['created'] ?? e['creationDate'] ?? '') as String,
             ),
           )
           .toList();
@@ -651,7 +687,7 @@ class _BansTabState extends State<_BansTab> {
                                     style: theme.textTheme.bodySmall,
                                   ),
                                 if (e.expires.isNotEmpty &&
-                                    e.expires != 'forever')
+                                    e.expires.toLowerCase() != 'forever')
                                   Text(
                                     context.tr('players.bans.expires', {
                                       'expires': e.expires,
@@ -713,21 +749,37 @@ class _OpsTabState extends State<_OpsTab> {
 
   Future<List<_NamedEntry>> _loadOps() async {
     final dir = await InstanceScope.of(context).directoryFor(widget.instance);
-    final file = File(p.join(dir.path, 'ops.json'));
-    if (!await file.exists()) return [];
-    try {
-      final json = jsonDecode(await file.readAsString()) as List;
-      return json
-          .map(
-            (e) => _NamedEntry(
-              name: e['name'] as String? ?? '',
-              uuid: e['uuid'] as String? ?? '',
-            ),
-          )
-          .toList();
-    } catch (_) {
-      return [];
+
+    // 优先读取 Java 版 ops.json
+    final jsonFile = File(p.join(dir.path, 'ops.json'));
+    if (await jsonFile.exists()) {
+      try {
+        final json = jsonDecode(await jsonFile.readAsString()) as List;
+        return json
+            .map(
+              (e) => _NamedEntry(
+                name: e['name'] as String? ?? '',
+                uuid: e['uuid'] as String? ?? '',
+              ),
+            )
+            .toList();
+      } catch (_) {}
     }
+
+    // 回退到 PNX ops.txt
+    final txtFile = File(p.join(dir.path, 'ops.txt'));
+    if (await txtFile.exists()) {
+      try {
+        final lines = await txtFile.readAsLines();
+        return lines
+            .map((l) => l.trim())
+            .where((l) => l.isNotEmpty)
+            .map((l) => _NamedEntry(name: l, uuid: ''))
+            .toList();
+      } catch (_) {}
+    }
+
+    return [];
   }
 
   void _refresh() => setState(() => _future = _loadOps());

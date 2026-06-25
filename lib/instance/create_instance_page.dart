@@ -1056,7 +1056,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       return;
     }
 
-    await _downloadJar(instanceId, info);
+    final jarName =
+        _serverType == 'powernukkitx' ? 'powernukkitx.jar' : 'server.jar';
+    await _downloadJar(instanceId, info, jarName: jarName);
   }
 
   /// Fabric 下载流程：获取最新 Installer 版本并构造下载 URL。
@@ -1085,7 +1087,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     await _downloadJar(instanceId, info);
   }
 
-  Future<void> _downloadJar(String instanceId, _DownloadInfo info) async {
+  Future<void> _downloadJar(
+    String instanceId,
+    _DownloadInfo info, {
+    String jarName = 'server.jar',
+  }) async {
     setState(() {
       _downloadProgress = null;
       _downloadError = null;
@@ -1107,7 +1113,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       }
 
       final dir = await _instanceController.directoryForId(instanceId);
-      final file = File(p.join(dir.path, 'server.jar'));
+      final file = File(p.join(dir.path, jarName));
 
       final contentLength = response.contentLength;
       int received = 0;
@@ -1136,13 +1142,18 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         return;
       }
 
-      final mcVersion = _serverType == 'fabric'
-          ? (_selectedMcVersion ?? '')
-          : (_serverType == 'velocity' ? '1.21' : (_selectedVersion ?? ''));
-      final javaVer = await _resolveJavaVersion(mcVersion);
+      final String javaVer;
+      if (_serverType == 'powernukkitx') {
+        javaVer = await _resolveJavaVersion('1.20.5');
+      } else {
+        final mcVersion = _serverType == 'fabric'
+            ? (_selectedMcVersion ?? '')
+            : (_serverType == 'velocity' ? '1.21' : (_selectedVersion ?? ''));
+        javaVer = await _resolveJavaVersion(mcVersion);
+      }
       await _instanceController.updateConfig(
         instanceId,
-        selectedJar: 'server.jar',
+        selectedJar: jarName,
         javaVersion: javaVer,
       );
 
@@ -1473,6 +1484,13 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           title: context.tr('instance.neoforgeTitle'),
           subtitle: context.tr('instance.neoforgeSubtitle'),
           onTap: () => _selectServerType('neoforge'),
+        ),
+        const SizedBox(height: 12),
+        _ServerTypeTile(
+          icon: Icons.phone_android_outlined,
+          title: context.tr('instance.powernukkitxTitle'),
+          subtitle: context.tr('instance.powernukkitxSubtitle'),
+          onTap: () => _selectServerType('powernukkitx'),
         ),
       ],
     );
@@ -1943,6 +1961,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       return _fetchVanillaVersions();
     } else if (type == 'paper') {
       return _fetchPaperVersions();
+    } else if (type == 'powernukkitx') {
+      return _fetchPowernukkitxVersions();
     } else {
       return _fetchVelocityVersions();
     }
@@ -2172,6 +2192,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       return _fetchVanillaDownloadInfo(version);
     } else if (_serverType == 'velocity') {
       return _fetchVelocityDownloadInfo(version);
+    } else if (_serverType == 'powernukkitx') {
+      return _fetchPowernukkitxDownloadInfo(version);
     } else {
       return _fetchPaperDownloadInfo(version);
     }
@@ -2304,6 +2326,61 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
               as String;
       final downloadUrl = serverDefault['url'] as String;
       return _DownloadInfo(url: downloadUrl, sha256: sha256);
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 从 GitHub Releases 获取 PowerNukkitX 版本列表（tag_name）。
+  Future<List<String>> _fetchPowernukkitxVersions() async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://api.github.com/repos/PowerNukkitX/PowerNukkitX/releases',
+        ),
+      );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as List<dynamic>;
+      return json
+          .map<String>((r) => (r as Map<String, dynamic>)['tag_name'] as String)
+          .toList();
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 从 GitHub Release Assets 获取 PowerNukkitX 指定版本的 jar 下载 URL。
+  Future<_DownloadInfo> _fetchPowernukkitxDownloadInfo(
+    String version,
+  ) async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://api.github.com/repos/PowerNukkitX/PowerNukkitX/releases/tags/$version',
+        ),
+      );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final assets = json['assets'] as List<dynamic>;
+      // 优先匹配 shaded jar，否则取第一个 jar。
+      String? downloadUrl;
+      for (final asset in assets) {
+        final name = (asset as Map<String, dynamic>)['name'] as String;
+        if (name.endsWith('.jar')) {
+          downloadUrl = asset['browser_download_url'] as String;
+          if (name.toLowerCase().contains('shaded')) break;
+        }
+      }
+      if (downloadUrl == null) {
+        throw Exception('No JAR found in release $version');
+      }
+      return _DownloadInfo(url: downloadUrl);
     } finally {
       client.close();
     }

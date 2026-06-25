@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:xterm/xterm.dart';
 
+import 'pnx_properties.dart';
 import 'server_properties.dart';
 import 'server_service.dart';
 import 'upnp_service.dart';
@@ -17,10 +18,15 @@ import 'runtime_service.dart';
 /// 匹配 Minecraft 服务端日志中玩家加入/离开的正则（兼容英文与中文输出）。
 ///
 /// 捕获组 1 均为玩家名：英文匹配 `Name[/ip] logged in` / `Name left the game`，
-/// 中文匹配 Nukkit 等服务端的 `Name 加入了游戏` / `Name 退出了游戏`。
-final _reJoin = RegExp(r'(\w{1,16})(?:\[/[\d.:]+\] logged in| 加入了游戏)');
-final _reLeave = RegExp(r'(\w{1,16})(?: left the game| 退出了游戏)');
-final _reListResp = RegExp(r'online(?:\s*:\s*|\s+)(.*)');
+/// 中文匹配 Nukkit/PowerNukkitX 的 `Name 加入了游戏` / `Name 退出了游戏`。
+final _reJoin = RegExp(r'(\w{1,16})(?:\[/[\d.:]+\] logged in| 加入了游戏|[/\d.:]+\] 登入游戏)');
+final _reLeave = RegExp(r'(\w{1,16})(?: left the game| 退出了游戏|[/\d.:]+\] 登出游戏)');
+
+/// 匹配 `list` 命令响应中的在线玩家列表。
+///
+/// 英文：`There are X of Y players online: name1, name2`
+/// 中文（Nukkit/PNX）：`目前有 X/Y 个玩家在线：name1, name2`
+final _reListResp = RegExp(r'(?:online|在线)[：:]\s*(.*)');
 
 /// 服务端进程的运行状态。
 ///
@@ -137,6 +143,10 @@ class ServerController extends ChangeNotifier {
 
   // —— 用户主动操作标志（区分意外退出与主动停止）——
   bool _userStopping = false;
+
+  // —— PowerNukkitX 首次启动向导自动应答 ——
+  // PNX 首次运行时会弹出交互式向导（语言→许可→跳过→启动），这里自动完成。
+  int _pnxWizardStep = 0; // 0=未触发, 1=等待许可, 2=等待跳过, 3=等待启动
   bool _userForceStopping = false;
 
   // —— UPnP / FRP 即时状态标志 ——
@@ -206,6 +216,7 @@ class ServerController extends ChangeNotifier {
     _compatModeId = instanceId;
     _userStopping = false;
     _userForceStopping = false;
+    _pnxWizardStep = 0;
     _status = ServerStatus.preparing;
     _notice('[EdgeCube] 启动 $instanceName …');
     notifyListeners();
@@ -578,6 +589,7 @@ class ServerController extends ChangeNotifier {
         //（终端内容已由对应的 term 字节呈现，避免重复）。
         _appendLogLine(line);
         _parsePlayerEvent(line);
+        _handlePnxWizard(line);
         notifyListeners();
       case ServerStateEvent(
         :final status,
@@ -650,6 +662,61 @@ class ServerController extends ChangeNotifier {
       } else {
         _onlinePlayers.clear();
       }
+    }
+  }
+
+  /// PowerNukkitX 首次启动向导自动应答。
+  ///
+  /// PNX 首次运行时会弹出交互式向导：语言选择 → 许可证接受 → 跳过向导 → 启动。
+  /// 检测到向导输出后自动发送默认响应，免去用户手动操作。
+  void _handlePnxWizard(String line) {
+    switch (_pnxWizardStep) {
+      case 0:
+        // 检测首次启动向导开始
+        if (line.contains('First-time setup') ||
+            line.contains('Setup Wizard') ||
+            line.contains('Language Selection')) {
+          _pnxWizardStep = 1;
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (_status != ServerStatus.stopped) {
+              _service.sendCommand('chs');
+            }
+          });
+        }
+        break;
+      case 1:
+        // 许可证提示：PNX 输出 "你必须接受此许可证才能继续"
+        if (line.contains('必须接受') || line.contains('接受此许可证')) {
+          _pnxWizardStep = 2;
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (_status != ServerStatus.stopped) {
+              _service.sendCommand('y');
+            }
+          });
+        }
+        break;
+      case 2:
+        // 跳过向导提示：PNX 输出 "你可以选择跳过设置向导"
+        if (line.contains('跳过设置向导')) {
+          _pnxWizardStep = 3;
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (_status != ServerStatus.stopped) {
+              _service.sendCommand('y');
+            }
+          });
+        }
+        break;
+      case 3:
+        // 配置完成：PNX 输出 "你的 PowerNukkitX 服务器现已配置完成"
+        if (line.contains('服务器现已配置完成') || line.contains('server is now configured')) {
+          _pnxWizardStep = 0;
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (_status != ServerStatus.stopped) {
+              _service.sendCommand('y');
+            }
+          });
+        }
+        break;
     }
   }
 
@@ -790,12 +857,18 @@ class ServerController extends ChangeNotifier {
         }
         finalConfig = saved;
       }
-      // 注入实际 localPort。
+      // 注入实际 localPort：优先 server.properties，回退 pnx.yml。
       int localPort = finalConfig.localPort;
       final propsFile = File(p.join(dir, 'server.properties'));
       if (await propsFile.exists()) {
         final props = ServerProperties.parse(await propsFile.readAsString());
         localPort = props.getInt('server-port') ?? 25565;
+      } else {
+        final pnxFile = File(p.join(dir, 'pnx.yml'));
+        if (await pnxFile.exists()) {
+          final pnx = PnxProperties.parse(await pnxFile.readAsString());
+          localPort = pnx.getPort();
+        }
       }
       finalConfig = finalConfig.copyWith(localPort: localPort);
       if (_status != ServerStatus.running) {

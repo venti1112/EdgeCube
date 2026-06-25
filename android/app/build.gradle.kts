@@ -74,6 +74,9 @@ android {
                 "META-INF/NOTICE",
                 "META-INF/NOTICE.txt",
                 "META-INF/*.kotlin_module",
+                // zstd-jni/lz4-java 等 JAR 包含全平台原生库，排除非 Android 的 .dll/.dylib
+                "**/*.dll",
+                "**/*.dylib",
             )
         }
     }

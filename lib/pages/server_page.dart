@@ -259,7 +259,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
             l.contains('spigot') ||
             l.contains('purpur') ||
             l.contains('fabric') ||
-            l.contains('forge')) {
+            l.contains('forge') ||
+            l.contains('powernukkitx') ||
+            l.contains('pnx')) {
           return 1;
         }
         return 2;

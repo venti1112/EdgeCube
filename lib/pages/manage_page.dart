@@ -1,11 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
+import '../instance/instance_scope.dart';
 import 'instance_export_page.dart';
 import 'players_page.dart';
 import 'port_mapping_page.dart';
 import 'ftp_page.dart';
 import 'mcp_page.dart';
+import 'pnx_properties_page.dart';
 import 'runtime_page.dart';
 import 'server_properties_page.dart';
 import 'shell_page.dart';
@@ -33,14 +38,7 @@ class ManagePage extends StatelessWidget {
               ).push(MaterialPageRoute(builder: (_) => const PlayersPage())),
             ),
             const SizedBox(height: 12),
-            _ManageEntryTile(
-              icon: Icons.tune,
-              title: context.tr('manage.serverProperties.title'),
-              subtitle: context.tr('manage.serverProperties.subtitle'),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ServerPropertiesPage()),
-              ),
-            ),
+            _ServerConfigTile(),
             const SizedBox(height: 12),
             _ManageEntryTile(
               icon: Icons.lan_outlined,
@@ -105,6 +103,57 @@ class ManagePage extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 服务器配置入口：自动检测 pnx.yml 或 server.properties 并导航到对应编辑页。
+class _ServerConfigTile extends StatefulWidget {
+  const _ServerConfigTile();
+
+  @override
+  State<_ServerConfigTile> createState() => _ServerConfigTileState();
+}
+
+class _ServerConfigTileState extends State<_ServerConfigTile> {
+  bool? _isPnx; // null = loading
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _detect();
+  }
+
+  Future<void> _detect() async {
+    final ctrl = InstanceScope.of(context);
+    final instance = ctrl.selected;
+    if (instance == null) {
+      if (mounted) setState(() => _isPnx = false);
+      return;
+    }
+    final dir = await ctrl.directoryFor(instance);
+    final pnxExists = File(p.join(dir.path, 'pnx.yml')).existsSync();
+    if (mounted) setState(() => _isPnx = pnxExists);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isPnx = _isPnx;
+    return _ManageEntryTile(
+      icon: Icons.tune,
+      title: isPnx == true
+          ? context.tr('manage.pnxProperties.title')
+          : context.tr('manage.serverProperties.title'),
+      subtitle: isPnx == true
+          ? context.tr('manage.pnxProperties.subtitle')
+          : context.tr('manage.serverProperties.subtitle'),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => isPnx == true
+              ? const PnxPropertiesPage()
+              : const ServerPropertiesPage(),
         ),
       ),
     );

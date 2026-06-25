@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:port_forwarder/port_forwarder.dart';
 
+import 'pnx_properties.dart';
 import 'server_properties.dart';
 
 /// UPnP / NAT-PMP 端口映射服务。
@@ -83,14 +84,25 @@ class UpnpService {
     }
   }
 
-  /// 从实例目录的 server.properties 读取 server-port。
+  /// 从实例目录的 server.properties 或 pnx.yml 读取端口号。
+  ///
+  /// 优先读取 server.properties（Java 版服务端），若不存在则尝试 pnx.yml
+  /// （PowerNukkitX 基岩版服务端，默认端口 19132）。
   Future<int?> _readPort(String workingDir) async {
     try {
-      final file = File(p.join(workingDir, 'server.properties'));
-      if (!await file.exists()) return null;
-      final content = await file.readAsString();
-      final props = ServerProperties.parse(content);
-      return props.getInt('server-port') ?? 25565;
+      final propsFile = File(p.join(workingDir, 'server.properties'));
+      if (await propsFile.exists()) {
+        final content = await propsFile.readAsString();
+        final props = ServerProperties.parse(content);
+        return props.getInt('server-port') ?? 25565;
+      }
+      final pnxFile = File(p.join(workingDir, 'pnx.yml'));
+      if (await pnxFile.exists()) {
+        final content = await pnxFile.readAsString();
+        final pnx = PnxProperties.parse(content);
+        return pnx.getPort();
+      }
+      return 25565;
     } catch (_) {
       return 25565;
     }
