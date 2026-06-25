@@ -65,6 +65,12 @@
                 <data android:mimeType="*/*"/>
                 <data android:pathPattern=".*\\.ecpkg"/>
             </intent-filter>
+            <!-- .ecpkg 分享导入：从其它 App 分享文件时导入 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="*/*"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

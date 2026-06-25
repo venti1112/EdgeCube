@@ -74,8 +74,11 @@ class MainActivity : FlutterActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
-        if (intent.action != Intent.ACTION_VIEW) return
-        val uri = intent.data ?: return
+        val uri = when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            else -> return
+        } ?: return
 
         // 检查文件名是否以 .ecpkg 结尾
         val fileName = getFileNameFromUri(uri)
