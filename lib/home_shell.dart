@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'config/network_store.dart';
 import 'config/version_store.dart';
@@ -193,10 +194,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     );
   }
 
-  /// 首次启动依次询问：在线服务、镜像源（各自只询问一次）。
+  /// 首次启动依次询问：在线服务、镜像源、QQ 群（各自只询问一次）。
   Future<void> _showFirstLaunchDialog() async {
     await _maybeAskOnlineService();
     await _maybeAskMirror();
+    await _maybeAskJoinQqGroup();
   }
 
   /// 询问是否启用在线服务（仅首次）。
@@ -268,6 +270,38 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (result == true) {
       await NetworkStore.saveUseMirror(true);
     }
+  }
+
+  /// 询问是否加入官方 QQ 群（仅首次）。
+  Future<void> _maybeAskJoinQqGroup() async {
+    if (await NetworkStore.loadQqGroupAsked()) return;
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.tr('firstLaunch.qqGroup.title')),
+        content: Text(ctx.tr('firstLaunch.qqGroup.content')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(ctx.tr('common.close')),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              launchUrl(
+                Uri.parse('https://qm.qq.com/q/pnCZcmnKIS'),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+            child: Text(ctx.tr('firstLaunch.qqGroup.join')),
+          ),
+        ],
+      ),
+    );
+
+    await NetworkStore.saveQqGroupAsked(true);
   }
 
   void _onDestinationSelected(int index) {

@@ -23,6 +23,7 @@ class NetworkStore {
   static const String _useCustomFrpcKey = 'useCustomFrpc';
   static const String _useMirrorKey = 'useMirror';
   static const String _mirrorAskedKey = 'mirrorAsked';
+  static const String _qqGroupAskedKey = 'qqGroupAsked';
 
   /// 用户可直接编辑的自定义 frpc.toml 文件路径（`config/frpc.toml`）。
   static Future<File> customFrpcFile() async {
@@ -77,6 +78,18 @@ class NetworkStore {
   static Future<void> saveMirrorAsked(bool value) async {
     final m = await ConfigStore.readConfig(_fileName);
     m[_mirrorAskedKey] = value;
+    await ConfigStore.writeConfig(_fileName, m);
+  }
+
+  /// 是否已询问过用户「加入 QQ 群」（首次启动弹窗只展示一次）。
+  static Future<bool> loadQqGroupAsked() async {
+    final m = await ConfigStore.readConfig(_fileName);
+    return m[_qqGroupAskedKey] as bool? ?? false;
+  }
+
+  static Future<void> saveQqGroupAsked(bool value) async {
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_qqGroupAskedKey] = value;
     await ConfigStore.writeConfig(_fileName, m);
   }
 

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../config/terminal_store.dart';
 import '../files/storage_permission.dart';
@@ -301,6 +302,16 @@ class _SettingsPageState extends State<SettingsPage>
           ),
           const Divider(),
           _sectionHeader(theme, context.tr('settings.section.other')),
+          ListTile(
+            leading: const Icon(Icons.group_outlined),
+            title: Text(context.tr('settings.community.title')),
+            subtitle: Text(context.tr('settings.community.subtitle')),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () => launchUrl(
+              Uri.parse('https://qm.qq.com/q/pnCZcmnKIS'),
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: Text(context.tr('settings.about.title')),
