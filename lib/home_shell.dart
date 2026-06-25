@@ -15,8 +15,10 @@ import 'online/update_service.dart';
 import 'pages/console_page.dart';
 import 'pages/files_page.dart';
 import 'pages/manage_page.dart';
+import 'pages/runtime_page.dart';
 import 'pages/server_page.dart';
 import 'pages/settings_page.dart';
+import 'server/ecpkg_handler.dart';
 import 'widgets/update_dialog.dart';
 
 /// 应用主壳：底部导航栏 + 页面切换。
@@ -47,14 +49,44 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       const FilesPage(),
       SettingsPage(onlineService: widget.onlineService),
     ];
+    EcpkgHandler.onOpenEcpkg = _handleOpenEcpkg;
+    EcpkgHandler.onError = _handleEcpkgError;
     WidgetsBinding.instance.addPostFrameCallback((_) => _runStartupTasks());
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    EcpkgHandler.onOpenEcpkg = null;
+    EcpkgHandler.onError = null;
     _resumeWaiter?.complete();
     super.dispose();
+  }
+
+  void _handleOpenEcpkg(String path) {
+    if (!mounted) return;
+    if (!path.toLowerCase().endsWith('.ecpkg')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('runtime.notEcpkg'))),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RuntimePage(initialEcpkgPath: path),
+      ),
+    ).then((_) {
+      if (mounted) {
+        EcpkgHandler.onOpenEcpkg = _handleOpenEcpkg;
+      }
+    });
+  }
+
+  void _handleEcpkgError(String error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.tr('runtime.openEcpkgFailed', {'error': error}))),
+    );
   }
 
   @override

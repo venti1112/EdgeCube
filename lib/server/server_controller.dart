@@ -10,6 +10,7 @@ import 'server_properties.dart';
 import 'server_service.dart';
 import 'upnp_service.dart';
 import '../config/network_store.dart';
+import '../config/terminal_store.dart';
 import '../tunnel/tunnel_service.dart';
 import 'runtime_service.dart';
 
@@ -192,6 +193,9 @@ class ServerController extends ChangeNotifier {
     bool compatMode = false,
   }) async {
     if (_status != ServerStatus.stopped) return;
+    if (await TerminalStore.loadAutoClearLogOnStart()) {
+      clearLog();
+    }
     _instanceId = instanceId;
     _instanceName = instanceName;
     _workingDir = workingDir;

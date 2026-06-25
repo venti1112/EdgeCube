@@ -64,6 +64,110 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestPostNotifications()
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null) return
+        if (intent.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+
+        // 检查文件名是否以 .ecpkg 结尾
+        val fileName = getFileNameFromUri(uri)
+        if (fileName == null) {
+            sendEcpkgError("无法获取文件名")
+            return
+        }
+        if (!fileName.lowercase().endsWith(".ecpkg")) {
+            sendEcpkgError("不是有效的 .ecpkg 文件")
+            return
+        }
+
+        // 获取可访问的文件路径
+        val path = resolveFilePath(uri)
+        if (path == null) {
+            sendEcpkgError("无法读取文件，请检查文件访问权限")
+            return
+        }
+        // Flutter engine 尚未就绪时暂存，configureFlutterEngine 中发送
+        pendingEcpkgPath = path
+        trySendPendingEcpkg()
+    }
+
+    private fun sendEcpkgError(message: String) {
+        val channel = ecpkgChannel
+        if (channel != null) {
+            channel.invokeMethod("ecpkgError", message)
+        } else {
+            pendingEcpkgError = message
+        }
+    }
+
+    private var pendingEcpkgError: String? = null
+
+    private fun getFileNameFromUri(uri: Uri): String? {
+        // 尝试从 URI 中获取文件名
+        if (uri.scheme == "file") {
+            return uri.lastPathSegment
+        }
+        // 对于 content:// URI，查询 DISPLAY_NAME
+        if (uri.scheme == "content") {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex >= 0) {
+                        return cursor.getString(nameIndex)
+                    }
+                }
+            }
+        }
+        return uri.lastPathSegment
+    }
+
+    private fun resolveFilePath(uri: Uri): String? {
+        // 对于 file:// scheme，直接返回路径
+        if (uri.scheme == "file") {
+            val path = uri.path
+            if (path != null && File(path).exists()) {
+                return path
+            }
+        }
+        // 对于 content:// scheme 或 file:// 无法直接访问时，复制到缓存
+        return try {
+            val fileName = getFileNameFromUri(uri) ?: "imported.ecpkg"
+            val tempFile = File(cacheDir, fileName)
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            tempFile.absolutePath
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private var pendingEcpkgPath: String? = null
+    private var ecpkgChannel: MethodChannel? = null
+
+    private fun trySendPendingEcpkg() {
+        val channel = ecpkgChannel ?: return
+
+        val error = pendingEcpkgError
+        if (error != null) {
+            pendingEcpkgError = null
+            channel.invokeMethod("ecpkgError", error)
+            return
+        }
+
+        val path = pendingEcpkgPath ?: return
+        pendingEcpkgPath = null
+        channel.invokeMethod("openEcpkg", path)
     }
 
     /** 请求通知权限（Android 13+）；授权后自动接着请求本地网络权限。 */
@@ -118,6 +222,9 @@ class MainActivity : FlutterActivity() {
         val serverManager = ServerProcessManager.getInstance(applicationContext)
         val tunnelManager = TunnelProcessManager.getInstance(applicationContext)
         val shellManager = ShellProcessManager.getInstance(applicationContext)
+
+        ecpkgChannel = MethodChannel(messenger, "com.venti1112.edgecube/ecpkg")
+        trySendPendingEcpkg()
 
         MethodChannel(messenger, storageChannel).setMethodCallHandler { call, result ->
             when (call.method) {

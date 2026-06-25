@@ -15,6 +15,7 @@ class TerminalStore {
   static const String _fileName = 'terminal.json';
   static const String _consoleKey = 'consoleFontSize';
   static const String _shellKey = 'shellFontSize';
+  static const String _autoClearKey = 'autoClearLogOnStart';
 
   static Future<double> loadConsoleFontSize() => _load(_consoleKey);
   static Future<void> saveConsoleFontSize(double value) =>
@@ -23,6 +24,18 @@ class TerminalStore {
   static Future<double> loadShellFontSize() => _load(_shellKey);
   static Future<void> saveShellFontSize(double value) =>
       _save(_shellKey, value);
+
+  static Future<bool> loadAutoClearLogOnStart() async {
+    final m = await ConfigStore.readConfig(_fileName);
+    final raw = m[_autoClearKey];
+    return raw is bool ? raw : true;
+  }
+
+  static Future<void> saveAutoClearLogOnStart(bool value) async {
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_autoClearKey] = value;
+    await ConfigStore.writeConfig(_fileName, m);
+  }
 
   static Future<double> _load(String key) async {
     final m = await ConfigStore.readConfig(_fileName);

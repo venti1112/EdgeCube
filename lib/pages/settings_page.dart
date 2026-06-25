@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../config/terminal_store.dart';
 import '../files/storage_permission.dart';
 import '../i18n/locale_scope.dart';
 import '../instance/instance_migration.dart';
@@ -30,6 +31,7 @@ class _SettingsPageState extends State<SettingsPage>
   bool _ignoringBattery = true;
   bool _batteryLoaded = false;
   bool _migratingInstances = false;
+  bool _autoClearLogOnStart = true;
   Completer<void>? _resumeWaiter;
 
   @override
@@ -37,6 +39,17 @@ class _SettingsPageState extends State<SettingsPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _refreshBattery();
+    _loadAutoClearLogOnStart();
+  }
+
+  Future<void> _loadAutoClearLogOnStart() async {
+    final value = await TerminalStore.loadAutoClearLogOnStart();
+    if (mounted) setState(() => _autoClearLogOnStart = value);
+  }
+
+  Future<void> _saveAutoClearLogOnStart(bool value) async {
+    setState(() => _autoClearLogOnStart = value);
+    await TerminalStore.saveAutoClearLogOnStart(value);
   }
 
   @override
@@ -217,6 +230,15 @@ class _SettingsPageState extends State<SettingsPage>
                 MaterialPageRoute(builder: (_) => const LanguageSettingsPage()),
               );
             },
+          ),
+          const Divider(),
+          _sectionHeader(theme, context.tr('settings.section.console')),
+          SwitchListTile(
+            secondary: const Icon(Icons.delete_sweep_outlined),
+            title: Text(context.tr('settings.console.autoClearLogOnStart')),
+            subtitle: Text(context.tr('settings.console.autoClearLogOnStartDescription')),
+            value: _autoClearLogOnStart,
+            onChanged: _saveAutoClearLogOnStart,
           ),
           if (Platform.isAndroid) ...[
             const Divider(),

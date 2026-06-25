@@ -4,11 +4,15 @@ import 'package:flutter/services.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
+import '../server/ecpkg_handler.dart';
 import '../server/runtime_service.dart';
 
 /// 「运行环境」管理页：列出已安装运行时，导入/删除 .ecpkg。
 class RuntimePage extends StatefulWidget {
-  const RuntimePage({super.key});
+  const RuntimePage({super.key, this.initialEcpkgPath});
+
+  /// 从文件关联打开时传入的 .ecpkg 文件路径。
+  final String? initialEcpkgPath;
 
   @override
   State<RuntimePage> createState() => _RuntimePageState();
@@ -24,6 +28,30 @@ class _RuntimePageState extends State<RuntimePage> {
   void initState() {
     super.initState();
     _load();
+    EcpkgHandler.onOpenEcpkg = _handleOpenEcpkg;
+    // 处理从文件关联传入的路径
+    if (widget.initialEcpkgPath != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _handleOpenEcpkg(widget.initialEcpkgPath!);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    EcpkgHandler.onOpenEcpkg = null;
+    super.dispose();
+  }
+
+  void _handleOpenEcpkg(String path) {
+    if (!mounted) return;
+    if (!path.toLowerCase().endsWith('.ecpkg')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('runtime.notEcpkg'))),
+      );
+      return;
+    }
+    _doImport(path);
   }
 
   Future<void> _load() async {

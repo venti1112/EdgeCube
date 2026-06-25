@@ -18,6 +18,7 @@ import 'instance/instance_scope.dart';
 import 'mcp/mcp_controller.dart';
 import 'mcp/mcp_scope.dart';
 import 'online/online_service.dart';
+import 'server/ecpkg_handler.dart';
 import 'server/server_controller.dart';
 import 'server/server_scope.dart';
 import 'server/system_monitor_controller.dart';
@@ -33,6 +34,8 @@ import 'widgets/precipitation_overlay.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 初始化 .ecpkg 文件关联处理器
+  EcpkgHandler.init();
   // 把旧版 SharedPreferences 中的历史配置迁移到新的文件式布局（只执行一次），
   // 必须先于下面任何新配置读取。
   await ConfigMigration.run();

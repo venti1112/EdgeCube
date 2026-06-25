@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:xterm/xterm.dart';
 
 import '../config/terminal_store.dart';
@@ -25,6 +29,8 @@ class _ConsolePageState extends State<ConsolePage> {
   /// 终端字号（控制台独立记忆，持久化于 config/terminal.json）。
   double _fontSize = kDefaultTerminalFontSize;
 
+  bool _exporting = false;
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +49,31 @@ class _ConsolePageState extends State<ConsolePage> {
   }
 
   void _saveFontSize() => TerminalStore.saveConsoleFontSize(_fontSize);
+
+  Future<void> _exportLog(ServerController server) async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final dir = await getTemporaryDirectory();
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final file = File('${dir.path}/edgecube_log_$ts.log');
+      await file.writeAsString(server.log.join('\n'));
+      if (!mounted) return;
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)]),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(context.tr('console.exportFailed', {'error': '$e'})),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +126,17 @@ class _ConsolePageState extends State<ConsolePage> {
                       SnackBar(content: Text(context.tr('console.logCopied'))),
                     );
                   },
+          ),
+          IconButton(
+            icon: _exporting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download),
+            tooltip: context.tr('console.tooltipExportLog'),
+            onPressed: !hasLog ? null : () => _exportLog(server),
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
