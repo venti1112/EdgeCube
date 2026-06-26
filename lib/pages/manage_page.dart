@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
 import 'instance_export_page.dart';
+import 'mods_plugins_page.dart';
 import 'players_page.dart';
 import 'port_mapping_page.dart';
 import 'ftp_page.dart';
@@ -39,6 +40,15 @@ class ManagePage extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _ServerConfigTile(),
+            const SizedBox(height: 12),
+            _ManageEntryTile(
+              icon: Icons.extension_outlined,
+              title: context.tr('manage.modsPlugins.title'),
+              subtitle: context.tr('manage.modsPlugins.subtitle'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ModsPluginsPage()),
+              ),
+            ),
             const SizedBox(height: 12),
             _ManageEntryTile(
               icon: Icons.lan_outlined,

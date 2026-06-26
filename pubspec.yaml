@@ -52,6 +52,7 @@ dependencies:
   xterm: ^4.0.0
   mcp_dart: ^2.2.1
   image: ^4.8.0
+  archive: ^4.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
