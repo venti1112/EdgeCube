@@ -71,8 +71,8 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
     final hasMods = mods.existsSync();
 
     _tabCtrl?.dispose();
-    // plugins → 1 个管理选项卡；mods → 管理选项卡 + 下载选项卡
-    final count = (hasPlugins ? 1 : 0) + (hasMods ? 2 : 0);
+    // plugins → 管理选项卡 + 下载选项卡；mods → 管理选项卡 + 下载选项卡
+    final count = (hasPlugins ? 2 : 0) + (hasMods ? 2 : 0);
     _tabCtrl = count > 0 ? TabController(length: count, vsync: this) : null;
 
     if (!mounted) return;
@@ -106,6 +106,8 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
                 tabs: [
                   if (_hasPlugins)
                     Tab(text: context.tr('modsPlugins.tab.plugins')),
+                  if (_hasPlugins)
+                    Tab(text: context.tr('modsPlugins.tab.downloadPlugin')),
                   if (_hasMods) Tab(text: context.tr('modsPlugins.tab.mods')),
                   if (_hasMods)
                     Tab(text: context.tr('modsPlugins.tab.download')),
@@ -125,9 +127,16 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
                   controller: _tabCtrl,
                   children: [
                     if (_hasPlugins && _pluginsDir != null)
-                      _ContentTab(folder: _pluginsDir!),
+                      _ContentTab(folder: _pluginsDir!, isJarContent: true),
+                    if (_hasPlugins && _pluginsDir != null)
+                      ModDownloadPage(
+                        modsFolder: _pluginsDir!,
+                        embedded: true,
+                        projectType: 'plugin',
+                        titleKey: 'modsPlugins.downloadPlugin',
+                      ),
                     if (_hasMods && _modsDir != null)
-                      _ContentTab(folder: _modsDir!, isMods: true),
+                      _ContentTab(folder: _modsDir!, isJarContent: true),
                     if (_hasMods && _modsDir != null)
                       ModDownloadPage(modsFolder: _modsDir!, embedded: true),
                   ],
@@ -138,11 +147,11 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
 
 /// 单个选项卡内容。
 ///
-/// [isMods] 为 true 时启用模组识别、图标获取与更新功能。
+/// [isJarContent] 为 true 时启用模组/插件识别、图标获取与更新功能。
 class _ContentTab extends StatefulWidget {
-  const _ContentTab({required this.folder, this.isMods = false});
+  const _ContentTab({required this.folder, this.isJarContent = false});
   final Directory folder;
-  final bool isMods;
+  final bool isJarContent;
 
   @override
   State<_ContentTab> createState() => _ContentTabState();
@@ -192,7 +201,7 @@ class _ContentTabState extends State<_ContentTab> {
       _sha1Hashes.clear();
       _updates.clear();
     });
-    if (widget.isMods) {
+    if (widget.isJarContent) {
       _identifyMods();
     }
   }
@@ -424,6 +433,35 @@ class _ContentTabState extends State<_ContentTab> {
     final tr = LocaleScope.of(context).translations;
     final messenger = ScaffoldMessenger.of(context);
     final isDisabled = entry.name.toLowerCase().endsWith('.jar.disabled');
+
+    // 弹窗确认
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          isDisabled
+              ? tr.get('modsPlugins.confirmEnable')
+              : tr.get('modsPlugins.confirmDisable'),
+        ),
+        content: Text(entry.name),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(tr.get('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              isDisabled
+                  ? tr.get('modsPlugins.enable')
+                  : tr.get('modsPlugins.disable'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
     final newName = isDisabled
         ? entry.name.substring(0, entry.name.length - '.disabled'.length)
         : '${entry.name}.disabled';
@@ -602,7 +640,7 @@ class _ContentTabState extends State<_ContentTab> {
     return Column(
       children: [
         _buildHeader(theme),
-        if (widget.isMods && _updates.isNotEmpty) _buildUpdateBanner(theme),
+        if (widget.isJarContent && _updates.isNotEmpty) _buildUpdateBanner(theme),
         Expanded(
           child: _entries.isEmpty
               ? _emptyState(
@@ -634,7 +672,7 @@ class _ContentTabState extends State<_ContentTab> {
             style: theme.textTheme.titleSmall,
           ),
           const Spacer(),
-          if (widget.isMods) ...[
+          if (widget.isJarContent) ...[
             if (_checkingUpdates)
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 4),
@@ -773,7 +811,7 @@ class _ContentTabState extends State<_ContentTab> {
             if (isJarFile)
               IconButton(
                 icon: Icon(
-                  isDisabled ? Icons.check_circle_outline : Icons.pause_circle_outline,
+                  isDisabled ? Icons.check_circle_outline : Icons.block,
                   size: 20,
                   color: isDisabled
                       ? theme.colorScheme.onSurfaceVariant
@@ -867,6 +905,9 @@ class _ContentTabState extends State<_ContentTab> {
       ModLoader.forge => const Color.fromARGB(255, 255, 170, 107),
       ModLoader.quilt => const Color.fromARGB(255, 170, 221, 255),
       ModLoader.neoforge => const Color.fromARGB(255, 255, 107, 107),
+      ModLoader.bukkit => const Color.fromARGB(255, 170, 255, 170),
+      ModLoader.bungeecord => const Color.fromARGB(255, 255, 221, 107),
+      ModLoader.velocity => const Color.fromARGB(255, 107, 221, 255),
       ModLoader.unknown => theme.colorScheme.surfaceContainerHighest,
     };
     return Container(

@@ -4,12 +4,17 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 
 /// Mod 加载器类型。
-enum ModLoader { fabric, forge, quilt, neoforge, unknown }
+enum ModLoader {
+  fabric, forge, quilt, neoforge,
+  bukkit, bungeecord, velocity,
+  unknown
+}
 
 /// 从 .jar 文件中解析出的模组元数据。
 ///
 /// 参考自 PCL-CE 的 ModLocalComp.LookupMetadata，依次尝试
-/// fabric.mod.json → quilt.mod.json → META-INF/mods.toml → mcmod.info。
+/// fabric.mod.json → quilt.mod.json → META-INF/mods.toml → mcmod.info
+/// → velocity-plugin.json → plugin.yml → bungee.yml。
 class ModMetadata {
   const ModMetadata({
     required this.name,
@@ -34,6 +39,9 @@ class ModMetadata {
         ModLoader.forge => 'Forge',
         ModLoader.quilt => 'Quilt',
         ModLoader.neoforge => 'NeoForge',
+        ModLoader.bukkit => 'Plugin',
+        ModLoader.bungeecord => 'BungeeCord',
+        ModLoader.velocity => 'Velocity',
         ModLoader.unknown => '',
       };
 }
@@ -80,6 +88,27 @@ class ModMetadataParser {
     final mcmodInfo = _readEntry(archive, 'mcmod.info');
     if (mcmodInfo != null) {
       final meta = _parseMcmodInfo(mcmodInfo);
+      if (meta != null) return meta;
+    }
+
+    // 5. velocity-plugin.json (Velocity 插件)
+    final velocityJson = _readEntry(archive, 'velocity-plugin.json');
+    if (velocityJson != null) {
+      final meta = _parseVelocityPluginJson(velocityJson);
+      if (meta != null) return meta;
+    }
+
+    // 6. plugin.yml (Bukkit/Spigot/Paper/Folia/Purpur 插件)
+    final pluginYml = _readEntry(archive, 'plugin.yml');
+    if (pluginYml != null) {
+      final meta = _parsePluginYml(pluginYml);
+      if (meta != null) return meta;
+    }
+
+    // 7. bungee.yml (BungeeCord/Waterfall 插件)
+    final bungeeYml = _readEntry(archive, 'bungee.yml');
+    if (bungeeYml != null) {
+      final meta = _parseBungeeYml(bungeeYml);
       if (meta != null) return meta;
     }
 
@@ -261,5 +290,129 @@ class ModMetadataParser {
     } catch (_) {
       return null;
     }
+  }
+
+  // ── velocity-plugin.json ─────────────────────────────────────
+  static ModMetadata? _parseVelocityPluginJson(String jsonStr) {
+    try {
+      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+      final name = data['name'] as String? ?? data['id'] as String?;
+      if (name == null) return null;
+      String? authors;
+      final authorsRaw = data['authors'];
+      if (authorsRaw is List && authorsRaw.isNotEmpty) {
+        authors = authorsRaw
+            .map((a) => a is String ? a : (a is Map ? a['name'] as String? ?? '' : ''))
+            .where((s) => s.isNotEmpty)
+            .join(', ');
+      }
+      return ModMetadata(
+        name: name,
+        version: data['version'] as String?,
+        description: data['description'] as String?,
+        modId: data['id'] as String?,
+        authors: authors,
+        url: data['url'] as String?,
+        loader: ModLoader.velocity,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── plugin.yml (Bukkit/Spigot/Paper) ────────────────────────
+  static ModMetadata? _parsePluginYml(String yml) {
+    final map = _parseSimpleYaml(yml);
+    final name = map['name'] as String? ?? map['main'] as String?;
+    if (name == null) return null;
+    return ModMetadata(
+      name: name,
+      version: map['version'] as String?,
+      description: map['description'] as String?,
+      modId: map['main'] as String?,
+      authors: (map['author'] as String?) ?? (map['authors'] as String?),
+      url: map['website'] as String?,
+      loader: ModLoader.bukkit,
+    );
+  }
+
+  // ── bungee.yml (BungeeCord/Waterfall) ───────────────────────
+  static ModMetadata? _parseBungeeYml(String yml) {
+    final map = _parseSimpleYaml(yml);
+    final name = map['name'] as String? ?? map['main'] as String?;
+    if (name == null) return null;
+    return ModMetadata(
+      name: name,
+      version: map['version'] as String?,
+      description: map['description'] as String?,
+      modId: map['main'] as String?,
+      authors: (map['author'] as String?) ?? (map['authors'] as String?),
+      url: map['website'] as String?,
+      loader: ModLoader.bungeecord,
+    );
+  }
+
+  // ── 简易 YAML 解析器 ─────────────────────────────────────────
+  /// 仅解析顶层 key: value 和列表项，适用于 plugin.yml / bungee.yml。
+  static Map<String, dynamic> _parseSimpleYaml(String yaml) {
+    final result = <String, dynamic>{};
+    final lines = yaml.split('\n');
+    String? pendingListKey;
+    final listBuffer = <String>[];
+
+    void flushList() {
+      if (pendingListKey != null && listBuffer.isNotEmpty) {
+        result[pendingListKey!] = listBuffer.join(', ');
+      }
+      pendingListKey = null;
+      listBuffer.clear();
+    }
+
+    for (final line in lines) {
+      // 保留缩进信息用于判断层级
+      final trimmed = line.trim();
+      if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+
+      // 列表项（顶层缩进为 2 空格）
+      if (trimmed.startsWith('- ')) {
+        if (pendingListKey != null) {
+          listBuffer.add(_unquote(trimmed.substring(2).trim()));
+        }
+        continue;
+      }
+
+      flushList();
+
+      final colonIdx = trimmed.indexOf(':');
+      if (colonIdx < 0) continue;
+      final key = trimmed.substring(0, colonIdx).trim();
+      final value = trimmed.substring(colonIdx + 1).trim();
+
+      if (value.isEmpty) {
+        // 后续可能是列表
+        pendingListKey = key;
+      } else if (value.startsWith('[') && value.endsWith(']')) {
+        // 内联列表 [a, b, c]
+        final inner = value.substring(1, value.length - 1);
+        result[key] = inner
+            .split(',')
+            .map((s) => _unquote(s.trim()))
+            .where((s) => s.isNotEmpty)
+            .join(', ');
+      } else {
+        result[key] = _unquote(value);
+      }
+    }
+    flushList();
+    return result;
+  }
+
+  static String _unquote(String s) {
+    if (s.length >= 2 &&
+        ((s.startsWith('"') && s.endsWith('"')) ||
+            (s.startsWith("'") && s.endsWith("'")))) {
+      return s.substring(1, s.length - 1);
+    }
+    return s;
   }
 }

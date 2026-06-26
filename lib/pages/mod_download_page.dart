@@ -7,15 +7,27 @@ import '../i18n/locale_scope.dart';
 import '../mods/download_queue.dart';
 import '../mods/modrinth_service.dart';
 
-/// 模组下载页：搜索 Modrinth 并下载模组到指定 mods 目录。
+/// 模组/插件下载页：搜索 Modrinth 并下载到指定目录。
 ///
 /// 支持搜索、浏览、筛选（游戏版本 / 加载器）和排序，
 /// 参考 PCL-CE 的 PageComp 实现分页加载（offset + limit）。
 class ModDownloadPage extends StatefulWidget {
-  const ModDownloadPage({super.key, required this.modsFolder, this.embedded = false});
+  const ModDownloadPage({
+    super.key,
+    required this.modsFolder,
+    this.embedded = false,
+    this.projectType = 'mod',
+    this.titleKey = 'modsPlugins.downloadMod',
+  });
 
   final Directory modsFolder;
   final bool embedded;
+
+  /// 'mod' 或 'plugin'，决定搜索的 project_type 和可选加载器列表。
+  final String projectType;
+
+  /// AppBar 标题的 i18n 键。
+  final String titleKey;
 
   @override
   State<ModDownloadPage> createState() => _ModDownloadPageState();
@@ -34,10 +46,13 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
   // 筛选
   List<ModrinthGameVersion> _gameVersions = [];
   String? _selectedGameVersion;
-  String? _selectedLoader; // fabric, forge, quilt, neoforge
+  String? _selectedLoader;
   ModrinthSort _sort = ModrinthSort.relevance;
 
-  static const _loaders = ['fabric', 'forge', 'quilt', 'neoforge'];
+  /// 根据项目类型返回可选加载器列表。
+  List<String> get _loaders => widget.projectType == 'plugin'
+      ? const ['paper', 'spigot', 'bukkit', 'bungeecord', 'velocity', 'waterfall', 'folia', 'purpur']
+      : const ['fabric', 'forge', 'quilt', 'neoforge'];
 
   @override
   void initState() {
@@ -87,6 +102,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
         gameVersion: _selectedGameVersion,
         loader: _selectedLoader,
         sort: query.isEmpty ? ModrinthSort.downloads : _sort,
+        projectType: widget.projectType,
       );
       if (!mounted) return;
       setState(() {
@@ -115,6 +131,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
         gameVersion: _selectedGameVersion,
         loader: _selectedLoader,
         sort: query.isEmpty ? ModrinthSort.downloads : _sort,
+        projectType: widget.projectType,
       );
       if (!mounted) return;
       setState(() {
@@ -144,11 +161,13 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useRootNavigator: true,
       builder: (_) => _VersionSheet(
         projectId: projectId,
         title: title,
         iconUrl: iconUrl,
         modsFolder: widget.modsFolder,
+        projectType: widget.projectType,
         filterGameVersion: _selectedGameVersion,
         filterLoader: _selectedLoader,
         onDownloaded: () {
@@ -168,7 +187,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: widget.embedded ? null : AppBar(title: Text(context.tr('modsPlugins.downloadMod'))),
+      appBar: widget.embedded ? null : AppBar(title: Text(context.tr(widget.titleKey))),
       body: Column(
         children: [
           _buildSearchBar(theme),
@@ -518,6 +537,7 @@ class _VersionSheet extends StatefulWidget {
     required this.iconUrl,
     required this.modsFolder,
     required this.onDownloaded,
+    this.projectType = 'mod',
     this.filterGameVersion,
     this.filterLoader,
   });
@@ -527,6 +547,7 @@ class _VersionSheet extends StatefulWidget {
   final String? iconUrl;
   final Directory modsFolder;
   final VoidCallback onDownloaded;
+  final String projectType;
   final String? filterGameVersion;
   final String? filterLoader;
 
@@ -564,8 +585,21 @@ class _VersionSheetState extends State<_VersionSheet> {
     }
   }
 
+  /// 模组加载器集合，用于过滤跨平台项目的版本。
+  static const _modLoaders = {'fabric', 'forge', 'quilt', 'neoforge'};
+  static const _pluginLoaders = {
+    'paper', 'spigot', 'bukkit', 'bungeecord',
+    'velocity', 'waterfall', 'folia', 'purpur',
+  };
+
   List<ModrinthVersion> _applyFilters(List<ModrinthVersion> versions) {
-    var filtered = versions;
+    // 先按项目类型过滤版本（只保留包含对应加载器的版本）
+    final typeLoaders =
+        widget.projectType == 'plugin' ? _pluginLoaders : _modLoaders;
+    var filtered = versions.where(
+      (v) => v.loaders.any((l) => typeLoaders.contains(l)),
+    ).toList();
+
     if (widget.filterGameVersion != null) {
       filtered = filtered.where((v) =>
           v.gameVersions.contains(widget.filterGameVersion)).toList();
@@ -688,6 +722,7 @@ class _VersionSheetState extends State<_VersionSheet> {
           iconUrl: widget.iconUrl,
           version: version,
           modsFolder: widget.modsFolder,
+          projectType: widget.projectType,
           onDownloaded: () => Navigator.of(context).pop(true),
         ),
         fullscreenDialog: true,
@@ -705,6 +740,7 @@ class _VersionDetailPage extends StatefulWidget {
     required this.version,
     required this.modsFolder,
     required this.onDownloaded,
+    this.projectType = 'mod',
   });
 
   final String projectId;
@@ -713,6 +749,7 @@ class _VersionDetailPage extends StatefulWidget {
   final ModrinthVersion version;
   final Directory modsFolder;
   final VoidCallback onDownloaded;
+  final String projectType;
 
   @override
   State<_VersionDetailPage> createState() => _VersionDetailPageState();
@@ -1095,11 +1132,13 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useRootNavigator: true,
       builder: (_) => _VersionSheet(
         projectId: projectId,
         title: title,
         iconUrl: iconUrl,
         modsFolder: widget.modsFolder,
+        projectType: widget.projectType,
         onDownloaded: () {
           Navigator.of(context).pop(true);
         },

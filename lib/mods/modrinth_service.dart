@@ -239,10 +239,12 @@ class ModrinthService {
   /// 每页数量（与 PCL-CE 的 compPageSize 不同，移动端用较小值）。
   static const pageSize = 20;
 
-  /// 搜索模组（project_type=mod）。
+  /// 搜索模组或插件。
   ///
   /// [query] 为空时返回按 [sort] 排序的浏览列表。
   /// [offset] 用于分页。[gameVersion] / [loader] 用于筛选。
+  /// [projectType] 为 'mod' 或 'plugin'，决定按加载器 categories 过滤
+  /// （Modrinth 的 project_type 字段不准确，跨平台项目大多标记为 mod）。
   static Future<ModrinthSearchResult> search(
     String query, {
     int offset = 0,
@@ -250,9 +252,15 @@ class ModrinthService {
     String? gameVersion,
     String? loader,
     ModrinthSort sort = ModrinthSort.relevance,
+    String projectType = 'mod',
   }) async {
+    // 按项目类型选择加载器 categories（OR 关系）
+    final typeCategories = projectType == 'plugin'
+        ? const ['paper', 'spigot', 'bukkit', 'bungeecord', 'velocity', 'waterfall', 'folia', 'purpur']
+        : const ['fabric', 'forge', 'quilt', 'neoforge'];
+
     final facets = <List<String>>[
-      ['project_type:mod'],
+      typeCategories.map((c) => 'categories:$c').toList(),
     ];
     if (gameVersion != null && gameVersion.isNotEmpty) {
       facets.add(["versions:'$gameVersion'"]);
