@@ -47,100 +47,100 @@ class NetworkStore {
 
   /// 是否启用「使用自定义配置文件」模式。
   static Future<bool> loadUseCustomFrpc() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    return m[_useCustomFrpcKey] as bool? ?? false;
+    final configMap = await ConfigStore.readConfig(_fileName);
+    return configMap[_useCustomFrpcKey] as bool? ?? false;
   }
 
-  static Future<void> saveUseCustomFrpc(bool value) async {
-    final m = await ConfigStore.readConfig(_fileName);
-    m[_useCustomFrpcKey] = value;
-    await ConfigStore.writeConfig(_fileName, m);
+  static Future<void> saveUseCustomFrpc(bool enabled) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_useCustomFrpcKey] = enabled;
+    await ConfigStore.writeConfig(_fileName, configMap);
   }
 
   /// 是否使用镜像源（MSL 开服器）下载服务端，默认关闭。
   static Future<bool> loadUseMirror() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    return m[_useMirrorKey] as bool? ?? false;
+    final configMap = await ConfigStore.readConfig(_fileName);
+    return configMap[_useMirrorKey] as bool? ?? false;
   }
 
-  static Future<void> saveUseMirror(bool value) async {
-    final m = await ConfigStore.readConfig(_fileName);
-    m[_useMirrorKey] = value;
-    await ConfigStore.writeConfig(_fileName, m);
+  static Future<void> saveUseMirror(bool enabled) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_useMirrorKey] = enabled;
+    await ConfigStore.writeConfig(_fileName, configMap);
   }
 
   /// 是否已询问过用户「是否启用镜像源」（首次启动弹窗只展示一次）。
   static Future<bool> loadMirrorAsked() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    return m[_mirrorAskedKey] as bool? ?? false;
+    final configMap = await ConfigStore.readConfig(_fileName);
+    return configMap[_mirrorAskedKey] as bool? ?? false;
   }
 
-  static Future<void> saveMirrorAsked(bool value) async {
-    final m = await ConfigStore.readConfig(_fileName);
-    m[_mirrorAskedKey] = value;
-    await ConfigStore.writeConfig(_fileName, m);
+  static Future<void> saveMirrorAsked(bool asked) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_mirrorAskedKey] = asked;
+    await ConfigStore.writeConfig(_fileName, configMap);
   }
 
   /// 是否已询问过用户「加入 QQ 群」（首次启动弹窗只展示一次）。
   static Future<bool> loadQqGroupAsked() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    return m[_qqGroupAskedKey] as bool? ?? false;
+    final configMap = await ConfigStore.readConfig(_fileName);
+    return configMap[_qqGroupAskedKey] as bool? ?? false;
   }
 
-  static Future<void> saveQqGroupAsked(bool value) async {
-    final m = await ConfigStore.readConfig(_fileName);
-    m[_qqGroupAskedKey] = value;
-    await ConfigStore.writeConfig(_fileName, m);
+  static Future<void> saveQqGroupAsked(bool asked) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_qqGroupAskedKey] = asked;
+    await ConfigStore.writeConfig(_fileName, configMap);
   }
 
   static Future<bool> loadUpnpEnabled() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    return m[_upnpKey] as bool? ?? false;
+    final configMap = await ConfigStore.readConfig(_fileName);
+    return configMap[_upnpKey] as bool? ?? false;
   }
 
-  static Future<void> saveUpnpEnabled(bool value) async {
-    final m = await ConfigStore.readConfig(_fileName);
-    m[_upnpKey] = value;
-    await ConfigStore.writeConfig(_fileName, m);
+  static Future<void> saveUpnpEnabled(bool enabled) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_upnpKey] = enabled;
+    await ConfigStore.writeConfig(_fileName, configMap);
   }
 
   static Future<bool> loadTunnelEnabled() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    return m[_tunnelKey] as bool? ?? false;
+    final configMap = await ConfigStore.readConfig(_fileName);
+    return configMap[_tunnelKey] as bool? ?? false;
   }
 
-  static Future<void> saveTunnelEnabled(bool value) async {
-    final m = await ConfigStore.readConfig(_fileName);
-    m[_tunnelKey] = value;
-    await ConfigStore.writeConfig(_fileName, m);
+  static Future<void> saveTunnelEnabled(bool enabled) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_tunnelKey] = enabled;
+    await ConfigStore.writeConfig(_fileName, configMap);
   }
 
   /// 读取已保存的 frpc 配置；未保存过返回 null。
   static Future<FrpcConfig?> loadFrpc() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    final frpc = m[_frpcKey];
+    final configMap = await ConfigStore.readConfig(_fileName);
+    final frpc = configMap[_frpcKey];
     if (frpc is! Map<String, dynamic>) return null;
     return FrpcConfig.fromJsonMap(frpc);
   }
 
   static Future<void> saveFrpc(FrpcConfig config) async {
-    final m = await ConfigStore.readConfig(_fileName);
-    m[_frpcKey] = config.toJsonMap();
-    await ConfigStore.writeConfig(_fileName, m);
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_frpcKey] = config.toJsonMap();
+    await ConfigStore.writeConfig(_fileName, configMap);
   }
 
   static Future<String?> loadFrpcRuntimeId() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    return m[_frpcRuntimeIdKey] as String?;
+    final configMap = await ConfigStore.readConfig(_fileName);
+    return configMap[_frpcRuntimeIdKey] as String?;
   }
 
-  static Future<void> saveFrpcRuntimeId(String? value) async {
-    final m = await ConfigStore.readConfig(_fileName);
-    if (value == null) {
-      m.remove(_frpcRuntimeIdKey);
+  static Future<void> saveFrpcRuntimeId(String? runtimeId) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    if (runtimeId == null) {
+      configMap.remove(_frpcRuntimeIdKey);
     } else {
-      m[_frpcRuntimeIdKey] = value;
+      configMap[_frpcRuntimeIdKey] = runtimeId;
     }
-    await ConfigStore.writeConfig(_fileName, m);
+    await ConfigStore.writeConfig(_fileName, configMap);
   }
 }

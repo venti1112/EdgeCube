@@ -43,7 +43,7 @@ class CrashData {
     required this.exitCode,
     required this.logLines,
     required this.envType,
-    required this.envVersion,
+    required this.envRuntimeId,
   });
 
   final int exitCode;
@@ -52,8 +52,8 @@ class CrashData {
   /// 运行环境类型：'java' 或 'php'。
   final String envType;
 
-  /// 运行环境版本：如 'jre21'、'php8.2'。
-  final String envVersion;
+  /// 运行环境标识：如 'jre21'、'php8.2'。
+  final String envRuntimeId;
 }
 
 /// 管理服务端进程的运行状态与日志缓冲，并把 UI 操作转发到 [ServerService]。
@@ -137,9 +137,9 @@ class ServerController extends ChangeNotifier {
   final List<String> _log = [];
   final Set<String> _onlinePlayers = {};
 
-  // —— 运行时类型/版本追踪（崩溃报告用）——
+  // —— 运行时类型/标识追踪（崩溃报告用）——
   String _runtimeType = '';
-  String _runtimeVersion = '';
+  String _runtimeId = '';
 
   // —— 用户主动操作标志（区分意外退出与主动停止）——
   bool _userStopping = false;
@@ -196,7 +196,7 @@ class ServerController extends ChangeNotifier {
     required String instanceId,
     required String instanceName,
     required String workingDir,
-    required String version,
+    required String runtimeId,
     required String runtime,
     required List<String> jvmArgs,
     required List<String> programArgs,
@@ -211,7 +211,7 @@ class ServerController extends ChangeNotifier {
     _workingDir = workingDir;
     _lastExitCode = null;
     _runtimeType = runtime;
-    _runtimeVersion = version;
+    _runtimeId = runtimeId;
     _compatMode = compatMode;
     _compatModeId = instanceId;
     _userStopping = false;
@@ -225,7 +225,7 @@ class ServerController extends ChangeNotifier {
         instanceId: instanceId,
         instanceName: instanceName,
         workingDir: workingDir,
-        version: version,
+        runtimeId: runtimeId,
         runtime: runtime,
         jvmArgs: jvmArgs,
         programArgs: programArgs,
@@ -572,12 +572,12 @@ class ServerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 当前设备架构下可用的 JRE 版本。
-  Future<List<String>> availableVersions() => _service.availableVersions();
+  /// 当前设备架构下可用的 JRE 标识（如 ['jre17','jre21','jre25']）。
+  Future<List<String>> availableJreIds() => _service.availableJreIds();
 
-  /// 当前设备架构下可用的 PHP 运行时（不支持的架构返回空）。
-  Future<List<String>> availablePhpRuntimes() =>
-      _service.availablePhpRuntimes();
+  /// 当前设备架构下可用的 PHP 运行时标识（如 ['php8.2']）；不支持的架构返回空。
+  Future<List<String>> availablePhpIds() =>
+      _service.availablePhpIds();
 
   void _onEvent(ServerEvent event) {
     switch (event) {
@@ -980,7 +980,7 @@ class ServerController extends ChangeNotifier {
         exitCode: exitCode,
         logLines: snapshot,
         envType: _runtimeType,
-        envVersion: _runtimeVersion,
+        envRuntimeId: _runtimeId,
       ),
     );
   }

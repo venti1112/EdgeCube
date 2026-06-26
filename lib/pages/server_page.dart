@@ -271,8 +271,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       return r != 0 ? r : a.compareTo(b);
     });
     phars.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    final versions = await server.availableVersions();
-    final phpRuntimes = await server.availablePhpRuntimes();
+    final versions = await server.availableJreIds();
+    final phpRuntimes = await server.availablePhpIds();
     final runtimeService = const RuntimeService();
     final runtimes = await runtimeService.installedRuntimes();
     final runtimeNames = <String, String>{
@@ -328,7 +328,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
         instanceId: widget.instance.id,
         instanceName: widget.instance.name,
         workingDir: ctx.workingDir,
-        version: ctx.phpRuntimes.first,
+        runtimeId: ctx.phpRuntimes.first,
         runtime: kRuntimePhp,
         jvmArgs: const [],
         programArgs: [file],
@@ -362,7 +362,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       instanceId: widget.instance.id,
       instanceName: widget.instance.name,
       workingDir: ctx.workingDir,
-      version: _version,
+      runtimeId: _version,
       runtime: kRuntimeJava,
       jvmArgs: jvmArgs,
       programArgs: ['-jar', file, 'nogui'],
@@ -1603,14 +1603,14 @@ class _CrashDialogState extends State<_CrashDialog> {
       final deviceInfo = await monitorService.getDeviceInfo();
       final sysInfo = await monitorService.getSystemInfo();
       final envType = widget.crash.envType == 'php' ? 'PHP' : 'Java';
-      final envVersion = _versionLabel(widget.crash.envVersion);
+      final envRuntimeId = _versionLabel(widget.crash.envRuntimeId);
       final header = [
         '=== 设备信息 ===',
         'SoC 型号: ${deviceInfo.socModel}',
         '内存总量: ${sysInfo.totalMemMb} MB',
         '内存已用: ${sysInfo.usedMemMb} MB',
         '环境类型: $envType',
-        '环境版本: $envVersion',
+        '运行环境: $envRuntimeId',
         '设备架构: ${deviceInfo.architecture}',
         '设备制造商: ${deviceInfo.manufacturer}',
         '设备型号: ${deviceInfo.model}',

@@ -75,9 +75,9 @@ class McpStore {
 
   /// 读取已保存的 MCP 配置；未保存过返回默认配置。
   static Future<McpConfig> load() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    if (m.isEmpty) return const McpConfig();
-    return McpConfig.fromJson(m);
+    final configMap = await ConfigStore.readConfig(_fileName);
+    if (configMap.isEmpty) return const McpConfig();
+    return McpConfig.fromJson(configMap);
   }
 
   /// 持久化 MCP 配置。

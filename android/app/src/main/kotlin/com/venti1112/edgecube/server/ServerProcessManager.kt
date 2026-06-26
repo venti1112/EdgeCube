@@ -151,7 +151,7 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         instanceId: String,
         instanceName: String,
         workingDir: String,
-        version: String,
+        runtimeId: String,
         runtime: String,
         jvmArgs: List<String>,
         programArgs: List<String>,
@@ -171,9 +171,9 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         val argv = ArrayList<String>()
 
         if (runtime == "php") {
-            val manifest = RuntimeInstaller.installedRuntime(appContext, version)
-                ?: throw IllegalStateException("PHP 运行时 $version 未安装，请先在「管理 → 运行环境」导入")
-            val runtimeDir = RuntimeInstaller.runtimeDir(appContext, version)
+            val manifest = RuntimeInstaller.installedRuntime(appContext, runtimeId)
+                ?: throw IllegalStateException("PHP 运行时 $runtimeId 未安装，请先在「管理 → 运行环境」导入")
+            val runtimeDir = RuntimeInstaller.runtimeDir(appContext, runtimeId)
             val launcherLib = File(runtimeDir, manifest.launcher.lib)
             if (!launcherLib.exists()) {
                 throw IllegalStateException("未找到 PHP wrapper 库：${launcherLib.absolutePath}")
@@ -196,9 +196,9 @@ class ServerProcessManager private constructor(private val appContext: Context) 
             // 叠加清单中的 env（${RUNTIME_DIR} 替换）
             applyManifestEnv(env, manifest, runtimeDir)
         } else {
-            val manifest = RuntimeInstaller.installedRuntime(appContext, version)
-                ?: throw IllegalStateException("JRE 运行时 $version 未安装，请先在「管理 → 运行环境」导入")
-            val runtimeDir = RuntimeInstaller.runtimeDir(appContext, version)
+            val manifest = RuntimeInstaller.installedRuntime(appContext, runtimeId)
+                ?: throw IllegalStateException("JRE 运行时 $runtimeId 未安装，请先在「管理 → 运行环境」导入")
+            val runtimeDir = RuntimeInstaller.runtimeDir(appContext, runtimeId)
             val resolved = JreLayout.resolve(runtimeDir, nativeDir)
             val launchBin = File(nativeDir, "liblaunch.so")
             if (!launchBin.exists()) {
@@ -254,7 +254,7 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         running = true
         runningInstanceId = instanceId
         runningInstanceName = instanceName
-        runningRuntimeId = version
+        runningRuntimeId = runtimeId
         currentStatus = STATUS_STARTING
         emitState(STATUS_STARTING, instanceId, instanceName, null)
 

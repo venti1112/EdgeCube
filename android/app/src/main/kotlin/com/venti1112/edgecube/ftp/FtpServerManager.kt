@@ -31,10 +31,10 @@ object FtpServerManager {
      * @param username 登录用户名（空则启用匿名访问）。
      * @param password 登录密码（匿名访问时忽略）。
      * @param writable 是否允许写入（上传/删除/重命名）。
-     * @param ipv6 是否启用 IPv6（双栈）监听；关闭时仅监听 IPv4。
+     * @param ipv6Enabled 是否启用 IPv6（双栈）监听；关闭时仅监听 IPv4。
      */
     @Synchronized
-    fun start(rootDir: String, port: Int, username: String, password: String, writable: Boolean, ipv6: Boolean) {
+    fun start(rootDir: String, port: Int, username: String, password: String, writable: Boolean, ipv6Enabled: Boolean) {
         if (isRunning) throw IllegalStateException("FTP 服务已在运行")
 
         val root = File(rootDir)
@@ -48,7 +48,7 @@ object FtpServerManager {
         // 协商被动数据连接（FTPServer 默认支持），无需额外配置。
         val listenerFactory = ListenerFactory()
         listenerFactory.port = port
-        listenerFactory.serverAddress = if (ipv6) "::" else "0.0.0.0"
+        listenerFactory.serverAddress = if (ipv6Enabled) "::" else "0.0.0.0"
         serverFactory.addListener("default", listenerFactory.createListener())
 
         // 配置用户：匿名或具名，home 目录限定为 rootDir。

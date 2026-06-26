@@ -20,7 +20,7 @@ class FtpService {
     required String username,
     required String password,
     required bool writable,
-    required bool ipv6,
+    required bool ipv6Enabled,
   }) async {
     await _channel.invokeMethod<void>('start', {
       'rootDir': rootDir,
@@ -28,7 +28,7 @@ class FtpService {
       'username': username,
       'password': password,
       'writable': writable,
-      'ipv6': ipv6,
+      'ipv6Enabled': ipv6Enabled,
     });
   }
 

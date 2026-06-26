@@ -25,7 +25,7 @@ class SshService {
     required bool writable,
     required bool sftpEnabled,
     required bool shellEnabled,
-    required bool ipv6,
+    required bool ipv6Enabled,
   }) async {
     await _channel.invokeMethod<void>('start', {
       'rootDir': rootDir,
@@ -35,7 +35,7 @@ class SshService {
       'writable': writable,
       'sftpEnabled': sftpEnabled,
       'shellEnabled': shellEnabled,
-      'ipv6': ipv6,
+      'ipv6Enabled': ipv6Enabled,
     });
   }
 

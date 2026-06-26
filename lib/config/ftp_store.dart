@@ -72,9 +72,9 @@ class FtpStore {
 
   /// 读取已保存的 FTP 配置；未保存过返回默认配置。
   static Future<FtpConfig> load() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    if (m.isEmpty) return const FtpConfig();
-    return FtpConfig.fromJson(m);
+    final configMap = await ConfigStore.readConfig(_fileName);
+    if (configMap.isEmpty) return const FtpConfig();
+    return FtpConfig.fromJson(configMap);
   }
 
   /// 持久化 FTP 配置。

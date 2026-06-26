@@ -29,14 +29,14 @@ class McpService {
   Future<void> start({
     required int port,
     required String token,
-    required bool ipv6,
+    required bool ipv6Enabled,
     required McpServer Function(String sessionId) serverFactory,
   }) async {
     if (_running) return;
     final expected = token.isEmpty ? null : 'Bearer $token';
     final server = StreamableMcpServer(
       serverFactory: serverFactory,
-      host: ipv6 ? '::' : '0.0.0.0',
+      host: ipv6Enabled ? '::' : '0.0.0.0',
       port: port,
       path: '/mcp',
       enableDnsRebindingProtection: false,

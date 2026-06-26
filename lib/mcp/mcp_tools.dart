@@ -120,14 +120,14 @@ void _registerReadTools(
     description: '获取设备硬件信息：SoC、CPU 架构、制造商、型号、安卓版本与安全补丁。',
     annotations: readOnly,
     callback: (args, extra) async {
-      final d = await SystemMonitorService().getDeviceInfo();
+      final deviceInfo = await SystemMonitorService().getDeviceInfo();
       return _ok({
-        'socModel': d.socModel,
-        'architecture': d.architecture,
-        'manufacturer': d.manufacturer,
-        'model': d.model,
-        'androidVersion': d.androidVersion,
-        'securityPatch': d.securityPatch,
+        'socModel': deviceInfo.socModel,
+        'architecture': deviceInfo.architecture,
+        'manufacturer': deviceInfo.manufacturer,
+        'model': deviceInfo.model,
+        'androidVersion': deviceInfo.androidVersion,
+        'securityPatch': deviceInfo.securityPatch,
       });
     },
   );
@@ -140,12 +140,12 @@ void _registerReadTools(
       final selectedId = instances.selected?.id;
       return _ok({
         'instances': [
-          for (final s in instances.instances)
+          for (final inst in instances.instances)
             {
-              'id': s.id,
-              'name': s.name,
-              'selected': s.id == selectedId,
-              'running': server.runningInstanceId == s.id,
+              'id': inst.id,
+              'name': inst.name,
+              'selected': inst.id == selectedId,
+              'running': server.runningInstanceId == inst.id,
             },
         ],
       });
@@ -339,15 +339,15 @@ void _registerShellTools(
       final command = (args['command'] as String?)?.trim() ?? '';
       if (command.isEmpty) return _err('command 不能为空');
       final cwdArg = (args['cwd'] as String?)?.trim();
-      final res = await shell.runCommand(
+      final result = await shell.runCommand(
         command,
         cwd: (cwdArg != null && cwdArg.isNotEmpty) ? cwdArg : session.cwd,
       );
       return _ok({
-        'exitCode': res['exitCode'],
-        'output': res['output'],
-        'cwd': res['cwd'],
-        'shell': res['shell'],
+        'exitCode': result['exitCode'],
+        'output': result['output'],
+        'cwd': result['cwd'],
+        'shell': result['shell'],
       });
     },
   );
@@ -364,11 +364,11 @@ void _registerShellTools(
       final path = (args['path'] as String?)?.trim() ?? '';
       if (path.isEmpty) return _err('path 不能为空');
       // 用 `cd && pwd` 校验目录可进入并解析为绝对路径。
-      final res = await shell.runCommand('cd "$path" && pwd', cwd: session.cwd);
-      final code = res['exitCode'] as int? ?? -1;
-      final out = (res['output'] as String? ?? '').trim();
-      if (code != 0 || out.isEmpty) return _err('无法进入目录：$path');
-      session.cwd = out;
+      final result = await shell.runCommand('cd "$path" && pwd', cwd: session.cwd);
+      final exitCode = result['exitCode'] as int? ?? -1;
+      final output = (result['output'] as String? ?? '').trim();
+      if (exitCode != 0 || output.isEmpty) return _err('无法进入目录：$path');
+      session.cwd = output;
       return _ok({'cwd': session.cwd});
     },
   );
@@ -382,10 +382,10 @@ void _registerShellTools(
     ),
     callback: (args, extra) async {
       if (session.cwd != null) return _ok({'cwd': session.cwd});
-      final res = await shell.runCommand('pwd', cwd: null);
-      final out = (res['output'] as String? ?? '').trim();
-      if (out.isNotEmpty) session.cwd = out;
-      return _ok({'cwd': session.cwd ?? out});
+      final result = await shell.runCommand('pwd', cwd: null);
+      final output = (result['output'] as String? ?? '').trim();
+      if (output.isNotEmpty) session.cwd = output;
+      return _ok({'cwd': session.cwd ?? output});
     },
   );
 
@@ -432,7 +432,7 @@ Future<CallToolResult> _startInstance(
 
   // PHP（PocketMine）：用 PHP 运行时执行选中的 .phar。
   if (instance.isPhp) {
-    final phpRuntimes = await server.availablePhpRuntimes();
+    final phpRuntimes = await server.availablePhpIds();
     if (phpRuntimes.isEmpty) return _err('当前设备架构不支持 PHP 运行环境');
     final phar = _pickFile(instance.selectedJar, phars);
     if (phar == null) {
@@ -442,7 +442,7 @@ Future<CallToolResult> _startInstance(
       instanceId: instance.id,
       instanceName: instance.name,
       workingDir: dir.path,
-      version: phpRuntimes.first,
+      runtimeId: phpRuntimes.first,
       runtime: kRuntimePhp,
       jvmArgs: const [],
       programArgs: [phar],
@@ -461,13 +461,13 @@ Future<CallToolResult> _startInstance(
   if (jar == null) {
     return _err('未在实例目录找到 .jar，请先放入服务端 jar 文件');
   }
-  final versions = await server.availableVersions();
+  final versions = await server.availableJreIds();
   if (versions.isEmpty) {
     return _err('未安装任何 Java 运行环境，请先在「管理 → 运行环境」导入 JRE');
   }
-  var version = instance.javaVersion ?? 'jre21';
-  if (!versions.contains(version)) {
-    version = versions.contains('jre21') ? 'jre21' : versions.first;
+  var runtimeId = instance.javaVersion ?? 'jre21';
+  if (!versions.contains(runtimeId)) {
+    runtimeId = versions.contains('jre21') ? 'jre21' : versions.first;
   }
   final mem = instance.maxMemory ?? 2048;
   final jvmArgs = <String>[
@@ -479,7 +479,7 @@ Future<CallToolResult> _startInstance(
     instanceId: instance.id,
     instanceName: instance.name,
     workingDir: dir.path,
-    version: version,
+    runtimeId: runtimeId,
     runtime: kRuntimeJava,
     jvmArgs: jvmArgs,
     programArgs: ['-jar', jar, 'nogui'],
@@ -489,7 +489,7 @@ Future<CallToolResult> _startInstance(
     'started': true,
     'runtime': 'java',
     'file': jar,
-    'version': version,
+    'runtimeId': runtimeId,
     'jvmArgs': jvmArgs,
     'status': server.status.name,
   });

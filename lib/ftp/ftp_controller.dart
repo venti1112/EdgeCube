@@ -52,14 +52,14 @@ class FtpController extends ChangeNotifier {
   }
 
   /// 开启/关闭 FTP 服务。
-  Future<void> setEnabled(bool value) async {
-    if (value == _running) return;
-    if (value) {
+  Future<void> setEnabled(bool enabled) async {
+    if (enabled == _running) return;
+    if (enabled) {
       await _startInternal();
     } else {
       await _stopInternal();
     }
-    _config = _config.copyWith(enabled: value);
+    _config = _config.copyWith(enabled: enabled);
     await FtpStore.save(_config);
     notifyListeners();
   }
@@ -87,7 +87,7 @@ class FtpController extends ChangeNotifier {
       username: _config.username,
       password: _config.password,
       writable: _config.writable,
-      ipv6: _config.ipv6Enabled,
+      ipv6Enabled: _config.ipv6Enabled,
     );
     _running = true;
   }

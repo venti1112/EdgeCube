@@ -13,24 +13,24 @@ class ServerService {
     'com.venti1112.edgecube/server_events',
   );
 
-  /// 当前设备架构下可用的 JRE 版本（如 ['jre17','jre21','jre25']）。
-  Future<List<String>> availableVersions() async {
+  /// 当前设备架构下可用的 JRE 标识（如 ['jre17','jre21','jre25']）。
+  Future<List<String>> availableJreIds() async {
     final list = await _method.invokeMethod<List<dynamic>>('availableVersions');
     return list?.cast<String>() ?? const [];
   }
 
-  /// 当前设备架构下可用的 PHP 运行时（如 ['php8.2']）；不支持的架构返回空。
-  Future<List<String>> availablePhpRuntimes() async {
+  /// 当前设备架构下可用的 PHP 运行时标识（如 ['php8.2']）；不支持的架构返回空。
+  Future<List<String>> availablePhpIds() async {
     final list = await _method.invokeMethod<List<dynamic>>(
       'availablePhpRuntimes',
     );
     return list?.cast<String>() ?? const [];
   }
 
-  /// 指定版本的 JRE 是否已解压就位。
-  Future<bool> isRuntimeReady(String version) async {
+  /// 指定标识的 JRE 是否已解压就位。
+  Future<bool> isRuntimeReady(String runtimeId) async {
     final ready = await _method.invokeMethod<bool>('isRuntimeReady', {
-      'version': version,
+      'runtimeId': runtimeId,
     });
     return ready ?? false;
   }
@@ -50,7 +50,7 @@ class ServerService {
     required String instanceId,
     required String instanceName,
     required String workingDir,
-    required String version,
+    required String runtimeId,
     required String runtime,
     required List<String> jvmArgs,
     required List<String> programArgs,
@@ -59,7 +59,7 @@ class ServerService {
       'instanceId': instanceId,
       'instanceName': instanceName,
       'workingDir': workingDir,
-      'version': version,
+      'runtimeId': runtimeId,
       'runtime': runtime,
       'jvmArgs': jvmArgs,
       'programArgs': programArgs,

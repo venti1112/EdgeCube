@@ -26,27 +26,27 @@ class TerminalStore {
       _save(_shellKey, value);
 
   static Future<bool> loadAutoClearLogOnStart() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    final raw = m[_autoClearKey];
+    final configMap = await ConfigStore.readConfig(_fileName);
+    final raw = configMap[_autoClearKey];
     return raw is bool ? raw : true;
   }
 
-  static Future<void> saveAutoClearLogOnStart(bool value) async {
-    final m = await ConfigStore.readConfig(_fileName);
-    m[_autoClearKey] = value;
-    await ConfigStore.writeConfig(_fileName, m);
+  static Future<void> saveAutoClearLogOnStart(bool enabled) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_autoClearKey] = enabled;
+    await ConfigStore.writeConfig(_fileName, configMap);
   }
 
   static Future<double> _load(String key) async {
-    final m = await ConfigStore.readConfig(_fileName);
-    final raw = m[key];
-    final value = raw is num ? raw.toDouble() : kDefaultTerminalFontSize;
-    return value.clamp(kMinTerminalFontSize, kMaxTerminalFontSize);
+    final configMap = await ConfigStore.readConfig(_fileName);
+    final raw = configMap[key];
+    final fontSize = raw is num ? raw.toDouble() : kDefaultTerminalFontSize;
+    return fontSize.clamp(kMinTerminalFontSize, kMaxTerminalFontSize);
   }
 
-  static Future<void> _save(String key, double value) async {
-    final m = await ConfigStore.readConfig(_fileName);
-    m[key] = value.clamp(kMinTerminalFontSize, kMaxTerminalFontSize);
-    await ConfigStore.writeConfig(_fileName, m);
+  static Future<void> _save(String key, double fontSize) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[key] = fontSize.clamp(kMinTerminalFontSize, kMaxTerminalFontSize);
+    await ConfigStore.writeConfig(_fileName, configMap);
   }
 }

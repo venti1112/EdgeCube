@@ -27,27 +27,27 @@ class VersionStore {
   /// （已存在则不重复，保持首次出现顺序）。
   static Future<void> recordOpen() async {
     final version = await currentVersion();
-    final m = await ConfigStore.readConfig(_fileName);
-    m[_lastVersionKey] = version;
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_lastVersionKey] = version;
     final history =
-        (m[_historyKey] as List?)?.whereType<String>().toList() ?? <String>[];
+        (configMap[_historyKey] as List?)?.whereType<String>().toList() ?? <String>[];
     if (!history.contains(version)) {
       history.add(version);
     }
-    m[_historyKey] = history;
-    await ConfigStore.writeConfig(_fileName, m);
+    configMap[_historyKey] = history;
+    await ConfigStore.writeConfig(_fileName, configMap);
   }
 
   /// 读取最后一次打开的版本号；未记录过返回 null。
   static Future<String?> loadLastVersion() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    return m[_lastVersionKey] as String?;
+    final configMap = await ConfigStore.readConfig(_fileName);
+    return configMap[_lastVersionKey] as String?;
   }
 
   /// 读取设备上运行过的全部历史版本列表（按首次出现顺序）；未记录过返回空列表。
   static Future<List<String>> loadHistory() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    final list = m[_historyKey];
+    final configMap = await ConfigStore.readConfig(_fileName);
+    final list = configMap[_historyKey];
     if (list is! List) return [];
     return list.whereType<String>().toList();
   }

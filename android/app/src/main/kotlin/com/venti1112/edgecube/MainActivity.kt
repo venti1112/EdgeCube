@@ -327,11 +327,11 @@ class MainActivity : FlutterActivity() {
                     result.success(RuntimeInstaller.availablePhpIds(applicationContext))
 
                 "isRuntimeReady" -> {
-                    val version = call.argument<String>("version")
-                    if (version == null) {
-                        result.error("BAD_ARGS", "缺少 version", null)
+                    val runtimeId = call.argument<String>("runtimeId")
+                    if (runtimeId == null) {
+                        result.error("BAD_ARGS", "缺少 runtimeId", null)
                     } else {
-                        result.success(RuntimeInstaller.isInstalled(applicationContext, version))
+                        result.success(RuntimeInstaller.isInstalled(applicationContext, runtimeId))
                     }
                 }
 
@@ -342,19 +342,19 @@ class MainActivity : FlutterActivity() {
                 "start" -> {
                     val instanceId = call.argument<String>("instanceId")
                     val workingDir = call.argument<String>("workingDir")
-                    val version = call.argument<String>("version")
+                    val runtimeId = call.argument<String>("runtimeId")
                     val runtime = call.argument<String>("runtime") ?: "java"
                     val jvmArgs = call.argument<List<String>>("jvmArgs") ?: emptyList()
                     val programArgs = call.argument<List<String>>("programArgs") ?: emptyList()
-                    if (instanceId == null || workingDir == null || version == null) {
-                        result.error("BAD_ARGS", "缺少 instanceId/workingDir/version", null)
+                    if (instanceId == null || workingDir == null || runtimeId == null) {
+                        result.error("BAD_ARGS", "缺少 instanceId/workingDir/runtimeId", null)
                     } else {
                         val instanceName = call.argument<String>("instanceName") ?: instanceId
                         // 含解压，放后台线程；完成后回主线程返回结果。
                         thread {
                             try {
                                 serverManager.start(
-                                    instanceId, instanceName, workingDir, version, runtime, jvmArgs, programArgs,
+                                    instanceId, instanceName, workingDir, runtimeId, runtime, jvmArgs, programArgs,
                                 )
                                 runOnUiThread { result.success(true) }
                             } catch (e: Exception) {
@@ -544,13 +544,13 @@ class MainActivity : FlutterActivity() {
                     val username = call.argument<String>("username") ?: ""
                     val password = call.argument<String>("password") ?: ""
                     val writable = call.argument<Boolean>("writable") ?: true
-                    val ipv6 = call.argument<Boolean>("ipv6") ?: false
+                    val ipv6Enabled = call.argument<Boolean>("ipv6Enabled") ?: false
                     if (rootDir == null || port == null) {
                         result.error("BAD_ARGS", "缺少 rootDir/port", null)
                     } else {
                         try {
                             com.venti1112.edgecube.ftp.FtpServerManager.start(
-                                rootDir, port, username, password, writable, ipv6,
+                                rootDir, port, username, password, writable, ipv6Enabled,
                             )
                             result.success(true)
                         } catch (e: Exception) {
@@ -580,7 +580,7 @@ class MainActivity : FlutterActivity() {
                     val writable = call.argument<Boolean>("writable") ?: true
                     val sftpEnabled = call.argument<Boolean>("sftpEnabled") ?: true
                     val shellEnabled = call.argument<Boolean>("shellEnabled") ?: true
-                    val ipv6 = call.argument<Boolean>("ipv6") ?: false
+                    val ipv6Enabled = call.argument<Boolean>("ipv6Enabled") ?: false
                     if (rootDir == null || port == null) {
                         result.error("BAD_ARGS", "缺少 rootDir/port", null)
                     } else {
@@ -589,7 +589,7 @@ class MainActivity : FlutterActivity() {
                             try {
                                 com.venti1112.edgecube.ssh.SshServerManager.start(
                                     applicationContext, rootDir, port, username, password,
-                                    writable, sftpEnabled, shellEnabled, ipv6,
+                                    writable, sftpEnabled, shellEnabled, ipv6Enabled,
                                 )
                                 runOnUiThread { result.success(true) }
                             } catch (e: Exception) {

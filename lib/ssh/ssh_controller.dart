@@ -52,18 +52,18 @@ class SshController extends ChangeNotifier {
   }
 
   /// 切换 SFTP 文件访问开关。
-  Future<void> setSftpEnabled(bool value) async {
-    if (value == _config.sftpEnabled) return;
-    _config = _config.copyWith(sftpEnabled: value);
+  Future<void> setSftpEnabled(bool enabled) async {
+    if (enabled == _config.sftpEnabled) return;
+    _config = _config.copyWith(sftpEnabled: enabled);
     await SshStore.save(_config);
     await _reconcile();
     notifyListeners();
   }
 
   /// 切换 SSH 终端开关。
-  Future<void> setShellEnabled(bool value) async {
-    if (value == _config.shellEnabled) return;
-    _config = _config.copyWith(shellEnabled: value);
+  Future<void> setShellEnabled(bool enabled) async {
+    if (enabled == _config.shellEnabled) return;
+    _config = _config.copyWith(shellEnabled: enabled);
     await SshStore.save(_config);
     await _reconcile();
     notifyListeners();
@@ -108,7 +108,7 @@ class SshController extends ChangeNotifier {
       writable: _config.writable,
       sftpEnabled: _config.sftpEnabled,
       shellEnabled: _config.shellEnabled,
-      ipv6: _config.ipv6Enabled,
+      ipv6Enabled: _config.ipv6Enabled,
     );
     _running = true;
   }

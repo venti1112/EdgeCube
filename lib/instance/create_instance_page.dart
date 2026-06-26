@@ -1197,7 +1197,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   /// 根据 MC 版本推断首选 Java 版本；若该版本未安装，回退到首个已安装 JRE。
   static Future<String> _resolveJavaVersion(String mcVersion) async {
     final preferred = _javaVersionForMc(mcVersion);
-    final available = await ServerService().availableVersions();
+    final available = await ServerService().availableJreIds();
     if (available.contains(preferred)) return preferred;
     if (available.isEmpty) return preferred;
     return available.first;

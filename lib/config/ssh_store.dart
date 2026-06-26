@@ -81,9 +81,9 @@ class SshStore {
 
   /// 读取已保存的 SSH 配置；未保存过返回默认配置。
   static Future<SshConfig> load() async {
-    final m = await ConfigStore.readConfig(_fileName);
-    if (m.isEmpty) return const SshConfig();
-    return SshConfig.fromJson(m);
+    final configMap = await ConfigStore.readConfig(_fileName);
+    if (configMap.isEmpty) return const SshConfig();
+    return SshConfig.fromJson(configMap);
   }
 
   /// 持久化 SSH 配置。

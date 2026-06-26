@@ -168,23 +168,23 @@ class FrpcConfig {
   /// 序列化为 frpc 的 TOML 配置。log.to=console 确保日志输出到 stdout，
   /// 由原生侧的进程读取并回传到界面。
   String toToml() {
-    final b = StringBuffer();
-    b.writeln('serverAddr = ${_q(serverAddr)}');
-    b.writeln('serverPort = $serverPort');
+    final buffer = StringBuffer();
+    buffer.writeln('serverAddr = ${_q(serverAddr)}');
+    buffer.writeln('serverPort = $serverPort');
     final token = authToken;
     if (token != null && token.isNotEmpty) {
-      b.writeln('auth.token = ${_q(token)}');
+      buffer.writeln('auth.token = ${_q(token)}');
     }
-    b.writeln('log.to = "console"');
-    b.writeln('log.level = ${_q(logLevel)}');
-    b.writeln();
-    b.writeln('[[proxies]]');
-    b.writeln('name = ${_q(proxyName)}');
-    b.writeln('type = ${_q(proxyType)}');
-    b.writeln('localIP = ${_q(localIp)}');
-    b.writeln('localPort = $localPort');
-    b.writeln('remotePort = $remotePort');
-    return b.toString();
+    buffer.writeln('log.to = "console"');
+    buffer.writeln('log.level = ${_q(logLevel)}');
+    buffer.writeln();
+    buffer.writeln('[[proxies]]');
+    buffer.writeln('name = ${_q(proxyName)}');
+    buffer.writeln('type = ${_q(proxyType)}');
+    buffer.writeln('localIP = ${_q(localIp)}');
+    buffer.writeln('localPort = $localPort');
+    buffer.writeln('remotePort = $remotePort');
+    return buffer.toString();
   }
 
   /// 用于本地持久化的可序列化映射。

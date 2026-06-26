@@ -61,7 +61,7 @@ object SshServerManager {
      * @param writable 是否允许 SFTP 写入（上传/删除/重命名）；仅作用于 SFTP，不限制 SSH 终端。
      * @param sftpEnabled 是否启用 SFTP 文件访问。
      * @param shellEnabled 是否启用 SSH 终端。
-     * @param ipv6 是否启用 IPv6（双栈）监听；关闭时仅监听 IPv4。
+     * @param ipv6Enabled 是否启用 IPv6（双栈）监听；关闭时仅监听 IPv4。
      */
     @Synchronized
     fun start(
@@ -73,7 +73,7 @@ object SshServerManager {
         writable: Boolean,
         sftpEnabled: Boolean,
         shellEnabled: Boolean,
-        ipv6: Boolean,
+        ipv6Enabled: Boolean,
     ) {
         if (isRunning) throw IllegalStateException("SSH 服务已在运行")
         require(sftpEnabled || shellEnabled) { "SFTP 与 SSH 终端至少需启用其一" }
@@ -88,7 +88,7 @@ object SshServerManager {
         sshd.port = port
         // host="::" 绑定 IPv6 通配地址，在 Android（内核 bindv6only=0）上为双栈，可同时接受
         // IPv4 与 IPv6；"0.0.0.0" 则仅监听 IPv4。与 FTP 监听器一致。
-        sshd.host = if (ipv6) "::" else "0.0.0.0"
+        sshd.host = if (ipv6Enabled) "::" else "0.0.0.0"
         // 显式指定 NIO2 传输工厂，避免 R8/资源合并下 ServiceLoader 自动发现失效。
         sshd.ioServiceFactoryFactory = Nio2ServiceFactoryFactory()
 

@@ -64,9 +64,9 @@ class McpController extends ChangeNotifier {
   }
 
   /// 开启/关闭 MCP 服务。
-  Future<void> setEnabled(bool value) async {
-    if (value == _running) return;
-    if (value) {
+  Future<void> setEnabled(bool enabled) async {
+    if (enabled == _running) return;
+    if (enabled) {
       await _startInternal();
       // 启动失败时不持久化为开启，避免下次启动反复失败。
       if (!_running) {
@@ -76,7 +76,7 @@ class McpController extends ChangeNotifier {
     } else {
       await _stopInternal();
     }
-    _config = _config.copyWith(enabled: value);
+    _config = _config.copyWith(enabled: enabled);
     await McpStore.save(_config);
     notifyListeners();
   }
@@ -105,7 +105,7 @@ class McpController extends ChangeNotifier {
       await _service.start(
         port: _config.port,
         token: _config.token,
-        ipv6: _config.ipv6Enabled,
+        ipv6Enabled: _config.ipv6Enabled,
         serverFactory: (sessionId) => buildMcpServer(
           server: serverController,
           instances: instanceController,
