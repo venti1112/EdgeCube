@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:flutter/foundation.dart';
 
 /// Mod 加载器类型。
 enum ModLoader {
@@ -51,17 +52,30 @@ class ModMetadataParser {
   ModMetadataParser._();
 
   /// 解析 [jarPath] 指向的 .jar 文件，返回元数据；无法识别返回 null。
+  ///
+  /// 解析在独立 isolate 中执行，避免 ZipDecoder 等 CPU 密集型操作
+  /// 阻塞 UI 线程（模组数量多时会导致界面卡顿）。
   static Future<ModMetadata?> parse(String jarPath) async {
-    final file = File(jarPath);
-    if (!await file.exists()) return null;
+    return compute(_parseJarSync, jarPath);
+  }
 
-    final bytes = await file.readAsBytes();
+  /// 在 isolate 中同步执行：读取文件 → 解压 → 解析元数据。
+  static ModMetadata? _parseJarSync(String jarPath) {
+    final file = File(jarPath);
+    if (!file.existsSync()) return null;
+
+    final bytes = file.readAsBytesSync();
     Archive? archive;
     try {
       archive = ZipDecoder().decodeBytes(bytes);
     } catch (_) {
       return null;
     }
+    return _extractMetadata(archive);
+  }
+
+  /// 从已解压的 [archive] 中按优先级提取模组元数据。
+  static ModMetadata? _extractMetadata(Archive archive) {
 
     // 1. fabric.mod.json
     final fabric = _readEntry(archive, 'fabric.mod.json');

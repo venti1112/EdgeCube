@@ -305,6 +305,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   void _onDestinationSelected(int index) {
+    // 切换页面前先收起软键盘，避免键盘收起动画期间的布局抖动导致视觉残留。
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _selectedIndex = index);
   }
 

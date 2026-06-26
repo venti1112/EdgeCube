@@ -10,6 +10,7 @@ import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
 import '../mods/download_queue.dart';
+import '../mods/icon_cache.dart';
 import '../mods/mod_metadata.dart';
 import '../mods/modrinth_service.dart';
 import 'mod_download_page.dart';
@@ -208,17 +209,34 @@ class _ContentTabState extends State<_ContentTab> {
 
   // ── 模组识别 ──────────────────────────────────────────────────
 
+  /// 单个 jar 解析失败时返回 null，避免异常中断批量处理。
+  Future<ModMetadata?> _safeParse(String path) async {
+    try {
+      return await ModMetadataParser.parse(path);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 分批并行解析模组元数据，每批完成后统一 setState，避免频繁重建列表。
   Future<void> _identifyMods() async {
     final jars = _entries.where((e) => e.isFile && _isJar(e.name)).toList();
-    for (final entry in jars) {
-      try {
-        final meta = await ModMetadataParser.parse(entry.path);
-        if (mounted) {
-          setState(() => _metadata[entry.path] = meta);
+    if (jars.isEmpty) return;
+
+    // 每批并行解析 6 个：平衡 isolate 开销与 UI 响应
+    const batchSize = 6;
+    for (var i = 0; i < jars.length; i += batchSize) {
+      final end = (i + batchSize).clamp(0, jars.length);
+      final batch = jars.sublist(i, end);
+      final results = await Future.wait(
+        batch.map((e) => _safeParse(e.path)),
+      );
+      if (!mounted) return;
+      setState(() {
+        for (var j = 0; j < batch.length; j++) {
+          _metadata[batch[j].path] = results[j];
         }
-      } catch (_) {
-        // 解析失败忽略，显示文件名即可
-      }
+      });
     }
     // 识别完成后获取模组图标
     if (mounted) _fetchModIcons(jars);
@@ -226,18 +244,41 @@ class _ContentTabState extends State<_ContentTab> {
 
   // ── 获取模组图标 ──────────────────────────────────────────────
 
+  /// 安全计算 SHA1，失败时返回空串占位。
+  Future<(String, String)> _safeSha1(String path) async {
+    try {
+      final hash = await ModrinthService.computeSha1(path);
+      return (path, hash);
+    } catch (_) {
+      return (path, '');
+    }
+  }
+
+  /// 分批并行计算 SHA1，限制并发度避免同时打开过多文件 / 创建过多 isolate。
+  Future<List<(String, String)>> _computeHashesBatched(
+    List<FileEntry> jars,
+  ) async {
+    const batchSize = 8;
+    final results = <(String, String)>[];
+    for (var i = 0; i < jars.length; i += batchSize) {
+      final end = (i + batchSize).clamp(0, jars.length);
+      final batch = jars.sublist(i, end);
+      results.addAll(await Future.wait(
+        batch.map((j) => _safeSha1(j.path)),
+      ));
+    }
+    return results;
+  }
+
   Future<void> _fetchModIcons(List<FileEntry> jars) async {
     if (jars.isEmpty) return;
     try {
-      // 并行计算 SHA1
-      final hashFutures = jars.map((j) async {
-        final hash = await ModrinthService.computeSha1(j.path);
-        return (j.path, hash);
-      }).toList();
-      final hashResults = await Future.wait(hashFutures);
+      // 分批并行计算 SHA1
+      final hashResults = await _computeHashesBatched(jars);
 
       final hashToPath = <String, String>{};
       for (final (path, hash) in hashResults) {
+        if (hash.isEmpty) continue;
         _sha1Hashes[path] = hash;
         hashToPath[hash] = path;
       }
@@ -290,15 +331,11 @@ class _ContentTabState extends State<_ContentTab> {
     });
 
     try {
-      // 复用已计算的 SHA1，未计算则现算
+      // 复用已计算的 SHA1，未计算则现算（分批并行）
       if (_sha1Hashes.isEmpty) {
-        final hashFutures = jars.map((j) async {
-          final hash = await ModrinthService.computeSha1(j.path);
-          return (j.path, hash);
-        }).toList();
-        final hashResults = await Future.wait(hashFutures);
+        final hashResults = await _computeHashesBatched(jars);
         for (final (path, hash) in hashResults) {
-          _sha1Hashes[path] = hash;
+          if (hash.isNotEmpty) _sha1Hashes[path] = hash;
         }
       }
 
@@ -361,7 +398,8 @@ class _ContentTabState extends State<_ContentTab> {
 
   /// 将模组更新任务加入下载队列。
   ///
-  /// 下载完成后队列会自动替换旧文件并刷新列表。
+  /// 下载完成后队列会自动替换旧文件，并通过 [_refreshAfterUpdate]
+  /// 就地更新列表条目，避免全列表刷新导致图标/元数据重新加载。
   void _updateMod(FileEntry entry) {
     final version = _updates[entry.path];
     if (version == null) return;
@@ -379,46 +417,210 @@ class _ContentTabState extends State<_ContentTab> {
       versionName: version.name.isEmpty ? version.versionNumber : version.name,
       iconUrl: _icons[entry.path],
       replacePath: entry.path,
-      onComplete: () {
-        if (mounted) _load();
-      },
+      onComplete: () => _refreshAfterUpdate(entry.path, destPath),
     );
 
     // 标记为更新中（队列下载期间显示进度）
     setState(() => _updatingPaths.add(entry.path));
-    _trackUpdate(entry.path);
   }
 
-  /// 监听下载队列，当指定路径的更新任务完成后清除「更新中」状态。
-  void _trackUpdate(String entryPath) {
-    void onChanged() {
-      // 检查是否还有以该路径为 replacePath 的活跃任务
-      final stillActive = DownloadQueue.instance.tasks.any(
-        (t) =>
-            t.replacePath == entryPath &&
-            (t.status == DownloadTaskStatus.downloading ||
-                t.status == DownloadTaskStatus.pending),
-      );
-      if (!stillActive) {
-        DownloadQueue.instance.removeListener(onChanged);
-        if (mounted) {
-          setState(() => _updatingPaths.remove(entryPath));
-          _updates.remove(entryPath);
-        }
-      }
+  /// 更新完成后就地刷新列表，不触发全列表重载。
+  ///
+  /// 下载成功时：旧文件已被队列删除，新文件位于 [destPath]，
+  /// 替换条目并仅对新文件重新识别元数据/图标/哈希。
+  /// 下载失败/取消时：旧文件仍在，仅清理更新状态。
+  Future<void> _refreshAfterUpdate(String oldPath, String destPath) async {
+    if (!mounted) return;
+    final newFile = File(destPath);
+
+    if (!newFile.existsSync()) {
+      // 下载失败或取消，旧文件仍在 → 仅清理状态
+      setState(() {
+        _updatingPaths.remove(oldPath);
+      });
+      return;
     }
 
-    DownloadQueue.instance.addListener(onChanged);
+    // 下载成功：旧文件已删除，新文件存在
+    final newName = p.basename(destPath);
+    final newEntry = entryFromEntity(newFile, newName);
+
+    // 清理旧路径缓存
+    _metadata.remove(oldPath);
+    _icons.remove(oldPath);
+    _sha1Hashes.remove(oldPath);
+    _updates.remove(oldPath);
+
+    setState(() {
+      final idx = _entries.indexWhere((e) => e.path == oldPath);
+      if (idx >= 0) {
+        _entries[idx] = newEntry;
+      } else {
+        _entries.add(newEntry);
+      }
+      _updatingPaths.remove(oldPath);
+    });
+
+    // 仅对新文件重新识别元数据、图标与哈希
+    await _identifySingleMod(newEntry);
   }
 
-  // ── 全部更新 ──────────────────────────────────────────────────
+  /// 对单个 jar 文件重新识别元数据、计算 SHA1 并获取图标。
+  Future<void> _identifySingleMod(FileEntry entry) async {
+    final meta = await _safeParse(entry.path);
+    if (!mounted) return;
+    setState(() => _metadata[entry.path] = meta);
 
-  void _updateAll() {
-    final paths = _updates.keys.toList();
-    for (final path in paths) {
+    try {
+      final hash = await ModrinthService.computeSha1(entry.path);
+      if (hash.isEmpty || !mounted) return;
+      _sha1Hashes[entry.path] = hash;
+
+      final versionMap = await ModrinthService.getVersionsByHashes([hash]);
+      final version = versionMap[hash];
+      if (version == null || version.projectId.isEmpty || !mounted) return;
+
+      final projects = await ModrinthService.getProjects([version.projectId]);
+      if (projects.isNotEmpty && mounted) {
+        setState(() => _icons[entry.path] = projects.first.iconUrl);
+      }
+    } catch (_) {
+      // 图标获取失败不影响使用
+    }
+  }
+
+  // ── 选择更新 ──────────────────────────────────────────────────
+
+  /// 弹出更新选择对话框，让用户勾选要更新的模组。
+  Future<void> _showUpdateSelection() async {
+    final tr = LocaleScope.of(context).translations;
+    final theme = Theme.of(context);
+
+    // 收集可更新的条目
+    final updatable = <MapEntry<FileEntry, ModrinthVersion>>[];
+    for (final path in _updates.keys) {
       final entry = _entries.where((e) => e.path == path).firstOrNull;
       if (entry != null) {
-        _updateMod(entry);
+        updatable.add(MapEntry(entry, _updates[path]!));
+      }
+    }
+    if (updatable.isEmpty) return;
+
+    // 默认全部选中
+    final selected = <String, bool>{
+      for (final e in updatable) e.key.path: true,
+    };
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final selectedCount = selected.values.where((v) => v).length;
+          return AlertDialog(
+            title: Text(tr.get('modsPlugins.selectUpdates')),
+            contentPadding: const EdgeInsets.only(top: 16),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        TextButton(
+                          onPressed: selected.values.every((v) => v)
+                              ? null
+                              : () {
+                                  setDialogState(() {
+                                    for (final k in selected.keys) {
+                                      selected[k] = true;
+                                    }
+                                  });
+                                },
+                          child: Text(tr.get('modsPlugins.selectAll')),
+                        ),
+                        TextButton(
+                          onPressed: selected.values.any((v) => v)
+                              ? () {
+                                  setDialogState(() {
+                                    for (final k in selected.keys) {
+                                      selected[k] = false;
+                                    }
+                                  });
+                                }
+                              : null,
+                          child: Text(tr.get('modsPlugins.deselectAll')),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: updatable.length,
+                      itemBuilder: (ctx, i) {
+                        final entry = updatable[i].key;
+                        final version = updatable[i].value;
+                        final meta = _metadata[entry.path];
+                        final name =
+                            (meta != null && meta.name.isNotEmpty)
+                                ? meta.name
+                                : entry.name;
+                        final oldVersion = meta?.version ?? '?';
+                        final newVersion = version.name.isEmpty
+                            ? version.versionNumber
+                            : version.name;
+                        return CheckboxListTile(
+                          value: selected[entry.path],
+                          onChanged: (v) {
+                            setDialogState(() {
+                              selected[entry.path] = v ?? false;
+                            });
+                          },
+                          title: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            '$oldVersion → $newVersion',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(tr.get('common.cancel')),
+              ),
+              FilledButton(
+                onPressed: selectedCount == 0
+                    ? null
+                    : () => Navigator.of(ctx).pop(true),
+                child: Text(
+                  tr.get('modsPlugins.updateSelected', {
+                    'count': '$selectedCount',
+                  }),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (confirmed == true) {
+      for (final entry in updatable) {
+        if (selected[entry.key.path] == true) {
+          _updateMod(entry.key);
+        }
       }
     }
   }
@@ -640,6 +842,7 @@ class _ContentTabState extends State<_ContentTab> {
     return Column(
       children: [
         _buildHeader(theme),
+        const DownloadQueueBanner(),
         if (widget.isJarContent && _updates.isNotEmpty) _buildUpdateBanner(theme),
         Expanded(
           child: _entries.isEmpty
@@ -735,8 +938,8 @@ class _ContentTabState extends State<_ContentTab> {
             ),
           ),
           TextButton(
-            onPressed: _updatingPaths.isNotEmpty ? null : _updateAll,
-            child: Text(context.tr('modsPlugins.updateAll')),
+            onPressed: _updatingPaths.isNotEmpty ? null : _showUpdateSelection,
+            child: Text(context.tr('modsPlugins.selectUpdates')),
           ),
         ],
       ),
@@ -854,7 +1057,7 @@ class _ContentTabState extends State<_ContentTab> {
 
   /// 构建列表项前导图标。
   ///
-  /// 优先显示从 Modrinth 获取的模组图标，其次按加载器显示彩色方块，
+  /// 优先显示从 Modrinth 获取的缓存图标，其次按加载器显示彩色方块，
   /// 最后回退到通用扩展图标。
   Widget _buildLeading(
     ThemeData theme,
@@ -862,18 +1065,12 @@ class _ContentTabState extends State<_ContentTab> {
     ModMetadata? meta,
     String? iconUrl,
   ) {
-    // 有 Modrinth 图标 URL 时显示真实图标
+    // 有 Modrinth 图标 URL 时显示缓存图标（加载中/失败回退到彩色方块）
     if (iconUrl != null && iconUrl.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.network(
-          iconUrl,
-          width: 40,
-          height: 40,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) =>
-              _fallbackLeading(theme, meta),
-        ),
+      return CachedModIcon(
+        url: iconUrl,
+        size: 40,
+        fallback: meta != null ? _coloredBox(theme, meta) : null,
       );
     }
 
@@ -884,19 +1081,6 @@ class _ContentTabState extends State<_ContentTab> {
 
     // 无元数据 → 通用图标
     return const Icon(Icons.extension_outlined, size: 32);
-  }
-
-  Widget _fallbackLeading(ThemeData theme, ModMetadata? meta) {
-    if (meta != null) return _coloredBox(theme, meta);
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: const Icon(Icons.extension, size: 24),
-    );
   }
 
   Widget _coloredBox(ThemeData theme, ModMetadata meta) {

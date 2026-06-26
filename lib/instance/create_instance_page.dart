@@ -19,6 +19,7 @@ import '../i18n/i18n_service.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
+import '../mods/modpack_service.dart';
 import '../net/msl_mirror.dart';
 import '../server/server_service.dart';
 
@@ -37,6 +38,7 @@ enum _WizardStep {
   importFile,
   importArchive,
   extractArchive,
+  modpackImport,
 }
 
 /// 新建实例向导结果。
@@ -106,6 +108,14 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   bool _extracting = false;
   String? _extractError;
   double? _extractProgress;
+
+  /// 整合包导入状态。
+  ModpackFormat? _modpackFormat;
+  String _modpackPhase = ''; // parsing / downloading / extracting / preparing / idle
+  int _modpackCurrent = 0;
+  int _modpackTotal = 0;
+  String _modpackCurrentFile = '';
+  String? _modpackError;
 
   /// 当前安装器类型（'forge' 或 'neoforge'），用于 UI 文案和日志文件名区分。
   String _installerType = 'forge';
@@ -394,6 +404,293 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       if (!mounted) return;
       _showDuplicateDialog(name);
     }
+  }
+
+  // —— 整合包导入流程 ——
+  // 参考 PCL-CE 的 ModModpack.ModpackInstall / InstallPackModrinth：
+  // 1. 选择整合包文件 → 2. 检测格式 → 3.（Modrinth）解析清单 →
+  //    4. 确认 → 5. 下载服务端 mod → 6. 解压 overrides → 7. 下载服务端 jar。
+  // 普通 zip：直接解压到实例目录后完成。
+
+  Future<void> _startModpackImport() async {
+    if (!await _validateName()) return;
+    final name = _nameController.text.trim();
+    try {
+      final instance = await _instanceController.createInstance(name);
+      if (!mounted) return;
+      _instanceId = instance.id;
+      setState(() {
+        _step = _WizardStep.modpackImport;
+        _modpackPhase = '';
+        _modpackError = null;
+        _modpackFormat = null;
+      });
+      await _doModpackImport(instance.id);
+    } on DuplicateInstanceNameException {
+      if (!mounted) return;
+      _showDuplicateDialog(name);
+    }
+  }
+
+  Future<void> _doModpackImport(String instanceId) async {
+    // 文件访问权限。
+    if (!await StoragePermission.isGranted()) {
+      if (!mounted) return;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(context.tr('instance.storagePermissionTitle')),
+          content: Text(context.tr('instance.importStoragePermissionMessage')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(context.tr('common.cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(context.tr('instance.goGrant')),
+            ),
+          ],
+        ),
+      );
+      if (go != true) {
+        _deleteCreatedInstance();
+        _closeWizard();
+        return;
+      }
+      await StoragePermission.request();
+      if (!mounted) return;
+      _doModpackImport(instanceId);
+      return;
+    }
+
+    // 选择整合包文件。
+    if (!mounted) return;
+    final sourcePath = await pickFromSystem(context, mode: SystemPickMode.file);
+    if (sourcePath == null) {
+      _deleteCreatedInstance();
+      _closeWizard();
+      return;
+    }
+
+    setState(() => _modpackPhase = 'parsing');
+    try {
+      final format = await ModpackService.detectFormat(sourcePath);
+      _modpackFormat = format;
+      if (format == ModpackFormat.plainZip) {
+        // 普通 zip：直接解压到实例目录后完成。
+        await _extractPlainZip(instanceId, sourcePath);
+        return;
+      }
+
+      // Modrinth：解析清单。
+      final modpack = await ModpackService.parseModrinth(sourcePath);
+      if (!mounted) return;
+
+      // 确认对话框。
+      final confirmed = await _showModpackConfirm(modpack);
+      if (confirmed != true) {
+        _deleteCreatedInstance();
+        _closeWizard();
+        return;
+      }
+
+      final dir = await _instanceController.directoryForId(instanceId);
+
+      // 下载服务端 mod 文件。
+      setState(() {
+        _modpackPhase = 'downloading';
+        _modpackCurrent = 0;
+        _modpackTotal = modpack.serverFiles.length;
+        _modpackError = null;
+      });
+      await ModpackService.downloadServerFiles(
+        modpack,
+        dir,
+        onProgress: (current, total, fileName) {
+          if (!mounted) return;
+          setState(() {
+            _modpackCurrent = current;
+            _modpackTotal = total;
+            _modpackCurrentFile = fileName;
+          });
+        },
+      );
+
+      // 解压 overrides。
+      if (!mounted) return;
+      setState(() {
+        _modpackPhase = 'extracting';
+        _modpackError = null;
+      });
+      await ModpackService.extractOverrides(sourcePath, dir);
+
+      // 下载服务端 jar。
+      if (!mounted) return;
+      setState(() => _modpackPhase = 'preparing');
+      await _downloadServerJarFromModpack(instanceId, modpack);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _modpackError = context.tr('instance.modpackFailed', {'error': '$e'});
+      });
+    }
+  }
+
+  /// 普通 zip 整合包：解压到实例目录后完成（与导入压缩包行为一致）。
+  Future<void> _extractPlainZip(String instanceId, String sourcePath) async {
+    setState(() {
+      _modpackPhase = 'extracting';
+      _modpackError = null;
+    });
+    try {
+      final dir = await _instanceController.directoryForId(instanceId);
+      await ArchiveService.extractWithProgress(
+        sourcePath,
+        dir.path,
+        onProgress: (current, total) {
+          if (!mounted) return;
+          setState(() {
+            if (total > 0) {
+              _extractProgress = current / total;
+            } else {
+              _extractProgress = null;
+            }
+          });
+        },
+      );
+      _completed = true;
+      if (mounted) {
+        setState(() {
+          _extracting = false;
+          _extractProgress = null;
+        });
+        _finishWizard();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _modpackError = context.tr('instance.extractArchiveFailed', {
+          'error': '$e',
+        });
+      });
+    }
+  }
+
+  /// 根据整合包 dependencies 下载对应服务端 jar，复用现有下载/安装流程。
+  Future<void> _downloadServerJarFromModpack(
+    String instanceId,
+    ModrinthModpack modpack,
+  ) async {
+    final deps = modpack.dependencies;
+    final mcVersion = deps['minecraft'];
+    if (mcVersion == null || mcVersion.isEmpty) {
+      // 无 MC 版本信息，无法自动下载服务端，直接完成。
+      _completed = true;
+      if (mounted) _finishWizard();
+      return;
+    }
+
+    final fabricLoader = deps['fabric-loader'];
+    final forge = deps['forge'];
+    final neoforge = deps['neo-forge'] ?? deps['neoforge'];
+    final quiltLoader = deps['quilt-loader'];
+
+    if (fabricLoader != null) {
+      _serverType = 'fabric';
+      _selectedMcVersion = mcVersion;
+      _selectedLoaderVersion = fabricLoader;
+      if (mounted) setState(() => _step = _WizardStep.downloading);
+      await _fetchAndDownloadFabric(instanceId);
+    } else if (forge != null) {
+      _serverType = 'forge';
+      _selectedForgeMcVersion = mcVersion;
+      _selectedForgeVersion = forge;
+      if (mounted) setState(() => _step = _WizardStep.downloading);
+      await _fetchAndDownloadForge(instanceId);
+    } else if (neoforge != null) {
+      _serverType = 'neoforge';
+      _selectedNeoforgeVersion = neoforge;
+      _selectedNeoforgeMcVersion = _deriveNeoforgeMcKey(neoforge);
+      if (mounted) setState(() => _step = _WizardStep.downloading);
+      await _fetchAndDownloadNeoforge(instanceId);
+    } else if (quiltLoader != null) {
+      // Quilt 无独立服务端下载流程：Fabric 兼容，下载 Fabric 服务端。
+      _serverType = 'fabric';
+      _selectedMcVersion = mcVersion;
+      _selectedLoaderVersion = quiltLoader;
+      if (mounted) setState(() => _step = _WizardStep.downloading);
+      await _fetchAndDownloadFabric(instanceId);
+    } else {
+      // Vanilla 服务端。
+      _serverType = 'vanilla';
+      _selectedVersion = mcVersion;
+      if (mounted) setState(() => _step = _WizardStep.downloading);
+      // 需先填充版本详情 URL 映射。
+      try {
+        await _fetchVanillaVersions();
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _downloadError = context.tr('instance.fetchVersionsFailed', {
+            'error': '$e',
+          });
+        });
+        return;
+      }
+      await _fetchAndDownload(instanceId, mcVersion);
+    }
+  }
+
+  /// 由 NeoForge 版本号推导 MC 版本键（与 _fetchAllNeoforgeVersions 分组规则一致）。
+  /// 三段式 "21.1.234" → "21.1"；四段式 "26.1.2.71" → "26.1.2"。
+  String _deriveNeoforgeMcKey(String nfVersion) {
+    final parts = nfVersion.split('-').first.split('.');
+    if (parts.length >= 4) return '${parts[0]}.${parts[1]}.${parts[2]}';
+    if (parts.length >= 2) return '${parts[0]}.${parts[1]}';
+    return nfVersion;
+  }
+
+  Future<bool?> _showModpackConfirm(ModrinthModpack modpack) {
+    final mc = modpack.dependencies['minecraft'] ?? '-';
+    final loader = _modpackLoaderLabel(modpack);
+    final modCount = modpack.serverFiles.length;
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.tr('instance.modpackConfirmTitle')),
+        content: Text(
+          ctx.tr('instance.modpackSummary', {
+            'name': modpack.name ?? '-',
+            'mc': mc,
+            'loader': loader,
+            'count': '$modCount',
+          }),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.tr('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.tr('common.ok')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _modpackLoaderLabel(ModrinthModpack modpack) {
+    final deps = modpack.dependencies;
+    if (deps['fabric-loader'] != null) return 'Fabric';
+    if (deps['quilt-loader'] != null) return 'Quilt';
+    if (deps['forge'] != null) return 'Forge';
+    if (deps['neo-forge'] != null || deps['neoforge'] != null) {
+      return 'NeoForge';
+    }
+    if (deps['minecraft'] != null) return context.tr('instance.modpackVanilla');
+    return '-';
   }
 
   Future<void> _doImport(String instanceId) async {
@@ -1276,6 +1573,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       case _WizardStep.forgeInstalling:
         // 安装进行中，不允许返回（已创建实例）。
         break;
+      case _WizardStep.modpackImport:
+        _deleteCreatedInstance();
+        _closeWizard();
     }
   }
 
@@ -1368,6 +1668,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _WizardStep.importFile => context.tr('instance.titleImportServer'),
       _WizardStep.importArchive => context.tr('instance.titleImportServer'),
       _WizardStep.extractArchive => context.tr('instance.titleImportArchive'),
+      _WizardStep.modpackImport => context.tr('instance.titleModpackImport'),
     };
   }
 
@@ -1387,6 +1688,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _WizardStep.importFile => _buildImporting(theme),
       _WizardStep.importArchive => _buildImporting(theme),
       _WizardStep.extractArchive => _buildExtractingArchive(theme),
+      _WizardStep.modpackImport => _buildModpackImport(theme),
     };
   }
 
@@ -1425,6 +1727,13 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
             title: context.tr('instance.titleImportArchive'),
             subtitle: context.tr('instance.importArchiveSubtitle'),
             onTap: _startImportArchive,
+          ),
+          const SizedBox(height: 12),
+          _ServerTypeTile(
+            icon: Icons.inventory_2_outlined,
+            title: context.tr('instance.titleModpackImport'),
+            subtitle: context.tr('instance.modpackImportSubtitle'),
+            onTap: _startModpackImport,
           ),
           const SizedBox(height: 12),
           _ServerTypeTile(
@@ -1763,6 +2072,125 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                     ],
                   ),
                 ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 整合包导入进度页。
+  Widget _buildModpackImport(ThemeData theme) {
+    final hasError = _modpackError != null;
+    final isDownloading = _modpackPhase == 'downloading';
+    final isExtracting = _modpackPhase == 'extracting';
+    final isPreparing = _modpackPhase == 'preparing';
+
+    double? progress;
+    String phaseText;
+    if (isDownloading) {
+      progress = _modpackTotal > 0 ? _modpackCurrent / _modpackTotal : null;
+      phaseText = context.tr('instance.modpackDownloadingMods', {
+        'current': '$_modpackCurrent',
+        'total': '$_modpackTotal',
+      });
+    } else if (isExtracting && _modpackFormat == ModpackFormat.plainZip) {
+      progress = _extractProgress;
+      phaseText = context.tr('instance.extractingArchive');
+    } else if (isExtracting) {
+      phaseText = context.tr('instance.modpackExtracting');
+    } else if (isPreparing) {
+      phaseText = context.tr('instance.modpackPreparing');
+    } else {
+      phaseText = context.tr('instance.modpackParsing');
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (hasError)
+                  Icon(
+                    Icons.error_outline,
+                    size: 48,
+                    color: theme.colorScheme.error,
+                  )
+                else
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: CircularProgressIndicator(value: progress),
+                  ),
+                const SizedBox(height: 24),
+                Text(
+                  hasError ? _modpackError! : phaseText,
+                  style: hasError
+                      ? TextStyle(color: theme.colorScheme.error)
+                      : theme.textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                ),
+                if (!hasError && isDownloading) ...[
+                  const SizedBox(height: 8),
+                  if (_modpackTotal > 0)
+                    Text(
+                      '${(progress! * 100).toStringAsFixed(1)}%',
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  if (_modpackCurrentFile.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _modpackCurrentFile,
+                      style: theme.textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+                if (!hasError && isExtracting &&
+                    _modpackFormat == ModpackFormat.plainZip &&
+                    _extractProgress != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '${(_extractProgress! * 100).toStringAsFixed(1)}%',
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                ],
+                const SizedBox(height: 16),
+                if (hasError)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () {
+                          _deleteCreatedInstance();
+                          _closeWizard();
+                        },
+                        child: Text(context.tr('common.cancel')),
+                      ),
+                      const SizedBox(width: 12),
+                      FilledButton(
+                        onPressed: () {
+                          _deleteCreatedInstance();
+                          setState(() => _step = _WizardStep.nameEntry);
+                        },
+                        child: Text(context.tr('instance.reselect')),
+                      ),
+                    ],
+                  )
+                else
+                  OutlinedButton(
+                    onPressed: () {
+                      _deleteCreatedInstance();
+                      _closeWizard();
+                    },
+                    child: Text(context.tr('common.cancel')),
+                  ),
               ],
             ),
           ),

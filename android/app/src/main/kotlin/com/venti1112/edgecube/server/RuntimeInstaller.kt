@@ -102,18 +102,17 @@ object RuntimeInstaller {
                 ?: throw IllegalArgumentException("当前设备架构不支持此包")
 
             // 4. 校验 minAppVersion
-            manifest.minAppVersion?.let { minVer ->
-                val appVer = try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_ACTIVITIES).longVersionCode
-                    } else {
-                        @Suppress("DEPRECATION")
-                        context.packageManager.getPackageInfo(context.packageName, 0).versionCode.toLong()
-                    }
-                } catch (_: Exception) { 0L }
-                if (appVer < minVer) {
-                    throw IllegalArgumentException("应用版本过低，需要构建号 ≥ $minVer")
+            val minVer = manifest.minAppVersion
+            val appVer = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_ACTIVITIES).longVersionCode
+                } else {
+                    @Suppress("DEPRECATION")
+                    context.packageManager.getPackageInfo(context.packageName, 0).versionCode.toLong()
                 }
+            } catch (_: Exception) { 0L }
+            if (appVer < minVer) {
+                throw IllegalArgumentException("应用版本过低，需要构建号 ≥ $minVer")
             }
 
             // 5. 校验 universalDir / archDir 在 ZIP 中存在

@@ -28,4 +28,32 @@ class StoragePermission {
     if (!Platform.isAndroid) return null;
     return _channel.invokeMethod<String>('externalStorageRoot');
   }
+
+  /// 获取指定路径所在分区的总空间与可用空间（字节）。
+  /// 非 Android 平台返回 null。
+  static Future<({int totalBytes, int availableBytes})?> getStorageStats(
+    String path,
+  ) async {
+    if (!Platform.isAndroid) return null;
+    final result = await _channel.invokeMethod<Map>('getStorageStats', {
+      'path': path,
+    });
+    if (result == null) return null;
+    return (
+      totalBytes: (result['totalBytes'] as num?)?.toInt() ?? 0,
+      availableBytes: (result['availableBytes'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// 获取程序本体大小（APK + native 库，字节）。非 Android 平台返回 null。
+  static Future<({int apkSize, int nativeLibSize, int totalSize})?> getAppSize() async {
+    if (!Platform.isAndroid) return null;
+    final result = await _channel.invokeMethod<Map>('getAppSize');
+    if (result == null) return null;
+    return (
+      apkSize: (result['apkSize'] as num?)?.toInt() ?? 0,
+      nativeLibSize: (result['nativeLibSize'] as num?)?.toInt() ?? 0,
+      totalSize: (result['totalSize'] as num?)?.toInt() ?? 0,
+    );
+  }
 }

@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import '../mods/download_queue.dart';
+import '../mods/icon_cache.dart';
 import '../mods/modrinth_service.dart';
 
 /// 模组/插件下载页：搜索 Modrinth 并下载到指定目录。
@@ -192,7 +193,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
         children: [
           _buildSearchBar(theme),
           _buildFilterBar(theme),
-          const _DownloadQueueBanner(),
+          const DownloadQueueBanner(),
           Expanded(child: _buildBody(theme)),
         ],
       ),
@@ -814,7 +815,7 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
           duration: const Duration(seconds: 3),
           action: SnackBarAction(
             label: context.tr('modsPlugins.viewQueue'),
-            onPressed: () => _showQueueSheet(context),
+            onPressed: () => showDownloadQueueSheet(context),
           ),
         ),
       );
@@ -1172,32 +1173,7 @@ class _ModIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (url == null || url!.isEmpty) {
-      return Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(Icons.extension, size: 24),
-      );
-    }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        url!,
-        width: 40,
-        height: 40,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Container(
-          width: 40,
-          height: 40,
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: const Icon(Icons.extension, size: 24),
-        ),
-      ),
-    );
+    return CachedModIcon(url: url, size: 40);
   }
 }
 
@@ -1253,14 +1229,14 @@ String _formatDownloads(int count) {
 // ── 下载队列横幅 ──────────────────────────────────────────────
 
 /// 下载队列状态横幅。监听全局 [DownloadQueue]，有任务时显示。
-class _DownloadQueueBanner extends StatefulWidget {
-  const _DownloadQueueBanner();
+class DownloadQueueBanner extends StatefulWidget {
+  const DownloadQueueBanner({super.key});
 
   @override
-  State<_DownloadQueueBanner> createState() => _DownloadQueueBannerState();
+  State<DownloadQueueBanner> createState() => _DownloadQueueBannerState();
 }
 
-class _DownloadQueueBannerState extends State<_DownloadQueueBanner> {
+class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
   @override
   void initState() {
     super.initState();
@@ -1289,75 +1265,84 @@ class _DownloadQueueBannerState extends State<_DownloadQueueBanner> {
     final completed = queue.completedCount;
     final failed = queue.failedCount;
 
-    return Material(
-      color: theme.colorScheme.primaryContainer,
-      child: InkWell(
-        onTap: () => _showQueueSheet(context),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            children: [
-              if (current != null)
-                SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    value: current.progress >= 0 ? current.progress : null,
-                    strokeWidth: 2,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: () => showDownloadQueueSheet(context),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                if (current != null)
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      value: current.progress >= 0 ? current.progress : null,
+                      strokeWidth: 2,
+                    ),
+                  )
+                else
+                  Icon(Icons.download_done,
+                      size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (current != null)
+                        Text(
+                          '${current.projectTitle} · '
+                          '${current.progress >= 0 ? '${(current.progress * 100).toInt()}%' : '...'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        )
+                      else
+                        Text(
+                          context.tr('modsPlugins.queueEmpty'),
+                          maxLines: 1,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      if (pending > 0 || completed > 0 || failed > 0)
+                        Text(
+                          [
+                            if (pending > 0)
+                              context.tr('modsPlugins.queuePending',
+                                  {'count': '$pending'}),
+                            if (completed > 0)
+                              context.tr('modsPlugins.queueCompleted',
+                                  {'count': '$completed'}),
+                            if (failed > 0)
+                              context.tr('modsPlugins.queueFailed',
+                                  {'count': '$failed'}),
+                          ].join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
                   ),
-                )
-              else
-                Icon(Icons.download_done,
-                    size: 18, color: theme.colorScheme.primary),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (current != null)
-                      Text(
-                        '${current.projectTitle} · '
-                        '${current.progress >= 0 ? '${(current.progress * 100).toInt()}%' : '...'}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      )
-                    else
-                      Text(
-                        context.tr('modsPlugins.queueEmpty'),
-                        maxLines: 1,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    if (pending > 0 || completed > 0 || failed > 0)
-                      Text(
-                        [
-                          if (pending > 0)
-                            context.tr('modsPlugins.queuePending',
-                                {'count': '$pending'}),
-                          if (completed > 0)
-                            context.tr('modsPlugins.queueCompleted',
-                                {'count': '$completed'}),
-                          if (failed > 0)
-                            context.tr('modsPlugins.queueFailed',
-                                {'count': '$failed'}),
-                        ].join(' · '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                  ],
                 ),
-              ),
-              Icon(Icons.chevron_right,
-                  size: 18, color: theme.colorScheme.onSurfaceVariant),
-            ],
+                Icon(Icons.chevron_right,
+                    size: 18, color: theme.colorScheme.onSurfaceVariant),
+              ],
+            ),
           ),
         ),
       ),
@@ -1365,7 +1350,7 @@ class _DownloadQueueBannerState extends State<_DownloadQueueBanner> {
   }
 }
 
-void _showQueueSheet(BuildContext context) {
+void showDownloadQueueSheet(BuildContext context) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -1424,6 +1409,11 @@ class _QueueSheetState extends State<_QueueSheet> {
                       style: theme.textTheme.titleMedium,
                     ),
                   ),
+                  if (queue.hasActiveTasks)
+                    TextButton(
+                      onPressed: () => DownloadQueue.instance.cancelAll(),
+                      child: Text(tr.get('modsPlugins.cancelAll')),
+                    ),
                   if (queue.tasks.any((t) =>
                       t.status == DownloadTaskStatus.completed ||
                       t.status == DownloadTaskStatus.failed ||

@@ -27,6 +27,7 @@ import 'shell/shell_controller.dart';
 import 'shell/shell_scope.dart';
 import 'ssh/ssh_controller.dart';
 import 'ssh/ssh_scope.dart';
+
 import 'theme/theme_scope.dart';
 import 'theme/theme_store.dart';
 import 'theme/precipitation_effect_mode.dart';

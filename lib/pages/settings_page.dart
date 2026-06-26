@@ -17,6 +17,7 @@ import 'appearance_settings_page.dart';
 import 'language_settings_page.dart';
 import 'network_settings_page.dart';
 import 'online_services_page.dart';
+import 'storage_management_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key, required this.onlineService});
@@ -263,6 +264,19 @@ class _SettingsPageState extends State<SettingsPage>
                     child: Text(context.tr('settings.storage.migrateAction')),
                   ),
             onTap: _migratingInstances ? null : _migrateInstances,
+          ),
+          ListTile(
+            leading: const Icon(Icons.storage),
+            title: Text(context.tr('storage.title')),
+            subtitle: Text(context.tr('storage.subtitle')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const StorageManagementPage(),
+                ),
+              );
+            },
           ),
           const Divider(),
           _sectionHeader(theme, context.tr('settings.section.online')),

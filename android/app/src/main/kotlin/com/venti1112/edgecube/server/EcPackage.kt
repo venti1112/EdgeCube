@@ -30,7 +30,7 @@ data class EcManifest(
     val arch: Map<String, ArchEntry>,
     val launcher: Launcher,
     val env: Map<String, String>,
-    val minAppVersion: Int?,
+    val minAppVersion: Int,
 ) {
     data class ArchEntry(val dir: String)
     data class Launcher(val type: String, val lib: String)
@@ -83,6 +83,15 @@ object EcPackage {
             throw IllegalArgumentException("不支持的启动器类型：${launcher.type}")
         }
 
+        // minAppVersion 为必填项
+        if (!root.has("minAppVersion")) {
+            throw IllegalArgumentException("缺少必填字段：minAppVersion")
+        }
+        val minAppVersion = root.getInt("minAppVersion")
+        if (minAppVersion <= 0) {
+            throw IllegalArgumentException("minAppVersion 必须为正整数：$minAppVersion")
+        }
+
         val env = mutableMapOf<String, String>()
         if (root.has("env")) {
             val envObj = root.getJSONObject("env")
@@ -108,7 +117,7 @@ object EcPackage {
             arch = arch,
             launcher = launcher,
             env = env,
-            minAppVersion = root.optInt("minAppVersion").takeIf { it > 0 },
+            minAppVersion = minAppVersion,
         )
     }
 

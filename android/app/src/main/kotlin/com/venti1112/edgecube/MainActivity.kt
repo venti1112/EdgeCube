@@ -15,6 +15,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.StatFs
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Size
@@ -237,6 +238,48 @@ class MainActivity : FlutterActivity() {
                 }
                 "externalStorageRoot" ->
                     result.success(Environment.getExternalStorageDirectory()?.absolutePath)
+                "getStorageStats" -> {
+                    val path = call.argument<String>("path")
+                    if (path == null) {
+                        result.error("BAD_ARGS", "缺少 path", null)
+                    } else {
+                        try {
+                            val stat = StatFs(path)
+                            val total = stat.totalBytes
+                            val available = stat.availableBytes
+                            result.success(
+                                mapOf(
+                                    "totalBytes" to total,
+                                    "availableBytes" to available,
+                                ),
+                            )
+                        } catch (e: Exception) {
+                            result.error("STAT_FAILED", e.message, null)
+                        }
+                    }
+                }
+                "getAppSize" -> {
+                    try {
+                        val pm = applicationContext.packageManager
+                        val info = pm.getPackageInfo(packageName, 0)
+                        val apkSize = File(info.applicationInfo!!.sourceDir).length()
+                        var nativeLibSize = 0L
+                        val nativeLibDir = File(info.applicationInfo!!.nativeLibraryDir)
+                        if (nativeLibDir.exists()) {
+                            nativeLibDir.walkTopDown().filter { it.isFile }
+                                .forEach { nativeLibSize += it.length() }
+                        }
+                        result.success(
+                            mapOf(
+                                "apkSize" to apkSize,
+                                "nativeLibSize" to nativeLibSize,
+                                "totalSize" to (apkSize + nativeLibSize),
+                            ),
+                        )
+                    } catch (e: Exception) {
+                        result.error("APP_SIZE_FAILED", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -822,6 +865,8 @@ class MainActivity : FlutterActivity() {
                             "version" to m.version,
                             "description" to (m.description ?: ""),
                             "author" to (m.author ?: ""),
+                            "updateUrl" to (m.updateUrl ?: ""),
+                            "minAppVersion" to m.minAppVersion,
                         )
                     }
                     result.success(list)
@@ -847,6 +892,8 @@ class MainActivity : FlutterActivity() {
                                             "version" to manifest.version,
                                             "description" to (manifest.description ?: ""),
                                             "author" to (manifest.author ?: ""),
+                                            "updateUrl" to (manifest.updateUrl ?: ""),
+                                            "minAppVersion" to manifest.minAppVersion,
                                         ),
                                     )
                                 }
@@ -877,6 +924,21 @@ class MainActivity : FlutterActivity() {
                             RuntimeInstaller.installedFrpc(applicationContext)?.id == id
                         result.success(serverRunning || tunnelRunning)
                     }
+                }
+
+                // 返回当前设备架构标识符（arm64 / arm / x86_64），无匹配时返回空串。
+                "deviceArch" -> {
+                    var arch = ""
+                    for (abi in Build.SUPPORTED_ABIS) {
+                        arch = when (abi) {
+                            "arm64-v8a" -> "arm64"
+                            "armeabi-v7a" -> "arm"
+                            "x86_64" -> "x86_64"
+                            else -> continue
+                        }
+                        break
+                    }
+                    result.success(arch)
                 }
 
                 else -> result.notImplemented()

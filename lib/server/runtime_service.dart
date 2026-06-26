@@ -10,6 +10,8 @@ class RuntimeInfo {
     required this.version,
     required this.description,
     required this.author,
+    required this.updateUrl,
+    required this.minAppVersion,
   });
 
   final String id;
@@ -19,6 +21,15 @@ class RuntimeInfo {
   final String description;
   final String author;
 
+  /// 清单中声明的更新检查地址；为空表示未提供，无法在线检查更新。
+  final String updateUrl;
+
+  /// 清单中声明的最低 EdgeCube 构建号。
+  final int minAppVersion;
+
+  /// 是否支持在线检查更新（updateUrl 非空）。
+  bool get canCheckUpdate => updateUrl.isNotEmpty;
+
   factory RuntimeInfo.fromMap(Map<String, dynamic> m) {
     return RuntimeInfo(
       id: m['id'] as String? ?? '',
@@ -27,6 +38,8 @@ class RuntimeInfo {
       version: m['version'] as String? ?? '',
       description: m['description'] as String? ?? '',
       author: m['author'] as String? ?? '',
+      updateUrl: m['updateUrl'] as String? ?? '',
+      minAppVersion: m['minAppVersion'] as int? ?? 0,
     );
   }
 }
@@ -81,5 +94,12 @@ class RuntimeService {
       {'id': id},
     );
     return running ?? false;
+  }
+
+  /// 返回当前设备架构标识符（`arm64` / `arm` / `x86_64`）。
+  /// 无法识别时返回空串。
+  Future<String> getDeviceArch() async {
+    final arch = await _method.invokeMethod<String>('deviceArch');
+    return arch ?? '';
   }
 }

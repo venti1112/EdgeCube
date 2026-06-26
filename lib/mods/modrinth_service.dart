@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 /// Modrinth 搜索结果项。
@@ -433,9 +434,16 @@ class ModrinthService {
   }
 
   /// 计算文件的 SHA1 哈希。
+  ///
+  /// 哈希计算在独立 isolate 中执行，避免大文件或批量计算时
+  /// `sha1.convert` 同步 CPU 密集型操作阻塞 UI 线程。
   static Future<String> computeSha1(String filePath) async {
-    final file = File(filePath);
-    final bytes = await file.readAsBytes();
+    return compute(_sha1Sync, filePath);
+  }
+
+  /// 在 isolate 中同步执行：读取文件 → 计算 SHA1。
+  static String _sha1Sync(String filePath) {
+    final bytes = File(filePath).readAsBytesSync();
     return sha1.convert(bytes).toString();
   }
 
