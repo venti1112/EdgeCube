@@ -25,7 +25,12 @@ class ShellController extends ChangeNotifier {
   static const int _maxLines = 5000;
 
   /// 交互式终端（xterm）。
-  final Terminal terminal = Terminal(maxLines: _maxLines);
+  // reflowEnabled: false —— 见 server_controller.dart 中同名字段注释。
+  // xterm 4.0.0 的 reflow 在 resize 时会保留旧单元格，导致缩放后内容行数翻倍。
+  final Terminal terminal = Terminal(
+    maxLines: _maxLines,
+    reflowEnabled: false,
+  );
 
   bool _running = false;
   String? _label;

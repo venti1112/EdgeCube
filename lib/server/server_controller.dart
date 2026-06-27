@@ -44,6 +44,7 @@ class CrashData {
     required this.logLines,
     required this.envType,
     required this.envRuntimeId,
+    this.kind = 'server',
   });
 
   final int exitCode;
@@ -54,6 +55,10 @@ class CrashData {
 
   /// 运行环境标识：如 'jre21'、'php8.2'。
   final String envRuntimeId;
+
+  /// 崩溃来源：'server'（服务端）或 'tunnel'（FRP 隧道）。
+  /// UI 根据此字段切换标题/文案；'tunnel' 时不显示 envType/envRuntimeId。
+  final String kind;
 }
 
 /// 管理服务端进程的运行状态与日志缓冲，并把 UI 操作转发到 [ServerService]。
@@ -69,6 +74,7 @@ class ServerController extends ChangeNotifier {
        _upnp = upnp ?? UpnpService(),
        _tunnel = tunnel ?? TunnelService() {
     _sub = _service.events().listen(_onEvent);
+    _tunnelSub = _tunnel.events().listen(_onTunnelEvent);
     terminal.onOutput = _onTerminalOutput;
     terminal.onResize = _onTerminalResize;
   }
@@ -77,11 +83,18 @@ class ServerController extends ChangeNotifier {
   final UpnpService _upnp;
   final TunnelService _tunnel;
   late final StreamSubscription<ServerEvent> _sub;
+  late final StreamSubscription<TunnelEvent> _tunnelSub;
 
   /// 交互式终端（xterm）。由本控制器持有，故切页/页面重建时内容不丢失。
   /// 所有可见输出（PTY 字节与 EdgeCube 提示）都经 [_feedTerm]/[_emitOutput] 同步写入，
   /// 以保证服务端输出与本地命令行提示符的显示顺序正确。
-  final Terminal terminal = Terminal(maxLines: _maxLogLines);
+  // reflowEnabled: false —— xterm 4.0.0 的 reflow 在 resize（缩放字号导致列数
+  // 变化）时会保留旧单元格，再次变宽时旧数据重现，导致内容行数翻倍累积
+  // （上游 PR #227 未合并）。禁用后变窄时截断长行而非重排，避免重复。
+  final Terminal terminal = Terminal(
+    maxLines: _maxLogLines,
+    reflowEnabled: false,
+  );
 
   // —— PTY 原始字节 → UTF-8 解码（allowMalformed 避免非法字节中断）——
 
@@ -137,6 +150,10 @@ class ServerController extends ChangeNotifier {
   final List<String> _log = [];
   final Set<String> _onlinePlayers = {};
 
+  /// FRP 隧道（frpc）日志缓冲。供崩溃报告导出使用。
+  /// 与 [_log] 分离：frpc 日志不写入服务端终端，但需在异常退出时一并导出。
+  final List<String> _tunnelLog = [];
+
   // —— 运行时类型/标识追踪（崩溃报告用）——
   String _runtimeType = '';
   String _runtimeId = '';
@@ -154,10 +171,26 @@ class ServerController extends ChangeNotifier {
   bool _tunnelActive = false;
   bool _restartingTunnel = false;
 
+  // —— FRP 隧道进程状态追踪 ——
+  // _tunnelRunning: frpc 进程是否真正进入 STATUS_RUNNING（看到 "login to server
+  //   success" 日志）；用于区分"进程已拉起但未连接成功"与"已成功连接到 frps"。
+  // _userStoppingTunnel: 区分用户主动停止（stop / disableTunnelNow /
+  //   applyTunnelConfig / restartTunnel）与 frpc 进程异常退出；前者静默，
+  //   后者需要提示。
+  // _tunnelCrashed: frpc 上次异常退出（非用户主动停止且退出码非 0）标志。
+  //   UI 据此在主页状态芯片显示"出错"（红色）；重新启动或主动停止时复位。
+  bool _tunnelRunning = false;
+  bool _userStoppingTunnel = false;
+  bool _tunnelCrashed = false;
+
   // —— 崩溃回调：服务端意外退出时触发 ——
   /// 当服务端非正常退出（退出码不为 0 且非用户主动停止）时调用。
   /// UI 层应监听此回调并展示崩溃报告弹窗。
   void Function(CrashData crash)? onCrashExit;
+
+  /// 当 FRP 隧道进程异常退出（非用户主动停止且退出码非 0）时调用。
+  /// UI 层应监听此回调并展示与 [onCrashExit] 同款的崩溃报告弹窗。
+  void Function(CrashData crash)? onTunnelCrashExit;
 
   // —— 映射结果追踪 ——
   String? _upnpExternalIp; // UPnP 映射成功后的公网 IP
@@ -178,6 +211,12 @@ class ServerController extends ChangeNotifier {
   // —— 映射状态公共接口 ——
   bool get isUpnpActive => _upnpActive;
   bool get isTunnelActive => _tunnelActive;
+  /// frpc 是否真正连接到 frps 成功（看到 "login to server success"）。
+  /// 区别于 [isTunnelActive]（仅表示进程已拉起）。UI 应以此作为"已映射"依据，
+  /// 以 [isTunnelActive] 作为"映射中"依据。
+  bool get isTunnelRunning => _tunnelRunning;
+  /// frpc 上次是否异常退出。UI 据此在状态芯片显示"出错"（红色）。
+  bool get isTunnelCrashed => _tunnelCrashed;
   String? get upnpExternalIp => _upnpExternalIp;
   int? get upnpMappedPort => _upnp.mappedPort;
   FrpcConfig? get activeFrpcConfig => _activeFrpcConfig;
@@ -805,6 +844,11 @@ class ServerController extends ChangeNotifier {
     final dir = _workingDir;
     if (dir == null || _tunnelActive) return;
     _tunnelActive = true;
+    _tunnelRunning = false;
+    _userStoppingTunnel = false;
+    _tunnelCrashed = false; // 重新启动，清除上次的异常退出标记
+    _tunnelLog.clear(); // 清空上次会话日志，避免崩溃报告混入历史
+    _tunnel.clearLog(); // 同步清空原生侧与 Dart 静态日志缓存
     _doStartTunnel(config, dir, runtimeId: runtimeId);
   }
 
@@ -833,7 +877,7 @@ class ServerController extends ChangeNotifier {
           final path = await _tunnel.writeRawConfig(raw);
           await _tunnel.start(configPath: path, name: 'frpc', runtimeId: runtimeId);
           _activeFrpcConfig = null;
-          _notice('[EdgeCube] FRP 隧道已启动（自定义配置）');
+          _notice('[EdgeCube] FRP 隧道正在启动…（自定义配置）');
           notifyListeners();
           return;
         }
@@ -882,7 +926,7 @@ class ServerController extends ChangeNotifier {
         runtimeId: runtimeId,
       );
       _activeFrpcConfig = finalConfig;
-      _notice('[EdgeCube] FRP 隧道已启动（本地端口 $localPort）');
+      _notice('[EdgeCube] FRP 隧道正在启动…（本地端口 $localPort）');
       notifyListeners();
     } catch (e) {
       _notice('[EdgeCube] FRP 隧道启动失败：$e');
@@ -894,10 +938,88 @@ class ServerController extends ChangeNotifier {
   void _stopTunnel() {
     if (!_tunnelActive) return;
     _tunnelActive = false;
+    _tunnelRunning = false;
+    _userStoppingTunnel = true; // 标记为主动停止，避免退出事件误报"异常退出"
     _activeFrpcConfig = null;
     _tunnel.stop().then((_) {
       // 静默处理，不影响主流程。
     });
+  }
+
+  /// frpc 隧道事件回调。
+  ///
+  /// 监听原生侧 [TunnelService.events()] 流：
+  ///  - 收到 `STATUS_RUNNING` 时才视为"真正成功"，发出成功提示（避免在
+  ///    [_doStartTunnel] 中进程刚拉起就误报成功，而 frpc 因 token 错误、
+  ///    端口冲突等原因随后立刻退出）。
+  ///  - 进程退出（status == null 且 exitCode != null）时，若非用户主动停止
+  ///    且退出码非 0，提示"异常退出"并触发 [onTunnelCrashExit] 弹出崩溃报告
+  ///    （与服务端崩溃同款，支持导出/上传日志）；用户主动停止或正常退出
+  ///    则静默。同时复位 `_tunnelActive`/`_tunnelRunning`，让 UI 可再次发起启动。
+  ///  - status == null 且 exitCode == null 是 app 启动时的状态回放
+  ///    （frpc 未运行），完全静默。
+  ///  - 日志事件（[TunnelLogEvent]）追加到 [_tunnelLog] 供崩溃报告导出；
+  ///    端口映射页另订阅同一流做实时显示，此处不写入服务端终端，避免噪声。
+  void _onTunnelEvent(TunnelEvent event) {
+    if (event is TunnelLogEvent) {
+      _appendTunnelLog(event.line);
+      return;
+    }
+    if (event is! TunnelStateEvent) return;
+    final status = event.status;
+    if (status == 'running') {
+      if (_tunnelRunning) return; // 去重，避免重复提示
+      _tunnelRunning = true;
+      _userStoppingTunnel = false; // 已成功连接，清除可能残留的停止标记
+      _tunnelCrashed = false; // 连接成功，清除可能的异常退出标记
+      _notice('[EdgeCube] FRP 隧道已连接到服务器');
+      notifyListeners();
+      return;
+    }
+    if (status != null) return; // starting / preparing 等中间状态不处理
+    // status == null
+    final code = event.exitCode;
+    if (code == null) return; // 状态回放（未运行），非真正退出，静默
+    // 真正的进程退出
+    final userStop = _userStoppingTunnel || _restartingTunnel;
+    final wasActive = _tunnelActive;
+    _userStoppingTunnel = false;
+    _tunnelActive = false;
+    _tunnelRunning = false;
+    _activeFrpcConfig = null;
+    if (userStop || !wasActive) {
+      _tunnelCrashed = false; // 主动停止或非本控制器发起，清除异常标记
+      return;
+    }
+    if (code != 0) {
+      _tunnelCrashed = true; // 标记异常退出，UI 显示"出错"
+      _notice('[EdgeCube] FRP 隧道异常退出（退出码 $code），请检查配置或网络');
+      notifyListeners();
+      // 触发崩溃报告弹窗（与服务端崩溃同款），附上 frpc 日志快照供导出/上传。
+      final callback = onTunnelCrashExit;
+      if (callback != null) {
+        callback(
+          CrashData(
+            exitCode: code,
+            logLines: List<String>.from(_tunnelLog),
+            envType: '',
+            envRuntimeId: '',
+            kind: 'tunnel',
+          ),
+        );
+      }
+    } else {
+      _notice('[EdgeCube] FRP 隧道已退出');
+      notifyListeners();
+    }
+  }
+
+  /// 追加一行 frpc 日志到 [_tunnelLog]，超出上限丢弃最旧。
+  void _appendTunnelLog(String line) {
+    _tunnelLog.add(line);
+    if (_tunnelLog.length > _maxLogLines) {
+      _tunnelLog.removeRange(0, _tunnelLog.length - _maxLogLines);
+    }
   }
 
   // —— 即时生效公共接口 ——
@@ -988,6 +1110,7 @@ class ServerController extends ChangeNotifier {
   @override
   void dispose() {
     _sub.cancel();
+    _tunnelSub.cancel();
     super.dispose();
   }
 }

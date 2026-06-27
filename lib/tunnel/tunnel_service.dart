@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -49,8 +50,14 @@ class TunnelService {
   /// 强制结束（SIGKILL）。
   Future<void> forceStop() => _method.invokeMethod('forceStop');
 
-  /// 清空原生侧日志缓冲（与界面清屏同步）。
-  Future<void> clearLog() => _method.invokeMethod('clearLog');
+  /// 清空日志缓冲（与界面清屏同步）。
+  ///
+  /// 同时清空 Dart 侧静态缓存 [_logBuffer] 与原生侧 `logBuffer`，确保清屏后
+  /// 新订阅者不会收到已清空的历史日志回放。
+  Future<void> clearLog() {
+    _logBuffer.clear();
+    return _method.invokeMethod('clearLog');
+  }
 
   /// 生成并写入 frpc 配置到应用私有目录，返回配置文件绝对路径。
   ///
@@ -89,23 +96,93 @@ class TunnelService {
     await start(configPath: path, name: name);
   }
 
+  // —— 事件广播与缓存 ——
+  //
+  // 所有 TunnelService 实例共享同一个原生 EventChannel 订阅，避免多页面各自
+  // 订阅导致 EventChannel sink 互相覆盖（后订阅者覆盖先订阅者，取消订阅时
+  // 把 sink 置 null，使先订阅者收不到后续事件——曾导致 frpc 异常退出时
+  // ServerController 状态卡在"FRP 连接中"）。
+  static StreamController<TunnelEvent>? _broadcastController;
+  static StreamSubscription<dynamic>? _rawSub;
+  static final List<String> _logBuffer = [];
+  static TunnelStateEvent? _lastState;
+  static const int _maxLogBuffer = 2000;
+
   /// 原生事件流（日志 / 状态）。
+  ///
+  /// 返回的 stream 为每个订阅者独立回放历史日志与最后状态，随后转发实时事件。
   Stream<TunnelEvent> events() {
-    return _events.receiveBroadcastStream().map((dynamic e) {
-      final map = (e as Map).cast<String, dynamic>();
-      switch (map['type']) {
-        case 'log':
-          return TunnelLogEvent(map['line'] as String? ?? '');
-        case 'state':
-          return TunnelStateEvent(
-            status: map['status'] as String?,
-            name: map['name'] as String?,
-            exitCode: map['exitCode'] as int?,
-          );
-        default:
-          return TunnelLogEvent(e.toString());
-      }
-    });
+    _ensureBroadcast();
+    final broadcast = _broadcastController!.stream;
+    late StreamController<TunnelEvent> replay;
+    StreamSubscription<TunnelEvent>? sub;
+    replay = StreamController<TunnelEvent>(
+      onListen: () {
+        // 先回放缓存的历史日志与最后状态
+        for (final line in _logBuffer) {
+          replay.add(TunnelLogEvent(line));
+        }
+        final state = _lastState;
+        if (state != null) replay.add(state);
+        // 再订阅广播流接收后续实时事件
+        sub = broadcast.listen(
+          replay.add,
+          onError: replay.addError,
+          onDone: replay.close,
+        );
+      },
+      onCancel: () {
+        sub?.cancel();
+      },
+    );
+    return replay.stream;
+  }
+
+  static void _ensureBroadcast() {
+    if (_broadcastController != null) return;
+    _broadcastController = StreamController<TunnelEvent>.broadcast(
+      onListen: _startRawSub,
+      onCancel: _stopRawSub,
+    );
+  }
+
+  static void _startRawSub() {
+    if (_rawSub != null) return;
+    _rawSub = _events.receiveBroadcastStream().map(_parseEvent).listen(
+      (event) {
+        if (event is TunnelLogEvent) {
+          _logBuffer.add(event.line);
+          if (_logBuffer.length > _maxLogBuffer) {
+            _logBuffer.removeRange(0, _logBuffer.length - _maxLogBuffer);
+          }
+        } else if (event is TunnelStateEvent) {
+          _lastState = event;
+        }
+        _broadcastController?.add(event);
+      },
+      onError: (e) => _broadcastController?.addError(e),
+    );
+  }
+
+  static void _stopRawSub() {
+    _rawSub?.cancel();
+    _rawSub = null;
+  }
+
+  static TunnelEvent _parseEvent(dynamic e) {
+    final map = (e as Map).cast<String, dynamic>();
+    switch (map['type']) {
+      case 'log':
+        return TunnelLogEvent(map['line'] as String? ?? '');
+      case 'state':
+        return TunnelStateEvent(
+          status: map['status'] as String?,
+          name: map['name'] as String?,
+          exitCode: map['exitCode'] as int?,
+        );
+      default:
+        return TunnelLogEvent(e.toString());
+    }
   }
 }
 

@@ -124,6 +124,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     // 设置崩溃回调：服务端意外退出时弹出报告弹窗。
     final server = ServerScope.of(context);
     server.onCrashExit = _onCrashExit;
+    // FRP 隧道异常退出时复用同一崩溃弹窗（导出/上传日志）。
+    server.onTunnelCrashExit = _onTunnelCrashExit;
     // 监听运行时导入/删除，自动刷新可用运行时列表。
     RuntimeService.refreshSignal.addListener(_onRuntimesChanged);
   }
@@ -137,6 +139,17 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
 
   /// 服务端意外退出回调。
   void _onCrashExit(CrashData crash) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) =>
+          _CrashDialog(crash: crash, onlineService: widget.onlineService),
+    );
+  }
+
+  /// FRP 隧道异常退出回调。复用 [_CrashDialog]，由 [CrashData.kind] 控制文案。
+  void _onTunnelCrashExit(CrashData crash) {
     if (!mounted) return;
     showDialog<void>(
       context: context,
@@ -1367,6 +1380,8 @@ class _ConnectionCard extends StatelessWidget {
     final theme = Theme.of(context);
     final upnpActive = server.isUpnpActive;
     final tunnelActive = server.isTunnelActive;
+    final tunnelRunning = server.isTunnelRunning;
+    final tunnelCrashed = server.isTunnelCrashed;
     final upnpIp = server.upnpExternalIp;
     final upnpPort = server.upnpMappedPort;
     final frpConfig = server.activeFrpcConfig;
@@ -1428,7 +1443,8 @@ class _ConnectionCard extends StatelessWidget {
                   icon: Icons.cloud_outlined,
                   label: 'FRP',
                   active: tunnelActive,
-                  success: tunnelActive,
+                  success: tunnelRunning,
+                  error: tunnelCrashed,
                 ),
               ],
             ),
@@ -1447,8 +1463,8 @@ class _ConnectionCard extends StatelessWidget {
                 ),
               ),
 
-            // FRP 公网地址（隧道运行时显示）。
-            if (tunnelActive && frpConfig != null)
+            // FRP 公网地址（隧道真正连接成功后显示，与状态芯片的"已映射"一致）。
+            if (tunnelRunning && frpConfig != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: _infoRow(
@@ -1514,6 +1530,9 @@ class _ConnectionCard extends StatelessWidget {
   }
 
   /// 状态芯片：显示映射功能的启用状态。
+  ///
+  /// 优先级：error（出错，红色）> !active（未启用，灰色）> success（已映射，绿色）
+  /// > active && !success（映射中，橙色）。
   Widget _statusChip(
     BuildContext context,
     ThemeData theme, {
@@ -1521,10 +1540,14 @@ class _ConnectionCard extends StatelessWidget {
     required String label,
     required bool active,
     required bool success,
+    bool error = false,
   }) {
     final Color color;
     final String statusText;
-    if (!active) {
+    if (error) {
+      color = theme.colorScheme.error;
+      statusText = context.tr('server.mappingError');
+    } else if (!active) {
       color = theme.colorScheme.outline;
       statusText = context.tr('server.mappingDisabled');
     } else if (success) {
@@ -1602,25 +1625,30 @@ class _CrashDialogState extends State<_CrashDialog> {
       final monitorService = SystemMonitorService();
       final deviceInfo = await monitorService.getDeviceInfo();
       final sysInfo = await monitorService.getSystemInfo();
-      final envType = widget.crash.envType == 'php' ? 'PHP' : 'Java';
-      final envRuntimeId = _versionLabel(widget.crash.envRuntimeId);
-      final header = [
+      final lines = <String>[
         '=== 设备信息 ===',
         'SoC 型号: ${deviceInfo.socModel}',
         '内存总量: ${sysInfo.totalMemMb} MB',
         '内存已用: ${sysInfo.usedMemMb} MB',
-        '环境类型: $envType',
-        '运行环境: $envRuntimeId',
-        '设备架构: ${deviceInfo.architecture}',
-        '设备制造商: ${deviceInfo.manufacturer}',
-        '设备型号: ${deviceInfo.model}',
-        '安卓版本: ${deviceInfo.androidVersion}',
-        '安全补丁: ${deviceInfo.securityPatch}',
-        '退出码: ${widget.crash.exitCode}',
-        '================',
-        '',
-      ].join('\n');
-      if (mounted) setState(() => _deviceHeader = header);
+      ];
+      // 服务端崩溃才输出运行环境信息；FRP 隧道崩溃无此概念。
+      if (widget.crash.kind == 'server') {
+        final envType = widget.crash.envType == 'php' ? 'PHP' : 'Java';
+        final envRuntimeId = _versionLabel(widget.crash.envRuntimeId);
+        lines.add('环境类型: $envType');
+        lines.add('运行环境: $envRuntimeId');
+      } else {
+        lines.add('崩溃来源: FRP 隧道 (frpc)');
+      }
+      lines
+        ..add('设备架构: ${deviceInfo.architecture}')
+        ..add('设备制造商: ${deviceInfo.manufacturer}')
+        ..add('设备型号: ${deviceInfo.model}')
+        ..add('安卓版本: ${deviceInfo.androidVersion}')
+        ..add('安全补丁: ${deviceInfo.securityPatch}')
+        ..add('退出码: ${widget.crash.exitCode}')
+        ..addAll(['================', '']);
+      if (mounted) setState(() => _deviceHeader = lines.join('\n'));
     } catch (_) {
       if (mounted) setState(() => _deviceHeader = '(设备信息获取失败)\n\n');
     }
@@ -1646,13 +1674,16 @@ class _CrashDialogState extends State<_CrashDialog> {
     try {
       final dir = await getTemporaryDirectory();
       final ts = DateTime.now().millisecondsSinceEpoch;
-      final file = File(p.join(dir.path, 'edgecube_crash_$ts.log'));
+      final prefix = widget.crash.kind == 'tunnel'
+          ? 'edgecube_tunnel_crash_'
+          : 'edgecube_crash_';
+      final file = File(p.join(dir.path, '$prefix$ts.log'));
       await file.writeAsString(_buildFullLog());
       if (!mounted) return;
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(file.path)],
-          text: context.tr('server.crashLogShareText'),
+          text: context.tr(_shareTextKey),
         ),
       );
     } catch (e) {
@@ -1667,6 +1698,11 @@ class _CrashDialogState extends State<_CrashDialog> {
       if (mounted) setState(() => _exporting = false);
     }
   }
+
+  /// 当前崩溃对应的分享文案翻译键（服务端 / 隧道）。
+  String get _shareTextKey => widget.crash.kind == 'tunnel'
+      ? 'tunnel.crashLogShareText'
+      : 'server.crashLogShareText';
 
   /// 上传日志到 EdgeCube 服务器。
   Future<void> _uploadLog() async {
@@ -1701,13 +1737,22 @@ class _CrashDialogState extends State<_CrashDialog> {
     final theme = Theme.of(context);
     final onlineEnabled =
         widget.onlineService.enabled && widget.onlineService.deviceId != null;
+    final isTunnel = widget.crash.kind == 'tunnel';
+    final titleKey = isTunnel ? 'tunnel.crashTitle' : 'server.crashTitle';
+    final messageKey = onlineEnabled
+        ? (isTunnel
+            ? 'tunnel.crashMessageOnline'
+            : 'server.crashMessageOnline')
+        : (isTunnel
+            ? 'tunnel.crashMessageOffline'
+            : 'server.crashMessageOffline');
 
     return AlertDialog(
       title: Row(
         children: [
           Icon(Icons.error_outline, color: theme.colorScheme.error, size: 24),
           const SizedBox(width: 8),
-          Text(context.tr('server.crashTitle')),
+          Text(context.tr(titleKey)),
         ],
       ),
       content: Column(
@@ -1715,13 +1760,7 @@ class _CrashDialogState extends State<_CrashDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            onlineEnabled
-                ? context.tr('server.crashMessageOnline', {
-                    'code': '${widget.crash.exitCode}',
-                  })
-                : context.tr('server.crashMessageOffline', {
-                    'code': '${widget.crash.exitCode}',
-                  }),
+            context.tr(messageKey, {'code': '${widget.crash.exitCode}'}),
           ),
           if (_uploadResult != null) ...[
             const SizedBox(height: 8),

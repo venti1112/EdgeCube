@@ -44,7 +44,11 @@ class _PortMappingPageState extends State<PortMappingPage> {
   String? _selectedFrpcRuntimeId;
 
   // —— 隧道运行状态 ——
+  // _tunnelStatus: 非 null 表示 frpc 正在运行/连接中（preparing/starting/running）。
+  // _tunnelExitCode: 非 null 表示 frpc 已退出（保留日志框以便排查异常退出原因）。
+  // 两者同时为 null 表示从未启动或已清空状态。
   String? _tunnelStatus;
+  int? _tunnelExitCode;
   final List<String> _logs = [];
   final _logScroll = ScrollController();
   StreamSubscription<TunnelEvent>? _sub;
@@ -158,15 +162,25 @@ class _PortMappingPageState extends State<PortMappingPage> {
   }
 
   Future<void> _saveFrpcConfig() async {
-    // 持久化到 config/network.json。
     final config = _buildFrpcConfig();
+    // 检查 frps 服务器地址是否填了回环地址（自己连自己，无意义）。
+    if (config.serverAddr == '127.0.0.1') {
+      final proceed = await _showLoopbackWarningDialog();
+      if (proceed != true) return;
+    }
+    // 持久化到 config/network.json。
     await NetworkStore.saveFrpc(config);
     await NetworkStore.saveFrpcRuntimeId(_selectedFrpcRuntimeId);
     if (!mounted) return;
-    // 若隧道正在运行，即时重启以应用新配置。
+    // FRP 开关开启且服务端运行中时，应用新配置：
+    // 隧道已激活则重启，未激活（如异常退出后）则启动。
     final server = ServerScope.of(context);
-    if (server.isRunning) {
-      server.applyTunnelConfig(config, _selectedFrpcRuntimeId);
+    if (server.isRunning && _tunnelEnabled) {
+      if (server.isTunnelActive) {
+        server.applyTunnelConfig(config, _selectedFrpcRuntimeId);
+      } else {
+        server.enableTunnelNow(config, _selectedFrpcRuntimeId);
+      }
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -174,6 +188,45 @@ class _PortMappingPageState extends State<PortMappingPage> {
         content: Text(context.tr('portMapping.saved')),
         duration: const Duration(seconds: 2),
       ),
+    );
+  }
+
+  /// frps 服务器地址填了 127.0.0.1 时的警告对话框。
+  ///
+  /// 取消按钮高亮（FilledButton），继续按钮次之（TextButton），符合"默认动作
+  /// 是取消"的预期——回环地址几乎肯定是误填。
+  Future<bool?> _showLoopbackWarningDialog() {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                color: theme.colorScheme.error,
+                size: 24,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(context.tr('portMapping.loopbackWarningTitle')),
+              ),
+            ],
+          ),
+          content: Text(context.tr('portMapping.loopbackWarningMessage')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(context.tr('common.continue')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(context.tr('common.cancel')),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -262,7 +315,18 @@ class _PortMappingPageState extends State<PortMappingPage> {
         });
         _scrollLogToBottom();
       } else if (e is TunnelStateEvent) {
-        setState(() => _tunnelStatus = e.status);
+        setState(() {
+          if (e.status != null) {
+            // 运行中 / 连接中 / 准备中：清除可能的退出码。
+            _tunnelStatus = e.status;
+            _tunnelExitCode = null;
+          } else if (e.exitCode != null) {
+            // frpc 已退出：保留日志框，记录退出码供排查。
+            _tunnelStatus = null;
+            _tunnelExitCode = e.exitCode;
+          }
+          // status == null && exitCode == null：状态回放（未运行），不改变状态。
+        });
       }
     });
   }
@@ -289,7 +353,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
             _buildUpnpCard(theme),
             const SizedBox(height: 16),
             _buildFrpcCard(theme),
-            if (_tunnelStatus != null) ...[
+            if (_tunnelEnabled) ...[
               const SizedBox(height: 16),
               _buildLogSection(theme),
             ],
@@ -343,12 +407,17 @@ class _PortMappingPageState extends State<PortMappingPage> {
   // —— FRP 卡片 ——
 
   Widget _buildFrpcCard(ThemeData theme) {
-    final statusText = switch (_tunnelStatus) {
-      'running' => context.tr('portMapping.tunnelRunning'),
-      'starting' => context.tr('portMapping.tunnelConnecting'),
-      'preparing' => context.tr('portMapping.tunnelPreparing'),
-      _ => null,
-    };
+    final statusText = _tunnelExitCode != null
+        ? (_tunnelExitCode == 0
+            ? context.tr('portMapping.tunnelExited')
+            : context.tr('portMapping.tunnelExitedWithError',
+                {'code': _tunnelExitCode.toString()}))
+        : switch (_tunnelStatus) {
+            'running' => context.tr('portMapping.tunnelRunning'),
+            'starting' => context.tr('portMapping.tunnelConnecting'),
+            'preparing' => context.tr('portMapping.tunnelPreparing'),
+            _ => null,
+          };
     return Card(
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16),
@@ -660,9 +729,18 @@ class _PortMappingPageState extends State<PortMappingPage> {
   }
 
   Widget _statusChip(ThemeData theme, String text) {
-    final color = _tunnelStatus == 'running'
-        ? theme.colorScheme.primary
-        : theme.colorScheme.tertiary;
+    final Color color;
+    if (_tunnelExitCode != null) {
+      // 已退出：退出码 0 灰色，非 0 红色。
+      color = _tunnelExitCode == 0
+          ? theme.colorScheme.outline
+          : theme.colorScheme.error;
+    } else if (_tunnelStatus == 'running') {
+      color = theme.colorScheme.primary;
+    } else {
+      // 连接中 / 准备中。
+      color = theme.colorScheme.tertiary;
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
