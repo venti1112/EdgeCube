@@ -217,6 +217,21 @@ class FrpcConfig {
   /// 日志级别：trace / debug / info / warn / error。
   final String logLevel;
 
+  /// 用户名（顶层 user）；为空则不启用。设置后代理在 frps 端命名为 user.proxyName。
+  final String? user;
+
+  /// 与 frps 的传输协议：tcp / kcp / quic / websocket。
+  final String protocol;
+
+  /// 是否与 frps 之间启用 TLS 加密传输（frpc 0.50+ 默认开启）。
+  final bool tlsEnable;
+
+  /// 是否对该代理的流量加密。
+  final bool useEncryption;
+
+  /// 是否对该代理的流量压缩。
+  final bool useCompression;
+
   const FrpcConfig({
     required this.serverAddr,
     this.serverPort = 7000,
@@ -227,6 +242,11 @@ class FrpcConfig {
     required this.localPort,
     required this.remotePort,
     this.logLevel = 'info',
+    this.user,
+    this.protocol = 'tcp',
+    this.tlsEnable = true,
+    this.useEncryption = false,
+    this.useCompression = false,
   });
 
   /// 以新的 [localPort] 生成副本。
@@ -240,6 +260,11 @@ class FrpcConfig {
     localPort: localPort ?? this.localPort,
     remotePort: remotePort,
     logLevel: logLevel,
+    user: user,
+    protocol: protocol,
+    tlsEnable: tlsEnable,
+    useEncryption: useEncryption,
+    useCompression: useCompression,
   );
 
   /// 序列化为 frpc 的 TOML 配置。log.to=console 确保日志输出到 stdout，
@@ -248,16 +273,28 @@ class FrpcConfig {
     final buffer = StringBuffer();
     buffer.writeln('serverAddr = ${_q(serverAddr)}');
     buffer.writeln('serverPort = $serverPort');
+    final userName = user;
+    if (userName != null && userName.isNotEmpty) {
+      buffer.writeln('user = ${_q(userName)}');
+    }
     final token = authToken;
     if (token != null && token.isNotEmpty) {
       buffer.writeln('auth.token = ${_q(token)}');
     }
+    buffer.writeln('transport.protocol = ${_q(protocol)}');
+    buffer.writeln('transport.tls.enable = $tlsEnable');
     buffer.writeln('log.to = "console"');
     buffer.writeln('log.level = ${_q(logLevel)}');
     buffer.writeln();
     buffer.writeln('[[proxies]]');
     buffer.writeln('name = ${_q(proxyName)}');
     buffer.writeln('type = ${_q(proxyType)}');
+    if (useEncryption) {
+      buffer.writeln('transport.useEncryption = true');
+    }
+    if (useCompression) {
+      buffer.writeln('transport.useCompression = true');
+    }
     buffer.writeln('localIP = ${_q(localIp)}');
     buffer.writeln('localPort = $localPort');
     buffer.writeln('remotePort = $remotePort');
@@ -268,10 +305,15 @@ class FrpcConfig {
   Map<String, dynamic> toJsonMap() => {
     'serverAddr': serverAddr,
     'serverPort': serverPort,
+    'user': user,
     'authToken': authToken,
     'proxyName': proxyName,
     'proxyType': proxyType,
     'remotePort': remotePort,
+    'protocol': protocol,
+    'tlsEnable': tlsEnable,
+    'useEncryption': useEncryption,
+    'useCompression': useCompression,
   };
 
   /// 从持久化映射还原配置。[localPort] 为占位值（默认 25565），
@@ -279,11 +321,16 @@ class FrpcConfig {
   factory FrpcConfig.fromJsonMap(Map<String, dynamic> m) => FrpcConfig(
     serverAddr: m['serverAddr'] as String? ?? '',
     serverPort: (m['serverPort'] as int?) ?? 7000,
+    user: m['user'] as String?,
     authToken: m['authToken'] as String?,
     proxyName: (m['proxyName'] as String?) ?? 'minecraft',
     proxyType: (m['proxyType'] as String?) ?? 'tcp',
     localPort: 25565,
     remotePort: (m['remotePort'] as int?) ?? 25565,
+    protocol: (m['protocol'] as String?) ?? 'tcp',
+    tlsEnable: (m['tlsEnable'] as bool?) ?? true,
+    useEncryption: (m['useEncryption'] as bool?) ?? false,
+    useCompression: (m['useCompression'] as bool?) ?? false,
   );
 
   /// TOML 基本字符串转义。

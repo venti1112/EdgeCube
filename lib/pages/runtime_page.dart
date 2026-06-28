@@ -95,7 +95,11 @@ class _RuntimePageState extends State<RuntimePage> {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final tr = LocaleScope.of(context).translations;
-    final path = await pickFromSystem(context, mode: SystemPickMode.file);
+    final path = await pickFromSystem(
+      context,
+      mode: SystemPickMode.file,
+      allowedExtensions: const ['.ecpkg'],
+    );
     if (path == null || !path.toLowerCase().endsWith('.ecpkg')) {
       if (mounted && path != null) {
         messenger.showSnackBar(

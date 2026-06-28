@@ -754,6 +754,7 @@ class _ContentTabState extends State<_ContentTab> {
     final sourcePath = await pickFromSystem(
       context,
       mode: SystemPickMode.file,
+      allowedExtensions: const ['.jar'],
     );
     if (sourcePath == null) return;
     if (!mounted) return;

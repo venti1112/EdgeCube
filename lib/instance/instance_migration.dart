@@ -41,6 +41,39 @@ class InstanceMigration {
   }) async {
     final source = await legacyPrivateInstancesRoot();
     final target = await defaultInstancesRoot();
+    return _migrateBetween(source, target, onProgress: onProgress);
+  }
+
+  /// 在两个 EdgeCube 数据文件夹之间迁移内容：将 [source] 下所有条目
+  /// （含 `instances/` 子目录）移动到 [target]。
+  ///
+  /// 用于用户更改「自定义实例文件夹路径」时把旧 EdgeCube 文件夹的内容
+  /// 搬到新位置。[source] 与 [target] 相同、[source] 不存在或为空时
+  /// 直接返回空结果。Android 平台需已获得「管理全部文件」权限。
+  ///
+  /// [copyFirst] 为 true 时（默认）采用「先复制后删除」策略：先将源文件
+  /// 复制到目标位置（经临时文件中转），确认复制成功后再删除源文件，避免
+  /// 跨文件系统移动中途出错导致文件损坏。
+  static Future<InstanceMigrationResult> migrateBetween({
+    required Directory source,
+    required Directory target,
+    void Function(int processed, int total)? onProgress,
+    bool copyFirst = true,
+  }) async {
+    return _migrateBetween(
+      source,
+      target,
+      onProgress: onProgress,
+      copyFirst: copyFirst,
+    );
+  }
+
+  static Future<InstanceMigrationResult> _migrateBetween(
+    Directory source,
+    Directory target, {
+    void Function(int processed, int total)? onProgress,
+    bool copyFirst = false,
+  }) async {
     if (p.equals(p.normalize(source.path), p.normalize(target.path))) {
       return InstanceMigrationResult(
         migrated: 0,
@@ -89,7 +122,7 @@ class InstanceMigration {
       final entry = entries[i];
       final dest = p.join(target.path, p.basename(entry.path));
       try {
-        final changed = await _migrateEntry(entry, dest);
+        final changed = await _migrateEntry(entry, dest, copyFirst: copyFirst);
         if (changed) {
           migrated++;
         } else {
@@ -126,11 +159,19 @@ class InstanceMigration {
 
   static Future<bool> _migrateEntry(
     FileSystemEntity source,
-    String destPath,
-  ) async {
+    String destPath, {
+    bool copyFirst = false,
+  }) async {
     final sourceType = FileSystemEntity.typeSync(source.path);
     final destType = FileSystemEntity.typeSync(destPath);
     if (destType == FileSystemEntityType.notFound) {
+      if (copyFirst) {
+        // 先复制到目标（经临时文件中转），确认成功后再删除源，避免跨文件系统
+        // 移动中途出错导致文件损坏。
+        await _copyEntityToFinal(source.path, destPath);
+        await source.delete(recursive: true);
+        return true;
+      }
       try {
         await source.rename(destPath);
         return true;
@@ -143,7 +184,11 @@ class InstanceMigration {
 
     if (sourceType == FileSystemEntityType.directory &&
         destType == FileSystemEntityType.directory) {
-      await _mergeDirectory(Directory(source.path), Directory(destPath));
+      await _mergeDirectory(
+        Directory(source.path),
+        Directory(destPath),
+        copyFirst: copyFirst,
+      );
       await source.delete(recursive: true);
       return true;
     }
@@ -197,8 +242,9 @@ class InstanceMigration {
 
   static Future<void> _mergeDirectory(
     Directory source,
-    Directory target,
-  ) async {
+    Directory target, {
+    bool copyFirst = false,
+  }) async {
     await target.create(recursive: true);
     await for (final child in source.list(followLinks: false)) {
       final destPath = p.join(target.path, p.basename(child.path));
@@ -211,7 +257,11 @@ class InstanceMigration {
       }
       if (sourceType == FileSystemEntityType.directory &&
           destType == FileSystemEntityType.directory) {
-        await _mergeDirectory(Directory(child.path), Directory(destPath));
+        await _mergeDirectory(
+          Directory(child.path),
+          Directory(destPath),
+          copyFirst: copyFirst,
+        );
         await child.delete(recursive: true);
       } else if (sourceType == FileSystemEntityType.file &&
           destType == FileSystemEntityType.file &&

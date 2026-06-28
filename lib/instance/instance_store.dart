@@ -4,23 +4,56 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../config/config_store.dart';
+import '../config/instance_path_store.dart';
 import '../files/storage_permission.dart';
 import 'instance.dart';
 
-/// 解析所有实例文件夹所在的根目录。
+/// 实例存放的 EdgeCube 数据文件夹下的子目录名。
+const String kInstancesSubDirName = 'instances';
+
+/// 解析所有实例文件夹所在的根目录（即 EdgeCube 数据文件夹下的 `instances`）。
 ///
 /// 默认指向共享内部存储 `EdgeCube/instances/`；测试可注入临时目录。
 /// 该目录存放各实例的服务端工作文件夹（jar、世界存档等），与配置文件分离。
 typedef InstancesRootResolver = Future<Directory> Function();
 
-/// 默认实例根目录 `<storage>/EdgeCube/instances`。
-Future<Directory> defaultInstancesRoot() async {
+/// 默认 EdgeCube 数据根目录 `<storage>/EdgeCube`。
+///
+/// 「实例文件夹」概念指此 EdgeCube 数据文件夹（其下 `instances/` 子目录存放
+/// 各实例的工作文件夹）。若用户在设置中指定了自定义实例文件夹路径
+/// （[InstancePathStore]），则返回该自定义路径；否则回退到默认位置。
+Future<Directory> defaultEdgeCubeRoot() async {
+  final customPath = await InstancePathStore.loadCustomPath();
+  if (customPath != null && customPath.isNotEmpty) {
+    return Directory(customPath);
+  }
+  return builtinEdgeCubeRoot();
+}
+
+/// 应用内置的默认 EdgeCube 数据根目录 `<storage>/EdgeCube`，
+/// 不读取用户自定义路径配置；供迁移、显示默认路径与「恢复默认」使用。
+Future<Directory> builtinEdgeCubeRoot() async {
   final externalRoot = await StoragePermission.externalStorageRoot();
   if (externalRoot != null && externalRoot.isNotEmpty) {
-    return Directory(p.join(externalRoot, 'EdgeCube', 'instances'));
+    return Directory(p.join(externalRoot, 'EdgeCube'));
   }
   final docs = await getApplicationDocumentsDirectory();
-  return Directory(p.join(docs.path, 'EdgeCube', 'instances'));
+  return Directory(p.join(docs.path, 'EdgeCube'));
+}
+
+/// 默认实例根目录 `<edgecube-root>/instances`。
+///
+/// 由 [defaultEdgeCubeRoot] 派生：EdgeCube 数据文件夹下的 `instances` 子目录。
+Future<Directory> defaultInstancesRoot() async {
+  final edgeCubeRoot = await defaultEdgeCubeRoot();
+  return Directory(p.join(edgeCubeRoot.path, kInstancesSubDirName));
+}
+
+/// 应用内置的默认实例根目录 `<storage>/EdgeCube/instances`，
+/// 不读取用户自定义路径配置；供迁移、显示默认路径与「恢复默认」使用。
+Future<Directory> builtinInstancesRoot() async {
+  final edgeCubeRoot = await builtinEdgeCubeRoot();
+  return Directory(p.join(edgeCubeRoot.path, kInstancesSubDirName));
 }
 
 /// 旧版实例根目录 `<documents>/instances`，用于一次性数据迁移。

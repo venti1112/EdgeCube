@@ -342,7 +342,15 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     }
 
     if (!mounted) return;
-    final sourcePath = await pickFromSystem(context, mode: SystemPickMode.file);
+    final sourcePath = await pickFromSystem(
+      context,
+      mode: SystemPickMode.file,
+      // 与原生 ArchiveExtractor 支持的格式保持一致。
+      allowedExtensions: const [
+        '.zip', '.tar', '.tar.gz', '.tgz', '.tar.xz', '.txz',
+        '.tar.bz2', '.tbz2', '.tar.zst', '.tzst', '.tar.lz4', '.7z',
+      ],
+    );
     if (sourcePath == null) {
       _closeWizard();
       return;
@@ -466,7 +474,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
     // 选择整合包文件。
     if (!mounted) return;
-    final sourcePath = await pickFromSystem(context, mode: SystemPickMode.file);
+    final sourcePath = await pickFromSystem(
+      context,
+      mode: SystemPickMode.file,
+      allowedExtensions: const ['.mrpack', '.zip'],
+    );
     if (sourcePath == null) {
       _deleteCreatedInstance();
       _closeWizard();
@@ -726,7 +738,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     }
 
     if (!mounted) return;
-    final sourcePath = await pickFromSystem(context, mode: SystemPickMode.file);
+    final sourcePath = await pickFromSystem(
+      context,
+      mode: SystemPickMode.file,
+      allowedExtensions: const ['.jar', '.phar'],
+    );
     if (sourcePath == null) {
       // 用户取消选择，关闭向导（dispose 会自动清理空实例）。
       _closeWizard();

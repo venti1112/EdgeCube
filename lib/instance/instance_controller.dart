@@ -46,18 +46,101 @@ class InstanceController extends ChangeNotifier {
   Instance? get selected => _selected;
 
   /// 从持久化存储加载索引与选中项配置，应在应用启动时调用一次。
+  ///
+  /// 加载后会自动清理与补全索引：
+  /// - 清理：移除索引中磁盘文件夹已不存在的实例（用户用文件管理器删除了
+  ///   实例文件夹的情况），同时删除其残留配置文件；
+  /// - 补全：扫描实例根目录下存在但未在索引中的文件夹（用户用外部文件
+  ///   管理器创建实例或卸载重装软件的情况），为其生成默认配置并加入索引。
   Future<void> init() async {
     _summaries = await _store.loadSummaries();
     final savedId = await _store.loadSelectedId();
+    final prunedId = await _pruneMissingInstances(savedId);
+    await _autoCompleteUnknownInstances(prunedId);
     // 选中项可能已被删除，回退到第一个实例。
-    if (savedId != null && _summaries.any((i) => i.id == savedId)) {
-      _selectedId = savedId;
+    if (prunedId != null && _summaries.any((i) => i.id == prunedId)) {
+      _selectedId = prunedId;
     } else {
       _selectedId = _summaries.isNotEmpty ? _summaries.first.id : null;
     }
     await _loadSelected();
     _initialized = true;
     notifyListeners();
+  }
+
+  /// 清理索引中磁盘文件夹已不存在的实例。
+  ///
+  /// 用于用户使用外部文件管理器删除实例文件夹、或存储路径变更后部分实例
+  /// 丢失的情况：从索引移除磁盘上不存在的实例 id，并删除其残留配置文件
+  /// （`config/instances/<id>.json`）。若被清理的实例正是当前选中项，
+  /// 返回的选中 id 会被置为 null，由调用方回退到第一个实例。
+  ///
+  /// 返回更新后的选中项 id（若 [preservedSelectedId] 对应的实例被清理则为 null）。
+  Future<String?> _pruneMissingInstances(String? preservedSelectedId) async {
+    final root = await _rootResolver();
+    // 根目录不存在时（如存储未挂载）不清理，避免误删全部索引。
+    if (!await root.exists()) return preservedSelectedId;
+
+    final existingDirIds = <String>{};
+    await for (final entity in root.list(followLinks: false)) {
+      if (entity is Directory) {
+        existingDirIds.add(p.basename(entity.path));
+      }
+    }
+
+    final kept = <InstanceSummary>[];
+    String? newSelectedId = preservedSelectedId;
+    var changed = false;
+
+    for (final summary in _summaries) {
+      if (existingDirIds.contains(summary.id)) {
+        kept.add(summary);
+      } else {
+        await _store.deleteConfig(summary.id);
+        if (summary.id == preservedSelectedId) newSelectedId = null;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      _summaries = kept;
+      await _store.saveIndex(_summaries, newSelectedId);
+    }
+
+    return newSelectedId;
+  }
+
+  /// 扫描实例根目录，将未在索引中的文件夹自动补全为实例。
+  ///
+  /// 用于用户使用外部文件管理器在 `instances/` 下创建文件夹、或卸载重装
+  /// 软件后索引丢失的情况：以文件夹名作为实例 id 与名称，写入默认配置
+  /// 并加入索引。隐藏文件夹（以 `.` 开头，如迁移临时目录）会被跳过。
+  /// [preservedSelectedId] 为持久化的选中项 id，写入索引时保留以免被覆盖。
+  Future<void> _autoCompleteUnknownInstances(String? preservedSelectedId) async {
+    final root = await _rootResolver();
+    if (!await root.exists()) return;
+    final existingIds = _summaries.map((s) => s.id).toSet();
+    final newSummaries = <InstanceSummary>[];
+    final newConfigs = <Instance>[];
+
+    await for (final entity in root.list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final id = p.basename(entity.path);
+      if (id.startsWith('.')) continue; // 跳过隐藏文件夹（含迁移临时目录）
+      if (existingIds.contains(id) || newSummaries.any((s) => s.id == id)) {
+        continue;
+      }
+      newSummaries.add(InstanceSummary(id: id, name: id));
+      newConfigs.add(Instance(id: id, name: id));
+    }
+
+    if (newSummaries.isEmpty) return;
+
+    for (final config in newConfigs) {
+      await _store.saveConfig(config);
+    }
+    _summaries = [..._summaries, ...newSummaries];
+    await _store.saveIndex(_summaries, preservedSelectedId);
   }
 
   /// 加载当前 [_selectedId] 对应的完整配置到 [_selected]。
@@ -165,6 +248,13 @@ class InstanceController extends ChangeNotifier {
   /// 通知当前实例目录内的文件发生变化（如导入 jar），触发依赖方重新扫描。
   void notifyInstanceFilesChanged() {
     _filesRevision++;
+    notifyListeners();
+  }
+
+  /// 自定义实例文件夹路径变更后调用：[defaultEdgeCubeRoot] 会动态读取
+  /// 新路径，[defaultInstancesRoot] 再在其下拼接 `instances` 子目录，
+  /// 此处仅触发监听者（FTP/SSH 根目录同步等）重新解析实例目录。
+  void refreshAfterPathChange() {
     notifyListeners();
   }
 

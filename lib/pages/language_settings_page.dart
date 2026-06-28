@@ -126,7 +126,11 @@ class LanguageSettingsPage extends StatelessWidget {
   ) async {
     if (!await _ensurePermission(context)) return;
     if (!context.mounted) return;
-    final path = await pickFromSystem(context, mode: SystemPickMode.file);
+    final path = await pickFromSystem(
+      context,
+      mode: SystemPickMode.file,
+      allowedExtensions: const ['.json'],
+    );
     if (path == null || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final successTpl = context.tr('language.importSuccess');

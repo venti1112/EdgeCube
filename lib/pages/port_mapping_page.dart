@@ -34,10 +34,15 @@ class _PortMappingPageState extends State<PortMappingPage> {
   // —— FRP 表单控制器 ——
   final _serverAddr = TextEditingController();
   final _serverPort = TextEditingController(text: '7000');
+  final _user = TextEditingController();
   final _token = TextEditingController();
   final _proxyName = TextEditingController(text: 'minecraft');
   final _remotePort = TextEditingController(text: '25565');
   String _proxyType = 'tcp';
+  String _protocol = 'tcp';
+  bool _tlsEnable = true;
+  bool _useEncryption = false;
+  bool _useCompression = false;
 
   // —— frpc 运行时 ——
   List<RuntimeInfo> _frpcRuntimes = [];
@@ -69,6 +74,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
     for (final c in [
       _serverAddr,
       _serverPort,
+      _user,
       _token,
       _proxyName,
       _remotePort,
@@ -102,10 +108,15 @@ class _PortMappingPageState extends State<PortMappingPage> {
       if (frpc != null) {
         _serverAddr.text = frpc.serverAddr;
         _serverPort.text = '${frpc.serverPort}';
+        _user.text = frpc.user ?? '';
         _token.text = frpc.authToken ?? '';
         _proxyName.text = frpc.proxyName;
         _proxyType = frpc.proxyType;
         _remotePort.text = '${frpc.remotePort}';
+        _protocol = frpc.protocol;
+        _tlsEnable = frpc.tlsEnable;
+        _useEncryption = frpc.useEncryption;
+        _useCompression = frpc.useCompression;
       }
     });
   }
@@ -130,6 +141,11 @@ class _PortMappingPageState extends State<PortMappingPage> {
       proxyType: _proxyType,
       localPort: 25565,
       remotePort: port(_remotePort, 25565),
+      user: _user.text.trim().isEmpty ? null : _user.text.trim(),
+      protocol: _protocol,
+      tlsEnable: _tlsEnable,
+      useEncryption: _useEncryption,
+      useCompression: _useCompression,
     );
   }
 
@@ -251,9 +267,9 @@ class _PortMappingPageState extends State<PortMappingPage> {
       ),
     );
     if (go == true && mounted) {
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const RuntimePage()),
-      );
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const RuntimePage()));
       if (mounted) _loadAll();
     }
   }
@@ -409,9 +425,10 @@ class _PortMappingPageState extends State<PortMappingPage> {
   Widget _buildFrpcCard(ThemeData theme) {
     final statusText = _tunnelExitCode != null
         ? (_tunnelExitCode == 0
-            ? context.tr('portMapping.tunnelExited')
-            : context.tr('portMapping.tunnelExitedWithError',
-                {'code': _tunnelExitCode.toString()}))
+              ? context.tr('portMapping.tunnelExited')
+              : context.tr('portMapping.tunnelExitedWithError', {
+                  'code': _tunnelExitCode.toString(),
+                }))
         : switch (_tunnelStatus) {
             'running' => context.tr('portMapping.tunnelRunning'),
             'starting' => context.tr('portMapping.tunnelConnecting'),
@@ -458,28 +475,138 @@ class _PortMappingPageState extends State<PortMappingPage> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
             if (_tunnelEnabled) ...[
-              if (_useCustomFrpc)
+              if (!_useCustomFrpc) ...[
+                const Divider(indent: 16, endIndent: 16),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    context.tr('portMapping.frpsServer'),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+                _px(
+                  _field(
+                    _serverAddr,
+                    context.tr('portMapping.serverAddr'),
+                    hint: context.tr('portMapping.serverAddrHint'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _field(
+                          _serverPort,
+                          context.tr('portMapping.port'),
+                          number: true,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _field(
+                          _token,
+                          context.tr('portMapping.tokenOptional'),
+                          obscure: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _field(_user, context.tr('portMapping.user')),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: _protocolDropdown()),
+                    ],
+                  ),
+                ),
+                SwitchListTile(
+                  title: Text(context.tr('portMapping.tlsEnable')),
+                  subtitle: Text(context.tr('portMapping.tlsEnableSubtitle')),
+                  value: _tlsEnable,
+                  onChanged: (v) => setState(() => _tlsEnable = v),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    context.tr('portMapping.proxy'),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Expanded(child: _typeDropdown()),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _field(
+                          _proxyName,
+                          context.tr('portMapping.proxyName'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _field(
+                          _remotePort,
+                          context.tr('portMapping.remotePort'),
+                          number: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SwitchListTile(
+                  title: Text(context.tr('portMapping.useEncryption')),
+                  subtitle: Text(
+                    context.tr('portMapping.useEncryptionSubtitle'),
+                  ),
+                  value: _useEncryption,
+                  onChanged: (v) => setState(() => _useEncryption = v),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                SwitchListTile(
+                  title: Text(context.tr('portMapping.useCompression')),
+                  subtitle: Text(
+                    context.tr('portMapping.useCompressionSubtitle'),
+                  ),
+                  value: _useCompression,
+                  onChanged: (v) => setState(() => _useCompression = v),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Card(
-                    color: theme.colorScheme.tertiaryContainer,
+                    color: theme.colorScheme.surfaceContainerHighest,
                     margin: EdgeInsets.zero,
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Row(
                         children: [
                           Icon(
-                            Icons.warning_amber_outlined,
+                            Icons.info_outline,
                             size: 18,
-                            color: theme.colorScheme.onTertiaryContainer,
+                            color: theme.colorScheme.primary,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              context.tr('portMapping.customConfigWarning'),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onTertiaryContainer,
-                              ),
+                              context.tr('portMapping.localPortInfo'),
+                              style: theme.textTheme.bodySmall,
                             ),
                           ),
                         ],
@@ -487,119 +614,20 @@ class _PortMappingPageState extends State<PortMappingPage> {
                     ),
                   ),
                 ),
-              const Divider(indent: 16, endIndent: 16),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  context.tr('portMapping.frpsServer'),
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ),
-              _px(
-                _field(
-                  _serverAddr,
-                  context.tr('portMapping.serverAddr'),
-                  hint: context.tr('portMapping.serverAddrHint'),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _field(
-                        _serverPort,
-                        context.tr('portMapping.port'),
-                        number: true,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _field(
-                        _token,
-                        context.tr('portMapping.tokenOptional'),
-                        obscure: true,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  context.tr('portMapping.proxy'),
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Expanded(child: _typeDropdown()),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _field(
-                        _proxyName,
-                        context.tr('portMapping.proxyName'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _field(
-                        _remotePort,
-                        context.tr('portMapping.remotePort'),
-                        number: true,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Card(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  margin: EdgeInsets.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 18,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            context.tr('portMapping.localPortInfo'),
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                      onPressed: _saveFrpcConfig,
+                      icon: const Icon(Icons.save, size: 18),
+                      label: Text(context.tr('portMapping.saveConfig')),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.tonalIcon(
-                    onPressed: _useCustomFrpc ? null : _saveFrpcConfig,
-                    icon: const Icon(Icons.save, size: 18),
-                    label: Text(context.tr('portMapping.saveConfig')),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 8),
+              ],
               const Divider(indent: 16, endIndent: 16),
               SwitchListTile(
                 title: Text(context.tr('portMapping.useCustomConfig')),
@@ -854,6 +882,25 @@ class _PortMappingPageState extends State<PortMappingPage> {
         DropdownMenuItem(value: 'udp', child: Text('UDP')),
       ],
       onChanged: (v) => setState(() => _proxyType = v ?? 'tcp'),
+    );
+  }
+
+  Widget _protocolDropdown() {
+    return DropdownButtonFormField<String>(
+      initialValue: _protocol,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: context.tr('portMapping.protocol'),
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      items: const [
+        DropdownMenuItem(value: 'tcp', child: Text('TCP')),
+        DropdownMenuItem(value: 'kcp', child: Text('KCP')),
+        DropdownMenuItem(value: 'quic', child: Text('QUIC')),
+        DropdownMenuItem(value: 'websocket', child: Text('WebSocket')),
+      ],
+      onChanged: (v) => setState(() => _protocol = v ?? 'tcp'),
     );
   }
 }
