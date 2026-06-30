@@ -241,7 +241,8 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
 
   /// 顶部大占用条：显示设备总空间和本程序各部分的占比。
   Widget _buildUsageBar(ThemeData theme, Translations tr) {
-    final appTotal = _cacheSize + _instancesSize + _runtimeSize + _appDataSize + _appSize;
+    final appTotal =
+        _cacheSize + _instancesSize + _runtimeSize + _appDataSize + _appSize;
     final usedBytes = _totalBytes - _availableBytes;
 
     return Card(
@@ -260,9 +261,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
               borderRadius: BorderRadius.circular(6),
               child: SizedBox(
                 height: 24,
-                child: Row(
-                  children: _buildBarSegments(appTotal, usedBytes),
-                ),
+                child: Row(children: _buildBarSegments(appTotal, usedBytes)),
               ),
             ),
             const SizedBox(height: 12),
@@ -321,35 +320,49 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
       const Color(0xFFAB47BC), // 程序数据-紫
       const Color(0xFF26A69A), // 程序本体-青
     ];
-    final sizes = [_cacheSize, _instancesSize, _runtimeSize, _appDataSize, _appSize];
+    final sizes = [
+      _cacheSize,
+      _instancesSize,
+      _runtimeSize,
+      _appDataSize,
+      _appSize,
+    ];
 
     for (var i = 0; i < 5; i++) {
       if (sizes[i] <= 0) continue;
       final flex = (sizes[i] / _totalBytes * 10000).round().clamp(1, 10000);
-      segments.add(Expanded(
-        flex: flex,
-        child: Container(color: colors[i]),
-      ));
+      segments.add(
+        Expanded(
+          flex: flex,
+          child: Container(color: colors[i]),
+        ),
+      );
     }
 
     // 其余已用空间（非本程序）- 灰色
     final otherUsed = usedBytes - appTotal;
     if (otherUsed > 0) {
       final flex = (otherUsed / _totalBytes * 10000).round().clamp(1, 10000);
-      segments.add(Expanded(
-        flex: flex,
-        child: Container(color: Colors.grey.shade400),
-      ));
+      segments.add(
+        Expanded(
+          flex: flex,
+          child: Container(color: Colors.grey.shade400),
+        ),
+      );
     }
 
     // 可用空间 - 浅灰
     if (_availableBytes > 0) {
-      final flex =
-          (_availableBytes / _totalBytes * 10000).round().clamp(1, 10000);
-      segments.add(Expanded(
-        flex: flex,
-        child: Container(color: Colors.grey.shade200),
-      ));
+      final flex = (_availableBytes / _totalBytes * 10000).round().clamp(
+        1,
+        10000,
+      );
+      segments.add(
+        Expanded(
+          flex: flex,
+          child: Container(color: Colors.grey.shade200),
+        ),
+      );
     }
 
     if (segments.isEmpty) {
@@ -422,10 +435,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : TextButton(
-                      onPressed: onAction,
-                      child: Text(actionText),
-                    ),
+                  : TextButton(onPressed: onAction, child: Text(actionText)),
           ],
         ),
       ),
@@ -444,20 +454,37 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
               spacing: 16,
               runSpacing: 8,
               children: [
-                _legend(theme, const Color(0xFF42A5F5),
-                    tr.get('storage.cache')),
-                _legend(theme, const Color(0xFF66BB6A),
-                    tr.get('storage.instances')),
-                _legend(theme, const Color(0xFFFF7043),
-                    tr.get('storage.runtime')),
-                _legend(theme, const Color(0xFFAB47BC),
-                    tr.get('storage.appData')),
-                _legend(theme, const Color(0xFF26A69A),
-                    tr.get('storage.app')),
-                _legend(theme, Colors.grey.shade400,
-                    tr.get('storage.otherUsed')),
-                _legend(theme, Colors.grey.shade200,
-                    tr.get('storage.available')),
+                _legend(
+                  theme,
+                  const Color(0xFF42A5F5),
+                  tr.get('storage.cache'),
+                ),
+                _legend(
+                  theme,
+                  const Color(0xFF66BB6A),
+                  tr.get('storage.instances'),
+                ),
+                _legend(
+                  theme,
+                  const Color(0xFFFF7043),
+                  tr.get('storage.runtime'),
+                ),
+                _legend(
+                  theme,
+                  const Color(0xFFAB47BC),
+                  tr.get('storage.appData'),
+                ),
+                _legend(theme, const Color(0xFF26A69A), tr.get('storage.app')),
+                _legend(
+                  theme,
+                  Colors.grey.shade400,
+                  tr.get('storage.otherUsed'),
+                ),
+                _legend(
+                  theme,
+                  Colors.grey.shade200,
+                  tr.get('storage.available'),
+                ),
               ],
             ),
           ],

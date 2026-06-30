@@ -71,8 +71,7 @@ class DownloadQueue extends ChangeNotifier {
       _tasks.where((t) => t.status == DownloadTaskStatus.failed).length;
 
   /// 是否有活跃任务（下载中或等待中）。
-  bool get hasActiveTasks =>
-      _current != null || pendingCount > 0;
+  bool get hasActiveTasks => _current != null || pendingCount > 0;
 
   /// 将任务加入队列，返回任务 ID。
   ///
@@ -89,20 +88,24 @@ class DownloadQueue extends ChangeNotifier {
     VoidCallback? onComplete,
   }) {
     // 去重：已有相同 destPath 的活跃任务则跳过
-    final existing = _tasks.where(
-      (t) =>
-          t.destPath == destPath &&
-          (t.status == DownloadTaskStatus.pending ||
-              t.status == DownloadTaskStatus.downloading),
-    ).firstOrNull;
+    final existing = _tasks
+        .where(
+          (t) =>
+              t.destPath == destPath &&
+              (t.status == DownloadTaskStatus.pending ||
+                  t.status == DownloadTaskStatus.downloading),
+        )
+        .firstOrNull;
     if (existing != null) return existing.id;
 
     // 去重：已完成且文件存在则跳过
-    final completed = _tasks.where(
-      (t) =>
-          t.destPath == destPath &&
-          t.status == DownloadTaskStatus.completed,
-    ).firstOrNull;
+    final completed = _tasks
+        .where(
+          (t) =>
+              t.destPath == destPath &&
+              t.status == DownloadTaskStatus.completed,
+        )
+        .firstOrNull;
     if (completed != null && File(destPath).existsSync()) {
       return completed.id;
     }
@@ -151,10 +154,12 @@ class DownloadQueue extends ChangeNotifier {
 
   /// 从列表中移除已结束的任务（完成/失败/取消）。
   void removeFinished() {
-    _tasks.removeWhere((t) =>
-        t.status == DownloadTaskStatus.completed ||
-        t.status == DownloadTaskStatus.failed ||
-        t.status == DownloadTaskStatus.cancelled);
+    _tasks.removeWhere(
+      (t) =>
+          t.status == DownloadTaskStatus.completed ||
+          t.status == DownloadTaskStatus.failed ||
+          t.status == DownloadTaskStatus.cancelled,
+    );
     notifyListeners();
   }
 
@@ -187,8 +192,7 @@ class DownloadQueue extends ChangeNotifier {
       notifyListeners();
 
       final isUpdate = task.replacePath != null;
-      final downloadPath =
-          isUpdate ? '${task.destPath}.dltmp' : task.destPath;
+      final downloadPath = isUpdate ? '${task.destPath}.dltmp' : task.destPath;
 
       try {
         await ModrinthService.downloadFile(

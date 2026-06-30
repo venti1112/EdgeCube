@@ -111,7 +111,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   /// 整合包导入状态。
   ModpackFormat? _modpackFormat;
-  String _modpackPhase = ''; // parsing / downloading / extracting / preparing / idle
+  String _modpackPhase =
+      ''; // parsing / downloading / extracting / preparing / idle
   int _modpackCurrent = 0;
   int _modpackTotal = 0;
   String _modpackCurrentFile = '';
@@ -347,8 +348,18 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       mode: SystemPickMode.file,
       // 与原生 ArchiveExtractor 支持的格式保持一致。
       allowedExtensions: const [
-        '.zip', '.tar', '.tar.gz', '.tgz', '.tar.xz', '.txz',
-        '.tar.bz2', '.tbz2', '.tar.zst', '.tzst', '.tar.lz4', '.7z',
+        '.zip',
+        '.tar',
+        '.tar.gz',
+        '.tgz',
+        '.tar.xz',
+        '.txz',
+        '.tar.bz2',
+        '.tbz2',
+        '.tar.zst',
+        '.tzst',
+        '.tar.lz4',
+        '.7z',
       ],
     );
     if (sourcePath == null) {
@@ -394,7 +405,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       setState(() {
         _extracting = false;
         _extractProgress = null;
-        _extractError = context.tr('instance.extractArchiveFailed', {'error': '$e'});
+        _extractError = context.tr('instance.extractArchiveFailed', {
+          'error': '$e',
+        });
       });
     }
   }
@@ -1369,8 +1382,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       return;
     }
 
-    final jarName =
-        _serverType == 'powernukkitx' ? 'powernukkitx.jar' : 'server.jar';
+    final jarName = _serverType == 'powernukkitx'
+        ? 'powernukkitx.jar'
+        : 'server.jar';
     await _downloadJar(instanceId, info, jarName: jarName);
   }
 
@@ -2054,7 +2068,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                   _extracting
                       ? context.tr('instance.extractingArchive')
                       : (_extractError != null
-                            ? context.tr('instance.extractArchiveFailed', {'error': _extractError!})
+                            ? context.tr('instance.extractArchiveFailed', {
+                                'error': _extractError!,
+                              })
                             : context.tr('instance.installComplete')),
                   style: theme.textTheme.titleMedium,
                 ),
@@ -2168,7 +2184,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                     ),
                   ],
                 ],
-                if (!hasError && isExtracting &&
+                if (!hasError &&
+                    isExtracting &&
                     _modpackFormat == ModpackFormat.plainZip &&
                     _extractProgress != null) ...[
                   const SizedBox(height: 8),
@@ -2797,9 +2814,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   }
 
   /// 从 GitHub Release Assets 获取 PowerNukkitX 指定版本的 jar 下载 URL。
-  Future<_DownloadInfo> _fetchPowernukkitxDownloadInfo(
-    String version,
-  ) async {
+  Future<_DownloadInfo> _fetchPowernukkitxDownloadInfo(String version) async {
     final client = HttpClient();
     try {
       final req = await client.getUrl(

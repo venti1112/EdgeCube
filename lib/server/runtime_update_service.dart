@@ -96,9 +96,7 @@ class RuntimeUpdateService {
   ///
   /// - [runtime] 必须支持在线检查（`canCheckUpdate` 为 true）
   /// - 网络/解析失败抛出异常
-  static Future<RuntimeUpdateInfo> checkForUpdates(
-    RuntimeInfo runtime,
-  ) async {
+  static Future<RuntimeUpdateInfo> checkForUpdates(RuntimeInfo runtime) async {
     if (!runtime.canCheckUpdate) {
       throw StateError('该运行时未声明 updateUrl，无法检查更新');
     }

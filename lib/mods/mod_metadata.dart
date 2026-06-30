@@ -6,9 +6,14 @@ import 'package:flutter/foundation.dart';
 
 /// Mod 加载器类型。
 enum ModLoader {
-  fabric, forge, quilt, neoforge,
-  bukkit, bungeecord, velocity,
-  unknown
+  fabric,
+  forge,
+  quilt,
+  neoforge,
+  bukkit,
+  bungeecord,
+  velocity,
+  unknown,
 }
 
 /// 从 .jar 文件中解析出的模组元数据。
@@ -36,15 +41,15 @@ class ModMetadata {
   final ModLoader loader;
 
   String get loaderLabel => switch (loader) {
-        ModLoader.fabric => 'Fabric',
-        ModLoader.forge => 'Forge',
-        ModLoader.quilt => 'Quilt',
-        ModLoader.neoforge => 'NeoForge',
-        ModLoader.bukkit => 'Plugin',
-        ModLoader.bungeecord => 'BungeeCord',
-        ModLoader.velocity => 'Velocity',
-        ModLoader.unknown => '',
-      };
+    ModLoader.fabric => 'Fabric',
+    ModLoader.forge => 'Forge',
+    ModLoader.quilt => 'Quilt',
+    ModLoader.neoforge => 'NeoForge',
+    ModLoader.bukkit => 'Plugin',
+    ModLoader.bungeecord => 'BungeeCord',
+    ModLoader.velocity => 'Velocity',
+    ModLoader.unknown => '',
+  };
 }
 
 /// 从 .jar（zip）中解析模组元数据。
@@ -76,7 +81,6 @@ class ModMetadataParser {
 
   /// 从已解压的 [archive] 中按优先级提取模组元数据。
   static ModMetadata? _extractMetadata(Archive archive) {
-
     // 1. fabric.mod.json
     final fabric = _readEntry(archive, 'fabric.mod.json');
     if (fabric != null) {
@@ -158,11 +162,14 @@ class ModMetadataParser {
       String? authors;
       final authorsRaw = data['authors'];
       if (authorsRaw is List && authorsRaw.isNotEmpty) {
-        authors = authorsRaw.map((a) {
-          if (a is String) return a;
-          if (a is Map<String, dynamic>) return a['name'] as String? ?? '';
-          return '';
-        }).where((s) => s.isNotEmpty).join(', ');
+        authors = authorsRaw
+            .map((a) {
+              if (a is String) return a;
+              if (a is Map<String, dynamic>) return a['name'] as String? ?? '';
+              return '';
+            })
+            .where((s) => s.isNotEmpty)
+            .join(', ');
       }
       return ModMetadata(
         name: name ?? id!,
@@ -231,7 +238,9 @@ class ModMetadataParser {
         }
 
         // Key-value
-        final kvMatch = RegExp(r'^([a-zA-Z_]+)\s*=\s*(.+)$').firstMatch(trimmed);
+        final kvMatch = RegExp(
+          r'^([a-zA-Z_]+)\s*=\s*(.+)$',
+        ).firstMatch(trimmed);
         if (kvMatch == null) continue;
         final key = kvMatch.group(1)!;
         var value = kvMatch.group(2)!;
@@ -246,7 +255,8 @@ class ModMetadataParser {
 
         if (inModsArray) {
           mods[key] = value;
-        } else if (currentSection == null || !currentSection.startsWith('dependencies')) {
+        } else if (currentSection == null ||
+            !currentSection.startsWith('dependencies')) {
           global[key] = value;
         }
       }
@@ -316,7 +326,11 @@ class ModMetadataParser {
       final authorsRaw = data['authors'];
       if (authorsRaw is List && authorsRaw.isNotEmpty) {
         authors = authorsRaw
-            .map((a) => a is String ? a : (a is Map ? a['name'] as String? ?? '' : ''))
+            .map(
+              (a) => a is String
+                  ? a
+                  : (a is Map ? a['name'] as String? ?? '' : ''),
+            )
             .where((s) => s.isNotEmpty)
             .join(', ');
       }

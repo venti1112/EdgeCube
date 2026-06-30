@@ -59,9 +59,7 @@ class _ConsolePageState extends State<ConsolePage> {
       final file = File('${dir.path}/edgecube_log_$ts.log');
       await file.writeAsString(server.log.join('\n'));
       if (!mounted) return;
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)]),
-      );
+      await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -160,9 +158,7 @@ class _ConsolePageState extends State<ConsolePage> {
             ),
             // RepaintBoundary 让按键栏拥有独立合成层，与 TerminalView 同步清除，
             // 避免 IndexedStack 切换时按键栏比终端慢一帧消失的视觉残留。
-            RepaintBoundary(
-              child: _ExtraKeysBar(server),
-            ),
+            RepaintBoundary(child: _ExtraKeysBar(server)),
           ],
         ),
       ),

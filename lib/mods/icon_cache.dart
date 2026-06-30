@@ -36,8 +36,7 @@ class ModIconCache {
   }
 
   /// 以 URL 的 SHA1 作为缓存文件名。
-  String _fileName(String url) =>
-      sha1.convert(utf8.encode(url)).toString();
+  String _fileName(String url) => sha1.convert(utf8.encode(url)).toString();
 
   /// 获取图标字节。优先从内存/磁盘读取，不存在则下载并缓存。
   Future<Uint8List?> get(String url) async {
@@ -94,12 +93,7 @@ class ModIconCache {
 /// 优先使用 [ModIconCache] 读取已缓存的图标字节，
 /// 加载中/失败时显示 [fallback]。
 class CachedModIcon extends StatefulWidget {
-  const CachedModIcon({
-    super.key,
-    this.url,
-    this.size = 40,
-    this.fallback,
-  });
+  const CachedModIcon({super.key, this.url, this.size = 40, this.fallback});
 
   final String? url;
   final double size;
@@ -165,8 +159,7 @@ class _CachedModIconState extends State<CachedModIcon> {
         width: widget.size,
         height: widget.size,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) =>
-            widget.fallback ?? _defaultFallback(context),
+        errorBuilder: (_, _, _) => widget.fallback ?? _defaultFallback(context),
       ),
     );
   }

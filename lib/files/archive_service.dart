@@ -13,7 +13,9 @@ class ArchiveService {
   ArchiveService._();
 
   static const _channel = MethodChannel('com.venti1112.edgecube/archive');
-  static const _eventChannel = EventChannel('com.venti1112.edgecube/archive_events');
+  static const _eventChannel = EventChannel(
+    'com.venti1112.edgecube/archive_events',
+  );
 
   static StreamSubscription<dynamic>? _eventSub;
 

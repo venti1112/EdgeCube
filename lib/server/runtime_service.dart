@@ -59,8 +59,9 @@ class RuntimeService {
   Future<List<RuntimeInfo>> installedRuntimes() async {
     final list = await _method.invokeMethod<List<dynamic>>('installedRuntimes');
     return list?.cast<Map<dynamic, dynamic>>().map((m) {
-      return RuntimeInfo.fromMap(m.cast<String, dynamic>());
-    }).toList() ?? const [];
+          return RuntimeInfo.fromMap(m.cast<String, dynamic>());
+        }).toList() ??
+        const [];
   }
 
   /// 导入 `.ecpkg` 文件并返回安装后的运行时信息。
@@ -89,10 +90,9 @@ class RuntimeService {
 
   /// 指定运行时的二进制是否正被服务端/隧道进程使用。
   Future<bool> isRuntimeRunning(String id) async {
-    final running = await _method.invokeMethod<bool>(
-      'isRuntimeRunning',
-      {'id': id},
-    );
+    final running = await _method.invokeMethod<bool>('isRuntimeRunning', {
+      'id': id,
+    });
     return running ?? false;
   }
 

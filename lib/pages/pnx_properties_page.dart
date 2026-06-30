@@ -140,11 +140,7 @@ final _sections = <_Section>[
       subtitle: '验证玩家的 Xbox 账号',
       kind: _PropKind.toggle,
     ),
-    _PropDef(
-      path: 'settings.autoSave',
-      label: '自动保存',
-      kind: _PropKind.toggle,
-    ),
+    _PropDef(path: 'settings.autoSave', label: '自动保存', kind: _PropKind.toggle),
     _PropDef(
       path: 'settings.autosaveDelay',
       label: '自动保存周期 (tick)',

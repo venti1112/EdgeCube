@@ -47,9 +47,9 @@ class _RuntimePageState extends State<RuntimePage> {
   void _handleOpenEcpkg(String path) {
     if (!mounted) return;
     if (!path.toLowerCase().endsWith('.ecpkg')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('runtime.notEcpkg'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.tr('runtime.notEcpkg'))));
       return;
     }
     _doImport(path);
@@ -153,13 +153,17 @@ class _RuntimePageState extends State<RuntimePage> {
       }
       messenger.showSnackBar(
         SnackBar(
-          content: Text(tr.get('runtime.importFailed', {'error': '${e.message}'})),
+          content: Text(
+            tr.get('runtime.importFailed', {'error': '${e.message}'}),
+          ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text(tr.get('runtime.importFailed', {'error': '$e'}))),
+        SnackBar(
+          content: Text(tr.get('runtime.importFailed', {'error': '$e'})),
+        ),
       );
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -211,7 +215,9 @@ class _RuntimePageState extends State<RuntimePage> {
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text(tr.get('runtime.deleteFailed', {'error': '$e'}))),
+        SnackBar(
+          content: Text(tr.get('runtime.deleteFailed', {'error': '$e'})),
+        ),
       );
     }
   }
@@ -267,7 +273,9 @@ class _RuntimePageState extends State<RuntimePage> {
     if (updateInfo == null) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text(tr.get('runtime.update.checkFailed', {'error': error ?? ''})),
+          content: Text(
+            tr.get('runtime.update.checkFailed', {'error': error ?? ''}),
+          ),
         ),
       );
       return;
@@ -310,9 +318,11 @@ class _RuntimePageState extends State<RuntimePage> {
               ),
               if (info.publishedAt != null) ...[
                 const SizedBox(height: 8),
-                Text(tr.get('runtime.update.publishedAt', {
-                  'date': info.publishedAt!,
-                })),
+                Text(
+                  tr.get('runtime.update.publishedAt', {
+                    'date': info.publishedAt!,
+                  }),
+                ),
               ],
               if (info.releaseNotes != null &&
                   info.releaseNotes!.isNotEmpty) ...[
@@ -365,7 +375,11 @@ class _RuntimePageState extends State<RuntimePage> {
     final messenger = ScaffoldMessenger.of(context);
 
     final progressNotifier = ValueNotifier<_DownloadProgress>(
-      _DownloadProgress(stage: _DownloadStage.downloading, received: 0, total: pkg.size),
+      _DownloadProgress(
+        stage: _DownloadStage.downloading,
+        received: 0,
+        total: pkg.size,
+      ),
     );
     var cancelled = false;
 
@@ -420,7 +434,11 @@ class _RuntimePageState extends State<RuntimePage> {
       progressNotifier.dispose();
       if (mounted) {
         messenger.showSnackBar(
-          SnackBar(content: Text(tr.get('runtime.update.downloadFailed', {'error': error}))),
+          SnackBar(
+            content: Text(
+              tr.get('runtime.update.downloadFailed', {'error': error}),
+            ),
+          ),
         );
       }
       return;
@@ -484,7 +502,11 @@ class _RuntimePageState extends State<RuntimePage> {
       await dialogFuture;
       progressNotifier.dispose();
       messenger.showSnackBar(
-        SnackBar(content: Text(tr.get('runtime.update.installFailed', {'error': '$e'}))),
+        SnackBar(
+          content: Text(
+            tr.get('runtime.update.installFailed', {'error': '$e'}),
+          ),
+        ),
       );
     }
   }
@@ -506,55 +528,55 @@ class _RuntimePageState extends State<RuntimePage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _runtimes.isEmpty
-              ? _EmptyBody(onImport: _import)
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _runtimes.length,
-                  itemBuilder: (_, i) {
-                    final rt = _runtimes[i];
-                    return Card(
-                      child: ListTile(
-                        leading: Icon(
-                          switch (rt.type) {
-                            'jre' => Icons.coffee,
-                            'php' => Icons.code,
-                            'frpc' => Icons.network_check,
-                            _ => Icons.memory,
-                          },
-                          size: 32,
+          ? _EmptyBody(onImport: _import)
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _runtimes.length,
+              itemBuilder: (_, i) {
+                final rt = _runtimes[i];
+                return Card(
+                  child: ListTile(
+                    leading: Icon(switch (rt.type) {
+                      'jre' => Icons.coffee,
+                      'php' => Icons.code,
+                      'frpc' => Icons.network_check,
+                      _ => Icons.memory,
+                    }, size: 32),
+                    title: Text(rt.name),
+                    subtitle: Text(
+                      '${_typeLabel(rt.type)} · ${rt.version}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.system_update_alt),
+                          tooltip: context.tr('runtime.update.tooltip'),
+                          onPressed: rt.canCheckUpdate
+                              ? () => _checkUpdate(rt)
+                              : null,
                         ),
-                        title: Text(rt.name),
-                        subtitle: Text(
-                          '${_typeLabel(rt.type)} · ${rt.version}',
-                          style: theme.textTheme.bodySmall,
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _delete(rt),
                         ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.system_update_alt),
-                              tooltip: context.tr('runtime.update.tooltip'),
-                              onPressed: rt.canCheckUpdate
-                                  ? () => _checkUpdate(rt)
-                                  : null,
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => _delete(rt),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
       floatingActionButton: _importing
           ? const FloatingActionButton(
               onPressed: null,
               child: SizedBox(
                 width: 24,
                 height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
               ),
             )
           : FloatingActionButton.extended(
@@ -578,7 +600,11 @@ class _EmptyBody extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.memory, size: 64, color: Theme.of(context).colorScheme.outline),
+            Icon(
+              Icons.memory,
+              size: 64,
+              color: Theme.of(context).colorScheme.outline,
+            ),
             const SizedBox(height: 16),
             Text(
               context.tr('runtime.emptyTitle'),
@@ -588,8 +614,8 @@ class _EmptyBody extends StatelessWidget {
             Text(
               context.tr('runtime.emptyDescription'),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -663,7 +689,8 @@ class _UpdateProgressDialog extends StatelessWidget {
       builder: (ctx, progress, _) {
         final stage = progress.stage;
         final canCancel = stage == _DownloadStage.downloading;
-        final isTerminal = stage == _DownloadStage.done ||
+        final isTerminal =
+            stage == _DownloadStage.done ||
             stage == _DownloadStage.failed ||
             stage == _DownloadStage.cancelled;
 

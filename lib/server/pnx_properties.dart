@@ -43,7 +43,8 @@ class PnxProperties {
       }
 
       // 嵌套 key: value（有缩进）。
-      if (currentSection != null && (raw.startsWith(' ') || raw.startsWith('\t'))) {
+      if (currentSection != null &&
+          (raw.startsWith(' ') || raw.startsWith('\t'))) {
         final colonIdx = trimmed.indexOf(':');
         if (colonIdx > 0) {
           final key = trimmed.substring(0, colonIdx).trim();

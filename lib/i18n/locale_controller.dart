@@ -54,7 +54,9 @@ class LocaleController extends ChangeNotifier {
     final loc = localeFromCode(_resolvedCode);
     if (GlobalMaterialLocalizations.delegate.isSupported(loc)) return loc;
     final hasEn = _available.any((l) => l.code == 'en_US');
-    final fallback = hasEn ? const Locale('en', 'US') : const Locale('zh', 'CN');
+    final fallback = hasEn
+        ? const Locale('en', 'US')
+        : const Locale('zh', 'CN');
     return GlobalMaterialLocalizations.delegate.isSupported(fallback)
         ? fallback
         : const Locale('zh', 'CN');
@@ -134,7 +136,8 @@ class LocaleController extends ChangeNotifier {
   Future<void> setLanguage(String code) async {
     if (code == _selectedCode) return;
     final localeCode = _localeCodeOf(code);
-    if (code != LocaleStore.systemCode && !isValidLocaleCode(localeCode)) return;
+    if (code != LocaleStore.systemCode && !isValidLocaleCode(localeCode))
+      return;
     _selectedCode = code;
     await LocaleStore.save(_selectedCode);
     await _reload();
@@ -158,7 +161,9 @@ class LocaleController extends ChangeNotifier {
     await I18nService.removePack(code);
     _available = await I18nService.availableLanguages();
     if (_isCustom(_selectedCode) && _localeCodeOf(_selectedCode) == code) {
-      final builtinExists = _available.any((l) => l.code == code && l.isBuiltin);
+      final builtinExists = _available.any(
+        (l) => l.code == code && l.isBuiltin,
+      );
       if (builtinExists) {
         _selectedCode = '$_builtinPrefix$code';
       } else {

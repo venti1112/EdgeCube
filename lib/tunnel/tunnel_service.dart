@@ -37,12 +37,11 @@ class TunnelService {
     required String configPath,
     required String name,
     String? runtimeId,
-  }) =>
-      _method.invokeMethod('start', {
-        'configPath': configPath,
-        'name': name,
-        'runtimeId': runtimeId,
-      });
+  }) => _method.invokeMethod('start', {
+    'configPath': configPath,
+    'name': name,
+    'runtimeId': runtimeId,
+  });
 
   /// 优雅停止（SIGTERM，触发 frpc GracefulClose）。
   Future<void> stop() => _method.invokeMethod('stop');
@@ -148,20 +147,17 @@ class TunnelService {
 
   static void _startRawSub() {
     if (_rawSub != null) return;
-    _rawSub = _events.receiveBroadcastStream().map(_parseEvent).listen(
-      (event) {
-        if (event is TunnelLogEvent) {
-          _logBuffer.add(event.line);
-          if (_logBuffer.length > _maxLogBuffer) {
-            _logBuffer.removeRange(0, _logBuffer.length - _maxLogBuffer);
-          }
-        } else if (event is TunnelStateEvent) {
-          _lastState = event;
+    _rawSub = _events.receiveBroadcastStream().map(_parseEvent).listen((event) {
+      if (event is TunnelLogEvent) {
+        _logBuffer.add(event.line);
+        if (_logBuffer.length > _maxLogBuffer) {
+          _logBuffer.removeRange(0, _logBuffer.length - _maxLogBuffer);
         }
-        _broadcastController?.add(event);
-      },
-      onError: (e) => _broadcastController?.addError(e),
-    );
+      } else if (event is TunnelStateEvent) {
+        _lastState = event;
+      }
+      _broadcastController?.add(event);
+    }, onError: (e) => _broadcastController?.addError(e));
   }
 
   static void _stopRawSub() {

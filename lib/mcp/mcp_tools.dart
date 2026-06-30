@@ -365,7 +365,10 @@ void _registerShellTools(
       final path = (args['path'] as String?)?.trim() ?? '';
       if (path.isEmpty) return _err('path 不能为空');
       // 用 `cd && pwd` 校验目录可进入并解析为绝对路径。
-      final result = await shell.runCommand('cd "$path" && pwd', cwd: session.cwd);
+      final result = await shell.runCommand(
+        'cd "$path" && pwd',
+        cwd: session.cwd,
+      );
       final exitCode = result['exitCode'] as int? ?? -1;
       final output = (result['output'] as String? ?? '').trim();
       if (exitCode != 0 || output.isEmpty) return _err('无法进入目录：$path');

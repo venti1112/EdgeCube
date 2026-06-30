@@ -333,9 +333,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '启动 Minecraft 服务端前需要同意 Minecraft 最终用户许可协议（EULA）。',
-              ),
+              const Text('启动 Minecraft 服务端前需要同意 Minecraft 最终用户许可协议（EULA）。'),
               const SizedBox(height: 12),
               InkWell(
                 onTap: () {
@@ -471,9 +469,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       ),
     );
     if (go == true && mounted) {
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const RuntimePage()),
-      );
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const RuntimePage()));
     }
   }
 
@@ -1742,10 +1740,7 @@ class _CrashDialogState extends State<_CrashDialog> {
       await file.writeAsString(_buildFullLog());
       if (!mounted) return;
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path)],
-          text: context.tr(_shareTextKey),
-        ),
+        ShareParams(files: [XFile(file.path)], text: context.tr(_shareTextKey)),
       );
     } catch (e) {
       if (mounted) {
@@ -1801,12 +1796,10 @@ class _CrashDialogState extends State<_CrashDialog> {
     final isTunnel = widget.crash.kind == 'tunnel';
     final titleKey = isTunnel ? 'tunnel.crashTitle' : 'server.crashTitle';
     final messageKey = onlineEnabled
-        ? (isTunnel
-            ? 'tunnel.crashMessageOnline'
-            : 'server.crashMessageOnline')
+        ? (isTunnel ? 'tunnel.crashMessageOnline' : 'server.crashMessageOnline')
         : (isTunnel
-            ? 'tunnel.crashMessageOffline'
-            : 'server.crashMessageOffline');
+              ? 'tunnel.crashMessageOffline'
+              : 'server.crashMessageOffline');
 
     return AlertDialog(
       title: Row(
@@ -1820,9 +1813,7 @@ class _CrashDialogState extends State<_CrashDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            context.tr(messageKey, {'code': '${widget.crash.exitCode}'}),
-          ),
+          Text(context.tr(messageKey, {'code': '${widget.crash.exitCode}'})),
           if (_uploadResult != null) ...[
             const SizedBox(height: 8),
             Text(

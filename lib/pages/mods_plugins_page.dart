@@ -118,30 +118,30 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _tabCtrl == null
-              ? _emptyState(
-                  theme,
-                  Icons.extension_outlined,
-                  context.tr('modsPlugins.noFolder.title'),
-                  context.tr('modsPlugins.noFolder.desc'),
-                )
-              : TabBarView(
-                  controller: _tabCtrl,
-                  children: [
-                    if (_hasPlugins && _pluginsDir != null)
-                      _ContentTab(folder: _pluginsDir!, isJarContent: true),
-                    if (_hasPlugins && _pluginsDir != null)
-                      ModDownloadPage(
-                        modsFolder: _pluginsDir!,
-                        embedded: true,
-                        projectType: 'plugin',
-                        titleKey: 'modsPlugins.downloadPlugin',
-                      ),
-                    if (_hasMods && _modsDir != null)
-                      _ContentTab(folder: _modsDir!, isJarContent: true),
-                    if (_hasMods && _modsDir != null)
-                      ModDownloadPage(modsFolder: _modsDir!, embedded: true),
-                  ],
-                ),
+          ? _emptyState(
+              theme,
+              Icons.extension_outlined,
+              context.tr('modsPlugins.noFolder.title'),
+              context.tr('modsPlugins.noFolder.desc'),
+            )
+          : TabBarView(
+              controller: _tabCtrl,
+              children: [
+                if (_hasPlugins && _pluginsDir != null)
+                  _ContentTab(folder: _pluginsDir!, isJarContent: true),
+                if (_hasPlugins && _pluginsDir != null)
+                  ModDownloadPage(
+                    modsFolder: _pluginsDir!,
+                    embedded: true,
+                    projectType: 'plugin',
+                    titleKey: 'modsPlugins.downloadPlugin',
+                  ),
+                if (_hasMods && _modsDir != null)
+                  _ContentTab(folder: _modsDir!, isJarContent: true),
+                if (_hasMods && _modsDir != null)
+                  ModDownloadPage(modsFolder: _modsDir!, embedded: true),
+              ],
+            ),
     );
   }
 }
@@ -191,9 +191,7 @@ class _ContentTabState extends State<_ContentTab> {
     final entries = await _service.list(widget.folder);
     if (!mounted) return;
     // 仅显示根目录下的 .jar 和 .jar.disabled 文件
-    final jars = entries
-        .where((e) => e.isFile && _isJar(e.name))
-        .toList();
+    final jars = entries.where((e) => e.isFile && _isJar(e.name)).toList();
     setState(() {
       _entries = jars;
       _loading = false;
@@ -228,9 +226,7 @@ class _ContentTabState extends State<_ContentTab> {
     for (var i = 0; i < jars.length; i += batchSize) {
       final end = (i + batchSize).clamp(0, jars.length);
       final batch = jars.sublist(i, end);
-      final results = await Future.wait(
-        batch.map((e) => _safeParse(e.path)),
-      );
+      final results = await Future.wait(batch.map((e) => _safeParse(e.path)));
       if (!mounted) return;
       setState(() {
         for (var j = 0; j < batch.length; j++) {
@@ -263,9 +259,7 @@ class _ContentTabState extends State<_ContentTab> {
     for (var i = 0; i < jars.length; i += batchSize) {
       final end = (i + batchSize).clamp(0, jars.length);
       final batch = jars.sublist(i, end);
-      results.addAll(await Future.wait(
-        batch.map((j) => _safeSha1(j.path)),
-      ));
+      results.addAll(await Future.wait(batch.map((j) => _safeSha1(j.path))));
     }
     return results;
   }
@@ -345,8 +339,9 @@ class _ContentTabState extends State<_ContentTab> {
       }
 
       // 查询 Modrinth 更新
-      final updateResults =
-          await ModrinthService.checkUpdates(_sha1Hashes.values.toList());
+      final updateResults = await ModrinthService.checkUpdates(
+        _sha1Hashes.values.toList(),
+      );
 
       // 对比哈希判断是否需要更新
       for (final entry in updateResults.entries) {
@@ -373,9 +368,11 @@ class _ContentTabState extends State<_ContentTab> {
       } else {
         messenger.showSnackBar(
           SnackBar(
-            content: Text(tr.get('modsPlugins.updatesAvailable', {
-              'count': '${_updates.length}',
-            })),
+            content: Text(
+              tr.get('modsPlugins.updatesAvailable', {
+                'count': '${_updates.length}',
+              }),
+            ),
           ),
         );
       }
@@ -385,9 +382,9 @@ class _ContentTabState extends State<_ContentTab> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            LocaleScope.of(context)
-                .translations
-                .get('modsPlugins.searchFailed', {'error': '$e'}),
+            LocaleScope.of(
+              context,
+            ).translations.get('modsPlugins.searchFailed', {'error': '$e'}),
           ),
         ),
       );
@@ -564,10 +561,9 @@ class _ContentTabState extends State<_ContentTab> {
                         final entry = updatable[i].key;
                         final version = updatable[i].value;
                         final meta = _metadata[entry.path];
-                        final name =
-                            (meta != null && meta.name.isNotEmpty)
-                                ? meta.name
-                                : entry.name;
+                        final name = (meta != null && meta.name.isNotEmpty)
+                            ? meta.name
+                            : entry.name;
                         final oldVersion = meta?.version ?? '?';
                         final newVersion = version.name.isEmpty
                             ? version.versionNumber
@@ -692,12 +688,14 @@ class _ContentTabState extends State<_ContentTab> {
       if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(
-          content: Text(tr.get(
-            isDisabled
-                ? 'modsPlugins.enableFailed'
-                : 'modsPlugins.disableFailed',
-            {'error': '$e'},
-          )),
+          content: Text(
+            tr.get(
+              isDisabled
+                  ? 'modsPlugins.enableFailed'
+                  : 'modsPlugins.disableFailed',
+              {'error': '$e'},
+            ),
+          ),
         ),
       );
     }
@@ -844,7 +842,8 @@ class _ContentTabState extends State<_ContentTab> {
       children: [
         _buildHeader(theme),
         const DownloadQueueBanner(),
-        if (widget.isJarContent && _updates.isNotEmpty) _buildUpdateBanner(theme),
+        if (widget.isJarContent && _updates.isNotEmpty)
+          _buildUpdateBanner(theme),
         Expanded(
           child: _entries.isEmpty
               ? _emptyState(
@@ -856,8 +855,7 @@ class _ContentTabState extends State<_ContentTab> {
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: _entries.length,
-                  itemBuilder: (ctx, i) =>
-                      _buildListTile(theme, _entries[i]),
+                  itemBuilder: (ctx, i) => _buildListTile(theme, _entries[i]),
                 ),
         ),
       ],
@@ -870,9 +868,7 @@ class _ContentTabState extends State<_ContentTab> {
       child: Row(
         children: [
           Text(
-            context.tr('modsPlugins.count', {
-              'count': '${_entries.length}',
-            }),
+            context.tr('modsPlugins.count', {'count': '${_entries.length}'}),
             style: theme.textTheme.titleSmall,
           ),
           const Spacer(),
@@ -973,7 +969,8 @@ class _ContentTabState extends State<_ContentTab> {
       if (meta.version != null) parts.add(meta.version!);
       if (meta.loaderLabel.isNotEmpty) parts.add(meta.loaderLabel);
       if (parts.isNotEmpty) {
-        subtitle = parts.join(' · ') +
+        subtitle =
+            parts.join(' · ') +
             (meta.description != null ? '\n${meta.description}' : '');
       } else if (meta.description != null) {
         subtitle = meta.description!;
@@ -1004,7 +1001,9 @@ class _ContentTabState extends State<_ContentTab> {
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: isDisabled
-                      ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5)
+                      ? theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.5,
+                        )
                       : null,
                 ),
               )
@@ -1033,8 +1032,7 @@ class _ContentTabState extends State<_ContentTab> {
                       child: SizedBox(
                         width: 20,
                         height: 20,
-                        child:
-                            CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     )
                   : IconButton(

@@ -46,7 +46,8 @@ class StoragePermission {
   }
 
   /// 获取程序本体大小（APK + native 库，字节）。非 Android 平台返回 null。
-  static Future<({int apkSize, int nativeLibSize, int totalSize})?> getAppSize() async {
+  static Future<({int apkSize, int nativeLibSize, int totalSize})?>
+  getAppSize() async {
     if (!Platform.isAndroid) return null;
     final result = await _channel.invokeMethod<Map>('getAppSize');
     if (result == null) return null;

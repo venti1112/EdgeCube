@@ -116,7 +116,9 @@ class InstanceController extends ChangeNotifier {
   /// 软件后索引丢失的情况：以文件夹名作为实例 id 与名称，写入默认配置
   /// 并加入索引。隐藏文件夹（以 `.` 开头，如迁移临时目录）会被跳过。
   /// [preservedSelectedId] 为持久化的选中项 id，写入索引时保留以免被覆盖。
-  Future<void> _autoCompleteUnknownInstances(String? preservedSelectedId) async {
+  Future<void> _autoCompleteUnknownInstances(
+    String? preservedSelectedId,
+  ) async {
     final root = await _rootResolver();
     if (!await root.exists()) return;
     final existingIds = _summaries.map((s) => s.id).toSet();

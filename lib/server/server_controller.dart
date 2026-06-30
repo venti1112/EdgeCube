@@ -19,7 +19,9 @@ import 'runtime_service.dart';
 ///
 /// 捕获组 1 均为玩家名：英文匹配 `Name[/ip] logged in` / `Name left the game`，
 /// 中文匹配 Nukkit/PowerNukkitX 的 `Name 加入了游戏` / `Name 退出了游戏`。
-final _reJoin = RegExp(r'(\w{1,16})(?:\[/[\d.:]+\] logged in| 加入了游戏|[/\d.:]+\] 登入游戏)');
+final _reJoin = RegExp(
+  r'(\w{1,16})(?:\[/[\d.:]+\] logged in| 加入了游戏|[/\d.:]+\] 登入游戏)',
+);
 final _reLeave = RegExp(r'(\w{1,16})(?: left the game| 退出了游戏|[/\d.:]+\] 登出游戏)');
 
 /// 匹配 `list` 命令响应中的在线玩家列表。
@@ -211,10 +213,12 @@ class ServerController extends ChangeNotifier {
   // —— 映射状态公共接口 ——
   bool get isUpnpActive => _upnpActive;
   bool get isTunnelActive => _tunnelActive;
+
   /// frpc 是否真正连接到 frps 成功（看到 "login to server success"）。
   /// 区别于 [isTunnelActive]（仅表示进程已拉起）。UI 应以此作为"已映射"依据，
   /// 以 [isTunnelActive] 作为"映射中"依据。
   bool get isTunnelRunning => _tunnelRunning;
+
   /// frpc 上次是否异常退出。UI 据此在状态芯片显示"出错"（红色）。
   bool get isTunnelCrashed => _tunnelCrashed;
   String? get upnpExternalIp => _upnpExternalIp;
@@ -615,8 +619,7 @@ class ServerController extends ChangeNotifier {
   Future<List<String>> availableJreIds() => _service.availableJreIds();
 
   /// 当前设备架构下可用的 PHP 运行时标识（如 ['php8.2']）；不支持的架构返回空。
-  Future<List<String>> availablePhpIds() =>
-      _service.availablePhpIds();
+  Future<List<String>> availablePhpIds() => _service.availablePhpIds();
 
   void _onEvent(ServerEvent event) {
     switch (event) {
@@ -747,7 +750,8 @@ class ServerController extends ChangeNotifier {
         break;
       case 3:
         // 配置完成：PNX 输出 "你的 PowerNukkitX 服务器现已配置完成"
-        if (line.contains('服务器现已配置完成') || line.contains('server is now configured')) {
+        if (line.contains('服务器现已配置完成') ||
+            line.contains('server is now configured')) {
           _pnxWizardStep = 0;
           Future.delayed(const Duration(milliseconds: 300), () {
             if (_status != ServerStatus.stopped) {
@@ -875,7 +879,11 @@ class ServerController extends ChangeNotifier {
             return;
           }
           final path = await _tunnel.writeRawConfig(raw);
-          await _tunnel.start(configPath: path, name: 'frpc', runtimeId: runtimeId);
+          await _tunnel.start(
+            configPath: path,
+            name: 'frpc',
+            runtimeId: runtimeId,
+          );
           _activeFrpcConfig = null;
           _notice('[EdgeCube] FRP 隧道正在启动…（自定义配置）');
           notifyListeners();

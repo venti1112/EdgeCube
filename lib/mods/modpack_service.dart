@@ -85,8 +85,10 @@ class ModpackService {
 
     final String manifestStr;
     try {
-      manifestStr = utf8.decode(manifestEntry.content as List<int>,
-          allowMalformed: true);
+      manifestStr = utf8.decode(
+        manifestEntry.content as List<int>,
+        allowMalformed: true,
+      );
     } catch (e) {
       throw FormatException('解析 modrinth.index.json 失败：$e');
     }
@@ -114,14 +116,16 @@ class ModpackService {
       final downloads = downloadsRaw.map((u) => '$u').toList();
       final env = item['env'] as Map<String, dynamic>? ?? {};
       final hashes = item['hashes'] as Map<String, dynamic>? ?? {};
-      files.add(ModrinthModpackFile(
-        path: path,
-        downloads: downloads,
-        fileSize: item['fileSize'] as int?,
-        sha1: hashes['sha1'] as String?,
-        envClient: (env['client'] ?? 'required') as String,
-        envServer: (env['server'] ?? 'required') as String,
-      ));
+      files.add(
+        ModrinthModpackFile(
+          path: path,
+          downloads: downloads,
+          fileSize: item['fileSize'] as int?,
+          sha1: hashes['sha1'] as String?,
+          envClient: (env['client'] ?? 'required') as String,
+          envServer: (env['server'] ?? 'required') as String,
+        ),
+      );
     }
 
     return ModrinthModpack(
@@ -203,10 +207,11 @@ class ModpackService {
     final baseFolder = manifestEntry == null
         ? ''
         : (manifestEntry.name == 'modrinth.index.json'
-            ? ''
-            : manifestEntry.name.substring(
-                0,
-                manifestEntry.name.length - 'modrinth.index.json'.length));
+              ? ''
+              : manifestEntry.name.substring(
+                  0,
+                  manifestEntry.name.length - 'modrinth.index.json'.length,
+                ));
 
     final overridePrefixes = [
       '${baseFolder}overrides/',
@@ -251,7 +256,8 @@ class ModpackService {
   static String _safeRelativePath(String rel, Directory destDir) {
     final normalized = p.normalize(rel).replaceAll('\\', '/');
     // 禁止绝对路径与盘符前缀，禁用 .. 逃逸。
-    if (p.isAbsolute(normalized) || normalized.startsWith('..') ||
+    if (p.isAbsolute(normalized) ||
+        normalized.startsWith('..') ||
         normalized.contains(':')) {
       throw InvalidPathException('整合包包含非法路径：$normalized');
     }

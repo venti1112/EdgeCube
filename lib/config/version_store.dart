@@ -30,7 +30,8 @@ class VersionStore {
     final configMap = await ConfigStore.readConfig(_fileName);
     configMap[_lastVersionKey] = version;
     final history =
-        (configMap[_historyKey] as List?)?.whereType<String>().toList() ?? <String>[];
+        (configMap[_historyKey] as List?)?.whereType<String>().toList() ??
+        <String>[];
     if (!history.contains(version)) {
       history.add(version);
     }

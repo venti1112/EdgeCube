@@ -52,7 +52,16 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
 
   /// 根据项目类型返回可选加载器列表。
   List<String> get _loaders => widget.projectType == 'plugin'
-      ? const ['paper', 'spigot', 'bukkit', 'bungeecord', 'velocity', 'waterfall', 'folia', 'purpur']
+      ? const [
+          'paper',
+          'spigot',
+          'bukkit',
+          'bungeecord',
+          'velocity',
+          'waterfall',
+          'folia',
+          'purpur',
+        ]
       : const ['fabric', 'forge', 'quilt', 'neoforge'];
 
   @override
@@ -188,7 +197,9 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: widget.embedded ? null : AppBar(title: Text(context.tr(widget.titleKey))),
+      appBar: widget.embedded
+          ? null
+          : AppBar(title: Text(context.tr(widget.titleKey))),
       body: Column(
         children: [
           _buildSearchBar(theme),
@@ -357,9 +368,11 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
                     else
                       const SizedBox(width: 24),
                     const SizedBox(width: 8),
-                    Text(l == null
-                        ? context.tr('modsPlugins.any')
-                        : _capitalize(l)),
+                    Text(
+                      l == null
+                          ? context.tr('modsPlugins.any')
+                          : _capitalize(l),
+                    ),
                   ],
                 ),
               ),
@@ -396,9 +409,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
                     else
                       const SizedBox(width: 24),
                     const SizedBox(width: 8),
-                    Text(v == null
-                        ? context.tr('modsPlugins.any')
-                        : v.version),
+                    Text(v == null ? context.tr('modsPlugins.any') : v.version),
                     if (v != null && v.versionType != 'release')
                       Padding(
                         padding: const EdgeInsets.only(left: 8),
@@ -463,9 +474,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
               padding: const EdgeInsets.all(16),
               child: Center(
                 child: Text(
-                  context.tr('modsPlugins.noMore', {
-                    'count': '$_totalHits',
-                  }),
+                  context.tr('modsPlugins.noMore', {'count': '$_totalHits'}),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -569,9 +578,7 @@ class _VersionSheetState extends State<_VersionSheet> {
 
   Future<void> _loadVersions() async {
     try {
-      final versions = await ModrinthService.getVersions(
-        widget.projectId,
-      );
+      final versions = await ModrinthService.getVersions(widget.projectId);
       if (!mounted) return;
       setState(() {
         _versions = _applyFilters(versions);
@@ -589,25 +596,34 @@ class _VersionSheetState extends State<_VersionSheet> {
   /// 模组加载器集合，用于过滤跨平台项目的版本。
   static const _modLoaders = {'fabric', 'forge', 'quilt', 'neoforge'};
   static const _pluginLoaders = {
-    'paper', 'spigot', 'bukkit', 'bungeecord',
-    'velocity', 'waterfall', 'folia', 'purpur',
+    'paper',
+    'spigot',
+    'bukkit',
+    'bungeecord',
+    'velocity',
+    'waterfall',
+    'folia',
+    'purpur',
   };
 
   List<ModrinthVersion> _applyFilters(List<ModrinthVersion> versions) {
     // 先按项目类型过滤版本（只保留包含对应加载器的版本）
-    final typeLoaders =
-        widget.projectType == 'plugin' ? _pluginLoaders : _modLoaders;
-    var filtered = versions.where(
-      (v) => v.loaders.any((l) => typeLoaders.contains(l)),
-    ).toList();
+    final typeLoaders = widget.projectType == 'plugin'
+        ? _pluginLoaders
+        : _modLoaders;
+    var filtered = versions
+        .where((v) => v.loaders.any((l) => typeLoaders.contains(l)))
+        .toList();
 
     if (widget.filterGameVersion != null) {
-      filtered = filtered.where((v) =>
-          v.gameVersions.contains(widget.filterGameVersion)).toList();
+      filtered = filtered
+          .where((v) => v.gameVersions.contains(widget.filterGameVersion))
+          .toList();
     }
     if (widget.filterLoader != null) {
-      filtered = filtered.where((v) =>
-          v.loaders.contains(widget.filterLoader)).toList();
+      filtered = filtered
+          .where((v) => v.loaders.contains(widget.filterLoader))
+          .toList();
     }
     return filtered;
   }
@@ -648,65 +664,55 @@ class _VersionSheetState extends State<_VersionSheet> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
-                      ? Center(
-                          child: Text(
-                            tr.get('modsPlugins.searchFailed',
-                                {'error': _error!}),
+                  ? Center(
+                      child: Text(
+                        tr.get('modsPlugins.searchFailed', {'error': _error!}),
+                      ),
+                    )
+                  : _versions.isEmpty
+                  ? Center(child: Text(tr.get('modsPlugins.noResults')))
+                  : ListView.builder(
+                      controller: scrollCtrl,
+                      itemCount: _versions.length,
+                      itemBuilder: (ctx, i) {
+                        final v = _versions[i];
+                        final depCount = v.dependencies
+                            .where((d) => d.projectId != null)
+                            .length;
+                        return ListTile(
+                          title: Text(
+                            v.name.isEmpty ? v.versionNumber : v.name,
                           ),
-                        )
-                      : _versions.isEmpty
-                          ? Center(
-                              child: Text(tr.get('modsPlugins.noResults')),
-                            )
-                          : ListView.builder(
-                              controller: scrollCtrl,
-                              itemCount: _versions.length,
-                              itemBuilder: (ctx, i) {
-                                final v = _versions[i];
-                                final depCount = v.dependencies
-                                    .where((d) => d.projectId != null)
-                                    .length;
-                                return ListTile(
-                                  title: Text(v.name.isEmpty
-                                      ? v.versionNumber
-                                      : v.name),
-                                  subtitle: Wrap(
-                                    spacing: 6,
-                                    children: [
-                                      if (v.gameVersions.isNotEmpty)
-                                        _chip(
-                                          theme,
-                                          v.gameVersions.take(3).join(', '),
-                                        ),
-                                      if (v.loaders.isNotEmpty)
-                                        _chip(
-                                          theme,
-                                          v.loaders.join(', '),
-                                        ),
-                                      _chip(
-                                        theme,
-                                        tr.get('modsPlugins.releaseType.'
-                                            '${v.versionType}'),
-                                      ),
-                                      if (v.primaryFile != null)
-                                        _chip(
-                                          theme,
-                                          _formatSize(v.primaryFile!.size),
-                                        ),
-                                      if (depCount > 0)
-                                        _chip(
-                                          theme,
-                                          tr.get('modsPlugins.dependencyCount',
-                                              {'count': '$depCount'}),
-                                        ),
-                                    ],
-                                  ),
-                                  trailing:
-                                      const Icon(Icons.chevron_right),
-                                  onTap: () => _showVersionDetail(v),
-                                );
-                              },
-                            ),
+                          subtitle: Wrap(
+                            spacing: 6,
+                            children: [
+                              if (v.gameVersions.isNotEmpty)
+                                _chip(theme, v.gameVersions.take(3).join(', ')),
+                              if (v.loaders.isNotEmpty)
+                                _chip(theme, v.loaders.join(', ')),
+                              _chip(
+                                theme,
+                                tr.get(
+                                  'modsPlugins.releaseType.'
+                                  '${v.versionType}',
+                                ),
+                              ),
+                              if (v.primaryFile != null)
+                                _chip(theme, _formatSize(v.primaryFile!.size)),
+                              if (depCount > 0)
+                                _chip(
+                                  theme,
+                                  tr.get('modsPlugins.dependencyCount', {
+                                    'count': '$depCount',
+                                  }),
+                                ),
+                            ],
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _showVersionDetail(v),
+                        );
+                      },
+                    ),
             ),
           ],
         );
@@ -840,13 +846,12 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
 
     final requiredDeps = v.dependencies.where((d) => d.isRequired).toList();
     final optionalDeps = v.dependencies.where((d) => d.isOptional).toList();
-    final incompatibleDeps =
-        v.dependencies.where((d) => d.isIncompatible).toList();
+    final incompatibleDeps = v.dependencies
+        .where((d) => d.isIncompatible)
+        .toList();
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(tr.get('modsPlugins.versionDetail')),
-      ),
+      appBar: AppBar(title: Text(tr.get('modsPlugins.versionDetail'))),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -881,20 +886,29 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
           const SizedBox(height: 16),
 
           // 基本信息卡
-          _sectionCard(theme, tr.get('modsPlugins.versionName'),
-              v.name.isEmpty ? v.versionNumber : v.name),
-          _sectionCard(theme, tr.get('modsPlugins.versionNumber'),
-              v.versionNumber),
           _sectionCard(
-              theme,
-              tr.get('modsPlugins.publishedAt'),
-              tr.get('modsPlugins.publishedAt',
-                  {'date': _formatDate(v.datePublished)})),
+            theme,
+            tr.get('modsPlugins.versionName'),
+            v.name.isEmpty ? v.versionNumber : v.name,
+          ),
           _sectionCard(
-              theme,
-              tr.get('modsPlugins.releaseType.${v.versionType}'),
-              null,
-              isChip: true),
+            theme,
+            tr.get('modsPlugins.versionNumber'),
+            v.versionNumber,
+          ),
+          _sectionCard(
+            theme,
+            tr.get('modsPlugins.publishedAt'),
+            tr.get('modsPlugins.publishedAt', {
+              'date': _formatDate(v.datePublished),
+            }),
+          ),
+          _sectionCard(
+            theme,
+            tr.get('modsPlugins.releaseType.${v.versionType}'),
+            null,
+            isChip: true,
+          ),
 
           // 游戏版本
           if (v.gameVersions.isNotEmpty) ...[
@@ -919,16 +933,25 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _infoRow(theme, tr.get('modsPlugins.fileName'),
-                        file.filename),
+                    _infoRow(
+                      theme,
+                      tr.get('modsPlugins.fileName'),
+                      file.filename,
+                    ),
                     const SizedBox(height: 6),
                     _infoRow(
-                        theme, tr.get('modsPlugins.fileSize'), _formatSize(file.size)),
+                      theme,
+                      tr.get('modsPlugins.fileSize'),
+                      _formatSize(file.size),
+                    ),
                     if (file.sha1 != null) ...[
                       const SizedBox(height: 6),
-                      _infoRow(theme, tr.get('modsPlugins.sha1'),
-                          file.sha1!,
-                          mono: true),
+                      _infoRow(
+                        theme,
+                        tr.get('modsPlugins.sha1'),
+                        file.sha1!,
+                        mono: true,
+                      ),
                     ],
                   ],
                 ),
@@ -977,8 +1000,14 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
               Card(
                 child: Column(
                   children: incompatibleDeps
-                      .map((d) => _depTile(theme, d, required: false,
-                          incompatible: true))
+                      .map(
+                        (d) => _depTile(
+                          theme,
+                          d,
+                          required: false,
+                          incompatible: true,
+                        ),
+                      )
                       .toList(),
                 ),
               ),
@@ -987,8 +1016,11 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
             if (requiredDeps.isEmpty &&
                 optionalDeps.isEmpty &&
                 incompatibleDeps.isEmpty)
-              _sectionCard(theme, tr.get('modsPlugins.dependencies'),
-                  tr.get('modsPlugins.noDependencies')),
+              _sectionCard(
+                theme,
+                tr.get('modsPlugins.dependencies'),
+                tr.get('modsPlugins.noDependencies'),
+              ),
           ],
 
           const SizedBox(height: 24),
@@ -1016,8 +1048,12 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
     );
   }
 
-  Widget _sectionCard(ThemeData theme, String label, String? value,
-      {bool isChip = false}) {
+  Widget _sectionCard(
+    ThemeData theme,
+    String label,
+    String? value, {
+    bool isChip = false,
+  }) {
     return Card(
       child: ListTile(
         dense: true,
@@ -1028,8 +1064,8 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
                 visualDensity: VisualDensity.compact,
               )
             : value == null
-                ? null
-                : Text(value, style: theme.textTheme.bodyMedium),
+            ? null
+            : Text(value, style: theme.textTheme.bodyMedium),
       ),
     );
   }
@@ -1039,37 +1075,46 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
       spacing: 6,
       runSpacing: 6,
       children: items
-          .map((item) => Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(item, style: theme.textTheme.labelMedium),
-              ))
+          .map(
+            (item) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(item, style: theme.textTheme.labelMedium),
+            ),
+          )
           .toList(),
     );
   }
 
-  Widget _infoRow(ThemeData theme, String label, String value,
-      {bool mono = false}) {
+  Widget _infoRow(
+    ThemeData theme,
+    String label,
+    String value, {
+    bool mono = false,
+  }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
           width: 80,
-          child: Text(label,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              )),
+          child: Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
         ),
         Expanded(
           child: SelectableText(
             value,
             style: mono
                 ? theme.textTheme.bodySmall?.copyWith(
-                    fontFamily: 'monospace', fontSize: 11)
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                  )
                 : theme.textTheme.bodySmall,
           ),
         ),
@@ -1092,34 +1137,39 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
         incompatible
             ? Icons.block
             : required
-                ? Icons.priority_high
-                : Icons.low_priority,
+            ? Icons.priority_high
+            : Icons.low_priority,
         size: 20,
         color: incompatible
             ? theme.colorScheme.error
             : required
-                ? theme.colorScheme.primary
-                : theme.colorScheme.onSurfaceVariant,
+            ? theme.colorScheme.primary
+            : theme.colorScheme.onSurfaceVariant,
       ),
       title: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: dep.projectId != null
-          ? Text(dep.projectId!,
+          ? Text(
+              dep.projectId!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
-              ))
+              ),
+            )
           : null,
       trailing: canNavigate
-          ? Icon(Icons.chevron_right, size: 20,
-              color: theme.colorScheme.onSurfaceVariant)
+          ? Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: theme.colorScheme.onSurfaceVariant,
+            )
           : null,
       onTap: canNavigate
           ? () => _openDependency(
-                projectId: dep.projectId!,
-                title: label,
-                iconUrl: project?.iconUrl,
-              )
+              projectId: dep.projectId!,
+              title: label,
+              iconUrl: project?.iconUrl,
+            )
           : null,
     );
   }
@@ -1149,9 +1199,9 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              LocaleScope.of(context)
-                  .translations
-                  .get('modsPlugins.downloadSuccess'),
+              LocaleScope.of(
+                context,
+              ).translations.get('modsPlugins.downloadSuccess'),
             ),
           ),
         );
@@ -1185,10 +1235,7 @@ Widget _chip(ThemeData theme, String label) {
       color: theme.colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(4),
     ),
-    child: Text(
-      label,
-      style: theme.textTheme.labelSmall,
-    ),
+    child: Text(label, style: theme.textTheme.labelSmall),
   );
 }
 
@@ -1291,8 +1338,11 @@ class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
                     ),
                   )
                 else
-                  Icon(Icons.download_done,
-                      size: 18, color: theme.colorScheme.primary),
+                  Icon(
+                    Icons.download_done,
+                    size: 18,
+                    color: theme.colorScheme.primary,
+                  ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -1321,14 +1371,17 @@ class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
                         Text(
                           [
                             if (pending > 0)
-                              context.tr('modsPlugins.queuePending',
-                                  {'count': '$pending'}),
+                              context.tr('modsPlugins.queuePending', {
+                                'count': '$pending',
+                              }),
                             if (completed > 0)
-                              context.tr('modsPlugins.queueCompleted',
-                                  {'count': '$completed'}),
+                              context.tr('modsPlugins.queueCompleted', {
+                                'count': '$completed',
+                              }),
                             if (failed > 0)
-                              context.tr('modsPlugins.queueFailed',
-                                  {'count': '$failed'}),
+                              context.tr('modsPlugins.queueFailed', {
+                                'count': '$failed',
+                              }),
                           ].join(' · '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -1339,8 +1392,11 @@ class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
                     ],
                   ),
                 ),
-                Icon(Icons.chevron_right,
-                    size: 18, color: theme.colorScheme.onSurfaceVariant),
+                Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ],
             ),
           ),
@@ -1414,13 +1470,14 @@ class _QueueSheetState extends State<_QueueSheet> {
                       onPressed: () => DownloadQueue.instance.cancelAll(),
                       child: Text(tr.get('modsPlugins.cancelAll')),
                     ),
-                  if (queue.tasks.any((t) =>
-                      t.status == DownloadTaskStatus.completed ||
-                      t.status == DownloadTaskStatus.failed ||
-                      t.status == DownloadTaskStatus.cancelled))
+                  if (queue.tasks.any(
+                    (t) =>
+                        t.status == DownloadTaskStatus.completed ||
+                        t.status == DownloadTaskStatus.failed ||
+                        t.status == DownloadTaskStatus.cancelled,
+                  ))
                     TextButton(
-                      onPressed: () =>
-                          DownloadQueue.instance.removeFinished(),
+                      onPressed: () => DownloadQueue.instance.removeFinished(),
                       child: Text(tr.get('modsPlugins.clearFinished')),
                     ),
                   IconButton(
@@ -1433,9 +1490,7 @@ class _QueueSheetState extends State<_QueueSheet> {
             const Divider(height: 1),
             Expanded(
               child: tasks.isEmpty
-                  ? Center(
-                      child: Text(tr.get('modsPlugins.queueEmpty')),
-                    )
+                  ? Center(child: Text(tr.get('modsPlugins.queueEmpty')))
                   : ListView.builder(
                       controller: scrollCtrl,
                       itemCount: tasks.length,

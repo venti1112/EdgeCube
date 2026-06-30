@@ -72,26 +72,30 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void _handleOpenEcpkg(String path) {
     if (!mounted) return;
     if (!path.toLowerCase().endsWith('.ecpkg')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('runtime.notEcpkg'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.tr('runtime.notEcpkg'))));
       return;
     }
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => RuntimePage(initialEcpkgPath: path),
-      ),
-    ).then((_) {
-      if (mounted) {
-        EcpkgHandler.onOpenEcpkg = _handleOpenEcpkg;
-      }
-    });
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute<void>(
+            builder: (_) => RuntimePage(initialEcpkgPath: path),
+          ),
+        )
+        .then((_) {
+          if (mounted) {
+            EcpkgHandler.onOpenEcpkg = _handleOpenEcpkg;
+          }
+        });
   }
 
   void _handleEcpkgError(String error) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(context.tr('runtime.openEcpkgFailed', {'error': error}))),
+      SnackBar(
+        content: Text(context.tr('runtime.openEcpkgFailed', {'error': error})),
+      ),
     );
   }
 
@@ -142,8 +146,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Future<void> _requestStartupPermissions() async {
     if (!Platform.isAndroid) return;
     try {
-      await const MethodChannel('com.venti1112.edgecube/permission')
-          .invokeMethod<void>('requestStartupPermissions');
+      await const MethodChannel(
+        'com.venti1112.edgecube/permission',
+      ).invokeMethod<void>('requestStartupPermissions');
     } catch (_) {
       // 通道异常时静默忽略，不阻塞后续流程。
     }

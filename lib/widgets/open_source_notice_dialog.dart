@@ -84,10 +84,10 @@ class _OpenSourceNoticeDialogState extends State<OpenSourceNoticeDialog> {
             child: const Text('退出应用'),
           ),
           FilledButton(
-            onPressed: canConfirm ? () => Navigator.of(context).pop(true) : null,
-            child: Text(
-              canConfirm ? '我已知悉' : '请仔细阅读 ($_remaining秒)',
-            ),
+            onPressed: canConfirm
+                ? () => Navigator.of(context).pop(true)
+                : null,
+            child: Text(canConfirm ? '我已知悉' : '请仔细阅读 ($_remaining秒)'),
           ),
         ],
       ),

@@ -242,7 +242,9 @@ class _SettingsPageState extends State<SettingsPage>
           SwitchListTile(
             secondary: const Icon(Icons.delete_sweep_outlined),
             title: Text(context.tr('settings.console.autoClearLogOnStart')),
-            subtitle: Text(context.tr('settings.console.autoClearLogOnStartDescription')),
+            subtitle: Text(
+              context.tr('settings.console.autoClearLogOnStartDescription'),
+            ),
             value: _autoClearLogOnStart,
             onChanged: _saveAutoClearLogOnStart,
           ),
@@ -524,7 +526,10 @@ class _CustomInstancePathTileState extends State<_CustomInstancePathTile>
     if (_busy) return;
     if (!await _ensurePermission()) return;
     if (!mounted) return;
-    final picked = await pickFromSystem(context, mode: SystemPickMode.directory);
+    final picked = await pickFromSystem(
+      context,
+      mode: SystemPickMode.directory,
+    );
     if (picked == null || !mounted) return;
     final normalized = p.normalize(picked);
     if (p.equals(normalized, p.normalize(_currentPath))) {
@@ -773,19 +778,14 @@ class _PathMigrationDialogState extends State<_PathMigrationDialog> {
                         ? context.tr('settings.storage.customPathMigrating')
                         : context.tr(
                             'settings.storage.customPathMigratingProgress',
-                            {
-                              'processed': '$_processed',
-                              'total': '$_total',
-                            },
+                            {'processed': '$_processed', 'total': '$_total'},
                           ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            Text(
-              context.tr('settings.storage.customPathMigratingDoNotClose'),
-            ),
+            Text(context.tr('settings.storage.customPathMigratingDoNotClose')),
           ],
         ),
       ),

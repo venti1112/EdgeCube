@@ -62,11 +62,7 @@ class ModrinthSearchResult {
 
 /// Modrinth 项目详情（用于批量获取图标）。
 class ModrinthProject {
-  const ModrinthProject({
-    required this.id,
-    required this.title,
-    this.iconUrl,
-  });
+  const ModrinthProject({required this.id, required this.title, this.iconUrl});
 
   final String id;
   final String title;
@@ -121,6 +117,7 @@ class ModrinthDependency {
   final String? projectId;
   final String? versionId;
   final String? fileName;
+
   /// 新版 API 直接返回的依赖名称（旧版可能为空，需通过 project_id 二次查询）
   final String? dependencyName;
 
@@ -168,8 +165,7 @@ class ModrinthVersion {
   bool get isRelease => versionType == 'release';
 
   /// 首个可下载文件（Modrinth 版本通常只有一个文件）。
-  ModrinthFile? get primaryFile =>
-      files.isNotEmpty ? files.first : null;
+  ModrinthFile? get primaryFile => files.isNotEmpty ? files.first : null;
 
   factory ModrinthVersion.fromJson(Map<String, dynamic> json) {
     return ModrinthVersion(
@@ -188,7 +184,7 @@ class ModrinthVersion {
           .toList(),
       datePublished:
           DateTime.tryParse(json['date_published'] as String? ?? '') ??
-              DateTime.now(),
+          DateTime.now(),
       projectId: json['project_id'] as String? ?? '',
       dependencies: ((json['dependencies'] as List?) ?? [])
           .map((e) => ModrinthDependency.fromJson(e as Map<String, dynamic>))
@@ -257,7 +253,16 @@ class ModrinthService {
   }) async {
     // 按项目类型选择加载器 categories（OR 关系）
     final typeCategories = projectType == 'plugin'
-        ? const ['paper', 'spigot', 'bukkit', 'bungeecord', 'velocity', 'waterfall', 'folia', 'purpur']
+        ? const [
+            'paper',
+            'spigot',
+            'bukkit',
+            'bungeecord',
+            'velocity',
+            'waterfall',
+            'folia',
+            'purpur',
+          ]
         : const ['fabric', 'forge', 'quilt', 'neoforge'];
 
     final facets = <List<String>>[
@@ -301,12 +306,12 @@ class ModrinthService {
   }
 
   static String _sortIndex(ModrinthSort sort) => switch (sort) {
-        ModrinthSort.relevance => 'relevance',
-        ModrinthSort.downloads => 'downloads',
-        ModrinthSort.follows => 'follows',
-        ModrinthSort.newest => 'newest',
-        ModrinthSort.updated => 'updated',
-      };
+    ModrinthSort.relevance => 'relevance',
+    ModrinthSort.downloads => 'downloads',
+    ModrinthSort.follows => 'follows',
+    ModrinthSort.newest => 'newest',
+    ModrinthSort.updated => 'updated',
+  };
 
   /// 获取项目的所有版本（按发布时间降序）。
   static Future<List<ModrinthVersion>> getVersions(String projectId) async {
@@ -330,9 +335,9 @@ class ModrinthService {
     List<String> projectIds,
   ) async {
     if (projectIds.isEmpty) return [];
-    final uri = Uri.parse('$_baseUrl/projects').replace(
-      queryParameters: {'ids': jsonEncode(projectIds)},
-    );
+    final uri = Uri.parse(
+      '$_baseUrl/projects',
+    ).replace(queryParameters: {'ids': jsonEncode(projectIds)});
     final response = await http
         .get(uri, headers: {'User-Agent': _userAgent})
         .timeout(const Duration(seconds: 15));
@@ -369,10 +374,7 @@ class ModrinthService {
   ) async {
     if (sha1Hashes.isEmpty) return {};
     final uri = Uri.parse('$_baseUrl/version_files/update');
-    final body = jsonEncode({
-      'hashes': sha1Hashes,
-      'algorithm': 'sha1',
-    });
+    final body = jsonEncode({'hashes': sha1Hashes, 'algorithm': 'sha1'});
     final response = await http
         .post(
           uri,
@@ -405,10 +407,7 @@ class ModrinthService {
   ) async {
     if (sha1Hashes.isEmpty) return {};
     final uri = Uri.parse('$_baseUrl/version_files');
-    final body = jsonEncode({
-      'hashes': sha1Hashes,
-      'algorithm': 'sha1',
-    });
+    final body = jsonEncode({'hashes': sha1Hashes, 'algorithm': 'sha1'});
     final response = await http
         .post(
           uri,

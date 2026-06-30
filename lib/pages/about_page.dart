@@ -294,10 +294,7 @@ class _LicenseViewerPageState extends State<_LicenseViewerPage> {
         padding: const EdgeInsets.all(16),
         onTapLink: (text, href, title) {
           if (href != null) {
-            launchUrl(
-              Uri.parse(href),
-              mode: LaunchMode.externalApplication,
-            );
+            launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
           }
         },
       ),
@@ -335,10 +332,7 @@ class _UserAgreementViewerPageState extends State<_UserAgreementViewerPage> {
         padding: const EdgeInsets.all(16),
         onTapLink: (text, href, title) {
           if (href != null) {
-            launchUrl(
-              Uri.parse(href),
-              mode: LaunchMode.externalApplication,
-            );
+            launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
           }
         },
       ),

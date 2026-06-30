@@ -45,7 +45,10 @@ class I18nService {
 
   /// 加载指定语言（附带中文源作为回退）的合并翻译表。
   /// [preferCustom] 为 true 且存在自定义文件时，优先加载自定义翻译。
-  static Future<Translations> loadTranslations(String code, {bool preferCustom = false}) async {
+  static Future<Translations> loadTranslations(
+    String code, {
+    bool preferCustom = false,
+  }) async {
     final source = await loadSource();
     final Map<String, String> active;
     if (preferCustom && await hasCustom(code)) {

@@ -138,8 +138,9 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
     if (entry.isDirectory) return true;
     if (!_hasFilter) return true;
     final lower = entry.name.toLowerCase();
-    return widget.allowedExtensions!
-        .any((ext) => lower.endsWith(ext.toLowerCase()));
+    return widget.allowedExtensions!.any(
+      (ext) => lower.endsWith(ext.toLowerCase()),
+    );
   }
 
   /// 顶部类型过滤提示条：告知用户当前仅显示哪些扩展名的文件。
@@ -285,9 +286,7 @@ Future<String?> _promptFolderName(BuildContext context) async {
       content: TextField(
         controller: controller,
         autofocus: true,
-        decoration: InputDecoration(
-          labelText: context.tr('picker.folderName'),
-        ),
+        decoration: InputDecoration(labelText: context.tr('picker.folderName')),
         onSubmitted: (v) => Navigator.of(dialogContext).pop(v.trim()),
       ),
       actions: [

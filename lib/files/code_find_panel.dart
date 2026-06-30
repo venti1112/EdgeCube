@@ -26,7 +26,12 @@ class CodeFindPanelView extends StatelessWidget implements PreferredSizeWidget {
   static const _kIconHeight = 30.0;
   static const _kInputFontSize = 13.0;
   static const _kResultFontSize = 12.0;
-  static const _kPadding = EdgeInsets.only(left: 5, right: 5, top: 2.5, bottom: 2.5);
+  static const _kPadding = EdgeInsets.only(
+    left: 5,
+    right: 5,
+    top: 2.5,
+    bottom: 2.5,
+  );
   static const _kInputContentPadding = EdgeInsets.only(left: 5, right: 5);
 
   @override
@@ -101,10 +106,7 @@ class CodeFindPanelView extends StatelessWidget implements PreferredSizeWidget {
             ],
           ),
         ),
-        Text(
-          result,
-          style: const TextStyle(fontSize: _kResultFontSize),
-        ),
+        Text(result, style: const TextStyle(fontSize: _kResultFontSize)),
         Expanded(
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -112,7 +114,9 @@ class CodeFindPanelView extends StatelessWidget implements PreferredSizeWidget {
               _buildIconButton(
                 icon: Icons.arrow_upward,
                 tooltip: context.tr('textEditor.previousMatch'),
-                onPressed: value.result == null ? null : controller.previousMatch,
+                onPressed: value.result == null
+                    ? null
+                    : controller.previousMatch,
               ),
               _buildIconButton(
                 icon: Icons.arrow_downward,
@@ -120,9 +124,7 @@ class CodeFindPanelView extends StatelessWidget implements PreferredSizeWidget {
                 onPressed: value.result == null ? null : controller.nextMatch,
               ),
               _buildIconButton(
-                icon: value.replaceMode
-                    ? Icons.find_replace
-                    : Icons.swap_vert,
+                icon: value.replaceMode ? Icons.find_replace : Icons.swap_vert,
                 tooltip: value.replaceMode
                     ? context.tr('textEditor.find')
                     : context.tr('textEditor.replace'),
@@ -163,7 +165,9 @@ class CodeFindPanelView extends StatelessWidget implements PreferredSizeWidget {
           _buildIconButton(
             icon: Icons.done_all,
             tooltip: context.tr('textEditor.replaceAll'),
-            onPressed: value.result == null ? null : controller.replaceAllMatches,
+            onPressed: value.result == null
+                ? null
+                : controller.replaceAllMatches,
           ),
         ],
       ],
@@ -184,17 +188,20 @@ class CodeFindPanelView extends StatelessWidget implements PreferredSizeWidget {
         controller: controller,
         focusNode: focusNode,
         style: const TextStyle(fontSize: _kInputFontSize),
-        decoration: const InputDecoration(
-          filled: true,
-          contentPadding: _kInputContentPadding,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.all(Radius.circular(0)),
-            gapPadding: 0,
-          ),
-        ).copyWith(
-          contentPadding: const EdgeInsets.only(left: 5, right: 5)
-              .add(EdgeInsets.only(right: iconsWidth)),
-        ),
+        decoration:
+            const InputDecoration(
+              filled: true,
+              contentPadding: _kInputContentPadding,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(0)),
+                gapPadding: 0,
+              ),
+            ).copyWith(
+              contentPadding: const EdgeInsets.only(
+                left: 5,
+                right: 5,
+              ).add(EdgeInsets.only(right: iconsWidth)),
+            ),
       ),
     );
   }

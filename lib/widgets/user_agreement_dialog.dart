@@ -68,8 +68,8 @@ class _UserAgreementDialogState extends State<UserAgreementDialog> {
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
     // 内容不足以滚动或已滚动至底部（留 2px 容差）
-    final atBottom = pos.maxScrollExtent <= 0 ||
-        pos.pixels >= pos.maxScrollExtent - 2;
+    final atBottom =
+        pos.maxScrollExtent <= 0 || pos.pixels >= pos.maxScrollExtent - 2;
     if (atBottom && !_scrolledToBottom) {
       setState(() => _scrolledToBottom = true);
     }

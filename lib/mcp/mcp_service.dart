@@ -43,9 +43,9 @@ class McpService {
       authenticator: expected == null
           ? null
           : (dynamic request) =>
-                (request as HttpRequest)
-                    .headers
-                    .value(HttpHeaders.authorizationHeader) ==
+                (request as HttpRequest).headers.value(
+                  HttpHeaders.authorizationHeader,
+                ) ==
                 expected,
     );
     await server.start();

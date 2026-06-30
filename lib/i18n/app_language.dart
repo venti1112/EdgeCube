@@ -34,10 +34,7 @@ bool isValidLocaleCode(String code) => _localeCodeRegExp.hasMatch(code);
 /// 兼容连字符写法 `en-US`。格式非法时回退到 `zh_CN`，避免生成空 languageCode
 /// 等无效 Locale 导致 `MaterialLocalizations` 加载失败。
 Locale localeFromCode(String code) {
-  assert(
-    isValidLocaleCode(code),
-    'locale 代码格式非法: $code，应形如 zh_CN、en_US、ja',
-  );
+  assert(isValidLocaleCode(code), 'locale 代码格式非法: $code，应形如 zh_CN、en_US、ja');
   final parts = code.split(RegExp(r'[_-]'));
   if (parts.length >= 2 && parts[1].isNotEmpty) {
     return Locale(parts[0], parts[1]);

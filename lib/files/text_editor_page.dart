@@ -97,6 +97,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     void readyListener() {
       if (!completer.isCompleted) completer.complete();
     }
+
     _controller.addListener(readyListener);
     _controller.textAsync = text;
     await completer.future;
@@ -327,67 +328,66 @@ class _TextEditorPageState extends State<TextEditorPage> {
         findBuilder: (context, controller, readOnly) =>
             CodeFindPanelView(controller: controller, readOnly: readOnly),
         toolbarController: MobileSelectionToolbarController(
-          builder: ({
-            required context,
-            required anchors,
-            required controller,
-            required onDismiss,
-            required onRefresh,
-          }) {
-            return AdaptiveTextSelectionToolbar.buttonItems(
-              anchors: anchors,
-              buttonItems: [
-                ContextMenuButtonItem(
-                  type: ContextMenuButtonType.cut,
-                  onPressed: () {
-                    controller.cut();
-                    onDismiss();
-                  },
-                ),
-                ContextMenuButtonItem(
-                  type: ContextMenuButtonType.copy,
-                  onPressed: () {
-                    controller.copy();
-                    onDismiss();
-                  },
-                ),
-                ContextMenuButtonItem(
-                  type: ContextMenuButtonType.paste,
-                  onPressed: () {
-                    controller.paste();
-                    onDismiss();
-                  },
-                ),
-                ContextMenuButtonItem(
-                  type: ContextMenuButtonType.selectAll,
-                  onPressed: () {
-                    controller.selectAll();
-                    onRefresh();
-                  },
-                ),
-              ],
-            );
-          },
+          builder:
+              ({
+                required context,
+                required anchors,
+                required controller,
+                required onDismiss,
+                required onRefresh,
+              }) {
+                return AdaptiveTextSelectionToolbar.buttonItems(
+                  anchors: anchors,
+                  buttonItems: [
+                    ContextMenuButtonItem(
+                      type: ContextMenuButtonType.cut,
+                      onPressed: () {
+                        controller.cut();
+                        onDismiss();
+                      },
+                    ),
+                    ContextMenuButtonItem(
+                      type: ContextMenuButtonType.copy,
+                      onPressed: () {
+                        controller.copy();
+                        onDismiss();
+                      },
+                    ),
+                    ContextMenuButtonItem(
+                      type: ContextMenuButtonType.paste,
+                      onPressed: () {
+                        controller.paste();
+                        onDismiss();
+                      },
+                    ),
+                    ContextMenuButtonItem(
+                      type: ContextMenuButtonType.selectAll,
+                      onPressed: () {
+                        controller.selectAll();
+                        onRefresh();
+                      },
+                    ),
+                  ],
+                );
+              },
         ),
-        indicatorBuilder: (context, editingController, chunkController, notifier) {
-          return Row(
-            children: [
-              DefaultCodeLineNumber(
-                controller: editingController,
-                notifier: notifier,
-              ),
-              DefaultCodeChunkIndicator(
-                width: 20,
-                controller: chunkController,
-                notifier: notifier,
-              ),
-            ],
-          );
-        },
-        sperator: Container(
-          width: 1,
-          color: Theme.of(context).dividerColor,
-        ),
+        indicatorBuilder:
+            (context, editingController, chunkController, notifier) {
+              return Row(
+                children: [
+                  DefaultCodeLineNumber(
+                    controller: editingController,
+                    notifier: notifier,
+                  ),
+                  DefaultCodeChunkIndicator(
+                    width: 20,
+                    controller: chunkController,
+                    notifier: notifier,
+                  ),
+                ],
+              );
+            },
+        sperator: Container(width: 1, color: Theme.of(context).dividerColor),
         style: CodeEditorStyle(
           fontFamily: 'monospace',
           fontSize: 13,

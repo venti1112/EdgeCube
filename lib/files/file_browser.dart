@@ -799,7 +799,9 @@ class _FileBrowserState extends State<FileBrowser> {
                           itemCount: _entries.length,
                           itemBuilder: (_, i) {
                             final entry = _entries[i];
-                            final selected = _selectedPaths.contains(entry.path);
+                            final selected = _selectedPaths.contains(
+                              entry.path,
+                            );
                             return ListTile(
                               selected: _selectionMode && selected,
                               leading: _selectionMode
@@ -832,36 +834,52 @@ class _FileBrowserState extends State<FileBrowser> {
                                         if (!entry.isDirectory)
                                           PopupMenuItem(
                                             value: _FileAction.edit,
-                                            child: Text(context.tr('common.edit')),
+                                            child: Text(
+                                              context.tr('common.edit'),
+                                            ),
                                           ),
                                         PopupMenuItem(
                                           value: _FileAction.rename,
-                                          child: Text(context.tr('common.rename')),
+                                          child: Text(
+                                            context.tr('common.rename'),
+                                          ),
                                         ),
                                         PopupMenuItem(
                                           value: _FileAction.move,
-                                          child: Text(context.tr('fileBrowser.move')),
+                                          child: Text(
+                                            context.tr('fileBrowser.move'),
+                                          ),
                                         ),
                                         PopupMenuItem(
                                           value: _FileAction.copy,
-                                          child: Text(context.tr('common.copy')),
+                                          child: Text(
+                                            context.tr('common.copy'),
+                                          ),
                                         ),
                                         PopupMenuItem(
                                           value: _FileAction.compress,
-                                          child: Text(context.tr('fileBrowser.compress')),
+                                          child: Text(
+                                            context.tr('fileBrowser.compress'),
+                                          ),
                                         ),
                                         if (_isArchive(entry))
                                           PopupMenuItem(
                                             value: _FileAction.extract,
-                                            child: Text(context.tr('fileBrowser.extract')),
+                                            child: Text(
+                                              context.tr('fileBrowser.extract'),
+                                            ),
                                           ),
                                         PopupMenuItem(
                                           value: _FileAction.export,
-                                          child: Text(context.tr('fileBrowser.export')),
+                                          child: Text(
+                                            context.tr('fileBrowser.export'),
+                                          ),
                                         ),
                                         PopupMenuItem(
                                           value: _FileAction.delete,
-                                          child: Text(context.tr('common.delete')),
+                                          child: Text(
+                                            context.tr('common.delete'),
+                                          ),
                                         ),
                                       ],
                                     ),
