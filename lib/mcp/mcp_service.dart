@@ -42,8 +42,10 @@ class McpService {
       enableDnsRebindingProtection: false,
       authenticator: expected == null
           ? null
-          : (HttpRequest request) =>
-                request.headers.value(HttpHeaders.authorizationHeader) ==
+          : (dynamic request) =>
+                (request as HttpRequest)
+                    .headers
+                    .value(HttpHeaders.authorizationHeader) ==
                 expected,
     );
     await server.start();

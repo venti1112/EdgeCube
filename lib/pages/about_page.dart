@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -88,7 +89,7 @@ class _AboutPageState extends State<AboutPage> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(24),
               child: Image.asset(
-                'android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png',
+                'assets/images/app_logo.png',
                 width: 96,
                 height: 96,
               ),
@@ -174,6 +175,22 @@ class _AboutPageState extends State<AboutPage> {
 
           const Divider(),
 
+          // ── 用户协议 ──
+          _sectionHeader(theme, context.tr('about.userAgreementSection')),
+          ListTile(
+            leading: const Icon(Icons.description_outlined),
+            title: Text(context.tr('about.userAgreement')),
+            subtitle: Text(context.tr('about.userAgreementDesc')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const _UserAgreementViewerPage(),
+                ),
+              );
+            },
+          ),
+
           // ── 开源许可 ──
           _sectionHeader(theme, context.tr('about.openSourceLicense')),
           ListTile(
@@ -203,7 +220,7 @@ class _AboutPageState extends State<AboutPage> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
                   child: Image.asset(
-                    'android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png',
+                    'assets/images/app_logo.png',
                     width: 64,
                     height: 64,
                   ),
@@ -262,7 +279,7 @@ class _LicenseViewerPageState extends State<_LicenseViewerPage> {
   @override
   void initState() {
     super.initState();
-    rootBundle.loadString('LICENSE').then((t) {
+    rootBundle.loadString('assets/markdown/licenses_gpl_3.0.md').then((t) {
       if (mounted) setState(() => _text = t);
     });
   }
@@ -271,14 +288,59 @@ class _LicenseViewerPageState extends State<_LicenseViewerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('GNU General Public License v3.0')),
-      body: SingleChildScrollView(
+      body: Markdown(
+        data: _text,
+        selectable: true,
         padding: const EdgeInsets.all(16),
-        child: SelectableText(
-          _text,
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace', height: 1.5),
-        ),
+        onTapLink: (text, href, title) {
+          if (href != null) {
+            launchUrl(
+              Uri.parse(href),
+              mode: LaunchMode.externalApplication,
+            );
+          }
+        },
+      ),
+    );
+  }
+}
+
+/// 内嵌用户协议全文查看页。
+class _UserAgreementViewerPage extends StatefulWidget {
+  const _UserAgreementViewerPage();
+
+  @override
+  State<_UserAgreementViewerPage> createState() =>
+      _UserAgreementViewerPageState();
+}
+
+class _UserAgreementViewerPageState extends State<_UserAgreementViewerPage> {
+  String _text = tr('common.loading');
+
+  @override
+  void initState() {
+    super.initState();
+    rootBundle.loadString('assets/markdown/user_agreement.md').then((t) {
+      if (mounted) setState(() => _text = t);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(context.tr('userAgreement.title'))),
+      body: Markdown(
+        data: _text,
+        selectable: true,
+        padding: const EdgeInsets.all(16),
+        onTapLink: (text, href, title) {
+          if (href != null) {
+            launchUrl(
+              Uri.parse(href),
+              mode: LaunchMode.externalApplication,
+            );
+          }
+        },
       ),
     );
   }

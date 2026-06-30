@@ -41,7 +41,7 @@ class FilesPage extends StatelessWidget {
   }
 }
 
-class _InstanceFiles extends StatelessWidget {
+class _InstanceFiles extends StatefulWidget {
   const _InstanceFiles({
     super.key,
     required this.controller,
@@ -52,9 +52,22 @@ class _InstanceFiles extends StatelessWidget {
   final Instance instance;
 
   @override
+  State<_InstanceFiles> createState() => _InstanceFilesState();
+}
+
+class _InstanceFilesState extends State<_InstanceFiles> {
+  late Future<Directory> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.controller.directoryFor(widget.instance);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<Directory>(
-      future: controller.directoryFor(instance),
+      future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());

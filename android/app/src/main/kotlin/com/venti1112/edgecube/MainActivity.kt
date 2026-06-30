@@ -59,12 +59,15 @@ class MainActivity : FlutterActivity() {
     private val archiveEventChannel = "com.venti1112.edgecube/archive_events"
     private val shellChannel = "com.venti1112.edgecube/shell"
     private val shellEventChannel = "com.venti1112.edgecube/shell_events"
+    private val permissionChannel = "com.venti1112.edgecube/permission"
     private var pendingPhotoPermissionResult: MethodChannel.Result? = null
     private var pendingStoragePermissionResult: MethodChannel.Result? = null
+    private var pendingStartupPermissionResult: MethodChannel.Result? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestPostNotifications()
+        // 启动权限（通知、本地网络）改由 Dart 端在用户同意用户协议后
+        // 经 permissionChannel 主动触发，避免在协议弹窗之前就出现系统权限对话框。
         handleIntent(intent)
     }
 
@@ -194,8 +197,12 @@ class MainActivity : FlutterActivity() {
                 != PackageManager.PERMISSION_GRANTED
             ) {
                 requestPermissions(arrayOf(android.Manifest.permission.ACCESS_LOCAL_NETWORK), 1004)
+                return
             }
         }
+        // 所有启动权限请求链已结束（无需请求或已全部处理），回调 Dart 端。
+        pendingStartupPermissionResult?.success(null)
+        pendingStartupPermissionResult = null
     }
 
     override fun onRequestPermissionsResult(
@@ -207,6 +214,7 @@ class MainActivity : FlutterActivity() {
         when (requestCode) {
             1001 -> {
                 // 通知权限对话框关闭后，接着请求本地网络权限。
+                // requestLocalNetworkPermission 内部会在无需请求时回调 pendingStartupPermissionResult。
                 requestLocalNetworkPermission()
             }
             1002 -> {
@@ -216,6 +224,11 @@ class MainActivity : FlutterActivity() {
             1003 -> {
                 pendingStoragePermissionResult?.success(isGranted())
                 pendingStoragePermissionResult = null
+            }
+            1004 -> {
+                // 本地网络权限对话框关闭，启动权限请求链结束，回调 Dart 端。
+                pendingStartupPermissionResult?.success(null)
+                pendingStartupPermissionResult = null
             }
         }
     }
@@ -229,6 +242,23 @@ class MainActivity : FlutterActivity() {
 
         ecpkgChannel = MethodChannel(messenger, "com.venti1112.edgecube/ecpkg")
         trySendPendingEcpkg()
+
+        // 启动权限：由 Dart 端在用户同意用户协议后调用，依次请求通知权限与本地网络权限。
+        // 请求链结束后（无论授权与否）回调 result.success，Dart 端据此继续后续流程。
+        MethodChannel(messenger, permissionChannel).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "requestStartupPermissions" -> {
+                    if (pendingStartupPermissionResult != null) {
+                        // 已有请求在进行，直接返回避免重复。
+                        result.success(null)
+                        return@setMethodCallHandler
+                    }
+                    pendingStartupPermissionResult = result
+                    requestPostNotifications()
+                }
+                else -> result.notImplemented()
+            }
+        }
 
         MethodChannel(messenger, storageChannel).setMethodCallHandler { call, result ->
             when (call.method) {

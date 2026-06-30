@@ -165,6 +165,15 @@ class FileService {
     return File(path).readAsString();
   }
 
+  /// 以 latin1 编码强制读取文件内容（永远不会失败）。
+  ///
+  /// 用于用户在被告知文件非 UTF-8 后仍希望强制打开查看/编辑的场景。
+  /// 注意：保存时仍以 UTF-8 写回，可能导致编码变化。
+  Future<String> readTextRaw(String path) async {
+    final bytes = await File(path).readAsBytes();
+    return String.fromCharCodes(bytes);
+  }
+
   /// 以 UTF-8 将 [content] 覆盖写入文件，并在返回前刷新到磁盘。
   Future<void> writeText(String path, String content) async {
     await File(path).writeAsString(content, flush: true);

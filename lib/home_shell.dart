@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'config/config_store.dart';
 import 'config/network_store.dart';
+import 'config/user_agreement_store.dart';
 import 'config/version_store.dart';
 import 'files/file_browser.dart';
 import 'files/storage_permission.dart';
@@ -21,6 +24,8 @@ import 'pages/server_page.dart';
 import 'pages/settings_page.dart';
 import 'server/ecpkg_handler.dart';
 import 'widgets/update_dialog.dart';
+import 'widgets/open_source_notice_dialog.dart';
+import 'widgets/user_agreement_dialog.dart';
 
 /// 应用主壳：底部导航栏 + 页面切换。
 class HomeShell extends StatefulWidget {
@@ -105,6 +110,18 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   Future<void> _runStartupTasks() async {
+    // 开源免费声明必须最先弹出：在用户协议、权限申请等所有流程之前。
+    // 未确认则退出应用，不再继续后续任何流程。
+    final noticed = await _ensureOpenSourceNoticeAcknowledged();
+    if (!noticed || !mounted) return;
+    // 用户协议必须紧随其后：在权限申请、迁移、首次启动弹窗之前。
+    // 未同意则退出应用，不再继续后续任何流程。
+    final agreed = await _ensureUserAgreementAccepted();
+    if (!agreed || !mounted) return;
+    // 用户同意协议后，触发系统启动权限申请（通知、本地网络），等待对话框关闭。
+    // 确保系统权限对话框不会与用户协议弹窗叠加，也不会在协议之前出现。
+    await _requestStartupPermissions();
+    if (!mounted) return;
     final storageReady = await _ensureStoragePermissionGuard();
     if (!storageReady || !mounted) return;
     await _maybeAutoMigrateInstances();
@@ -112,6 +129,76 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     await _showFirstLaunchDialog();
     if (!mounted) return;
     await _checkUpdatesInBackground();
+  }
+
+  /// 调用原生端依次请求通知权限与本地网络权限，等待所有对话框关闭后返回。
+  ///
+  /// 由 [MainActivity] 的 permission Channel 处理：
+  /// - Android 13+：请求 POST_NOTIFICATIONS；
+  /// - Android 17+：请求 ACCESS_LOCAL_NETWORK；
+  /// 链式请求结束后（无论授权与否）原生端回调，本方法返回。
+  ///
+  /// 非 Android 平台直接返回；通道异常时静默忽略，不阻塞后续流程。
+  Future<void> _requestStartupPermissions() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await const MethodChannel('com.venti1112.edgecube/permission')
+          .invokeMethod<void>('requestStartupPermissions');
+    } catch (_) {
+      // 通道异常时静默忽略，不阻塞后续流程。
+    }
+  }
+
+  /// 检查用户是否已确认开源免费声明。
+  ///
+  /// - 已确认：返回 `true`，继续后续启动流程；
+  /// - 未确认：弹出声明对话框，等待 3 秒倒计时后才可点击确认；
+  ///   - 选择「我已知悉」：持久化后返回 `true`；
+  ///   - 选择「退出应用」：调用 `SystemNavigator.pop()` 退出应用，返回 `false`。
+  Future<bool> _ensureOpenSourceNoticeAcknowledged() async {
+    const fileName = 'open_source_notice.json';
+    final config = await ConfigStore.readConfig(fileName);
+    if (config['acknowledged'] == true) return true;
+    if (!mounted) return false;
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const OpenSourceNoticeDialog(),
+    );
+    if (result == true) {
+      await ConfigStore.writeConfig(fileName, {'acknowledged': true});
+      return true;
+    }
+    await SystemNavigator.pop();
+    return false;
+  }
+
+  /// 检查用户是否已同意当前版本的用户协议。
+  ///
+  /// - 已同意当前版本：返回 `true`，继续后续启动流程；
+  /// - 从未同意或协议版本落后：弹出协议对话框让用户阅读并选择；
+  ///   - 选择「同意」：持久化后返回 `true`；
+  ///   - 选择「不同意」或按下返回键：调用 `SystemNavigator.pop()` 退出应用，
+  ///     返回 `false`。
+  Future<bool> _ensureUserAgreementAccepted() async {
+    final agreedVersion = await UserAgreementStore.loadAgreedVersion();
+    if (agreedVersion != null &&
+        agreedVersion >= UserAgreementStore.currentVersion) {
+      return true;
+    }
+    if (!mounted) return false;
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const UserAgreementDialog(),
+    );
+    if (result == true) {
+      await UserAgreementStore.saveAgreed();
+      return true;
+    }
+    // 不同意 → 退出应用
+    await SystemNavigator.pop();
+    return false;
   }
 
   Future<bool> _ensureStoragePermissionGuard() async {
@@ -281,7 +368,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(ctx.tr('firstLaunch.qqGroup.title')),
-        content: Text(ctx.tr('firstLaunch.qqGroup.content')),
+        content: Text('${ctx.tr('firstLaunch.qqGroup.content')}1028916207'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),

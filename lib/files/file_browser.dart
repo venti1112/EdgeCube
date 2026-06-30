@@ -5,7 +5,6 @@ import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
-import '../route_observer.dart';
 import 'file_entry.dart';
 import 'file_service.dart';
 import 'folder_picker.dart';
@@ -53,9 +52,6 @@ const _textExtensions = <String>{
   '.mcmeta',
   '.snbt',
 };
-
-/// 超过该大小的文件不在内置编辑器中打开，避免一次性载入内存造成卡顿。
-const _maxEditableBytes = 2 * 1024 * 1024; // 2 MiB
 
 /// 可解压的归档文件扩展名（小写，含点）。
 const _archiveExtensions = <String>{
@@ -109,7 +105,7 @@ class FileBrowser extends StatefulWidget {
   State<FileBrowser> createState() => _FileBrowserState();
 }
 
-class _FileBrowserState extends State<FileBrowser> with RouteAware {
+class _FileBrowserState extends State<FileBrowser> {
   static const _service = FileService();
 
   /// 当前活跃的 FileBrowser 实例引用，供 HomeShell 处理系统返回键时查询。
@@ -118,6 +114,7 @@ class _FileBrowserState extends State<FileBrowser> with RouteAware {
   late Directory _current = widget.rootDir;
   List<FileEntry> _entries = [];
   bool _loading = true;
+  final ScrollController _scrollController = ScrollController();
 
   /// 多选模式开关与已选中条目的路径集合。
   bool _selectionMode = false;
@@ -131,19 +128,8 @@ class _FileBrowserState extends State<FileBrowser> with RouteAware {
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    appRouteObserver.subscribe(this, ModalRoute.of(context)!);
-  }
-
-  @override
-  void didPopNext() {
-    if (mounted) _load();
-  }
-
-  @override
   void dispose() {
-    appRouteObserver.unsubscribe(this);
+    _scrollController.dispose();
     if (_active == this) _active = null;
     super.dispose();
   }
@@ -163,7 +149,10 @@ class _FileBrowserState extends State<FileBrowser> with RouteAware {
   bool get _atRoot => p.equals(_current.path, widget.rootDir.path);
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    // 首次加载时显示转圈；已有列表数据时静默刷新，不替换 ListView，
+    // 避免销毁重建导致滚动位置丢失。
+    final isFirstLoad = _entries.isEmpty;
+    if (isFirstLoad) setState(() => _loading = true);
     final entries = await _service.list(_current);
     if (!mounted) return;
     setState(() {
@@ -198,19 +187,14 @@ class _FileBrowserState extends State<FileBrowser> with RouteAware {
     return _archiveExtensions.contains(p.extension(lower));
   }
 
-  /// 在内置文本编辑器中打开 [entry]；过大文件拒绝打开。返回后刷新列表以更新大小。
+  /// 在内置文本编辑器中打开 [entry]。返回后刷新列表以更新大小。
   Future<void> _openEditor(FileEntry entry) async {
     if (entry.isDirectory) return;
-    if (entry.size > _maxEditableBytes) {
-      _showError(context.tr('fileBrowser.fileTooLarge'));
-      return;
-    }
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TextEditorPage(path: entry.path, name: entry.name),
       ),
     );
-    if (mounted) await _load();
   }
 
   /// 是否已回到实例根目录（供外部返回键处理使用）。
@@ -811,6 +795,7 @@ class _FileBrowserState extends State<FileBrowser> with RouteAware {
                           },
                         )
                       : ListView.builder(
+                          controller: _scrollController,
                           itemCount: _entries.length,
                           itemBuilder: (_, i) {
                             final entry = _entries[i];

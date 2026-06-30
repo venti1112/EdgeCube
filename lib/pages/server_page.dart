@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../i18n/locale_scope.dart';
 import '../instance/create_instance_page.dart';
@@ -301,8 +302,12 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     );
   }
 
-  /// 启动前自动检查并写入 eula.txt，确保 eula=true。
-  Future<void> _ensureEula(String workingDir) async {
+  /// 启动前检查 eula.txt 中 eula=true 是否已设置。
+  ///
+  /// - 已设置：直接返回 `true`；
+  /// - 未设置：弹出 Minecraft EULA 确认对话框让用户选择，
+  ///   同意后写入 `eula=true` 并返回 `true`，拒绝则返回 `false`。
+  Future<bool> _ensureEula(String workingDir) async {
     final eulaFile = File(p.join(workingDir, 'eula.txt'));
     bool needWrite = false;
     if (await eulaFile.exists()) {
@@ -314,12 +319,68 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     } else {
       needWrite = true;
     }
-    if (needWrite) {
+    if (!needWrite) return true;
+
+    // EULA 尚未同意，弹窗询问用户
+    if (!mounted) return false;
+    final agreed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Minecraft EULA'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '启动 Minecraft 服务端前需要同意 Minecraft 最终用户许可协议（EULA）。',
+              ),
+              const SizedBox(height: 12),
+              InkWell(
+                onTap: () {
+                  // 在外部浏览器打开 EULA 链接
+                  launchUrl(
+                    Uri.parse('https://aka.ms/MinecraftEULA'),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                child: const Text(
+                  'https://aka.ms/MinecraftEULA',
+                  style: TextStyle(
+                    color: Colors.blue,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '点击下方「同意」将向 eula.txt 写入 eula=true，'
+                '表示你已阅读并同意该协议。',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('不同意'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('同意'),
+          ),
+        ],
+      ),
+    );
+    if (agreed == true) {
       await eulaFile.writeAsString(
         '#By changing the setting below to TRUE you are indicating your agreement to our EULA (https://aka.ms/MinecraftEULA).\n'
         'eula=true\n',
       );
+      return true;
     }
+    return false;
   }
 
   void _start(ServerController server, _LaunchContext ctx) async {
@@ -369,8 +430,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       // 追加用户自定义 JVM 参数（以空白符/换行分隔）。
       ..._parseCustomJvmArgs(widget.instance.customJvmArgs),
     ];
-    // 启动前自动确保 eula=true
-    await _ensureEula(ctx.workingDir);
+    // 启动前确保 EULA 已同意，未同意则中止启动
+    if (!await _ensureEula(ctx.workingDir)) return;
     server.start(
       instanceId: widget.instance.id,
       instanceName: widget.instance.name,

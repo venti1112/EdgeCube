@@ -222,7 +222,8 @@ void _registerControlTools(
     'start_server',
     description:
         '启动当前选中实例的服务端。自动扫描实例目录下的 .jar/.phar、'
-        '按实例配置组装启动参数，Java 版会自动写入 eula=true。',
+        '按实例配置组装启动参数。Java 版需要 eula.txt 中 eula=true，'
+        '若未设置将返回错误，需先在应用内同意 EULA。',
     annotations: const ToolAnnotations(destructiveHint: false),
     callback: (args, extra) async {
       if (server.status != ServerStatus.stopped) {
@@ -474,7 +475,12 @@ Future<CallToolResult> _startInstance(
     if (mem > 0) '-Xmx${mem}M',
     ..._parseCustomJvmArgs(instance.customJvmArgs),
   ];
-  await _ensureEula(dir.path);
+  if (!await _ensureEula(dir.path)) {
+    return _err(
+      'Minecraft EULA 尚未同意，请先在应用内启动一次该实例并同意 EULA，'
+      '或手动在实例目录的 eula.txt 中设置 eula=true',
+    );
+  }
   await server.start(
     instanceId: instance.id,
     instanceName: instance.name,
@@ -507,22 +513,17 @@ List<String> _parseCustomJvmArgs(String? raw) {
   return raw.split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
 }
 
-/// 启动前自动检查并写入 eula.txt，确保 eula=true。
-Future<void> _ensureEula(String workingDir) async {
+/// 检查 eula.txt 中 eula=true 是否已设置。
+///
+/// MCP 工具无 BuildContext，无法弹窗；仅在 EULA 尚未同意时返回 `false`，
+/// 由调用方提示用户先在应用内手动同意。
+Future<bool> _ensureEula(String workingDir) async {
   final eulaFile = File(p.join(workingDir, 'eula.txt'));
-  var needWrite = false;
   if (await eulaFile.exists()) {
     final content = await eulaFile.readAsString();
-    if (!RegExp(r'eula\s*=\s*true', caseSensitive: false).hasMatch(content)) {
-      needWrite = true;
+    if (RegExp(r'eula\s*=\s*true', caseSensitive: false).hasMatch(content)) {
+      return true;
     }
-  } else {
-    needWrite = true;
   }
-  if (needWrite) {
-    await eulaFile.writeAsString(
-      '#By changing the setting below to TRUE you are indicating your agreement to our EULA (https://aka.ms/MinecraftEULA).\n'
-      'eula=true\n',
-    );
-  }
+  return false;
 }
