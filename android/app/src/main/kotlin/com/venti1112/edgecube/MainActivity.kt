@@ -41,10 +41,7 @@ import java.nio.charset.StandardCharsets
 import kotlin.concurrent.thread
 
 /**
- * 平台通道宿主：
- *  - storage：「管理全部文件」权限查询/申请。
- *  - power：电池优化白名单状态查询与申请。
- *  - server / server_events：服务端 JVM 进程的启动、停止、命令输入与日志/状态回传。
+ * 平台通道宿主
  */
 class MainActivity : FlutterActivity() {
     private val storageChannel = "com.venti1112.edgecube/storage"
@@ -66,8 +63,6 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 启动权限（通知、本地网络）改由 Dart 端在用户同意用户协议后
-        // 经 permissionChannel 主动触发，避免在协议弹窗之前就出现系统权限对话框。
         handleIntent(intent)
     }
 

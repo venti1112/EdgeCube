@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 管理全部文件：自建文件选择器需读写整个外部存储（Android 11+ 需用户在系统设置中授予）。 -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    <!-- 兼容 Android 10 及更低版本的传统存储访问。 -->
+    <!-- Android 10 及更低版本的传统存储访问。 -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <!-- Android 13+ 读取用户照片/图片，用于图片选择与预览。 -->
@@ -9,7 +9,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Android 17+ 访问本地网络（LAN）的运行时权限；FTP/SSH 服务与 UPnP 网关发现需要。 -->
+    <!-- Android 17+ 访问本地网络（LAN）的运行时权限； UPnP 网关发现需要。 -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <!-- 前台 Service 保活：让后台运行的服务端进程不被系统轻易回收。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -86,7 +86,7 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="running a local Minecraft server process" />
         </service>
-        <!-- 通过 FileProvider 安全地分享下载的 APK 给系统安装器。 -->
+        <!-- 通过 FileProvider 分享下载的 APK 给系统安装器。 -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
