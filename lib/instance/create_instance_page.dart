@@ -1724,56 +1724,53 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   /// 步骤 1：名称输入 + 两个大选项卡。
   Widget _buildNameEntry(ThemeData theme) {
-    return Padding(
+    return ListView(
       padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: _nameController,
-            decoration: InputDecoration(
-              labelText: context.tr('instance.nameLabel'),
-              hintText: context.tr('instance.nameHint'),
-              border: const OutlineInputBorder(),
-            ),
+      children: [
+        TextField(
+          controller: _nameController,
+          decoration: InputDecoration(
+            labelText: context.tr('instance.nameLabel'),
+            hintText: context.tr('instance.nameHint'),
+            border: const OutlineInputBorder(),
           ),
-          const SizedBox(height: 24),
-          _ServerTypeTile(
-            icon: Icons.cloud_download_outlined,
-            title: context.tr('instance.titleDownloadServer'),
-            subtitle: context.tr('instance.downloadServerSubtitle'),
-            onTap: _goToServerType,
-          ),
-          const SizedBox(height: 12),
-          _ServerTypeTile(
-            icon: Icons.file_upload_outlined,
-            title: context.tr('instance.titleImportServer'),
-            subtitle: context.tr('instance.importServerSubtitle'),
-            onTap: _startImport,
-          ),
-          const SizedBox(height: 12),
-          _ServerTypeTile(
-            icon: Icons.archive_outlined,
-            title: context.tr('instance.titleImportArchive'),
-            subtitle: context.tr('instance.importArchiveSubtitle'),
-            onTap: _startImportArchive,
-          ),
-          const SizedBox(height: 12),
-          _ServerTypeTile(
-            icon: Icons.inventory_2_outlined,
-            title: context.tr('instance.titleModpackImport'),
-            subtitle: context.tr('instance.modpackImportSubtitle'),
-            onTap: _startModpackImport,
-          ),
-          const SizedBox(height: 12),
-          _ServerTypeTile(
-            icon: Icons.create_new_folder_outlined,
-            title: context.tr('instance.createEmptyTitle'),
-            subtitle: context.tr('instance.createEmptySubtitle'),
-            onTap: _createEmptyInstance,
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 24),
+        _ServerTypeTile(
+          icon: Icons.cloud_download_outlined,
+          title: context.tr('instance.titleDownloadServer'),
+          subtitle: context.tr('instance.downloadServerSubtitle'),
+          onTap: _goToServerType,
+        ),
+        const SizedBox(height: 12),
+        _ServerTypeTile(
+          icon: Icons.file_upload_outlined,
+          title: context.tr('instance.titleImportServer'),
+          subtitle: context.tr('instance.importServerSubtitle'),
+          onTap: _startImport,
+        ),
+        const SizedBox(height: 12),
+        _ServerTypeTile(
+          icon: Icons.archive_outlined,
+          title: context.tr('instance.titleImportArchive'),
+          subtitle: context.tr('instance.importArchiveSubtitle'),
+          onTap: _startImportArchive,
+        ),
+        const SizedBox(height: 12),
+        _ServerTypeTile(
+          icon: Icons.inventory_2_outlined,
+          title: context.tr('instance.titleModpackImport'),
+          subtitle: context.tr('instance.modpackImportSubtitle'),
+          onTap: _startModpackImport,
+        ),
+        const SizedBox(height: 12),
+        _ServerTypeTile(
+          icon: Icons.create_new_folder_outlined,
+          title: context.tr('instance.createEmptyTitle'),
+          subtitle: context.tr('instance.createEmptySubtitle'),
+          onTap: _createEmptyInstance,
+        ),
+      ],
     );
   }
 

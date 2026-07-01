@@ -725,8 +725,7 @@ class MainActivity : FlutterActivity() {
         MethodChannel(messenger, shellChannel).setMethodCallHandler { call, result ->
             when (call.method) {
                 "availableShells" -> {
-                    val nativeDir = applicationContext.applicationInfo.nativeLibraryDir
-                    result.success(ShellResolver.availableLabels(nativeDir))
+                    result.success(ShellResolver.availableLabels())
                 }
 
                 "isRunning" -> result.success(shellManager.isRunning)

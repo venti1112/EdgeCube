@@ -214,16 +214,44 @@ class _FileBrowserState extends State<FileBrowser> {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final instances = InstanceScope.of(context);
+    final importingMessage = context.tr('fileBrowser.importing');
     final successMessage = context.tr('fileBrowser.importSuccess');
     final sourcePath = await pickFromSystem(context, mode: SystemPickMode.file);
     if (sourcePath == null) return;
+    if (!mounted) return;
+    _showLoadingDialog(importingMessage);
     try {
       await _service.importFile(sourcePath, _current);
+      if (mounted) Navigator.of(context).pop();
       await _load();
-      // 通知服务器页重新扫描，新导入的 jar 可被立即识别。
       instances.notifyInstanceFilesChanged();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
+      if (mounted) Navigator.of(context).pop();
+      _showError(e);
+    }
+  }
+
+  Future<void> _importFolder() async {
+    if (!await _ensurePermission()) return;
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final instances = InstanceScope.of(context);
+    final importingMessage = context.tr('fileBrowser.importing');
+    final successMessage = context.tr('fileBrowser.importFolderSuccess');
+    final sourcePath =
+        await pickFromSystem(context, mode: SystemPickMode.directory);
+    if (sourcePath == null) return;
+    if (!mounted) return;
+    _showLoadingDialog(importingMessage);
+    try {
+      await _service.importFile(sourcePath, _current);
+      if (mounted) Navigator.of(context).pop();
+      await _load();
+      instances.notifyInstanceFilesChanged();
+      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
       _showError(e);
     }
   }
@@ -341,16 +369,21 @@ class _FileBrowserState extends State<FileBrowser> {
     if (!await _ensurePermission()) return;
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    final exportingMessage = context.tr('fileBrowser.exporting');
     final successMessage = context.tr('fileBrowser.exportSuccess');
     final destDir = await pickFromSystem(
       context,
       mode: SystemPickMode.directory,
     );
     if (destDir == null) return;
+    if (!mounted) return;
+    _showLoadingDialog(exportingMessage);
     try {
       await _service.exportTo(entry.path, destDir);
+      if (mounted) Navigator.of(context).pop();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
+      if (mounted) Navigator.of(context).pop();
       _showError(e);
     }
   }
@@ -361,22 +394,7 @@ class _FileBrowserState extends State<FileBrowser> {
     final compressingMessage = context.tr('fileBrowser.compressing');
     final successMessage = context.tr('fileBrowser.compressSuccess');
     if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Row(
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(width: 20),
-              Text(compressingMessage),
-            ],
-          ),
-        ),
-      ),
-    );
+    _showLoadingDialog(compressingMessage);
     try {
       await _service.compress(entry.path, _current);
       if (mounted) Navigator.of(context).pop();
@@ -395,24 +413,8 @@ class _FileBrowserState extends State<FileBrowser> {
     final extractingMessage = context.tr('fileBrowser.extracting');
     final successMessage = context.tr('fileBrowser.extractSuccess');
     final subfolderName = _archiveBaseName(entry.name);
-    // 解压可能耗时，显示不可取消的加载对话框。
     if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Row(
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(width: 20),
-              Text(extractingMessage),
-            ],
-          ),
-        ),
-      ),
-    );
+    _showLoadingDialog(extractingMessage);
     try {
       await _service.extract(entry.path, _current, subfolderName);
       if (mounted) Navigator.of(context).pop(); // 关闭加载对话框
@@ -424,6 +426,26 @@ class _FileBrowserState extends State<FileBrowser> {
       if (mounted) Navigator.of(context).pop(); // 关闭加载对话框
       _showError(e);
     }
+  }
+
+  /// 显示不可取消的加载对话框，操作完成后由调用方 pop 关闭。
+  void _showLoadingDialog(String message) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(width: 20),
+              Text(message),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// 去掉归档文件名的全部扩展名作为解压子文件夹名。
@@ -681,11 +703,14 @@ class _FileBrowserState extends State<FileBrowser> {
     if (!await _ensurePermission()) return;
     if (!mounted) return;
     final exportLabel = context.tr('fileBrowser.export');
+    final exportingMessage = context.tr('fileBrowser.exporting');
     final destDir = await pickFromSystem(
       context,
       mode: SystemPickMode.directory,
     );
     if (destDir == null) return;
+    if (!mounted) return;
+    _showLoadingDialog(exportingMessage);
     final failed = <String>[];
     for (final entry in entries) {
       try {
@@ -694,6 +719,7 @@ class _FileBrowserState extends State<FileBrowser> {
         failed.add(entry.name);
       }
     }
+    if (mounted) Navigator.of(context).pop();
     _clearSelection();
     _reportBulkResult(exportLabel, failed);
   }
@@ -718,22 +744,7 @@ class _FileBrowserState extends State<FileBrowser> {
         ? inputName
         : '$inputName.zip';
 
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Row(
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(width: 20),
-              Text(compressingMessage),
-            ],
-          ),
-        ),
-      ),
-    );
+    _showLoadingDialog(compressingMessage);
     try {
       await _service.compressMany(
         entries.map((e) => e.path).toList(),
@@ -764,6 +775,7 @@ class _FileBrowserState extends State<FileBrowser> {
                     : p.relative(_current.path, from: widget.rootDir.path),
                 onUp: _goUp,
                 onImport: _importFile,
+                onImportFolder: _importFolder,
                 onNewFolder: _createFolder,
                 onNewFile: _createFile,
               ),
@@ -978,6 +990,7 @@ class _Toolbar extends StatelessWidget {
     required this.relativePath,
     required this.onUp,
     required this.onImport,
+    required this.onImportFolder,
     required this.onNewFolder,
     required this.onNewFile,
   });
@@ -986,6 +999,7 @@ class _Toolbar extends StatelessWidget {
   final String relativePath;
   final VoidCallback onUp;
   final VoidCallback onImport;
+  final VoidCallback onImportFolder;
   final VoidCallback onNewFolder;
   final VoidCallback onNewFile;
 
@@ -1021,6 +1035,11 @@ class _Toolbar extends StatelessWidget {
             icon: const Icon(Icons.file_upload_outlined),
             tooltip: context.tr('fileBrowser.importFile'),
             onPressed: onImport,
+          ),
+          IconButton(
+            icon: const Icon(Icons.drive_folder_upload_outlined),
+            tooltip: context.tr('fileBrowser.importFolder'),
+            onPressed: onImportFolder,
           ),
         ],
       ),

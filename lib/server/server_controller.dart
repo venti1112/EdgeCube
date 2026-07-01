@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:port_forwarder/port_forwarder.dart';
 import 'package:xterm/xterm.dart';
 
 import 'pnx_properties.dart';
@@ -131,6 +132,14 @@ class ServerController extends ChangeNotifier {
   /// 解析当前是否启用了 UPnP 端口映射。由外层（main）注入，读取配置文件。
   Future<bool> Function()? upnpEnabledResolver;
 
+  /// 解析 UPnP 自定义外网端口。由外层（main）注入，读取配置文件。
+  /// 返回 null 表示使用服务端端口。
+  Future<int?> Function()? upnpExternalPortResolver;
+
+  /// 解析 UPnP 映射协议。由外层（main）注入，读取配置文件。
+  /// 返回 'tcp' 或 'udp'，默认 'tcp'。
+  Future<String> Function()? upnpProtocolResolver;
+
   /// 解析当前是否启用了 FRP 隧道。由外层（main）注入，读取配置文件。
   Future<bool> Function()? tunnelEnabledResolver;
 
@@ -197,6 +206,7 @@ class ServerController extends ChangeNotifier {
   // —— 映射结果追踪 ——
   String? _upnpExternalIp; // UPnP 映射成功后的公网 IP
   FrpcConfig? _activeFrpcConfig; // 当前活跃的 FRP 配置
+  int? _serverPort; // 从配置文件读取的服务端端口（启动时缓存）
 
   ServerStatus get status => _status;
   bool get isRunning => _status == ServerStatus.running;
@@ -224,6 +234,33 @@ class ServerController extends ChangeNotifier {
   String? get upnpExternalIp => _upnpExternalIp;
   int? get upnpMappedPort => _upnp.mappedPort;
   FrpcConfig? get activeFrpcConfig => _activeFrpcConfig;
+
+  /// 服务端实际监听端口（启动时从配置文件读取并缓存）。
+  int? get serverPort => _serverPort;
+
+  /// 从实例目录的 server.properties 或 pnx.yml 读取服务端实际监听端口。
+  ///
+  /// 用于内网地址显示等需要真实端口的场景，与 UPnP 映射状态无关。
+  Future<int?> readServerPort() async {
+    final dir = _workingDir;
+    if (dir == null) return null;
+    try {
+      final propsFile = File(p.join(dir, 'server.properties'));
+      if (await propsFile.exists()) {
+        final props =
+            ServerProperties.parse(await propsFile.readAsString());
+        return props.getInt('server-port') ?? 25565;
+      }
+      final pnxFile = File(p.join(dir, 'pnx.yml'));
+      if (await pnxFile.exists()) {
+        final pnx = PnxProperties.parse(await pnxFile.readAsString());
+        return pnx.getPort();
+      }
+      return 25565;
+    } catch (_) {
+      return 25565;
+    }
+  }
 
   /// 是否正有某个“其它”实例在运行（用于禁用对当前实例的启动）。
   bool isOtherRunning(String instanceId) =>
@@ -280,6 +317,7 @@ class ServerController extends ChangeNotifier {
             ? ServerStatus.running
             : ServerStatus.starting;
         if (_status == ServerStatus.running) {
+          _cacheServerPort();
           _triggerUpnp();
           _triggerTunnel();
         }
@@ -290,6 +328,7 @@ class ServerController extends ChangeNotifier {
       _status = ServerStatus.stopped;
       _instanceId = null;
       _instanceName = null;
+      _serverPort = null;
       notifyListeners();
     }
   }
@@ -655,6 +694,7 @@ class ServerController extends ChangeNotifier {
           };
           // 服务端进入运行态后触发 UPnP 端口映射和 FRP 隧道。
           if (_status == ServerStatus.running) {
+            _cacheServerPort();
             if (!_upnpActive) _triggerUpnp();
             if (!_tunnelActive) _triggerTunnel();
           }
@@ -662,6 +702,7 @@ class ServerController extends ChangeNotifier {
           _status = ServerStatus.stopped;
           _lastExitCode = exitCode;
           _onlinePlayers.clear();
+          _serverPort = null;
           if (_upnpActive) _stopUpnp();
           if (_tunnelActive && !_restartingTunnel) _stopTunnel();
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
@@ -791,6 +832,14 @@ class ServerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 从配置文件读取并缓存服务端端口（服务端进入运行态时调用）。
+  void _cacheServerPort() {
+    readServerPort().then((port) {
+      _serverPort = port;
+      notifyListeners();
+    });
+  }
+
   /// 触发 UPnP 端口映射（服务端进入运行态时调用）。
   void _triggerUpnp() {
     final resolver = upnpEnabledResolver;
@@ -805,13 +854,34 @@ class ServerController extends ChangeNotifier {
     final dir = _workingDir;
     if (dir == null || _upnpActive) return;
     _upnpActive = true;
-    _upnp.openPort(dir).then((port) async {
-      if (port != null) {
-        _notice('[EdgeCube] 路由器端口映射成功：$port');
-        // 尝试获取公网 IP。
-        _upnpExternalIp = await _upnp.getExternalIp();
-        notifyListeners();
-      }
+
+    // 并行加载：服务端端口、自定义外网端口、映射协议。
+    final extResolver = upnpExternalPortResolver;
+    final protoResolver = upnpProtocolResolver;
+    final extFuture =
+        extResolver != null ? extResolver() : Future<int?>.value(null);
+    final protoFuture =
+        protoResolver != null ? protoResolver() : Future.value('tcp');
+
+    Future.wait([readServerPort(), extFuture, protoFuture]).then((results) {
+      final internalPort = results[0] as int? ?? 25565;
+      final externalPort = results[1] as int?;
+      final protocol =
+          (results[2] as String) == 'udp' ? PortType.udp : PortType.tcp;
+
+      _upnp
+          .openPort(
+            internalPort: internalPort,
+            externalPort: externalPort,
+            protocol: protocol,
+          )
+          .then((port) async {
+        if (port != null) {
+          _notice('[EdgeCube] 路由器端口映射成功：$port');
+          _upnpExternalIp = await _upnp.getExternalIp();
+          notifyListeners();
+        }
+      });
     });
   }
 

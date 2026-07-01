@@ -28,6 +28,10 @@ class _PortMappingPageState extends State<PortMappingPage> {
   bool _upnpEnabled = false;
   bool _tunnelEnabled = false;
 
+  // —— UPnP 外网端口与协议 ——
+  final _upnpExternalPort = TextEditingController();
+  String _upnpProtocol = 'tcp';
+
   // —— 自定义配置文件模式 ——
   bool _useCustomFrpc = false;
 
@@ -78,6 +82,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
       _token,
       _proxyName,
       _remotePort,
+      _upnpExternalPort,
     ]) {
       c.dispose();
     }
@@ -88,6 +93,8 @@ class _PortMappingPageState extends State<PortMappingPage> {
 
   Future<void> _loadAll() async {
     final upnp = await NetworkStore.loadUpnpEnabled();
+    final extPort = await NetworkStore.loadUpnpExternalPort();
+    final protocol = await NetworkStore.loadUpnpProtocol();
     final tunnel = await NetworkStore.loadTunnelEnabled();
     final frpc = await NetworkStore.loadFrpc();
     final useCustom = await NetworkStore.loadUseCustomFrpc();
@@ -96,6 +103,8 @@ class _PortMappingPageState extends State<PortMappingPage> {
     if (!mounted) return;
     setState(() {
       _upnpEnabled = upnp;
+      _upnpExternalPort.text = extPort?.toString() ?? '';
+      _upnpProtocol = protocol;
       _tunnelEnabled = tunnel;
       _useCustomFrpc = useCustom;
       _frpcRuntimes = runtimes;
@@ -151,6 +160,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
 
   Future<void> _setUpnp(bool value) async {
     await NetworkStore.saveUpnpEnabled(value);
+    await _saveUpnpSettings();
     if (!mounted) return;
     setState(() => _upnpEnabled = value);
     final server = ServerScope.of(context);
@@ -159,6 +169,13 @@ class _PortMappingPageState extends State<PortMappingPage> {
     } else {
       server.disableUpnpNow();
     }
+  }
+
+  Future<void> _saveUpnpSettings() async {
+    final text = _upnpExternalPort.text.trim();
+    final port = text.isEmpty ? null : int.tryParse(text);
+    await NetworkStore.saveUpnpExternalPort(port);
+    await NetworkStore.saveUpnpProtocol(_upnpProtocol);
   }
 
   Future<void> _setTunnel(bool value) async {
@@ -414,6 +431,51 @@ class _PortMappingPageState extends State<PortMappingPage> {
               onChanged: _setUpnp,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
+            if (_upnpEnabled) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _field(
+                        _upnpExternalPort,
+                        context.tr('portMapping.upnpExternalPort'),
+                        hint: context.tr('portMapping.upnpExternalPortHint'),
+                        number: true,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: _upnpProtocolDropdown()),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () async {
+                      await _saveUpnpSettings();
+                      if (!mounted) return;
+                      final server = ServerScope.of(context);
+                      if (server.isRunning) {
+                        server.disableUpnpNow();
+                        server.enableUpnpNow();
+                      }
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(context.tr('portMapping.saved')),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.save, size: 18),
+                    label: Text(context.tr('portMapping.saveConfig')),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -866,6 +928,22 @@ class _PortMappingPageState extends State<PortMappingPage> {
         isDense: true,
         border: const OutlineInputBorder(),
       ),
+    );
+  }
+
+  Widget _upnpProtocolDropdown() {
+    return DropdownButtonFormField<String>(
+      initialValue: _upnpProtocol,
+      decoration: InputDecoration(
+        labelText: context.tr('portMapping.protocol'),
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      items: const [
+        DropdownMenuItem(value: 'tcp', child: Text('TCP')),
+        DropdownMenuItem(value: 'udp', child: Text('UDP')),
+      ],
+      onChanged: (v) => setState(() => _upnpProtocol = v ?? 'tcp'),
     );
   }
 

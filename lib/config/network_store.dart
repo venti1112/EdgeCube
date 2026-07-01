@@ -17,6 +17,8 @@ class NetworkStore {
 
   static const String _fileName = 'network.json';
   static const String _upnpKey = 'upnpEnabled';
+  static const String _upnpExternalPortKey = 'upnpExternalPort';
+  static const String _upnpProtocolKey = 'upnpProtocol';
   static const String _tunnelKey = 'tunnelEnabled';
   static const String _frpcKey = 'frpc';
   static const String _frpcRuntimeIdKey = 'frpcRuntimeId';
@@ -101,6 +103,36 @@ class NetworkStore {
   static Future<void> saveUpnpEnabled(bool enabled) async {
     final configMap = await ConfigStore.readConfig(_fileName);
     configMap[_upnpKey] = enabled;
+    await ConfigStore.writeConfig(_fileName, configMap);
+  }
+
+  /// 读取 UPnP 自定义外网端口；未设置返回 null（表示使用服务端端口）。
+  static Future<int?> loadUpnpExternalPort() async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    final value = configMap[_upnpExternalPortKey];
+    if (value is int) return value;
+    return null;
+  }
+
+  static Future<void> saveUpnpExternalPort(int? port) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    if (port == null) {
+      configMap.remove(_upnpExternalPortKey);
+    } else {
+      configMap[_upnpExternalPortKey] = port;
+    }
+    await ConfigStore.writeConfig(_fileName, configMap);
+  }
+
+  /// 读取 UPnP 映射协议；默认 'tcp'（Java 版），基岩版应设为 'udp'。
+  static Future<String> loadUpnpProtocol() async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    return configMap[_upnpProtocolKey] as String? ?? 'tcp';
+  }
+
+  static Future<void> saveUpnpProtocol(String protocol) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_upnpProtocolKey] = protocol;
     await ConfigStore.writeConfig(_fileName, configMap);
   }
 

@@ -20,6 +20,7 @@
  */
 
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <jni.h>
 #include <signal.h>
@@ -94,7 +95,12 @@ static int create_subprocess(JNIEnv* env,
         int pts = open(devname, O_RDWR);
         if (pts < 0) exit(-1);
 
-        // 从设备作为 stdin/stdout/stderr，并成为控制终端。
+        // 显式设置控制终端。部分 Android 内核不会在 session leader 打开终端时
+        // 自动赋予控制终端，需要 TIOCSCTTY。缺少控制终端时 mksh 在前台读 stdin
+        // 可能收到 SIGTTIN 导致进程停止/退出。
+        ioctl(pts, TIOCSCTTY, 0);
+
+        // 从设备作为 stdin/stdout/stderr。
         dup2(pts, 0);
         dup2(pts, 1);
         dup2(pts, 2);
@@ -120,12 +126,17 @@ static int create_subprocess(JNIEnv* env,
             perror(error_message);
             fflush(stderr);
         }
+
         execvp(cmd, argv);
-        // exec 失败时把错误打到终端，便于排查。
-        char* error_message;
-        if (asprintf(&error_message, "exec(\"%s\")", cmd) == -1) error_message = "exec()";
-        perror(error_message);
-        _exit(1);
+        // exec 失败时把详细错误写到 PTY 从设备（仅当 exec 真正失败时才会出现）。
+        {
+            char errbuf[256];
+            int n = snprintf(errbuf, sizeof(errbuf),
+                    "\r\n[ecpty] exec(\"%s\") failed: %s (errno=%d)\r\n",
+                    cmd, strerror(errno), errno);
+            if (n > 0) write(pts, errbuf, (size_t) n);
+        }
+        _exit(127);
     }
 }
 
@@ -214,14 +225,25 @@ JNIEXPORT jint JNICALL Java_com_venti1112_edgecube_server_EcPty_waitFor(
         JNIEnv* EC_UNUSED(env), jclass EC_UNUSED(clazz), jint pid)
 {
     int status;
-    waitpid(pid, &status, 0);
-    if (WIFEXITED(status)) {
-        return WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
-        return -WTERMSIG(status);
-    } else {
-        return 0;
+    int ret;
+    // 在 EINTR（信号中断）时重试 waitpid，这是 POSIX 标准做法。
+    // Android JVM 可能安装 SIGCHLD 相关信号处理器导致 EINTR。
+    do {
+        ret = waitpid(pid, &status, 0);
+    } while (ret == -1 && errno == EINTR);
+
+    if (ret > 0) {
+        if (WIFEXITED(status)) {
+            return WEXITSTATUS(status);
+        } else if (WIFSIGNALED(status)) {
+            return -WTERMSIG(status);
+        } else {
+            return 0;
+        }
     }
+    // waitpid 失败（如 ECHILD：进程已被其它机制回收）返回 -errno
+    // 调用方可据此区分正常退出（>=0）与异常（<0 且绝对值较大）。
+    return -(1000 + errno);
 }
 
 JNIEXPORT void JNICALL Java_com_venti1112_edgecube_server_EcPty_setPtyEcho(

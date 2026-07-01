@@ -17,7 +17,7 @@ import kotlin.concurrent.thread
  * 交互式 shell 的 PTY 进程管理器（应用级单例）。
  *
  * 是 [com.venti1112.edgecube.server.ServerProcessManager] 的裁剪版：复用 [EcPty] 在
- * /dev/ptmx 上拉起一个交互 shell（系统 sh 或自带 busybox/bash），父进程读写主设备 fd。
+ * /dev/ptmx 上拉起一个交互 shell（系统 sh），父进程读写主设备 fd。
  * 与服务端管理器相比去掉了运行时解压、DONE 状态机、玩家解析与前台 Service——shell 在
  * 真实 TTY 上自带行编辑/历史/补全，界面只需把原始字节转发给 xterm 渲染、把按键写回 PTY。
  */
@@ -89,10 +89,9 @@ class ShellProcessManager private constructor(private val appContext: Context) {
     fun start(cwd: String?) {
         if (isRunning) return
 
-        val nativeDir = appContext.applicationInfo.nativeLibraryDir
         val workDir = cwd?.takeIf { File(it).isDirectory } ?: ShellResolver.defaultCwd(appContext)
-        val spec = ShellResolver.resolveInteractive(nativeDir)
-        val env = ShellResolver.baseEnv(appContext, nativeDir, workDir)
+        val spec = ShellResolver.resolveInteractive()
+        val env = ShellResolver.baseEnv(appContext, workDir)
 
         val argv = ArrayList<String>()
         argv.add(spec.cmd)
@@ -140,7 +139,11 @@ class ShellProcessManager private constructor(private val appContext: Context) {
             } catch (_: Exception) {
                 -1
             }
-            val code = if (raw < 0) 128 - raw else raw
+            val code = when {
+                raw >= 0 -> raw
+                raw > -1000 -> 128 - raw
+                else -> 1
+            }
 
             try {
                 EcPty.close(fd)

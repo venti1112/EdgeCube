@@ -35,7 +35,7 @@ class ShellController extends ChangeNotifier {
 
   bool get isRunning => _running;
 
-  /// 当前生效的 shell 名称（如 "system sh" / "BusyBox ash"）。
+  /// 当前生效的 shell 名称（如 "system sh"）。
   String? get shellLabel => _label;
   int? get lastExitCode => _lastExitCode;
 

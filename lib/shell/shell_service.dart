@@ -13,7 +13,7 @@ class ShellService {
     'com.venti1112.edgecube/shell_events',
   );
 
-  /// 当前可用的 shell 列表（按优先级，如 ['BusyBox ash','system sh']）。
+  /// 当前可用的 shell 列表（如 ['system sh']）。
   Future<List<String>> availableShells() async {
     final list = await _method.invokeMethod<List<dynamic>>('availableShells');
     return list?.cast<String>() ?? const [];

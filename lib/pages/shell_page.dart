@@ -7,7 +7,7 @@ import '../shell/shell_controller.dart';
 import '../shell/shell_scope.dart';
 import '../widgets/terminal_zoom.dart';
 
-/// Shell 终端页：在设备上运行一个交互式 shell（系统 sh 或自带 busybox/bash）。
+/// Shell 终端页：在设备上运行一个交互式 shell（系统 sh）。
 ///
 /// 直接交互的伪终端（PTY + xterm）+ Termux 式扩展按键栏，支持 `ls`/`cd`、彩色输出、
 /// Tab 补全与命令历史（由 shell 自身在真实 TTY 上提供）。终端对象由全局

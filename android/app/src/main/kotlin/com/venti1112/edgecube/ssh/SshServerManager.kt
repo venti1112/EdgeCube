@@ -7,6 +7,7 @@ import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.common.io.nio2.Nio2ServiceFactoryFactory
 import org.apache.sshd.common.util.OsUtils
 import org.apache.sshd.common.util.io.PathUtils
+import org.apache.sshd.core.CoreModuleProperties
 import org.apache.sshd.server.SshServer
 import org.apache.sshd.server.auth.password.PasswordAuthenticator
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider
@@ -118,6 +119,13 @@ object SshServerManager {
         }
         // 不提供 exec/command 通道（仅交互式 shell 与 SFTP）。
         sshd.commandFactory = null
+
+        // 禁用空闲超时与心跳超时，避免 shell 通道在用户未输入时被服务端关闭。
+        // MINA SSHD 默认 IDLE_TIMEOUT = 10 分钟，对于长时间不操作的 SSH 终端可能过短。
+        val noTimeout = java.time.Duration.ZERO
+        CoreModuleProperties.IDLE_TIMEOUT.set(sshd, noTimeout)
+        CoreModuleProperties.NIO2_READ_TIMEOUT.set(sshd, noTimeout)
+        CoreModuleProperties.AUTH_TIMEOUT.set(sshd, noTimeout)
 
         sshd.start()
         server = sshd

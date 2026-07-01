@@ -27,19 +27,11 @@ target_link_libraries(launch dl log)
 add_library(tagfix SHARED tagfix.c)
 target_link_libraries(tagfix dl log)
 
-# ─── libtsrm_cache.so ─── PHP ZTS TLS 变量提供者
-# 作为主可执行文件的 NEEDED 依赖，在进程启动时加载，
-# 使 _tsrm_ls_cache 在初始 TLS 块中分配，IE 访问模型合法。
-add_library(tsrm_cache SHARED tsrm_cache.c)
-# -fno-emulated-tls：强制使用原生 TLS（非 emutls）。
-# NDK 对 API < 29 默认使用 emutls，但 libphp.so 以原生 TLS 引用
-# _tsrm_ls_cache，两者符号名不匹配（emutls 生成 __emutls_v._tsrm_ls_cache）。
-# 注：旧写法 `-mllvm -emulated-tls=0` 在 NDK 28 的 Clang 19 下已不被识别
-# （LLVM 移除了该内部选项），改用等价的 driver 标志 -fno-emulated-tls；
-# 实测两者产物一致：_tsrm_ls_cache 为 Type=TLS 的原生 TLS 符号。
-target_compile_options(tsrm_cache PRIVATE -ftls-model=initial-exec -fno-emulated-tls)
-
 # ─── libphploader.so ─── PHP 启动器（dlopen libphpwrapper.so，与 liblaunch.so 同构）
+# PHP 运行时本体（libphp.so / libphpwrapper.so 及其依赖）通过 .ecpkg 安装
+# 到 App 数据目录，由本加载器在 PTY 子进程中 dlopen 加载并调用 php_run。
+# 由于 PHP 以 --enable-zts（不带 --enable-static-tsrm-cache）方式构建，
+# _tsrm_ls_cache 只是普通全局变量，不需要额外的 TLS 提供库。
 add_executable(phploader phploader.c)
 
 set_target_properties(phploader PROPERTIES
@@ -49,8 +41,7 @@ set_target_properties(phploader PROPERTIES
 
 target_compile_options(phploader PRIVATE -fPIE)
 target_link_options(phploader PRIVATE -fPIE -pie)
-# 链接 libtsrm_cache.so → 它成为 NEEDED 依赖，进程启动时一起加载
-target_link_libraries(phploader tsrm_cache dl log)
+target_link_libraries(phploader dl log)
 
 # ─── libfrpcloader.so ─── frpc 启动器（dlopen 数据目录里的 libfrpc.so）
 # 与 liblaunch.so / libphploader.so 同构，但更简单：libfrpc.so 是 Go c-shared

@@ -1443,6 +1443,7 @@ class _ConnectionCard extends StatelessWidget {
     final tunnelCrashed = server.isTunnelCrashed;
     final upnpIp = server.upnpExternalIp;
     final upnpPort = server.upnpMappedPort;
+    final serverPort = server.serverPort;
     final frpConfig = server.activeFrpcConfig;
 
     return Card(
@@ -1476,7 +1477,7 @@ class _ConnectionCard extends StatelessWidget {
                   theme,
                   icon: Icons.lan_outlined,
                   label: context.tr('server.lanAddress'),
-                  value: '$localIp:${upnpPort ?? 25565}',
+                  value: '$localIp:${serverPort ?? upnpPort ?? 25565}',
                   canCopy: snapshot.hasData,
                 );
               },

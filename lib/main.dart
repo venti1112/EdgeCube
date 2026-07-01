@@ -68,6 +68,8 @@ Future<void> main() async {
   serverController.compatModeResolver = instanceController.compatModeFor;
   // UPnP 端口映射开关：读取 config/network.json 中的持久化配置。
   serverController.upnpEnabledResolver = NetworkStore.loadUpnpEnabled;
+  serverController.upnpExternalPortResolver = NetworkStore.loadUpnpExternalPort;
+  serverController.upnpProtocolResolver = NetworkStore.loadUpnpProtocol;
   // FRP 隧道开关：读取 config/network.json 中的持久化配置。
   serverController.tunnelEnabledResolver = NetworkStore.loadTunnelEnabled;
   final systemMonitorController = SystemMonitorController();

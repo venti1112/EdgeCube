@@ -22,9 +22,8 @@ object ShellCommandRunner {
      * `{exitCode, output, cwd, shell}`。出错时 exitCode 为 -1，output 含错误信息。
      */
     fun runOnce(context: Context, command: String, cwd: String?): Map<String, Any?> {
-        val nativeDir = context.applicationInfo.nativeLibraryDir
         val workDir = cwd?.takeIf { File(it).isDirectory } ?: ShellResolver.defaultCwd(context)
-        val spec = ShellResolver.resolveOnce(nativeDir)
+        val spec = ShellResolver.resolveOnce()
 
         val cmd = ArrayList<String>()
         cmd.add(spec.cmd)
@@ -34,7 +33,7 @@ object ShellCommandRunner {
         val pb = ProcessBuilder(cmd)
         pb.directory(File(workDir))
         pb.redirectErrorStream(true)
-        pb.environment().putAll(ShellResolver.baseEnv(context, nativeDir, workDir))
+        pb.environment().putAll(ShellResolver.baseEnv(context, workDir))
 
         val sb = StringBuilder()
         var truncated = false
