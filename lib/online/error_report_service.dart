@@ -5,6 +5,7 @@ import 'package:http_parser/http_parser.dart';
 
 import '../config/network_store.dart';
 import '../i18n/i18n_service.dart';
+import 'cloud_headers.dart';
 
 /// 错误报告上传服务：将崩溃日志上传到 EdgeCube 服务器。
 class ErrorReportService {
@@ -32,8 +33,10 @@ class ErrorReportService {
     try {
       final baseUrl = await NetworkStore.loadBackendApiBaseUrl();
       final uri = Uri.parse('$baseUrl/api/error_report');
+      final baseHeaders = await CloudHeaders.base();
+      baseHeaders['X-Device-Id'] = deviceId;
       final request = http.MultipartRequest('POST', uri)
-        ..headers['X-Device-Id'] = deviceId
+        ..headers.addAll(baseHeaders)
         ..files.add(
           http.MultipartFile.fromBytes(
             'file',

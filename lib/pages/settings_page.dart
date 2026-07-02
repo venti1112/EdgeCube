@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../account/account_scope.dart';
 import '../config/instance_path_store.dart';
 import '../config/network_store.dart';
 import '../config/terminal_store.dart';
@@ -18,6 +19,7 @@ import '../online/online_service.dart';
 import '../server/power_service.dart';
 import '../theme/theme_scope.dart';
 import 'about_page.dart';
+import 'account_page.dart';
 import 'appearance_settings_page.dart';
 import 'language_settings_page.dart';
 import 'network_settings_page.dart';
@@ -300,6 +302,33 @@ class _SettingsPageState extends State<SettingsPage>
           ),
           const Divider(),
           _sectionHeader(theme, context.tr('settings.section.online')),
+          ListenableBuilder(
+            listenable: AccountScope.of(context),
+            builder: (context, _) {
+              final account = AccountScope.of(context);
+              final user = account.user;
+              final String subtitle;
+              if (!account.available) {
+                // 在线服务未启用：账号功能不可用。
+                subtitle = context.tr('settings.account.needOnline');
+              } else if (user != null) {
+                subtitle = '${user.displayName} · ${user.email}';
+              } else {
+                subtitle = context.tr('settings.account.loggedOut');
+              }
+              return ListTile(
+                leading: const Icon(Icons.account_circle_outlined),
+                title: Text(context.tr('settings.account.title')),
+                subtitle: Text(subtitle),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AccountPage()),
+                  );
+                },
+              );
+            },
+          ),
           ListenableBuilder(
             listenable: widget.onlineService,
             builder: (context, _) => ListTile(

@@ -2,6 +2,8 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'account/account_controller.dart';
+import 'account/account_scope.dart';
 import 'config/config_migration.dart';
 import 'config/network_store.dart';
 import 'config/version_store.dart';
@@ -17,6 +19,7 @@ import 'instance/instance_migration.dart';
 import 'instance/instance_scope.dart';
 import 'mcp/mcp_controller.dart';
 import 'mcp/mcp_scope.dart';
+import 'online/cloud_headers.dart';
 import 'online/online_service.dart';
 import 'server/ecpkg_handler.dart';
 import 'server/server_controller.dart';
@@ -63,6 +66,11 @@ Future<void> main() async {
   await instanceController.init();
   final onlineService = OnlineService();
   await onlineService.init();
+  CloudHeaders.init(deviceIdProvider: () => onlineService.deviceId);
+  // 账号系统：载入上次会话并尝试用 refresh_token 静默续期。
+  // 依赖 onlineService 读取设备 ID（登录时附带，可为空）。
+  final accountController = AccountController(onlineService: onlineService);
+  await accountController.init();
   final serverController = ServerController();
   // 让服务端状态机能查询某实例是否开启兼容模式（兼容模式跳过「启动中」标签）。
   serverController.compatModeResolver = instanceController.compatModeFor;
@@ -109,6 +117,7 @@ Future<void> main() async {
       serverController: serverController,
       systemMonitorController: systemMonitorController,
       onlineService: onlineService,
+      accountController: accountController,
       ftpController: ftpController,
       mcpController: mcpController,
       shellController: shellController,
@@ -161,6 +170,7 @@ class EdgeCubeApp extends StatefulWidget {
     required this.serverController,
     required this.systemMonitorController,
     required this.onlineService,
+    required this.accountController,
     required this.ftpController,
     required this.mcpController,
     required this.shellController,
@@ -178,6 +188,7 @@ class EdgeCubeApp extends StatefulWidget {
   final ServerController serverController;
   final SystemMonitorController systemMonitorController;
   final OnlineService onlineService;
+  final AccountController accountController;
   final FtpController ftpController;
   final McpController mcpController;
   final ShellController shellController;
@@ -247,89 +258,94 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
   Widget build(BuildContext context) {
     return LocaleScope(
       controller: widget.localeController,
-      child: ThemeScope(
-        themeMode: _themeMode,
-        setThemeMode: _setThemeMode,
-        seedColor: _seedColor,
-        setSeedColor: _setSeedColor,
-        useDynamicColor: _useDynamicColor,
-        setUseDynamicColor: _setUseDynamicColor,
-        snowfallEnabled: _snowfallEnabled,
-        setSnowfallEnabled: _setSnowfallEnabled,
-        precipitationMode: _precipitationMode,
-        setPrecipitationMode: _setPrecipitationMode,
-        child: InstanceScope(
-          controller: widget.instanceController,
-          child: FtpScope(
-            controller: widget.ftpController,
-            child: ServerScope(
-              controller: widget.serverController,
-              child: SystemMonitorScope(
-                controller: widget.systemMonitorController,
-                child: McpScope(
-                  controller: widget.mcpController,
-                  child: ShellScope(
-                    controller: widget.shellController,
-                    child: SshScope(
-                      controller: widget.sshController,
-                      child: DynamicColorBuilder(
-                        builder:
-                            (
-                              ColorScheme? lightDynamic,
-                              ColorScheme? darkDynamic,
-                            ) {
-                              // 当用户开启「跟随系统主题色」且设备支持动态色时使用系统取色。
-                              final useDynamic =
-                                  _useDynamicColor && lightDynamic != null;
-                              final lightScheme = useDynamic
-                                  ? lightDynamic
-                                  : ColorScheme.fromSeed(seedColor: _seedColor);
-                              final darkScheme = useDynamic
-                                  ? (darkDynamic ??
-                                        ColorScheme.fromSeed(
-                                          seedColor: _seedColor,
-                                          brightness: Brightness.dark,
-                                        ))
-                                  : ColorScheme.fromSeed(
-                                      seedColor: _seedColor,
-                                      brightness: Brightness.dark,
-                                    );
+      child: AccountScope(
+        controller: widget.accountController,
+        child: ThemeScope(
+          themeMode: _themeMode,
+          setThemeMode: _setThemeMode,
+          seedColor: _seedColor,
+          setSeedColor: _setSeedColor,
+          useDynamicColor: _useDynamicColor,
+          setUseDynamicColor: _setUseDynamicColor,
+          snowfallEnabled: _snowfallEnabled,
+          setSnowfallEnabled: _setSnowfallEnabled,
+          precipitationMode: _precipitationMode,
+          setPrecipitationMode: _setPrecipitationMode,
+          child: InstanceScope(
+            controller: widget.instanceController,
+            child: FtpScope(
+              controller: widget.ftpController,
+              child: ServerScope(
+                controller: widget.serverController,
+                child: SystemMonitorScope(
+                  controller: widget.systemMonitorController,
+                  child: McpScope(
+                    controller: widget.mcpController,
+                    child: ShellScope(
+                      controller: widget.shellController,
+                      child: SshScope(
+                        controller: widget.sshController,
+                        child: DynamicColorBuilder(
+                          builder:
+                              (
+                                ColorScheme? lightDynamic,
+                                ColorScheme? darkDynamic,
+                              ) {
+                                // 当用户开启「跟随系统主题色」且设备支持动态色时使用系统取色。
+                                final useDynamic =
+                                    _useDynamicColor && lightDynamic != null;
+                                final lightScheme = useDynamic
+                                    ? lightDynamic
+                                    : ColorScheme.fromSeed(
+                                        seedColor: _seedColor,
+                                      );
+                                final darkScheme = useDynamic
+                                    ? (darkDynamic ??
+                                          ColorScheme.fromSeed(
+                                            seedColor: _seedColor,
+                                            brightness: Brightness.dark,
+                                          ))
+                                    : ColorScheme.fromSeed(
+                                        seedColor: _seedColor,
+                                        brightness: Brightness.dark,
+                                      );
 
-                              return MaterialApp(
-                                title: 'EdgeCube',
-                                localizationsDelegates: [
-                                  GlobalMaterialLocalizations.delegate,
-                                  GlobalWidgetsLocalizations.delegate,
-                                  GlobalCupertinoLocalizations.delegate,
-                                ],
-                                supportedLocales:
-                                    widget.localeController.supportedLocales,
-                                locale: widget.localeController.locale,
-                                theme: ThemeData(colorScheme: lightScheme),
-                                darkTheme: ThemeData(colorScheme: darkScheme),
-                                themeMode: _themeMode,
-                                navigatorObservers: [appRouteObserver],
-                                builder: (context, child) {
-                                  final content =
-                                      child ?? const SizedBox.shrink();
-                                  if (!_snowfallEnabled) return content;
-                                  return Stack(
-                                    children: [
-                                      content,
-                                      Positioned.fill(
-                                        child: PrecipitationOverlay(
-                                          mode: _precipitationMode,
+                                return MaterialApp(
+                                  title: 'EdgeCube',
+                                  localizationsDelegates: [
+                                    GlobalMaterialLocalizations.delegate,
+                                    GlobalWidgetsLocalizations.delegate,
+                                    GlobalCupertinoLocalizations.delegate,
+                                  ],
+                                  supportedLocales:
+                                      widget.localeController.supportedLocales,
+                                  locale: widget.localeController.locale,
+                                  theme: ThemeData(colorScheme: lightScheme),
+                                  darkTheme: ThemeData(colorScheme: darkScheme),
+                                  themeMode: _themeMode,
+                                  navigatorObservers: [appRouteObserver],
+                                  builder: (context, child) {
+                                    final content =
+                                        child ?? const SizedBox.shrink();
+                                    if (!_snowfallEnabled) return content;
+                                    return Stack(
+                                      children: [
+                                        content,
+                                        Positioned.fill(
+                                          child: PrecipitationOverlay(
+                                            mode: _precipitationMode,
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  );
-                                },
-                                home: HomeShell(
-                                  onlineService: widget.onlineService,
-                                  lastVersion: widget.lastVersion,
-                                ),
-                              );
-                            },
+                                      ],
+                                    );
+                                  },
+                                  home: HomeShell(
+                                    onlineService: widget.onlineService,
+                                    lastVersion: widget.lastVersion,
+                                  ),
+                                );
+                              },
+                        ),
                       ),
                     ),
                   ),

@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 
 import '../config/network_store.dart';
 import '../i18n/i18n_service.dart';
+import 'cloud_headers.dart';
 
 class DownloadLink {
   const DownloadLink({
@@ -95,14 +96,11 @@ class UpdateService {
       final baseUrl = await NetworkStore.loadBackendApiBaseUrl();
       final endpoint = '$baseUrl/api/check_updates';
       final info = await PackageInfo.fromPlatform();
+      final headers = await CloudHeaders.base();
+      headers['X-App-Version'] = info.version;
+      headers['X-App-Build'] = info.buildNumber;
       final response = await http
-          .get(
-            Uri.parse(endpoint),
-            headers: {
-              'X-App-Version': info.version,
-              'X-App-Build': info.buildNumber,
-            },
-          )
+          .get(Uri.parse(endpoint), headers: headers)
           .timeout(const Duration(seconds: 15));
       if (response.statusCode != 200) return null;
       final body = utf8.decode(response.bodyBytes);
