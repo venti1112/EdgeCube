@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/instance_path_store.dart';
+import '../config/network_store.dart';
 import '../config/terminal_store.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
@@ -38,6 +39,7 @@ class _SettingsPageState extends State<SettingsPage>
   bool _batteryLoaded = false;
   bool _migratingInstances = false;
   bool _autoClearLogOnStart = true;
+  bool _enableBetaUpdates = true;
   Completer<void>? _resumeWaiter;
 
   @override
@@ -46,6 +48,7 @@ class _SettingsPageState extends State<SettingsPage>
     WidgetsBinding.instance.addObserver(this);
     _refreshBattery();
     _loadAutoClearLogOnStart();
+    _loadBetaUpdates();
   }
 
   Future<void> _loadAutoClearLogOnStart() async {
@@ -56,6 +59,16 @@ class _SettingsPageState extends State<SettingsPage>
   Future<void> _saveAutoClearLogOnStart(bool value) async {
     setState(() => _autoClearLogOnStart = value);
     await TerminalStore.saveAutoClearLogOnStart(value);
+  }
+
+  Future<void> _loadBetaUpdates() async {
+    final value = await NetworkStore.loadBetaUpdates();
+    if (mounted) setState(() => _enableBetaUpdates = value);
+  }
+
+  Future<void> _saveBetaUpdates(bool value) async {
+    setState(() => _enableBetaUpdates = value);
+    await NetworkStore.saveBetaUpdates(value);
   }
 
   @override
@@ -323,6 +336,14 @@ class _SettingsPageState extends State<SettingsPage>
           ),
           const Divider(),
           _sectionHeader(theme, context.tr('settings.section.other')),
+          SwitchListTile(
+            secondary: const Icon(Icons.science_outlined),
+            title: Text(context.tr('settings.enableBetaUpdates')),
+            subtitle: Text(context.tr('settings.enableBetaUpdatesDesc')),
+            value: _enableBetaUpdates,
+            onChanged: _saveBetaUpdates,
+          ),
+          const Divider(),
           ListTile(
             leading: const Icon(Icons.group_outlined),
             title: Text(context.tr('settings.community.title')),

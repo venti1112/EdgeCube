@@ -689,7 +689,7 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // APK 安装通道：触发系统安装界面安装下载好的更新包。
+        // APK 更新通道：安装 APK 与签名验证。
         MethodChannel(messenger, "com.venti1112.edgecube/update").setMethodCallHandler { call, result ->
             when (call.method) {
                 "installApk" -> {
@@ -702,6 +702,21 @@ class MainActivity : FlutterActivity() {
                             result.success(true)
                         } catch (e: Exception) {
                             result.error("INSTALL_FAILED", e.message, null)
+                        }
+                    }
+                }
+                "verifySignature" -> {
+                    val apkPath = call.argument<String>("apkPath")
+                    if (apkPath == null) {
+                        result.error("BAD_ARGS", "缺少 apkPath", null)
+                    } else {
+                        try {
+                            val match = com.venti1112.edgecube.update.ApkInstaller.verifyApkSignature(
+                                applicationContext, apkPath,
+                            )
+                            result.success(match)
+                        } catch (e: Exception) {
+                            result.error("SIGNATURE_VERIFY_FAILED", e.message, null)
                         }
                     }
                 }

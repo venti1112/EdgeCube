@@ -42,18 +42,18 @@ class _AboutPageState extends State<AboutPage> {
     if (_checking) return;
     setState(() => _checking = true);
     try {
-      final info = await UpdateService.checkForUpdates();
-      if (info == null) {
+      final result = await UpdateService.checkForUpdates();
+      if (result == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(context.tr('about.checkUpdateFailed'))),
         );
         return;
       }
-      final hasUpdate = await UpdateService.hasUpdate(info);
+      final updateInfo = await UpdateService.pickBestUpdate(result);
       if (!mounted) return;
-      if (hasUpdate) {
-        _showUpdateDialog(info);
+      if (updateInfo != null) {
+        _showUpdateDialog(updateInfo);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(context.tr('about.alreadyLatest'))),
@@ -64,12 +64,12 @@ class _AboutPageState extends State<AboutPage> {
     }
   }
 
-  /// 展示更新提示对话框，用户确认后下载并安装。
-  void _showUpdateDialog(UpdateInfo info) {
+  /// 展示更新提示对话框。
+  void _showUpdateDialog(AppUpdateInfo updateInfo) {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => UpdateDialog(info: info),
+      builder: (ctx) => UpdateDialog(updateInfo: updateInfo),
     );
   }
 

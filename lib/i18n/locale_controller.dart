@@ -136,8 +136,9 @@ class LocaleController extends ChangeNotifier {
   Future<void> setLanguage(String code) async {
     if (code == _selectedCode) return;
     final localeCode = _localeCodeOf(code);
-    if (code != LocaleStore.systemCode && !isValidLocaleCode(localeCode))
+    if (code != LocaleStore.systemCode && !isValidLocaleCode(localeCode)) {
       return;
+    }
     _selectedCode = code;
     await LocaleStore.save(_selectedCode);
     await _reload();

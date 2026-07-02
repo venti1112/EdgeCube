@@ -3,12 +3,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
+import '../config/network_store.dart';
 import '../i18n/i18n_service.dart';
 
 /// 错误报告上传服务：将崩溃日志上传到 EdgeCube 服务器。
 class ErrorReportService {
-  static const String _endpoint =
-      'https://edgecube-api.ventichat.com/api/error_report';
 
   /// 日志大小上限：5 MB。超过此大小的日志不允许上传。
   static const int maxUploadBytes = 5 * 1024 * 1024;
@@ -31,7 +30,8 @@ class ErrorReportService {
     }
 
     try {
-      final uri = Uri.parse(_endpoint);
+      final baseUrl = await NetworkStore.loadBackendApiBaseUrl();
+      final uri = Uri.parse('$baseUrl/api/error_report');
       final request = http.MultipartRequest('POST', uri)
         ..headers['X-Device-Id'] = deviceId
         ..files.add(

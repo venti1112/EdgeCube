@@ -2,8 +2,9 @@ package com.venti1112.edgecube.update
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.net.Uri
-import android.os.Build
 import androidx.core.content.FileProvider
 import java.io.File
 
@@ -38,5 +39,59 @@ object ApkInstaller {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
+    }
+
+    /**
+     * 验证下载的 APK 签名是否与当前已安装的应用一致。
+     *
+     * 同时检查包名是否匹配，防止安装恶意替换包。
+     */
+    fun verifyApkSignature(context: Context, apkPath: String): Boolean {
+        val pm = context.packageManager
+        val packageName = context.packageName
+
+        val installedSigners = getInstalledSignatures(pm, packageName) ?: return false
+        val archiveSigners = getArchiveSignatures(pm, apkPath) ?: return false
+
+        // 包名必须匹配
+        if (archiveSigners.first != packageName) return false
+
+        val apkSignatures = archiveSigners.second
+
+        if (installedSigners.size != apkSignatures.size) return false
+        for (i in installedSigners.indices) {
+            if (!installedSigners[i].toByteArray().contentEquals(apkSignatures[i].toByteArray())) {
+                return false
+            }
+        }
+        return true
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getInstalledSignatures(
+        pm: PackageManager,
+        packageName: String,
+    ): Array<Signature>? {
+        return try {
+            val info = pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+            info.signatures
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getArchiveSignatures(
+        pm: PackageManager,
+        apkPath: String,
+    ): Pair<String, Array<Signature>>? {
+        return try {
+            val info = pm.getPackageArchiveInfo(apkPath, PackageManager.GET_SIGNATURES)
+                ?: return null
+            val sigs = info.signatures ?: return null
+            Pair(info.packageName, sigs)
+        } catch (_: Exception) {
+            null
+        }
     }
 }

@@ -26,6 +26,21 @@ class NetworkStore {
   static const String _useMirrorKey = 'useMirror';
   static const String _mirrorAskedKey = 'mirrorAsked';
   static const String _qqGroupAskedKey = 'qqGroupAsked';
+  static const String _backendApiBaseUrlKey = 'backendApiBaseUrl';
+  static const String defaultBackendApiBaseUrl =
+      'https://edgecube-api.ventichat.com';
+
+  /// 服务后端 API 基础地址（用于更新检查、错误上报等）。
+  static Future<String> loadBackendApiBaseUrl() async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    return configMap[_backendApiBaseUrlKey] as String? ?? defaultBackendApiBaseUrl;
+  }
+
+  static Future<void> saveBackendApiBaseUrl(String url) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_backendApiBaseUrlKey] = url;
+    await ConfigStore.writeConfig(_fileName, configMap);
+  }
 
   /// 用户可直接编辑的自定义 frpc.toml 文件路径（`config/frpc.toml`）。
   static Future<File> customFrpcFile() async {
@@ -173,6 +188,19 @@ class NetworkStore {
     } else {
       configMap[_frpcRuntimeIdKey] = runtimeId;
     }
+    await ConfigStore.writeConfig(_fileName, configMap);
+  }
+
+  static const String _betaUpdatesKey = 'enableBetaUpdates';
+
+  static Future<bool> loadBetaUpdates() async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    return configMap[_betaUpdatesKey] as bool? ?? true;
+  }
+
+  static Future<void> saveBetaUpdates(bool enabled) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_betaUpdatesKey] = enabled;
     await ConfigStore.writeConfig(_fileName, configMap);
   }
 }

@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'config/config_store.dart';
-import 'config/network_store.dart';
+import 'config/network_store.dart' show NetworkStore;
 import 'config/user_agreement_store.dart';
 import 'config/version_store.dart';
 import 'files/file_browser.dart';
@@ -274,15 +274,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   /// 后台检查更新。失败不提示；有更新则弹出更新对话框。
   Future<void> _checkUpdatesInBackground() async {
-    final info = await UpdateService.checkForUpdates();
-    if (info == null) return; // 检查失败，静默处理。
+    final result = await UpdateService.checkForUpdates();
+    if (result == null) return;
     if (!mounted) return;
-    final hasUpdate = await UpdateService.hasUpdate(info);
-    if (!mounted || !hasUpdate) return;
+    final updateInfo = await UpdateService.pickBestUpdate(result);
+    if (!mounted || updateInfo == null) return;
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => UpdateDialog(info: info),
+      builder: (_) => UpdateDialog(updateInfo: updateInfo),
     );
   }
 
