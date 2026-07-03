@@ -808,6 +808,7 @@ class _FileBrowserState extends State<FileBrowser> {
                         )
                       : ListView.builder(
                           controller: _scrollController,
+                          physics: const AlwaysScrollableScrollPhysics(),
                           itemCount: _entries.length,
                           itemBuilder: (_, i) {
                             final entry = _entries[i];
