@@ -30,8 +30,8 @@ target_link_libraries(tagfix dl log)
 # ─── libphploader.so ─── PHP 启动器（dlopen libphpwrapper.so，与 liblaunch.so 同构）
 # PHP 运行时本体（libphp.so / libphpwrapper.so 及其依赖）通过 .ecpkg 安装
 # 到 App 数据目录，由本加载器在 PTY 子进程中 dlopen 加载并调用 php_run。
-# 由于 PHP 以 --enable-zts（不带 --enable-static-tsrm-cache）方式构建，
-# _tsrm_ls_cache 只是普通全局变量，不需要额外的 TLS 提供库。
+# PHP 以 --enable-zts --enable-static-tsrm-cache 构建，_tsrm_ls_cache 作为
+# __thread 变量（global-dynamic TLS 模型）定义在 libphp.so 内部，兼容 dlopen。
 add_executable(phploader phploader.c)
 
 set_target_properties(phploader PROPERTIES

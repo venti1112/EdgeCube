@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -1682,11 +1683,14 @@ class _CrashDialogState extends State<_CrashDialog> {
 
   Future<void> _loadDeviceHeader() async {
     try {
+      final info = await PackageInfo.fromPlatform();
+      final appVersion = '${info.version}+${info.buildNumber}';
       final monitorService = SystemMonitorService();
       final deviceInfo = await monitorService.getDeviceInfo();
       final sysInfo = await monitorService.getSystemInfo();
       final lines = <String>[
         '=== 设备信息 ===',
+        'EdgeCube 版本: $appVersion',
         'SoC 型号: ${deviceInfo.socModel}',
         '内存总量: ${sysInfo.totalMemMb} MB',
         '内存已用: ${sysInfo.usedMemMb} MB',
@@ -1694,9 +1698,16 @@ class _CrashDialogState extends State<_CrashDialog> {
       // 服务端崩溃才输出运行环境信息；FRP 隧道崩溃无此概念。
       if (widget.crash.kind == 'server') {
         final envType = widget.crash.envType == 'php' ? 'PHP' : 'Java';
-        final envRuntimeId = _versionLabel(widget.crash.envRuntimeId);
+        final envDisplay = (widget.crash.runtimeName != null &&
+                widget.crash.runtimeName!.isNotEmpty)
+            ? widget.crash.runtimeName!
+            : _versionLabel(widget.crash.envRuntimeId);
         lines.add('环境类型: $envType');
-        lines.add('运行环境: $envRuntimeId');
+        lines.add('运行环境: $envDisplay');
+        if (widget.crash.runtimeVersion != null &&
+            widget.crash.runtimeVersion!.isNotEmpty) {
+          lines.add('环境版本: ${widget.crash.runtimeVersion}');
+        }
       } else {
         lines.add('崩溃来源: FRP 隧道 (frpc)');
       }
@@ -1716,16 +1727,35 @@ class _CrashDialogState extends State<_CrashDialog> {
 
   static String _versionLabel(String version) {
     const labels = {
-      'jre17': 'Java 17',
-      'jre21': 'Java 21',
-      'jre25': 'Java 25',
+      'jre17': 'JRE 17',
+      'jre21': 'JRE 21',
+      'jre25': 'JRE 25',
       'php8.2': 'PHP 8.2',
     };
     return labels[version] ?? version;
   }
 
   /// 拼接完整日志内容（设备信息 + 控制台输出）。
-  String _buildFullLog() => '$_deviceHeader${widget.crash.logLines.join('\n')}';
+  /// 当有持久化日志文件时优先从文件读取，否则回退到内存中的日志快照。
+  Future<String> _buildFullLog() async {
+    String logContent;
+    final logFilePath = widget.crash.logFilePath;
+    if (logFilePath != null && logFilePath.isNotEmpty) {
+      try {
+        final logFile = File(logFilePath);
+        if (await logFile.exists()) {
+          logContent = await logFile.readAsString();
+        } else {
+          logContent = widget.crash.logLines.join('\n');
+        }
+      } catch (_) {
+        logContent = widget.crash.logLines.join('\n');
+      }
+    } else {
+      logContent = widget.crash.logLines.join('\n');
+    }
+    return '$_deviceHeader$logContent';
+  }
 
   /// 导出日志：写入临时文件并通过系统分享发送。
   Future<void> _exportLog() async {
@@ -1738,7 +1768,7 @@ class _CrashDialogState extends State<_CrashDialog> {
           ? 'edgecube_tunnel_crash_'
           : 'edgecube_crash_';
       final file = File(p.join(dir.path, '$prefix$ts.log'));
-      await file.writeAsString(_buildFullLog());
+      await file.writeAsString(await _buildFullLog());
       if (!mounted) return;
       await SharePlus.instance.share(
         ShareParams(files: [XFile(file.path)], text: context.tr(_shareTextKey)),
@@ -1778,7 +1808,7 @@ class _CrashDialogState extends State<_CrashDialog> {
       _uploadOk = false;
     });
     final result = await ErrorReportService.upload(
-      logContent: _buildFullLog(),
+      logContent: await _buildFullLog(),
       deviceId: deviceId,
     );
     if (!mounted) return;
@@ -1815,6 +1845,51 @@ class _CrashDialogState extends State<_CrashDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(context.tr(messageKey, {'code': '${widget.crash.exitCode}'})),
+          if (widget.crash.errorReason != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    context.tr('server.crashReason'),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onErrorContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.crash.errorReason!,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onErrorContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (widget.crash.errorDetail != null &&
+                      widget.crash.errorDetail!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    SelectableText(
+                      widget.crash.errorDetail!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onErrorContainer
+                            .withValues(alpha: 0.75),
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
           if (_uploadResult != null) ...[
             const SizedBox(height: 8),
             Text(

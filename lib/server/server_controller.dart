@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:port_forwarder/port_forwarder.dart';
 import 'package:xterm/xterm.dart';
 
@@ -48,6 +49,11 @@ class CrashData {
     required this.envType,
     required this.envRuntimeId,
     this.kind = 'server',
+    this.errorReason,
+    this.errorDetail,
+    this.runtimeName,
+    this.runtimeVersion,
+    this.logFilePath,
   });
 
   final int exitCode;
@@ -62,6 +68,100 @@ class CrashData {
   /// 崩溃来源：'server'（服务端）或 'tunnel'（FRP 隧道）。
   /// UI 根据此字段切换标题/文案；'tunnel' 时不显示 envType/envRuntimeId。
   final String kind;
+
+  /// 运行环境显示名称（如 "JRE 17"、"PHP 8.2"）。为 null 时 UI 回退到 [_versionLabel]。
+  final String? runtimeName;
+
+  /// 运行环境版本号（如 "17.0.9+13"、"8.2.19"）。
+  final String? runtimeVersion;
+
+  /// 持久化日志文件的路径（如果有）。导出/上传时优先从此文件读取完整日志。
+  final String? logFilePath;
+
+  /// 从日志尾部解析出的简要错误原因（如 "Java 版本不兼容"）。
+  final String? errorReason;
+
+  /// 原始错误详情（如完整的 UnsupportedClassVersionError 信息）。
+  final String? errorDetail;
+
+  /// 从服务端日志尾部扫描常见崩溃原因，返回 (简要原因, 详细错误)。
+  static (String? reason, String? detail) parseError(List<String> logLines) {
+    const maxScan = 80;
+    final scan = logLines.length > maxScan
+        ? logLines.sublist(logLines.length - maxScan)
+        : logLines;
+
+    for (int i = scan.length - 1; i >= 0; i--) {
+      final trimmed = scan[i].trim();
+      if (trimmed.isEmpty) continue;
+
+      // UnsupportedClassVersionError：Java 版本不兼容
+      if (trimmed.contains('UnsupportedClassVersionError')) {
+        final msg = _after(trimmed, 'UnsupportedClassVersionError:');
+        return ('Java 版本不兼容：服务端需要更高版本的 Java', msg);
+      }
+
+      // OutOfMemoryError：内存不足
+      if (trimmed.contains('OutOfMemoryError')) {
+        final msg = _after(trimmed, 'OutOfMemoryError:');
+        return ('Java 堆内存不足', msg);
+      }
+
+      // Unable to access jarfile
+      if (trimmed.contains('Unable to access jarfile')) {
+        final jar = _after(trimmed, 'Unable to access jarfile');
+        return ('找不到服务端文件', 'Unable to access jarfile $jar');
+      }
+
+      // Could not find or load main class
+      if (trimmed.contains('Could not find or load main class')) {
+        final cls = _after(trimmed, 'Could not find or load main class');
+        return ('找不到主类', 'Could not find or load main class $cls');
+      }
+
+      // LinkageError（通常包裹更具体的错误如 UnsupportedClassVersionError）
+      if (trimmed.contains('LinkageError')) {
+        if (i + 1 < scan.length) {
+          final next = scan[i + 1].trim();
+          if (next.contains('UnsupportedClassVersionError')) {
+            final detail = _after(next, 'UnsupportedClassVersionError:');
+            return ('Java 版本不兼容：服务端需要更高版本的 Java', detail);
+          }
+        }
+        final msg = _after(trimmed, 'LinkageError');
+        return ('Java 类加载错误', msg);
+      }
+
+      // Could not create the Java Virtual Machine
+      if (trimmed.contains('Could not create the Java Virtual Machine')) {
+        return ('无法创建 Java 虚拟机', trimmed);
+      }
+
+      // PHP 致命错误
+      if (trimmed.contains('PHP Fatal error:')) {
+        final msg = _after(trimmed, 'PHP Fatal error:');
+        return ('PHP 致命错误', msg);
+      }
+    }
+
+    // 兜底：任何 Error:/Exception in thread 开头行
+    for (int i = scan.length - 1; i >= 0; i--) {
+      final trimmed = scan[i].trim();
+      if (trimmed.startsWith('Error:') ||
+          trimmed.startsWith('Exception in thread')) {
+        return ('服务端启动错误', trimmed);
+      }
+    }
+
+    return (null, null);
+  }
+
+  /// 截取 [prefix] 第一次出现之后的内容，去除首尾空白。
+  static String _after(String text, String prefix) {
+    final idx = text.indexOf(prefix);
+    if (idx < 0) return text;
+    return text.substring(idx + prefix.length).trim();
+  }
 }
 
 /// 管理服务端进程的运行状态与日志缓冲，并把 UI 操作转发到 [ServerService]。
@@ -165,9 +265,17 @@ class ServerController extends ChangeNotifier {
   /// 与 [_log] 分离：frpc 日志不写入服务端终端，但需在异常退出时一并导出。
   final List<String> _tunnelLog = [];
 
+  /// 持久化日志文件（写入实例目录 logs/ 下），所有日志行同时写入此文件。
+  File? _logFile;
+
+  /// 日志文件的写入流。
+  IOSink? _logFileSink;
+
   // —— 运行时类型/标识追踪（崩溃报告用）——
   String _runtimeType = '';
   String _runtimeId = '';
+  String _runtimeName = '';
+  String _runtimeVersion = '';
 
   // —— 用户主动操作标志（区分意外退出与主动停止）——
   bool _userStopping = false;
@@ -218,6 +326,7 @@ class ServerController extends ChangeNotifier {
   String? get runningInstanceName => _instanceName;
   int? get lastExitCode => _lastExitCode;
   List<String> get log => List.unmodifiable(_log);
+  String? get logFilePath => _logFile?.path;
   Set<String> get onlinePlayers => Set.unmodifiable(_onlinePlayers);
 
   // —— 映射状态公共接口 ——
@@ -292,6 +401,20 @@ class ServerController extends ChangeNotifier {
     _lastExitCode = null;
     _runtimeType = runtime;
     _runtimeId = runtimeId;
+    _runtimeName = '';
+    _runtimeVersion = '';
+    try {
+      final runtimes = await const RuntimeService().installedRuntimes();
+      for (final rt in runtimes) {
+        if (rt.id == runtimeId) {
+          _runtimeName = rt.name;
+          _runtimeVersion = rt.version;
+          break;
+        }
+      }
+    } catch (_) {}
+    // 打开持久化日志文件（位于应用文档目录 logs/ 下）。
+    await _openLogFile(instanceId, instanceName);
     _compatMode = compatMode;
     _compatModeId = instanceId;
     _userStopping = false;
@@ -652,6 +775,39 @@ class ServerController extends ChangeNotifier {
     _writeTerm('\x1b[3J\x1b[2J\x1b[H');
     if (_lineMode) _redrawPrompt();
     notifyListeners();
+  }
+
+  /// 创建持久化日志文件并打开写入流。
+  /// 文件保存在 `{应用文档目录}/logs/{instanceId}_{启动时间戳}.log`。
+  Future<void> _openLogFile(String instanceId, String instanceName) async {
+    await _closeLogFile();
+    try {
+      final docDir = await getApplicationDocumentsDirectory();
+      final logDir = Directory(p.join(docDir.path, 'logs'));
+      await logDir.create(recursive: true);
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final filePath = p.join(logDir.path, '${instanceId}_$ts.log');
+      _logFile = File(filePath);
+      _logFileSink = _logFile!.openWrite(mode: FileMode.append);
+      // 写入文件头
+      _logFileSink!.writeln('=== EdgeCube Server Log ===');
+      _logFileSink!.writeln('Instance: $instanceName ($instanceId)');
+      _logFileSink!.writeln('Start Time: ${DateTime.now()}');
+      final envLabel = _runtimeType == 'php' ? 'PHP' : 'JRE';
+      _logFileSink!.writeln('Runtime: $envLabel ($_runtimeId)');
+      _logFileSink!.writeln('============================');
+    } catch (_) {
+      _logFile = null;
+      _logFileSink = null;
+    }
+  }
+
+  /// 关闭持久化日志文件写入流。
+  Future<void> _closeLogFile() async {
+    await _logFileSink?.flush();
+    await _logFileSink?.close();
+    _logFileSink = null;
+    _logFile = null;
   }
 
   /// 当前设备架构下可用的 JRE 标识（如 ['jre17','jre21','jre25']）。
@@ -1155,8 +1311,10 @@ class ServerController extends ChangeNotifier {
   }
 
   /// 追加一条纯文本日志行到缓冲（用于复制日志 / 崩溃报告 / 玩家解析），不写终端。
+  /// 同时写入持久化日志文件（如果有）。
   void _appendLogLine(String line) {
     _log.add(line);
+    _logFileSink?.writeln(line);
     if (_log.length > _maxLogLines) {
       _log.removeRange(0, _log.length - _maxLogLines);
     }
@@ -1170,17 +1328,35 @@ class ServerController extends ChangeNotifier {
   }
 
   /// 服务端意外退出时生成崩溃数据并触发回调。
-  void _handleCrash(int exitCode) {
+  Future<void> _handleCrash(int exitCode) async {
     final callback = onCrashExit;
     if (callback == null) return;
     // 复制当前日志快照，避免后续新启动覆盖。
     final snapshot = List<String>.from(_log);
+    // 优先从持久化日志文件尾部取更多行用于错误分析（防止错误已滚出内存缓冲）。
+    var scanLines = snapshot;
+    if (_logFile != null) {
+      try {
+        if (await _logFile!.exists()) {
+          final fileLines = await _logFile!.readAsLines();
+          scanLines = fileLines.length > 200
+              ? fileLines.sublist(fileLines.length - 200)
+              : fileLines;
+        }
+      } catch (_) {}
+    }
+    final (errorReason, errorDetail) = CrashData.parseError(scanLines);
     callback(
       CrashData(
         exitCode: exitCode,
         logLines: snapshot,
         envType: _runtimeType,
         envRuntimeId: _runtimeId,
+        errorReason: errorReason,
+        errorDetail: errorDetail,
+        runtimeName: _runtimeName.isEmpty ? null : _runtimeName,
+        runtimeVersion: _runtimeVersion.isEmpty ? null : _runtimeVersion,
+        logFilePath: _logFile?.path,
       ),
     );
   }
@@ -1189,6 +1365,7 @@ class ServerController extends ChangeNotifier {
   void dispose() {
     _sub.cancel();
     _tunnelSub.cancel();
+    _closeLogFile();
     super.dispose();
   }
 }

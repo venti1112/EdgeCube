@@ -54,10 +54,22 @@ class _ConsolePageState extends State<ConsolePage> {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
+      String content;
+      final logFilePath = server.logFilePath;
+      if (logFilePath != null) {
+        final logFile = File(logFilePath);
+        if (await logFile.exists()) {
+          content = await logFile.readAsString();
+        } else {
+          content = server.log.join('\n');
+        }
+      } else {
+        content = server.log.join('\n');
+      }
       final dir = await getTemporaryDirectory();
       final ts = DateTime.now().millisecondsSinceEpoch;
       final file = File('${dir.path}/edgecube_log_$ts.log');
-      await file.writeAsString(server.log.join('\n'));
+      await file.writeAsString(content);
       if (!mounted) return;
       await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
     } catch (e) {

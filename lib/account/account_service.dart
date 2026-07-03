@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import '../config/network_store.dart';
 import '../i18n/i18n_service.dart';
 import '../online/cloud_headers.dart';
+import '../online/online_service.dart';
 import 'account_models.dart';
 
 /// 账号认证的无状态 HTTP 客户端。
@@ -128,7 +128,7 @@ class AccountService {
     Map<String, dynamic> body,
   ) async {
     try {
-      final baseUrl = await NetworkStore.loadBackendApiBaseUrl();
+      final baseUrl = OnlineService.instance.backendApiBaseUrl;
       final uri = Uri.parse('$baseUrl$path');
       final headers = await CloudHeaders.base();
       headers['Content-Type'] = 'application/json';

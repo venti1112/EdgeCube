@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import '../config/network_store.dart';
 import '../i18n/i18n_service.dart';
 import 'cloud_headers.dart';
+import 'online_service.dart';
 
 class DownloadLink {
   const DownloadLink({
@@ -93,19 +94,27 @@ class UpdateService {
 
   static Future<UpdateCheckResult?> checkForUpdates() async {
     try {
-      final baseUrl = await NetworkStore.loadBackendApiBaseUrl();
-      final endpoint = '$baseUrl/api/check_updates';
+      final urls = OnlineService.instance.updateCheckUrls;
       final info = await PackageInfo.fromPlatform();
       final headers = await CloudHeaders.base();
       headers['X-App-Version'] = info.version;
       headers['X-App-Build'] = info.buildNumber;
-      final response = await http
-          .get(Uri.parse(endpoint), headers: headers)
-          .timeout(const Duration(seconds: 15));
-      if (response.statusCode != 200) return null;
-      final body = utf8.decode(response.bodyBytes);
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      return UpdateCheckResult.fromJson(json);
+
+      return OnlineService.fetchFirstValid<UpdateCheckResult>(
+        urls,
+        (url) async {
+          final response = await http
+              .get(Uri.parse(url), headers: headers)
+              .timeout(const Duration(seconds: 15));
+          if (response.statusCode != 200) {
+            throw Exception('HTTP ${response.statusCode}');
+          }
+          final body = utf8.decode(response.bodyBytes);
+          final json = jsonDecode(body) as Map<String, dynamic>;
+          return UpdateCheckResult.fromJson(json);
+        },
+        (result) => result.stable.version.isNotEmpty,
+      );
     } catch (_) {
       return null;
     }

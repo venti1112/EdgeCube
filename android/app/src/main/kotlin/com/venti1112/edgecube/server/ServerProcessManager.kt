@@ -161,6 +161,14 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         val work = File(workingDir)
         if (!work.isDirectory) throw IllegalStateException("工作目录不存在：$workingDir")
 
+        // 清理 PMMP 留下的过期 server.lock：Android 外部存储（/storage/emulated/0，
+        // FUSE/sdcardfs）对 flock() 的支持不完整，进程崩溃后排他锁可能不被释放，
+        // 导致下次启动时 PMMP 误判"另一个实例正在运行"。启动前删除锁文件，
+        // 让 PMMP 重新创建。此清理同样适用于 JRE 服务器（同样用 server.lock）。
+        File(work, "server.lock").let { lock ->
+            if (lock.exists()) lock.delete()
+        }
+
         val nativeDir = appContext.applicationInfo.nativeLibraryDir
         // LD_PRELOAD 标签修复库：拦截 malloc/free 恢复指针标签再释放，解决 Android 15+ MTE 崩溃
         val tagfixLib = "$nativeDir/libtagfix.so"

@@ -12,6 +12,7 @@ import 'config_store.dart';
 ///
 /// 另支持「直接编辑配置文件」：用户可编辑原始 TOML 存于 `config/frpc.toml`，
 /// 启用 [loadUseCustomFrpc] 后隧道将使用该文件覆盖表单生成的配置。
+///
 class NetworkStore {
   NetworkStore._();
 
@@ -26,21 +27,6 @@ class NetworkStore {
   static const String _useMirrorKey = 'useMirror';
   static const String _mirrorAskedKey = 'mirrorAsked';
   static const String _qqGroupAskedKey = 'qqGroupAsked';
-  static const String _backendApiBaseUrlKey = 'backendApiBaseUrl';
-  static const String defaultBackendApiBaseUrl =
-      'https://edgecube-api.ventichat.com';
-
-  /// 服务后端 API 基础地址（用于更新检查、错误上报等）。
-  static Future<String> loadBackendApiBaseUrl() async {
-    final configMap = await ConfigStore.readConfig(_fileName);
-    return configMap[_backendApiBaseUrlKey] as String? ?? defaultBackendApiBaseUrl;
-  }
-
-  static Future<void> saveBackendApiBaseUrl(String url) async {
-    final configMap = await ConfigStore.readConfig(_fileName);
-    configMap[_backendApiBaseUrlKey] = url;
-    await ConfigStore.writeConfig(_fileName, configMap);
-  }
 
   /// 用户可直接编辑的自定义 frpc.toml 文件路径（`config/frpc.toml`）。
   static Future<File> customFrpcFile() async {

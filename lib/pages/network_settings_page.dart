@@ -9,6 +9,8 @@ import '../net/msl_mirror.dart';
 ///
 /// 开启后，新建实例下载服务端时优先通过 MSL 镜像源加速；镜像不可用时
 /// 自动回退官方源。
+///
+/// 在线服务相关配置（后端地址、更新检查、运行环境下载）在「在线服务」页面中。
 class NetworkSettingsPage extends StatefulWidget {
   const NetworkSettingsPage({super.key});
 
@@ -18,7 +20,6 @@ class NetworkSettingsPage extends StatefulWidget {
 
 class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
   bool _useMirror = false;
-  String _backendApiBaseUrl = NetworkStore.defaultBackendApiBaseUrl;
   bool _loaded = false;
 
   @override
@@ -29,11 +30,9 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
 
   Future<void> _load() async {
     final v = await NetworkStore.loadUseMirror();
-    final apiUrl = await NetworkStore.loadBackendApiBaseUrl();
     if (!mounted) return;
     setState(() {
       _useMirror = v;
-      _backendApiBaseUrl = apiUrl;
       _loaded = true;
     });
   }
@@ -41,50 +40,6 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
   Future<void> _onToggle(bool value) async {
     setState(() => _useMirror = value);
     await NetworkStore.saveUseMirror(value);
-  }
-
-  Future<void> _showBackendUrlDialog() async {
-    final controller = TextEditingController(text: _backendApiBaseUrl);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.tr('network.backendApiUrl')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              context.tr('network.backendApiUrlWarning'),
-              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(ctx).colorScheme.error,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'URL',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(context.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: Text(context.tr('common.save')),
-          ),
-        ],
-      ),
-    );
-    if (result != null && result != _backendApiBaseUrl) {
-      setState(() => _backendApiBaseUrl = result);
-      await NetworkStore.saveBackendApiBaseUrl(result);
-    }
   }
 
   @override
@@ -102,16 +57,6 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
             subtitle: Text(context.tr('network.useMirrorDesc')),
             value: _useMirror,
             onChanged: _loaded ? _onToggle : null,
-          ),
-          const Divider(),
-          _sectionHeader(theme, context.tr('network.backendApiUrl')),
-          ListTile(
-            leading: const Icon(Icons.dns_outlined),
-            title: Text(context.tr('network.backendApiUrl')),
-            subtitle: Text(_backendApiBaseUrl,
-                overflow: TextOverflow.ellipsis),
-            trailing: const Icon(Icons.edit_outlined, size: 18),
-            onTap: _loaded ? _showBackendUrlDialog : null,
           ),
           const Divider(),
           _sectionHeader(theme, context.tr('network.aboutMirror')),

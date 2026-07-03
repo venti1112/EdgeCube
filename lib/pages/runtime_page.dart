@@ -7,6 +7,7 @@ import '../i18n/locale_scope.dart';
 import '../server/ecpkg_handler.dart';
 import '../server/runtime_service.dart';
 import '../server/runtime_update_service.dart';
+import 'ecpkg_download_page.dart';
 
 /// 「运行环境」管理页：列出已安装运行时，导入/删除/更新 .ecpkg。
 class RuntimePage extends StatefulWidget {
@@ -524,7 +525,18 @@ class _RuntimePageState extends State<RuntimePage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(context.tr('runtime.title'))),
+      appBar: AppBar(
+  title: Text(context.tr('runtime.title')),
+  actions: [
+    IconButton(
+      icon: const Icon(Icons.cloud_download_outlined),
+      tooltip: context.tr('ecpkgDownload.browse'),
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const EcpkgDownloadPage()),
+      ),
+    ),
+  ],
+),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _runtimes.isEmpty
@@ -594,6 +606,7 @@ class _EmptyBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -603,18 +616,18 @@ class _EmptyBody extends StatelessWidget {
             Icon(
               Icons.memory,
               size: 64,
-              color: Theme.of(context).colorScheme.outline,
+              color: theme.colorScheme.outline,
             ),
             const SizedBox(height: 16),
             Text(
               context.tr('runtime.emptyTitle'),
-              style: Theme.of(context).textTheme.titleMedium,
+              style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
             Text(
               context.tr('runtime.emptyDescription'),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
               textAlign: TextAlign.center,
             ),
@@ -623,6 +636,16 @@ class _EmptyBody extends StatelessWidget {
               onPressed: onImport,
               icon: const Icon(Icons.add),
               label: Text(context.tr('runtime.import')),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const EcpkgDownloadPage(),
+                ),
+              ),
+              icon: const Icon(Icons.cloud_download_outlined),
+              label: Text(context.tr('ecpkgDownload.browse')),
             ),
           ],
         ),
