@@ -902,8 +902,11 @@ class MainActivity : FlutterActivity() {
                             "type" to m.type,
                             "name" to m.name,
                             "version" to m.version,
+                            "versionName" to (m.versionName ?: ""),
                             "description" to (m.description ?: ""),
                             "author" to (m.author ?: ""),
+                            "homepage" to (m.homepage ?: ""),
+                            "repository" to (m.repository ?: ""),
                             "updateUrl" to (m.updateUrl ?: ""),
                             "minAppVersion" to m.minAppVersion,
                         )
@@ -929,8 +932,11 @@ class MainActivity : FlutterActivity() {
                                             "type" to manifest.type,
                                             "name" to manifest.name,
                                             "version" to manifest.version,
+                                            "versionName" to (manifest.versionName ?: ""),
                                             "description" to (manifest.description ?: ""),
                                             "author" to (manifest.author ?: ""),
+                                            "homepage" to (manifest.homepage ?: ""),
+                                            "repository" to (manifest.repository ?: ""),
                                             "updateUrl" to (manifest.updateUrl ?: ""),
                                             "minAppVersion" to manifest.minAppVersion,
                                         ),
@@ -965,12 +971,12 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
-                // 返回当前设备架构标识符（arm64 / arm / x86_64），无匹配时返回空串。
+                // 返回当前设备架构标识符（aarch64 / arm / x86_64），无匹配时返回空串。
                 "deviceArch" -> {
                     var arch = ""
                     for (abi in Build.SUPPORTED_ABIS) {
                         arch = when (abi) {
-                            "arm64-v8a" -> "arm64"
+                            "arm64-v8a" -> "aarch64"
                             "armeabi-v7a" -> "arm"
                             "x86_64" -> "x86_64"
                             else -> continue
@@ -978,6 +984,16 @@ class MainActivity : FlutterActivity() {
                         break
                     }
                     result.success(arch)
+                }
+
+                "getDownloadDir" -> {
+                    val base = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+                        applicationContext.getExternalFilesDir(null)
+                    else
+                        Environment.getExternalStorageDirectory()
+                    val dir = File(base, "Download/EdgeCube")
+                    if (!dir.exists()) dir.mkdirs()
+                    result.success(dir.absolutePath)
                 }
 
                 else -> result.notImplemented()

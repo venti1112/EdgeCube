@@ -408,7 +408,7 @@ class ServerController extends ChangeNotifier {
       for (final rt in runtimes) {
         if (rt.id == runtimeId) {
           _runtimeName = rt.name;
-          _runtimeVersion = rt.version;
+          _runtimeVersion = rt.displayVersion;
           break;
         }
       }

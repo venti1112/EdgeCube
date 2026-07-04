@@ -8,8 +8,11 @@ class RuntimeInfo {
     required this.type,
     required this.name,
     required this.version,
+    this.versionName,
     required this.description,
     required this.author,
+    this.homepage,
+    this.repository,
     required this.updateUrl,
     required this.minAppVersion,
   });
@@ -17,9 +20,17 @@ class RuntimeInfo {
   final String id;
   final String type;
   final String name;
-  final String version;
+
+  /// 构建版本号（整数，越大越新）。
+  final int version;
+
+  /// 显示用版本号（如日期字符串）；为空时回退到 [version]。
+  final String? versionName;
+
   final String description;
   final String author;
+  final String? homepage;
+  final String? repository;
 
   /// 清单中声明的更新检查地址；为空表示未提供，无法在线检查更新。
   final String updateUrl;
@@ -30,14 +41,20 @@ class RuntimeInfo {
   /// 是否支持在线检查更新（updateUrl 非空）。
   bool get canCheckUpdate => updateUrl.isNotEmpty;
 
+  /// 用于展示的版本字符串：优先 [versionName]，否则 [version]。
+  String get displayVersion => versionName?.isNotEmpty == true ? versionName! : version.toString();
+
   factory RuntimeInfo.fromMap(Map<String, dynamic> m) {
     return RuntimeInfo(
       id: m['id'] as String? ?? '',
       type: m['type'] as String? ?? '',
       name: m['name'] as String? ?? '',
-      version: m['version'] as String? ?? '',
+      version: m['version'] as int? ?? 0,
+      versionName: m['versionName'] as String?,
       description: m['description'] as String? ?? '',
       author: m['author'] as String? ?? '',
+      homepage: m['homepage'] as String?,
+      repository: m['repository'] as String?,
       updateUrl: m['updateUrl'] as String? ?? '',
       minAppVersion: m['minAppVersion'] as int? ?? 0,
     );
@@ -96,10 +113,17 @@ class RuntimeService {
     return running ?? false;
   }
 
-  /// 返回当前设备架构标识符（`arm64` / `arm` / `x86_64`）。
+  /// 返回当前设备架构标识符（`aarch64` / `arm` / `x86_64`）。
   /// 无法识别时返回空串。
   Future<String> getDeviceArch() async {
     final arch = await _method.invokeMethod<String>('deviceArch');
     return arch ?? '';
+  }
+
+  /// 返回下载目录路径（内部存储/Download/EdgeCube）。
+  static Future<String> getDownloadDir() async {
+    final path = await _method.invokeMethod<String>('getDownloadDir');
+    if (path == null) throw Exception('获取下载目录失败');
+    return path;
   }
 }

@@ -33,11 +33,11 @@ class OnlineService extends ChangeNotifier {
       'https://edgecube-api.ventichat.com';
 
   static const List<String> defaultUpdateCheckUrls = [
-    'https://edgecube-files.ventichat.com/updates.json',
+    'https://edgecube-files.ventichat.com/app/updates.json',
   ];
 
   static const List<String> defaultEcpkgCatalogUrls = [
-    'https://edgecube-files.ventichat.com/ecpkg.json',
+    'https://edgecube-files.ventichat.com/ecpkg/list.json',
   ];
 
   // ── 静态单例 ──────────────────────────────────────────────────────

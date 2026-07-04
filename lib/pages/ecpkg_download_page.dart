@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -62,21 +64,15 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
     }
   }
 
-  IconData _typeIcon(String type) {
-    return switch (type) {
-      'jre' => Icons.coffee,
-      'php' => Icons.code,
-      'frpc' => Icons.network_check,
+  /// 将 list.json 中 `icon` 字符串解析为图标，未知值回退到默认。
+  IconData _iconFromName(String? name) {
+    return switch (name) {
+      'coffee' => Icons.coffee,
+      'code' => Icons.code,
+      'wifi' => Icons.wifi,
+      'network' => Icons.network_check,
+      'memory' => Icons.memory,
       _ => Icons.memory,
-    };
-  }
-
-  String _typeLabel(String type) {
-    return switch (type) {
-      'jre' => 'Java',
-      'php' => 'PHP',
-      'frpc' => 'FRP',
-      _ => type,
     };
   }
 
@@ -90,292 +86,161 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
     return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
   }
 
-  Future<void> _downloadEntry(EcpkgCatalogPackage pkg, EcpkgDownloadEntry entry) async {
-    final tr = LocaleScope.of(context).translations;
+  /// 下载并安装：自动匹配当前设备架构，走下载→校验→安装流程。
+  Future<void> _downloadAndInstall(EcpkgCatalogPackage pkg) async {
     final messenger = ScaffoldMessenger.of(context);
-    final urls = entry.urls;
+    final deviceArch = _deviceArch;
 
-    if (!mounted) return;
+    if (deviceArch.isEmpty) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(context.tr('ecpkgDownload.archUnknown'))),
+      );
+      return;
+    }
+
+    // detail 已在加载目录时随 metadata 一起取回
+    final detail = pkg.detail;
+
+    // 自动匹配架构
+    final entry = detail.pickEntry(deviceArch);
+    if (entry == null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(context.tr('ecpkgDownload.noMatchingArch'))),
+      );
+      return;
+    }
 
     // 选择下载源
-    EcpkgDownloadUrl? selectedUrl;
-    if (urls.length == 1) {
-      selectedUrl = urls.first;
-    } else {
-      selectedUrl = await showDialog<EcpkgDownloadUrl>(
-        context: context,
-        builder: (ctx) {
-          var selectedIndex = 0;
-          return StatefulBuilder(
-            builder: (ctx, setState) => AlertDialog(
-              title: Text(tr.get('ecpkgDownload.confirmTitle')),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('${pkg.name} ${pkg.version}'),
-                  if (pkg.description != null && pkg.description!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        pkg.description!,
-                        style: Theme.of(ctx).textTheme.bodySmall,
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  _infoRow(ctx, tr.get('ecpkgDownload.arch'), entry.arch.join(', ')),
-                  if (entry.size != null)
-                    _infoRow(ctx, tr.get('ecpkgDownload.size'), _formatSize(entry.size)),
-                  if (pkg.author != null && pkg.author!.isNotEmpty)
-                    _infoRow(ctx, tr.get('ecpkgDownload.author'), pkg.author!),
-                  if (urls.length > 1) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      tr.get('ecpkgDownload.selectSource'),
-                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    for (var i = 0; i < urls.length; i++) ...[
-                      if (i > 0) const SizedBox(height: 2),
-                      ListTile(
-                        leading: Icon(
-                          selectedIndex == i
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_unchecked,
-                          size: 20,
-                          color: selectedIndex == i
-                              ? Theme.of(ctx).colorScheme.primary
-                              : null,
-                        ),
-                        title: Text(
-                          urls[i].name.isNotEmpty ? urls[i].name : 'Source ${i + 1}',
-                          style: Theme.of(ctx).textTheme.bodySmall,
-                        ),
-                        subtitle: urls[i].extra.isNotEmpty
-                            ? Text(
-                                urls[i].extra,
-                                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                                ),
-                              )
-                            : null,
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        selected: selectedIndex == i,
-                        onTap: () => setState(() => selectedIndex = i),
-                      ),
-                    ],
-                  ],
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: Text(tr.get('common.cancel')),
-                ),
-                if (urls[selectedIndex].isWebPage)
-                  FilledButton.icon(
-                    icon: const Icon(Icons.open_in_new, size: 18),
-                    onPressed: () => Navigator.of(ctx).pop(urls[selectedIndex]),
-                    label: Text(tr.get('ecpkgDownload.openInBrowser')),
-                  )
-                else
-                  FilledButton(
-                    onPressed: () => Navigator.of(ctx).pop(urls[selectedIndex]),
-                    child: Text(tr.get('ecpkgDownload.download')),
-                  ),
-              ],
-            ),
-          );
-        },
-      );
-      if (selectedUrl == null) return;
-    }
+    final url = await _pickDownloadUrl(entry.urls);
+    if (url == null || !mounted) return;
 
-    // web 类型：打开浏览器
-    if (selectedUrl.isWebPage) {
-      await launchUrl(Uri.parse(selectedUrl.url),
-          mode: LaunchMode.externalApplication);
+    // web 类型：交给系统浏览器打开，不走安装流程
+    if (url.isWebPage) {
+      await launchUrl(Uri.parse(url.url), mode: LaunchMode.externalApplication);
       return;
     }
 
-    if (!mounted) return;
-
-    // direct 类型：检查运行时是否在运行
-    final running = await _service.isRuntimeRunning(pkg.id);
-    if (running) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(tr.get('runtime.cannotUpdateRunning'))),
-      );
-      return;
-    }
-
-    if (!mounted) return;
-    final downloadPkg = RuntimeUpdatePackage(
-      key: entry.key,
-      url: selectedUrl.url,
-      sha256: entry.sha256,
-      size: entry.size,
-      arch: entry.arch,
-    );
-    await _doDownload(pkg, downloadPkg);
-  }
-
-  Future<void> _doDownload(
-    EcpkgCatalogPackage pkg,
-    RuntimeUpdatePackage downloadPkg,
-  ) async {
-    final tr = LocaleScope.of(context).translations;
-    final messenger = ScaffoldMessenger.of(context);
-
-    final progressNotifier = ValueNotifier<_DlProgress>(
-      _DlProgress(
-        stage: _DlStage.downloading,
-        received: 0,
-        total: downloadPkg.size,
-      ),
-    );
-    var cancelled = false;
-
-    final dialogFuture = showDialog<void>(
+    await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _DlProgressDialog(
-        progressNotifier: progressNotifier,
-        sizeBytes: downloadPkg.size,
-        onCancel: () => cancelled = true,
-        tr: tr,
+      builder: (_) => _InstallDialog(
+        pkgName: pkg.name,
+        pkgVersion: detail.version,
+        entry: entry,
+        downloadUrl: url,
       ),
     );
-
-    String? downloadedPath;
-    String? error;
-    try {
-      downloadedPath = await RuntimeUpdateService.downloadPackage(
-        downloadPkg,
-        onProgress: (received, total) {
-          progressNotifier.value = _DlProgress(
-            stage: _DlStage.downloading,
-            received: received,
-            total: total ?? downloadPkg.size,
-          );
-        },
-        isCancelled: () => cancelled,
-      );
-    } on CancellationException {
-      // 用户取消，不做处理
-    } catch (e) {
-      error = '$e';
-    }
-
-    if (!mounted) {
-      progressNotifier.dispose();
-      return;
-    }
-
-    if (error != null) {
-      progressNotifier.value = _DlProgress(
-        stage: _DlStage.failed,
-        received: 0,
-        total: downloadPkg.size,
-        error: error,
-      );
-      await dialogFuture;
-      progressNotifier.dispose();
-      if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              tr.get('runtime.update.downloadFailed', {'error': error}),
-            ),
-          ),
-        );
-      }
-      return;
-    }
-
-    if (downloadedPath == null) {
-      progressNotifier.value = _DlProgress(
-        stage: _DlStage.cancelled,
-        received: 0,
-        total: downloadPkg.size,
-      );
-      await dialogFuture;
-      progressNotifier.dispose();
-      if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text(tr.get('runtime.update.cancelled'))),
-        );
-      }
-      return;
-    }
-
-    progressNotifier.value = _DlProgress(
-      stage: _DlStage.installing,
-      received: downloadPkg.size ?? 0,
-      total: downloadPkg.size,
-    );
-
-    try {
-      await _service.importPackage(downloadedPath, force: true);
-      if (!mounted) {
-        progressNotifier.dispose();
-        return;
-      }
-      progressNotifier.value = _DlProgress(
-        stage: _DlStage.done,
-        received: downloadPkg.size ?? 0,
-        total: downloadPkg.size,
-      );
-      await dialogFuture;
-      progressNotifier.dispose();
-      if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text(tr.get('ecpkgDownload.installSuccess'))),
-        );
-      }
-    } catch (e) {
-      if (!mounted) {
-        progressNotifier.dispose();
-        return;
-      }
-      progressNotifier.value = _DlProgress(
-        stage: _DlStage.failed,
-        received: downloadPkg.size ?? 0,
-        total: downloadPkg.size,
-        error: '$e',
-      );
-      await dialogFuture;
-      progressNotifier.dispose();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            tr.get('runtime.update.installFailed', {'error': '$e'}),
-          ),
-        ),
-      );
-    }
   }
 
-  Widget _infoRow(BuildContext context, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 60,
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+  /// 仅下载：弹出架构列表供用户选择，下载到 Download/EdgeCube。
+  Future<void> _downloadOnly(EcpkgCatalogPackage pkg) async {
+    // detail 已在加载目录时随 metadata 一起取回
+    final detail = pkg.detail;
+    final entries = detail.packageEntries;
+    if (entries.isEmpty) return;
+
+    final selected = await showDialog<MapEntry<String, EcpkgDownloadEntry>>(
+      context: context,
+      builder: (ctx) {
+        final keys = entries.keys.toList();
+        return AlertDialog(
+          title: Text(context.tr('ecpkgDownload.selectArch')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final key in keys) ...[
+                if (keys.indexOf(key) > 0) const Divider(height: 1),
+                ListTile(
+                  title: Text(switch (key) {
+                    'multi' => context.tr('ecpkgDownload.entryMulti'),
+                    _ => key,
+                  }),
+                  subtitle: Text(
+                    '${entries[key]!.arch.join(', ')} · ${_formatSize(entries[key]!.size)}',
+                    style: Theme.of(ctx).textTheme.bodySmall,
                   ),
-            ),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  onTap: () => Navigator.of(ctx).pop(
+                    MapEntry(key, entries[key]!),
+                  ),
+                ),
+              ],
+            ],
           ),
-          Expanded(child: Text(value, style: Theme.of(context).textTheme.bodySmall)),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(context.tr('common.cancel')),
+            ),
+          ],
+        );
+      },
+    );
+    if (selected == null || !mounted) return;
+
+    // 选择下载源
+    final dlUrl = await _pickDownloadUrl(selected.value.urls);
+    if (dlUrl == null || !mounted) return;
+
+    // web 类型：交给系统浏览器打开，不写入本地
+    if (dlUrl.isWebPage) {
+      await launchUrl(Uri.parse(dlUrl.url), mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    // 准备目录
+    String dirPath;
+    try {
+      dirPath = await RuntimeService.getDownloadDir();
+    } catch (_) {
+      dirPath = (await Directory.systemTemp.createTemp()).path;
+    }
+    final dir = Directory(dirPath);
+    if (!await dir.exists()) await dir.create(recursive: true);
+
+    // 文件名冲突处理，使用 detail.version
+    var fileName = '${pkg.id}-${selected.key}.ecpkg';
+    var counter = 1;
+    while (await File('${dir.path}/$fileName').exists()) {
+      fileName = '${pkg.id}-${selected.key}($counter).ecpkg';
+      counter++;
+    }
+    final targetPath = '${dir.path}/$fileName';
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _DownloadOnlyDialog(
+        pkgName: pkg.name,
+        pkgVersion: detail.version,
+        entryKey: selected.key,
+        dlUrl: dlUrl,
+        sha256: selected.value.sha256,
+        size: selected.value.size,
+        arch: selected.value.arch,
+        targetPath: targetPath,
+      ),
+    );
+  }
+
+  /// 弹出下载源选择对话框；返回用户选中的 [EcpkgDownloadUrl]，取消则 null。
+  /// 默认预选第一个 direct 类型（与更新对话框行为一致）。
+  Future<EcpkgDownloadUrl?> _pickDownloadUrl(
+    List<EcpkgDownloadUrl> urls,
+  ) async {
+    if (urls.isEmpty) return null;
+    if (urls.length == 1) return urls.first;
+
+    final defaultIndex = urls.indexWhere((u) => u.isDirect);
+    final preselect = defaultIndex >= 0 ? defaultIndex : 0;
+
+    return showDialog<EcpkgDownloadUrl>(
+      context: context,
+      builder: (ctx) => _DownloadSourceDialog(
+        urls: urls,
+        initialIndex: preselect,
       ),
     );
   }
@@ -395,7 +260,7 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
                 tabAlignment: TabAlignment.start,
                 tabs: [
                   for (final cat in _catalog!.categories)
-                    Tab(text: _typeLabel(cat.type)),
+                    Tab(text: cat.nameKey),
                 ],
               ),
       ),
@@ -427,25 +292,379 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
           for (final cat in catalog.categories)
             _CategoryView(
               category: cat,
-              typeIcon: _typeIcon(cat.type),
-              typeLabel: _typeLabel(cat.type),
-              formatSize: _formatSize,
-              deviceArch: _deviceArch,
-              onDownloadEntry: _downloadEntry,
+              typeIcon: _iconFromName(cat.icon),
+              onDownloadAndInstall: _downloadAndInstall,
+              onDownloadOnly: _downloadOnly,
             ),
         ],
       );
     }
 
-    // 只有一个分类时不显示 TabBar
     final cat = catalog.categories.first;
     return _CategoryView(
       category: cat,
-      typeIcon: _typeIcon(cat.type),
-      typeLabel: _typeLabel(cat.type),
-      formatSize: _formatSize,
-      deviceArch: _deviceArch,
-      onDownloadEntry: _downloadEntry,
+      typeIcon: _iconFromName(cat.icon),
+      onDownloadAndInstall: _downloadAndInstall,
+      onDownloadOnly: _downloadOnly,
+    );
+  }
+}
+
+// ── 仅下载对话框（下载进度）────────────────────────────────────────────
+
+class _DownloadOnlyDialog extends StatefulWidget {
+  const _DownloadOnlyDialog({
+    required this.pkgName,
+    required this.pkgVersion,
+    required this.entryKey,
+    required this.dlUrl,
+    required this.sha256,
+    required this.size,
+    required this.arch,
+    required this.targetPath,
+  });
+
+  final String pkgName;
+  final String pkgVersion;
+  final String entryKey;
+  final EcpkgDownloadUrl dlUrl;
+  final String sha256;
+  final int? size;
+  final List<String> arch;
+  final String targetPath;
+
+  @override
+  State<_DownloadOnlyDialog> createState() => _DownloadOnlyDialogState();
+}
+
+class _DownloadOnlyDialogState extends State<_DownloadOnlyDialog> {
+  bool _done = false;
+  String? _error;
+  double? _progress;
+  String _stage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _start();
+  }
+
+  Future<void> _start() async {
+    final tr = context.tr;
+
+    setState(() { _stage = tr('runtime.update.downloading'); _progress = null; });
+
+    try {
+      final tempPath = await RuntimeUpdateService.downloadPackage(
+        RuntimeUpdatePackage(
+          key: widget.entryKey,
+          url: widget.dlUrl.url,
+          sha256: widget.sha256,
+          size: widget.size,
+          arch: widget.arch,
+        ),
+        onProgress: (received, total) {
+          if (total != null && total > 0) {
+            setState(() => _progress = received / total);
+          }
+        },
+      );
+      if (!mounted) return;
+
+      setState(() { _stage = tr('ecpkgDownload.copying'); _progress = null; });
+      await File(tempPath).copy(widget.targetPath);
+      try {
+        await File(tempPath).delete();
+      } catch (_) {}
+      if (!mounted) return;
+
+      setState(() { _done = true; _stage = ''; });
+    } on HashMismatchException {
+      if (!mounted) return;
+      setState(() { _error = context.tr('update.sha256Mismatch'); });
+    } on CancellationException {
+      if (!mounted) return;
+      setState(() { _error = context.tr('runtime.update.cancelled'); });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _error = '$e'; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Expanded(child: Text(_done
+            ? context.tr('ecpkgDownload.downloadSuccess')
+            : _error != null
+              ? context.tr('runtime.update.failedTitle')
+              : context.tr('ecpkgDownload.downloadingTitle'))),
+          if (_done)
+            Icon(Icons.check_circle, color: cs.primary, size: 24),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${widget.pkgName} ${widget.pkgVersion}'),
+          if (_done) ...[
+            const SizedBox(height: 8),
+            Text(
+              widget.targetPath,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ],
+          if (_progress != null && _stage.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            LinearProgressIndicator(value: _progress),
+            const SizedBox(height: 8),
+            Text(
+              '${(_progress! * 100).toStringAsFixed(0)}% · $_stage',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+          if (_stage.isNotEmpty && _progress == null) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                SizedBox(
+                  width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 12),
+                Text(_stage),
+              ],
+            ),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(_error!, style: TextStyle(color: cs.error)),
+          ],
+        ],
+      ),
+      actions: [
+        if (_done || _error != null)
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(context.tr('common.close')),
+          ),
+      ],
+    );
+  }
+}
+
+// ── 安装对话框（下载+安装进度）───────────────────────────────────────
+
+class _InstallDialog extends StatefulWidget {
+  const _InstallDialog({
+    required this.pkgName,
+    required this.pkgVersion,
+    required this.entry,
+    required this.downloadUrl,
+  });
+
+  final String pkgName;
+  final String pkgVersion;
+  final EcpkgDownloadEntry entry;
+  final EcpkgDownloadUrl downloadUrl;
+
+  @override
+  State<_InstallDialog> createState() => _InstallDialogState();
+}
+
+class _InstallDialogState extends State<_InstallDialog> {
+  static const _service = RuntimeService();
+  bool _done = false;
+  String? _error;
+  double? _progress;
+  String _stage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _start();
+  }
+
+  Future<void> _start() async {
+    final tr = context.tr;
+
+    setState(() { _stage = tr('runtime.update.downloading'); _progress = null; });
+
+    try {
+      final dlPkg = RuntimeUpdatePackage(
+        key: widget.entry.key,
+        url: widget.downloadUrl.url,
+        sha256: widget.entry.sha256,
+        size: widget.entry.size,
+        arch: widget.entry.arch,
+      );
+
+      final path = await RuntimeUpdateService.downloadPackage(
+        dlPkg,
+        onProgress: (received, total) {
+          if (total != null && total > 0) {
+            setState(() => _progress = received / total);
+          }
+        },
+      );
+      if (!mounted) return;
+
+      setState(() { _stage = tr('runtime.update.installing'); _progress = null; });
+      await _service.importPackage(path, force: true);
+      if (!mounted) return;
+
+      setState(() { _done = true; _stage = ''; });
+    } on HashMismatchException {
+      if (!mounted) return;
+      setState(() { _error = tr('update.sha256Mismatch'); });
+    } on CancellationException {
+      if (!mounted) return;
+      setState(() { _error = tr('runtime.update.cancelled'); });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _error = '$e'; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Expanded(child: Text(_done
+            ? context.tr('ecpkgDownload.installSuccess')
+            : _error != null
+              ? context.tr('runtime.update.failedTitle')
+              : context.tr('ecpkgDownload.confirmTitle'))),
+          if (_done)
+            Icon(Icons.check_circle, color: cs.primary, size: 24),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${widget.pkgName} ${widget.pkgVersion}'),
+          if (_progress != null && _stage.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            LinearProgressIndicator(value: _progress),
+            const SizedBox(height: 8),
+            Text(
+              '${(_progress! * 100).toStringAsFixed(0)}% · $_stage',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+          if (_stage.isNotEmpty && _progress == null) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                SizedBox(
+                  width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 12),
+                Text(_stage),
+              ],
+            ),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(_error!, style: TextStyle(color: cs.error)),
+          ],
+        ],
+      ),
+      actions: [
+        if (_done || _error != null)
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(context.tr('common.close')),
+          ),
+      ],
+    );
+  }
+}
+
+// ── 下载源选择对话框 ──────────────────────────────────────────────────
+
+class _DownloadSourceDialog extends StatefulWidget {
+  const _DownloadSourceDialog({
+    required this.urls,
+    required this.initialIndex,
+  });
+
+  final List<EcpkgDownloadUrl> urls;
+  final int initialIndex;
+
+  @override
+  State<_DownloadSourceDialog> createState() => _DownloadSourceDialogState();
+}
+
+class _DownloadSourceDialogState extends State<_DownloadSourceDialog> {
+  late int _selected = widget.initialIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tr = context.tr;
+
+    return AlertDialog(
+      title: Text(tr('ecpkgDownload.selectSource')),
+      content: RadioGroup<int>(
+        groupValue: _selected,
+        onChanged: (v) {
+          if (v != null) setState(() => _selected = v);
+        },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < widget.urls.length; i++) ...[
+              if (i > 0) const Divider(height: 1),
+              RadioListTile<int>(
+                value: i,
+                title: Text(widget.urls[i].name.isEmpty
+                    ? widget.urls[i].url
+                    : widget.urls[i].name),
+                subtitle: widget.urls[i].extra.isEmpty
+                    ? null
+                    : Text(
+                        widget.urls[i].extra,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                secondary: Icon(
+                  widget.urls[i].isDirect
+                      ? Icons.cloud_download
+                      : Icons.open_in_browser,
+                  size: 22,
+                ),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(tr('common.cancel')),
+        ),
+        FilledButton(
+          onPressed: () =>
+              Navigator.of(context).pop(widget.urls[_selected]),
+          child: Text(tr('ecpkgDownload.download')),
+        ),
+      ],
     );
   }
 }
@@ -454,18 +673,14 @@ class _CategoryView extends StatelessWidget {
   const _CategoryView({
     required this.category,
     required this.typeIcon,
-    required this.typeLabel,
-    required this.formatSize,
-    required this.deviceArch,
-    required this.onDownloadEntry,
+    required this.onDownloadAndInstall,
+    required this.onDownloadOnly,
   });
 
   final EcpkgCategory category;
   final IconData typeIcon;
-  final String typeLabel;
-  final String Function(int? bytes) formatSize;
-  final String deviceArch;
-  final void Function(EcpkgCatalogPackage pkg, EcpkgDownloadEntry entry) onDownloadEntry;
+  final void Function(EcpkgCatalogPackage pkg) onDownloadAndInstall;
+  final void Function(EcpkgCatalogPackage pkg) onDownloadOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -484,6 +699,10 @@ class _CategoryView extends StatelessWidget {
       itemCount: packages.length,
       itemBuilder: (_, i) {
         final pkg = packages[i];
+        final versionStr = tr('runtime.versionWithBuild', {
+          'version': pkg.detail.version,
+          'build': pkg.detail.buildVersion.toString(),
+        });
 
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
@@ -506,12 +725,11 @@ class _CategoryView extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 2),
                           Text(
-                            pkg.version,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
+                            versionStr,
+                            style: theme.textTheme.bodySmall,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
@@ -531,16 +749,71 @@ class _CategoryView extends StatelessWidget {
                 if (pkg.author != null && pkg.author!.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: _chip(theme, pkg.author!),
-                  ),
-                if (pkg.arch.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: _chip(theme, pkg.arch.join(', ')),
+                    child: Text(
+                      tr('ecpkgDownload.author', {'author': pkg.author!}),
+                      style: theme.textTheme.bodySmall,
+                    ),
                   ),
                 const SizedBox(height: 12),
-                for (final entry in pkg.packageEntries.entries)
-                  _entryRow(theme, tr, pkg, entry.key, entry.value),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => onDownloadAndInstall(pkg),
+                        icon: const Icon(Icons.download_for_offline, size: 18),
+                        label: Text(tr('ecpkgDownload.downloadAndInstall')),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    PopupMenuButton<String>(
+                      tooltip: tr('runtime.more'),
+                      icon: const Icon(Icons.more_vert),
+                      onSelected: (action) {
+                        if (action == 'downloadOnly') {
+                          onDownloadOnly(pkg);
+                        } else if (action == 'homepage') {
+                          launchUrl(Uri.parse(pkg.homepage!),
+                              mode: LaunchMode.externalApplication);
+                        } else if (action == 'repository') {
+                          launchUrl(Uri.parse(pkg.repository!),
+                              mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      itemBuilder: (ctx) => [
+                        PopupMenuItem(
+                          value: 'downloadOnly',
+                          child: ListTile(
+                            leading: const Icon(Icons.download, size: 22),
+                            title: Text(ctx.tr('ecpkgDownload.downloadOnly')),
+                            contentPadding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                        if (pkg.homepage != null && pkg.homepage!.isNotEmpty)
+                          PopupMenuItem(
+                            value: 'homepage',
+                            child: ListTile(
+                              leading: const Icon(Icons.home_outlined),
+                              title: Text(ctx.tr('runtime.openHomepage')),
+                              contentPadding: EdgeInsets.zero,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        if (pkg.repository != null &&
+                            pkg.repository!.isNotEmpty)
+                          PopupMenuItem(
+                            value: 'repository',
+                            child: ListTile(
+                              leading: const Icon(Icons.code),
+                              title: Text(ctx.tr('runtime.openRepository')),
+                              contentPadding: EdgeInsets.zero,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -549,88 +822,6 @@ class _CategoryView extends StatelessWidget {
     );
   }
 
-  Widget _entryRow(
-    ThemeData theme,
-    dynamic tr,
-    EcpkgCatalogPackage pkg,
-    String key,
-    EcpkgDownloadEntry entry,
-  ) {
-    final supportsDevice = deviceArch.isNotEmpty && entry.arch.contains(deviceArch);
-    final keyLabel = switch (key) {
-      'multi' => tr('ecpkgDownload.entryMulti'),
-      _ => key,
-    };
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 56,
-            child: Text(
-              keyLabel,
-              style: theme.textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          if (entry.size != null) ...[
-            const SizedBox(width: 8),
-            Text(
-              formatSize(entry.size),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-          const SizedBox(width: 8),
-          Icon(
-            supportsDevice ? Icons.check_circle : Icons.cancel,
-            size: 14,
-            color: supportsDevice
-                ? theme.colorScheme.primary
-                : theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              supportsDevice
-                  ? tr('ecpkgDownload.supported')
-                  : tr('ecpkgDownload.unsupported'),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: supportsDevice
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: () => onDownloadEntry(pkg, entry),
-            icon: const Icon(Icons.download, size: 16),
-            label: Text(tr('ecpkgDownload.download')),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _chip(ThemeData theme, String label) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          label,
-          style: theme.textTheme.labelSmall,
-        ),
-      ),
-    );
-  }
 }
 
 class _ErrorBody extends StatelessWidget {
@@ -674,136 +865,6 @@ class _ErrorBody extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-enum _DlStage { downloading, installing, done, failed, cancelled }
-
-class _DlProgress {
-  const _DlProgress({
-    required this.stage,
-    required this.received,
-    required this.total,
-    this.error,
-  });
-
-  final _DlStage stage;
-  final int received;
-  final int? total;
-  final String? error;
-
-  int? get percent {
-    final t = total;
-    if (t == null || t <= 0) return null;
-    return (received * 100 ~/ t).clamp(0, 100);
-  }
-}
-
-class _DlProgressDialog extends StatelessWidget {
-  const _DlProgressDialog({
-    required this.progressNotifier,
-    required this.sizeBytes,
-    required this.onCancel,
-    required this.tr,
-  });
-
-  final ValueNotifier<_DlProgress> progressNotifier;
-  final int? sizeBytes;
-  final VoidCallback onCancel;
-  final dynamic tr;
-
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<_DlProgress>(
-      valueListenable: progressNotifier,
-      builder: (ctx, progress, _) {
-        final stage = progress.stage;
-        final canCancel = stage == _DlStage.downloading;
-        final isTerminal = stage == _DlStage.done ||
-            stage == _DlStage.failed ||
-            stage == _DlStage.cancelled;
-
-        String title;
-        String? message;
-        switch (stage) {
-          case _DlStage.downloading:
-            title = tr.get('runtime.update.downloading');
-            break;
-          case _DlStage.installing:
-            title = tr.get('runtime.update.installing');
-            break;
-          case _DlStage.done:
-            title = tr.get('runtime.update.doneTitle');
-            break;
-          case _DlStage.failed:
-            title = tr.get('runtime.update.failedTitle');
-            message = progress.error;
-            break;
-          case _DlStage.cancelled:
-            title = tr.get('runtime.update.cancelledTitle');
-            break;
-        }
-
-        return PopScope(
-          canPop: false,
-          child: AlertDialog(
-            title: Text(title),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (stage == _DlStage.downloading ||
-                    stage == _DlStage.installing)
-                  LinearProgressIndicator(
-                    value: progress.percent != null
-                        ? progress.percent! / 100.0
-                        : null,
-                  ),
-                if (stage == _DlStage.downloading &&
-                    progress.percent != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    '${progress.percent}% · ${_formatBytes(progress.received)} / ${progress.total != null ? _formatBytes(progress.total!) : '?'}',
-                    style: Theme.of(ctx).textTheme.bodySmall,
-                  ),
-                ],
-                if (message != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    message,
-                    style: TextStyle(
-                      color: Theme.of(ctx).colorScheme.error,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            actions: [
-              if (canCancel)
-                TextButton(
-                  onPressed: onCancel,
-                  child: Text(tr.get('common.cancel')),
-                ),
-              if (isTerminal)
-                FilledButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: Text(tr.get('common.close')),
-                ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

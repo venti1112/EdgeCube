@@ -782,7 +782,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
     }
 
     final runtimeNames = <String, String>{
-      for (final r in _frpcRuntimes) r.id: '${r.name} (${r.version})',
+      for (final r in _frpcRuntimes) r.id: '${r.name} (${r.displayVersion})',
     };
 
     return DropdownButtonFormField<String>(

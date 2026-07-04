@@ -9,6 +9,10 @@ import 'package:path_provider/path_provider.dart';
 import 'runtime_service.dart';
 
 /// `updateUrl` 响应中的单个下载包条目。
+///
+/// 新格式下，metadata 的 `packages[key]` 含 `urls` 数组（多个下载源）。
+/// 这里在解析时自动选取第一个 `direct` 类型 URL，对外只暴露单个 [url]，
+/// 供 [RuntimeUpdateService.downloadPackage] 直接使用。
 class RuntimeUpdatePackage {
   const RuntimeUpdatePackage({
     required this.key,
@@ -18,7 +22,7 @@ class RuntimeUpdatePackage {
     required this.arch,
   });
 
-  /// 在 `packages` 对象中的 key：`multi` / `arm64` / `arm` / `x86_64`。
+  /// 在 `packages` 对象中的 key：`multi` / `aarch64` / `arm` / `x86_64`。
   final String key;
 
   final String url;
@@ -29,9 +33,19 @@ class RuntimeUpdatePackage {
   final List<String> arch;
 
   factory RuntimeUpdatePackage.fromJson(String key, Map<String, dynamic> json) {
+    // 从 urls 数组中选取第一个 direct 类型，回退到第一个。
+    final urls = (json['urls'] as List? ?? []).cast<Map<String, dynamic>>();
+    String url = '';
+    if (urls.isNotEmpty) {
+      final direct = urls.firstWhere(
+        (u) => u['type'] != 'web',
+        orElse: () => urls.first,
+      );
+      url = direct['url'] as String? ?? '';
+    }
     return RuntimeUpdatePackage(
       key: key,
-      url: json['url'] as String,
+      url: url,
       sha256: json['sha256'] as String,
       size: json['size'] as int?,
       arch: (json['arch'] as List? ?? []).map((e) => e as String).toList(),
@@ -39,25 +53,38 @@ class RuntimeUpdatePackage {
   }
 }
 
-/// `updateUrl` 响应模型，对应 ecpkg-spec §4.7。
+/// `updateUrl` 响应模型。
+///
+/// 新格式下，`updateUrl` 指向与 ecpkg 下载中心 metadata 相同的 JSON：
+/// 顶层对象含 `id` / `version`(int) / `versionName` / `packages` 等字段，
+/// 无 `{code,data}` 外壳，无 `formatVersion` / `latestVersion`。
 class RuntimeUpdateInfo {
   const RuntimeUpdateInfo({
-    required this.formatVersion,
     required this.id,
-    required this.latestVersion,
+    required this.version,
+    this.versionName,
     this.minAppVersion,
     this.publishedAt,
     this.releaseNotes,
     this.packages = const {},
   });
 
-  final int formatVersion;
   final String id;
-  final String latestVersion;
+
+  /// 构建版本号（整数，越大越新）。
+  final int version;
+
+  /// 显示用版本号；为空时回退到 [version]。
+  final String? versionName;
+
   final int? minAppVersion;
   final String? publishedAt;
   final String? releaseNotes;
   final Map<String, RuntimeUpdatePackage> packages;
+
+  /// 用于展示的版本字符串。
+  String get displayVersion =>
+      versionName?.isNotEmpty == true ? versionName! : version.toString();
 
   factory RuntimeUpdateInfo.fromJson(Map<String, dynamic> json) {
     final packages = <String, RuntimeUpdatePackage>{};
@@ -71,9 +98,9 @@ class RuntimeUpdateInfo {
       }
     }
     return RuntimeUpdateInfo(
-      formatVersion: json['formatVersion'] as int? ?? 1,
       id: json['id'] as String,
-      latestVersion: json['latestVersion'] as String,
+      version: json['version'] as int,
+      versionName: json['versionName'] as String?,
       minAppVersion: json['minAppVersion'] as int?,
       publishedAt: json['publishedAt'] as String?,
       releaseNotes: json['releaseNotes'] as String?,
@@ -84,9 +111,9 @@ class RuntimeUpdateInfo {
 
 /// 检查与下载运行时包更新的服务。
 ///
-/// 流程遵循 ecpkg-spec §4.7：
-/// 1. 请求 `updateUrl` 获取 [RuntimeUpdateInfo]
-/// 2. 比较 `latestVersion` 与本地 `version`（字符串不等即视为有更新）
+/// 流程：
+/// 1. 请求 `updateUrl` 获取 [RuntimeUpdateInfo]（新 metadata 格式）
+/// 2. 比较 `version`（整数构建版本号）：远端 > 本地即视为有更新
 /// 3. 优先下载当前设备架构对应的单架构包，回退到 `multi` 包
 /// 4. 下载后校验 SHA-256，校验通过则交由 [RuntimeService.importPackage] 安装
 class RuntimeUpdateService {
@@ -116,14 +143,15 @@ class RuntimeUpdateService {
 
   /// 判断 [info] 相对于 [runtime] 是否表示有新版本。
   ///
-  /// 不做语义化比较——`latestVersion` 与本地 `version` 字符串不等即视为可更新。
+  /// 比较整数构建版本号 [RuntimeUpdateInfo.version] 与 [RuntimeInfo.version]，
+  /// 远端 > 本地即视为可更新。
   static bool hasUpdate(RuntimeInfo runtime, RuntimeUpdateInfo info) {
-    return info.latestVersion != runtime.version;
+    return info.version > runtime.version;
   }
 
   /// 根据设备架构从 [info.packages] 中选取最优下载包。
   ///
-  /// 选择顺序（遵循 spec §4.7）：
+  /// 选择顺序：
   /// 1. `packages[deviceArch]`（单架构包，体积更小）
   /// 2. `packages.multi`（多架构包，需其 `arch` 含当前设备架构）
   /// 3. 任何其他 `arch` 含当前设备架构的包

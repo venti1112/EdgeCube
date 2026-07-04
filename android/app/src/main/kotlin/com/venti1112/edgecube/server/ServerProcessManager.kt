@@ -169,6 +169,25 @@ class ServerProcessManager private constructor(private val appContext: Context) 
             if (lock.exists()) lock.delete()
         }
 
+        // 清理 PMMP 的 phar 解压缓存目录：PMMP 的 server-phar-stub.php 在
+        // sys_get_temp_dir()（= appContext.cacheDir）下创建
+        // PocketMine-MP-phar-cache.N 目录存放解压后的 phar。FUSE 文件系统上
+        // is_dir() 可能因缓存延迟返回错误结果，导致 stub 的 mkdir 容错判断失败
+        // （mkdir 返回 false && is_dir 返回 false → 抛 RuntimeException）。
+        // 启动前清空这些缓存目录，让 PMMP 干净创建。
+        if (runtime == "php") {
+            val cacheDir = appContext.cacheDir
+            cacheDir.listFiles { f -> f.name.startsWith("PocketMine-MP-phar-cache.") }
+                ?.forEach { dir ->
+                    if (dir.isDirectory) {
+                        dir.listFiles()?.forEach { it.delete() }
+                        dir.delete()
+                    } else {
+                        dir.delete()
+                    }
+                }
+        }
+
         val nativeDir = appContext.applicationInfo.nativeLibraryDir
         // LD_PRELOAD 标签修复库：拦截 malloc/free 恢复指针标签再释放，解决 Android 15+ MTE 崩溃
         val tagfixLib = "$nativeDir/libtagfix.so"

@@ -20,7 +20,8 @@ data class EcManifest(
     val type: String,
     val id: String,
     val name: String,
-    val version: String,
+    val version: Int,
+    val versionName: String?,
     val description: String?,
     val author: String?,
     val homepage: String?,
@@ -60,7 +61,8 @@ object EcPackage {
         }
 
         val name = root.getString("name")
-        val version = root.getString("version")
+        val version = root.getInt("version")
+        val versionName = root.optString("versionName").takeIf { it.isNotEmpty() }
 
         val archObj = root.getJSONObject("arch")
         val arch = mutableMapOf<String, EcManifest.ArchEntry>()
@@ -108,6 +110,7 @@ object EcPackage {
             id = id,
             name = name,
             version = version,
+            versionName = versionName,
             description = root.optString("description").takeIf { it.isNotEmpty() },
             author = root.optString("author").takeIf { it.isNotEmpty() },
             homepage = root.optString("homepage").takeIf { it.isNotEmpty() },
@@ -128,7 +131,7 @@ object EcPackage {
     fun pickArchDir(context: Context, manifest: EcManifest): String? {
         for (abi in Build.SUPPORTED_ABIS) {
             val key = when (abi) {
-                "arm64-v8a" -> "arm64"
+                "arm64-v8a" -> "aarch64"
                 "armeabi-v7a" -> "arm"
                 "x86_64" -> "x86_64"
                 else -> continue

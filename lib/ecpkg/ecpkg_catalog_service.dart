@@ -4,46 +4,87 @@ import 'package:http/http.dart' as http;
 
 import '../online/cloud_headers.dart';
 import '../online/online_service.dart';
-import '../server/runtime_update_service.dart';
 
+/// 目录中的一个包：元数据 + 已随 metadata 一起加载的下载详情。
+///
+/// 新格式下，list.json 中每个分类的 `packages` 是一组 metadata JSON 的 URL；
+/// 拉取这些 URL 即得到含全部字段（id/name/version/packages 等）的对象，
+/// 因此 [EcpkgCatalogPackage] 同时持有摘要信息与 [detail]。
 class EcpkgCatalogPackage {
   const EcpkgCatalogPackage({
     required this.id,
     required this.type,
     required this.name,
-    required this.version,
-    required this.arch,
     this.description,
     this.author,
     this.homepage,
     this.repository,
     this.minAppVersion,
-    this.updateUrl,
-    this.publishedAt,
-    this.releaseNotes,
-    this.packageEntries = const {},
+    required this.detailUrl,
+    required this.detail,
   });
 
   final String id;
   final String type;
   final String name;
-  final String version;
   final String? description;
   final String? author;
   final String? homepage;
   final String? repository;
   final int? minAppVersion;
-  final String? updateUrl;
-  final String? publishedAt;
-  final String? releaseNotes;
+
+  /// 该包 metadata JSON 的来源 URL。
+  final String detailUrl;
+
+  /// 已随 metadata 一起加载的下载详情。
+  final EcpkgPackageDetail detail;
+
+  factory EcpkgCatalogPackage.fromDetailJson(
+    String detailUrl,
+    Map<String, dynamic> json,
+  ) {
+    return EcpkgCatalogPackage(
+      id: json['id'] as String? ?? '',
+      type: json['type'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      description: json['description'] as String?,
+      author: json['author'] as String?,
+      homepage: json['homepage'] as String?,
+      repository: json['repository'] as String?,
+      minAppVersion: json['minAppVersion'] as int?,
+      detailUrl: detailUrl,
+      detail: EcpkgPackageDetail.fromJson(json),
+    );
+  }
+}
+
+/// 包的下载详情：显示版本、架构并集、各架构下载条目。
+class EcpkgPackageDetail {
+  const EcpkgPackageDetail({
+    required this.version,
+    required this.buildVersion,
+    required this.arch,
+    required this.packageEntries,
+    this.publishedAt,
+    this.releaseNotes,
+  });
+
+  /// 显示用版本号（取自 metadata 中的 `versionName`）。
+  final String version;
+
+  /// 构建版本号（取自 metadata 中的 `version`，整数）。
+  final int buildVersion;
 
   /// 该包所有下载条目支持的架构并集（去重排序）。
   final List<String> arch;
 
-  /// key: `multi` / `arm64` / `arm` / `x86_64`，与 spec §4.7 一致。
+  /// key: `multi` / `aarch64` / `arm` / `x86_64`。
   final Map<String, EcpkgDownloadEntry> packageEntries;
 
-  factory EcpkgCatalogPackage.fromJson(Map<String, dynamic> json) {
+  final String? publishedAt;
+  final String? releaseNotes;
+
+  factory EcpkgPackageDetail.fromJson(Map<String, dynamic> json) {
     final packagesObj = json['packages'] as Map<String, dynamic>?;
     final entries = <String, EcpkgDownloadEntry>{};
     if (packagesObj != null) {
@@ -59,71 +100,24 @@ class EcpkgCatalogPackage {
       archSet.addAll(e.arch);
     }
     final archList = archSet.toList()..sort();
-    return EcpkgCatalogPackage(
-      id: json['id'] as String,
-      type: json['type'] as String,
-      name: json['name'] as String,
-      version: json['version'] as String,
+    return EcpkgPackageDetail(
+      version: json['versionName'] as String? ?? '',
+      buildVersion: json['version'] as int? ?? 0,
       arch: archList,
-      description: json['description'] as String?,
-      author: json['author'] as String?,
-      homepage: json['homepage'] as String?,
-      repository: json['repository'] as String?,
-      minAppVersion: json['minAppVersion'] as int?,
-      updateUrl: json['updateUrl'] as String?,
+      packageEntries: entries,
       publishedAt: json['publishedAt'] as String?,
       releaseNotes: json['releaseNotes'] as String?,
-      packageEntries: entries,
     );
   }
 
-  /// 转换为 [RuntimeUpdatePackage]，供下载流程复用。
-  RuntimeUpdatePackage? toUpdatePackage(String arch) {
-    final entry = packageEntries[arch] ??
-        packageEntries['multi'] ??
-        packageEntries.values.firstOrNull;
-    if (entry == null) return null;
-    return RuntimeUpdatePackage(
-      key: arch,
-      url: entry.urls.first.url,
-      sha256: entry.sha256,
-      size: entry.size,
-      arch: entry.arch,
-    );
-  }
-
-  /// 获取当前设备架构的最佳下载包。
-  RuntimeUpdatePackage? pickPackage(String deviceArch) {
+  /// 优先单架构包，其次 multi 包，最后任意含当前架构的包。
+  EcpkgDownloadEntry? pickEntry(String deviceArch) {
     final single = packageEntries[deviceArch];
-    if (single != null) {
-      return RuntimeUpdatePackage(
-        key: deviceArch,
-        url: single.urls.first.url,
-        sha256: single.sha256,
-        size: single.size,
-        arch: single.arch,
-      );
-    }
+    if (single != null) return single;
     final multi = packageEntries['multi'];
-    if (multi != null && multi.arch.contains(deviceArch)) {
-      return RuntimeUpdatePackage(
-        key: 'multi',
-        url: multi.urls.first.url,
-        sha256: multi.sha256,
-        size: multi.size,
-        arch: multi.arch,
-      );
-    }
+    if (multi != null && multi.arch.contains(deviceArch)) return multi;
     for (final entry in packageEntries.values) {
-      if (entry.arch.contains(deviceArch)) {
-        return RuntimeUpdatePackage(
-          key: entry.key,
-          url: entry.urls.first.url,
-          sha256: entry.sha256,
-          size: entry.size,
-          arch: entry.arch,
-        );
-      }
+      if (entry.arch.contains(deviceArch)) return entry;
     }
     return null;
   }
@@ -205,42 +199,12 @@ class EcpkgCategory {
   final String? icon;
   final String? description;
   final List<EcpkgCatalogPackage> packages;
-
-  factory EcpkgCategory.fromJson(Map<String, dynamic> json) {
-    final list = (json['packages'] as List? ?? []);
-    return EcpkgCategory(
-      type: json['type'] as String,
-      nameKey: json['nameKey'] as String? ?? json['type'] as String,
-      icon: json['icon'] as String?,
-      description: json['description'] as String?,
-      packages: list
-          .map((e) => EcpkgCatalogPackage.fromJson(e as Map<String, dynamic>))
-          .toList(),
-    );
-  }
 }
 
 class EcpkgCatalog {
-  const EcpkgCatalog({
-    required this.categories,
-    this.total,
-    this.updatedAt,
-  });
+  const EcpkgCatalog({required this.categories});
 
   final List<EcpkgCategory> categories;
-  final int? total;
-  final String? updatedAt;
-
-  factory EcpkgCatalog.fromJson(Map<String, dynamic> json) {
-    final list = (json['categories'] as List? ?? []);
-    return EcpkgCatalog(
-      categories: list
-          .map((e) => EcpkgCategory.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      total: json['total'] as int?,
-      updatedAt: json['updatedAt'] as String?,
-    );
-  }
 
   List<EcpkgCatalogPackage> get allPackages =>
       categories.expand((c) => c.packages).toList();
@@ -249,11 +213,21 @@ class EcpkgCatalog {
 class EcpkgCatalogService {
   EcpkgCatalogService._();
 
+  /// 拉取目录列表并并行加载每个包的 metadata，组装成 [EcpkgCatalog]。
+  ///
+  /// list.json 为顶层数组，每项形如：
+  /// ```json
+  /// { "type": "java", "nameKey": "Java", "icon": "coffee",
+  ///   "packages": ["https://.../jre17.json", ...] }
+  /// ```
+  /// 每个 packages URL 指向的 metadata JSON 为顶层对象（无 `{code,data}` 包裹），
+  /// 同时包含元数据与 `packages` 下载条目映射。
   static Future<EcpkgCatalog> fetchCatalog() async {
     final urls = OnlineService.instance.ecpkgCatalogUrls;
     final headers = await CloudHeaders.base();
 
-    return OnlineService.fetchFirstValid<EcpkgCatalog>(
+    // 1. 拉取 list.json（顶层数组），取第一个有效响应。
+    final rawList = await OnlineService.fetchFirstValid<List<dynamic>>(
       urls,
       (url) async {
         final uri = Uri.parse(url);
@@ -263,18 +237,90 @@ class EcpkgCatalogService {
         if (response.statusCode != 200) {
           throw Exception('HTTP ${response.statusCode}');
         }
-        final body = jsonDecode(response.body) as Map<String, dynamic>;
-        final code = body['code'] as int?;
-        if (code != null && code != 200) {
-          throw Exception(body['message'] as String? ?? 'API error: $code');
+        final body = jsonDecode(response.body);
+        if (body is! List) {
+          throw Exception('list.json 应为顶层数组');
         }
-        final data = body['data'] as Map<String, dynamic>?;
-        if (data == null) {
-          throw Exception('响应缺少 data 字段');
-        }
-        return EcpkgCatalog.fromJson(data);
+        return body;
       },
-      (catalog) => catalog.categories.isNotEmpty,
+      (list) => list.isNotEmpty,
     );
+
+    // 2. 解析分类壳 + 包 metadata URL 列表。
+    final shells = <_CategoryShell>[];
+    for (final item in rawList) {
+      final obj = item as Map<String, dynamic>;
+      final pkgUrls = (obj['packages'] as List? ?? [])
+          .whereType<String>()
+          .where((u) => u.isNotEmpty)
+          .toList();
+      shells.add(_CategoryShell(
+        type: obj['type'] as String? ?? '',
+        nameKey: obj['nameKey'] as String? ?? obj['type'] as String? ?? '',
+        icon: obj['icon'] as String?,
+        description: obj['description'] as String?,
+        packageUrls: pkgUrls,
+      ));
+    }
+
+    // 3. 并行拉取每个包的 metadata，组装 catalog。
+    final categories = <EcpkgCategory>[];
+    for (final shell in shells) {
+      final pkgs = await _fetchPackages(shell.packageUrls, headers);
+      categories.add(EcpkgCategory(
+        type: shell.type,
+        nameKey: shell.nameKey,
+        icon: shell.icon,
+        description: shell.description,
+        packages: pkgs,
+      ));
+    }
+
+    return EcpkgCatalog(categories: categories);
   }
+
+  /// 并行拉取一组 metadata URL，单个失败则跳过。
+  static Future<List<EcpkgCatalogPackage>> _fetchPackages(
+    List<String> urls,
+    Map<String, String> headers,
+  ) async {
+    final results = await Future.wait(
+      urls.map((u) => _fetchOne(u, headers)),
+    );
+    return results.whereType<EcpkgCatalogPackage>().toList();
+  }
+
+  static Future<EcpkgCatalogPackage?> _fetchOne(
+    String url,
+    Map<String, String> headers,
+  ) async {
+    try {
+      final uri = Uri.parse(url);
+      final response = await http
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) return null;
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) return null;
+      return EcpkgCatalogPackage.fromDetailJson(url, body);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+class _CategoryShell {
+  const _CategoryShell({
+    required this.type,
+    required this.nameKey,
+    this.icon,
+    this.description,
+    required this.packageUrls,
+  });
+
+  final String type;
+  final String nameKey;
+  final String? icon;
+  final String? description;
+  final List<String> packageUrls;
 }

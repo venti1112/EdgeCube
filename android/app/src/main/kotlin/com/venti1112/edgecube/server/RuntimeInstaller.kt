@@ -167,7 +167,7 @@ object RuntimeInstaller {
                 File(tmpDir, "edgecube-package.json").writeText(manifestJson)
 
                 // 最后写 version（作为完成标记）
-                File(tmpDir, "version").writeText(manifest.version)
+                File(tmpDir, "version").writeText(manifest.version.toString())
 
                 onProgress?.invoke(processed, total)
 
@@ -199,7 +199,7 @@ object RuntimeInstaller {
         return try {
             val manifest = EcPackage.parse(manifestFile.readText())
             val installedVersion = versionFile.readText().trim()
-            if (installedVersion == manifest.version) manifest else null
+            if (installedVersion == manifest.version.toString()) manifest else null
         } catch (_: Exception) {
             null
         }

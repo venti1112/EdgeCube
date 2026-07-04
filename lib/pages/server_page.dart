@@ -404,7 +404,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
         runtimeId: ctx.phpRuntimes.first,
         runtime: kRuntimePhp,
         jvmArgs: const [],
-        programArgs: [file],
+        programArgs: [file, '--no-wizard'],
         compatMode: _compatMode,
       );
       return;
@@ -724,7 +724,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                       ),
                       const SizedBox(height: 16),
                     ] else ...[
-                      // PHP 运行时版本（只读；当前仅 PHP 8.2，且仅 arm64 提供）。
+                      // PHP 运行时版本（只读；当前仅 PHP 8.2，且仅 aarch64 提供）。
                       InputDecorator(
                         decoration: InputDecoration(
                           labelText: context.tr('server.runtimeVersionLabel'),

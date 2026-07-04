@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
@@ -312,8 +313,14 @@ class _RuntimePageState extends State<RuntimePage> {
             children: [
               Text(
                 tr.get('runtime.update.versionRow', {
-                  'current': runtime.version,
-                  'latest': info.latestVersion,
+                  'current': tr.get('runtime.versionWithBuild', {
+                    'version': runtime.displayVersion,
+                    'build': runtime.version.toString(),
+                  }),
+                  'latest': tr.get('runtime.versionWithBuild', {
+                    'version': info.displayVersion,
+                    'build': info.version.toString(),
+                  }),
                 }),
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
@@ -556,7 +563,10 @@ class _RuntimePageState extends State<RuntimePage> {
                     }, size: 32),
                     title: Text(rt.name),
                     subtitle: Text(
-                      '${_typeLabel(rt.type)} · ${rt.version}',
+                      '${_typeLabel(rt.type)} · ${context.tr('runtime.versionWithBuild', {
+                        'version': rt.displayVersion,
+                        'build': rt.version.toString(),
+                      })}',
                       style: theme.textTheme.bodySmall,
                     ),
                     trailing: Row(
@@ -572,6 +582,43 @@ class _RuntimePageState extends State<RuntimePage> {
                         IconButton(
                           icon: const Icon(Icons.delete_outline),
                           onPressed: () => _delete(rt),
+                        ),
+                        PopupMenuButton<String>(
+                          tooltip: context.tr('runtime.more'),
+                          icon: const Icon(Icons.more_vert),
+                          onSelected: (action) {
+                            if (action == 'homepage') {
+                              launchUrl(Uri.parse(rt.homepage!),
+                                  mode: LaunchMode.externalApplication);
+                            } else if (action == 'repository') {
+                              launchUrl(Uri.parse(rt.repository!),
+                                  mode: LaunchMode.externalApplication);
+                            }
+                          },
+                          itemBuilder: (ctx) => [
+                            if (rt.homepage != null && rt.homepage!.isNotEmpty)
+                              PopupMenuItem(
+                                value: 'homepage',
+                                child: ListTile(
+                                  leading: const Icon(Icons.home_outlined),
+                                  title: Text(ctx.tr('runtime.openHomepage')),
+                                  contentPadding: EdgeInsets.zero,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
+                            if (rt.repository != null &&
+                                rt.repository!.isNotEmpty)
+                              PopupMenuItem(
+                                value: 'repository',
+                                child: ListTile(
+                                  leading: const Icon(Icons.code),
+                                  title:
+                                      Text(ctx.tr('runtime.openRepository')),
+                                  contentPadding: EdgeInsets.zero,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),
