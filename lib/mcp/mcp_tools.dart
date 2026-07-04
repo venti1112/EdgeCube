@@ -449,7 +449,7 @@ Future<CallToolResult> _startInstance(
       runtimeId: phpRuntimes.first,
       runtime: kRuntimePhp,
       jvmArgs: const [],
-      programArgs: [phar, '--no-wizard', '--console.enable-input=false'],
+      programArgs: [phar, '--no-wizard', '--console.enable-input=0'],
       compatMode: instance.compatMode,
     );
     return _ok({

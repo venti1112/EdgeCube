@@ -404,7 +404,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
         runtimeId: ctx.phpRuntimes.first,
         runtime: kRuntimePhp,
         jvmArgs: const [],
-        programArgs: [file, '--no-wizard', '--console.enable-input=false'],
+        programArgs: [file, '--no-wizard', '--console.enable-input=0'],
         compatMode: _compatMode,
       );
       return;
