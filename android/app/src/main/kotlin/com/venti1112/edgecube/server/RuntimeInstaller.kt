@@ -57,10 +57,20 @@ object RuntimeInstaller {
 
     /** 当前已安装的 PHP 运行时 id 列表。 */
     fun availablePhpIds(context: Context): List<String> {
-        return installedRuntimes(context)
+        val installed = installedRuntimes(context)
             .filter { it.type == "php" }
             .map { it.id }
+            .toMutableList()
+        // PHP CLI 随 APK 内置（libphp-cli.so），总是可用。放在列表首位，
+        // 让 UI 默认选中内置版本。
+        if (!installed.contains(BUILTIN_PHP_CLI_ID)) {
+            installed.add(0, BUILTIN_PHP_CLI_ID)
+        }
+        return installed
     }
+
+    /** 内置 PHP CLI 的运行时 id（随 APK 打包的 musl 静态链接 PHP 8.2）。 */
+    const val BUILTIN_PHP_CLI_ID = "php-cli-8.2"
 
     /** 取首个已安装的 frpc 运行时（用于隧道）。 */
     fun installedFrpc(context: Context): EcManifest? {

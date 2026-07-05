@@ -1,6 +1,10 @@
 package com.venti1112.edgecube.server
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.system.Os
@@ -39,6 +43,24 @@ class ServerProcessManager private constructor(private val appContext: Context) 
 
         /** 单行未遇换行时的最大累积字节，超出强制断行，防止异常输出撑爆内存。 */
         private const val MAX_LINE_BYTES = 16 * 1024
+
+        /**
+         * PHP CLI 内置 php.ini 内容（与 PMMP 官方构建产物的 php.ini 一致）。
+         * 首次启动 PHP 时写入 filesDir/php/php.ini，通过 PHPRC 环境变量指定路径。
+         * PHP CLI 随 APK 静态打包，--with-config-file-path 指向的构建机器路径在
+         * 运行时不存在，故必须用 PHPRC 显式指定。
+         */
+        private const val DEFAULT_PHP_INI = """memory_limit=1024M
+date.timezone=UTC
+short_open_tag=0
+asp_tags=0
+phar.require_hash=1
+igbinary.compact_strings=0
+zend.assertions=-1
+error_reporting=-1
+display_errors=1
+display_startup_errors=1
+recursionguard.enabled=0"""
 
         const val STATUS_PREPARING = "preparing"
         const val STATUS_STARTING  = "starting"
@@ -141,7 +163,7 @@ class ServerProcessManager private constructor(private val appContext: Context) 
      *
      * [runtime] 为 [com.venti1112.edgecube.server] 约定的 "java"（默认）或 "php"：
      *  - java：执行 nativeLibraryDir 下的 liblaunch.so，由它 dlopen JRE 的 libjli.so 启动 JVM。
-     *  - php ：执行 libphploader.so，dlopen libphpwrapper.so（→ libphp.so）运行脚本。
+     *  - php ：直接 exec 随 APK 打包的 libphp-cli.so（PMMP 官方 musl 静态链接 PHP CLI）。
      *
      * 与改造前相比，唯一变化是用 [EcPty] 在 PTY 上拉起进程（取代 ProcessBuilder），
      * stdio 改为 PTY 从设备，因此进程认为自己连着真实终端。
@@ -198,30 +220,44 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         val argv = ArrayList<String>()
 
         if (runtime == "php") {
-            val manifest = RuntimeInstaller.installedRuntime(appContext, runtimeId)
-                ?: throw IllegalStateException("PHP 运行时 $runtimeId 未安装，请先在「管理 → 运行环境」导入")
-            val runtimeDir = RuntimeInstaller.runtimeDir(appContext, runtimeId)
-            val launcherLib = File(runtimeDir, manifest.launcher.lib)
-            if (!launcherLib.exists()) {
-                throw IllegalStateException("未找到 PHP wrapper 库：${launcherLib.absolutePath}")
+            // PHP CLI 随 APK 静态打包到 lib/<abi>/libphp-cli.so（PMMP 官方 musl 静态
+            // 链接构建，自包含 musl libc，不依赖 Bionic 与任何外部 .so）。
+            // 直接 exec 即可：PHP_BINARY / proc_open / cli_set_process_title / php://stderr
+            // 等在 CLI SAPI 下均原生可用。
+            val phpBin = File(nativeDir, "libphp-cli.so")
+            if (!phpBin.exists()) {
+                throw IllegalStateException("未找到 libphp-cli.so，请确认其已随 APK 打包到 lib 目录")
             }
-            val loaderBin = File(nativeDir, "libphploader.so")
-            if (!loaderBin.exists()) {
-                throw IllegalStateException("未找到 libphploader.so，请确认其已随 APK 打包到 lib 目录")
-            }
-            cmd = loaderBin.absolutePath
-            argv.add(loaderBin.absolutePath)
-            argv.addAll(programArgs) // 即 [phar]
 
-            env["EC_PHP_LIB"] = launcherLib.absolutePath
-            env["LD_PRELOAD"] = tagfixLib
-            env["LD_LIBRARY_PATH"] = "${launcherLib.parentFile?.absolutePath}:$nativeDir"
+            // php.ini：首次启动写入 filesDir/php/php.ini。PHP CLI 的
+            // --with-config-file-path 指向构建机器路径（运行时不存在），须用 PHPRC
+            // 显式指定。ConsoleReaderChildProcessDaemon 用 proc_open([PHP_BINARY, '-r', ...])
+            // fork 子进程时会继承 PHPRC，确保子进程也用同一 php.ini。
+            val phpIniDir = File(appContext.filesDir, "php")
+            phpIniDir.mkdirs()
+            val phpIni = File(phpIniDir, "php.ini")
+            if (!phpIni.exists()) {
+                phpIni.writeText(DEFAULT_PHP_INI)
+            }
+
+            // DNS：PMMP 的 musl libc patch（sdcard-resolv-conf.diff）把 resolv.conf
+            // 路径从 /etc/resolv.conf 改到 /sdcard/resolv.conf（Android /etc 不可写）。
+            // curl 用 --enable-threaded-resolver（系统 getaddrinfo 在独立线程），不走
+            // c-ares，故同样受 musl patch 影响。启动前把当前 DNS 服务器写入
+            // /sdcard/resolv.conf，让 PHP 的所有网络解析都能找到 DNS。
+            writeResolvConf()
+
+            cmd = phpBin.absolutePath
+            argv.add(phpBin.absolutePath)
+            argv.addAll(programArgs) // 即 [phar, --no-wizard]
+
+            env["PHPRC"] = phpIniDir.absolutePath
             env["HOME"] = workingDir
             env["TMPDIR"] = appContext.cacheDir.absolutePath
             env["LANG"] = "en_US.UTF-8"
             env["TERM"] = "xterm-256color"
-            // 叠加清单中的 env（${RUNTIME_DIR} 替换）
-            applyManifestEnv(env, manifest, runtimeDir)
+            // PHP 是 musl 静态链接，不依赖 Bionic，故不需要 LD_PRELOAD=libtagfix.so
+            // （MTE 标签问题不存在），也不需要 LD_LIBRARY_PATH。
         } else {
             val manifest = RuntimeInstaller.installedRuntime(appContext, runtimeId)
                 ?: throw IllegalStateException("JRE 运行时 $runtimeId 未安装，请先在「管理 → 运行环境」导入")
@@ -528,5 +564,69 @@ class ServerProcessManager private constructor(private val appContext: Context) 
                 else -> env[key] = value
             }
         }
+    }
+
+    /**
+     * 把当前系统的 DNS 服务器写入 /sdcard/resolv.conf。
+     *
+     * PMMP 的 musl libc patch（sdcard-resolv-conf.diff）把 resolv.conf 路径从
+     * /etc/resolv.conf 改到 /sdcard/resolv.conf（Android /etc 不可写）。PHP 静态
+     * 链接 musl，所有 getaddrinfo 调用都从该路径读取 DNS 服务器。Android 不维护
+     * 这个文件，故须在启动 PHP 前主动写入当前网络的 DNS。
+     *
+     * 通过 ConnectivityManager.getLinkProperties() 获取活动网络的 DNS 服务器列表
+     * （与 Android 系统一致，跟随 WiFi/移动数据切换）。若获取失败则回退到公共 DNS。
+     */
+    private fun writeResolvConf() {
+        val dnsServers = collectDnsServers().ifEmpty {
+            // 回退：无法获取系统 DNS 时用公共 DNS（Google + Cloudflare）。
+            listOf("8.8.8.8", "1.1.1.1")
+        }
+        val sb = StringBuilder()
+        sb.append("# Generated by EdgeCube for PocketMine-MP (musl libc resolv.conf)\n")
+        for (dns in dnsServers) {
+            sb.append("nameserver ").append(dns).append('\n')
+        }
+        val content = sb.toString()
+
+        // /sdcard 是 /storage/emulated/0 的符号链接，需 MANAGE_EXTERNAL_STORAGE 权限。
+        // 写到临时文件再重命名，避免 PHP 在写入过程中读到半截内容。
+        val resolvFile = File(Environment.getExternalStorageDirectory(), "resolv.conf")
+        val tmpFile = File(resolvFile.parentFile, "resolv.conf.tmp")
+        try {
+            tmpFile.writeText(content)
+            tmpFile.renameTo(resolvFile)
+        } catch (e: Exception) {
+            // 即使写失败也不阻断启动——PHP 启动后仍可访问 IP 直连的服务。
+            emitNotice("[EdgeCube] 写入 resolv.conf 失败：${e.message}，DNS 解析可能不可用")
+        }
+    }
+
+    /** 通过 ConnectivityManager 收集活动网络的 DNS 服务器地址。 */
+    private fun collectDnsServers(): List<String> {
+        val result = LinkedHashSet<String>()
+        try {
+            val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE)
+                as? ConnectivityManager ?: return emptyList()
+
+            // 优先取活动网络的 DNS；若没有（如 Android 7+ getActiveNetwork 返回 null），
+            // 遍历所有网络。
+            val networks = mutableListOf<Network>()
+            cm.activeNetwork?.let { networks.add(it) }
+            if (networks.isEmpty()) {
+                cm.allNetworks?.let { networks.addAll(it) }
+            }
+
+            for (net in networks) {
+                val lp: LinkProperties = cm.getLinkProperties(net) ?: continue
+                for (addr in lp.dnsServers) {
+                    if (addr.isLoopbackAddress || addr.isLinkLocalAddress) continue
+                    val ip = addr.hostAddress ?: continue
+                    result.add(ip)
+                }
+            }
+        } catch (_: Exception) {
+        }
+        return result.toList()
     }
 }

@@ -292,6 +292,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     final runtimes = await runtimeService.installedRuntimes();
     final runtimeNames = <String, String>{
       for (final rt in runtimes) rt.id: rt.name,
+      // 内置 PHP CLI（随 APK 打包）的友好名称；.ecpkg 安装的 PHP 会被同 id 覆盖。
+      'php-cli-8.2': 'PHP 8.2 (内置)',
     };
     return _LaunchContext(
       workingDir: dir.path,
@@ -404,7 +406,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
         runtimeId: ctx.phpRuntimes.first,
         runtime: kRuntimePhp,
         jvmArgs: const [],
-        programArgs: [file, '--no-wizard', '--console.enable-input=0'],
+        programArgs: [file, '--no-wizard'],
         compatMode: _compatMode,
       );
       return;
@@ -503,12 +505,14 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
               status,
               active ? server.lastExitCode : null,
             ),
-            if (status == ServerStatus.running) ...[
-              const SizedBox(height: 16),
-              _ConnectionCard(server: server),
-            ],
             const SizedBox(height: 16),
             _actions(context, server, ctx, status),
+            const SizedBox(height: 16),
+            // 连接信息卡片：运行时展示连接地址，未运行时显示占位提示。
+            _ConnectionCard(
+              server: server,
+              running: status != ServerStatus.stopped,
+            ),
             const SizedBox(height: 16),
             _MonitorCard(maxMemoryMb: widget.instance.maxMemory ?? 2048),
           ],
@@ -873,32 +877,19 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     ServerStatus status,
   ) {
     final theme = Theme.of(context);
+    final otherRunning = server.isOtherRunning(widget.instance.id);
+    // 已停止时可启动；无 jar 时按钮仍可点击，由 _start 在启动前校验并提示。
+    final canStart = ctx != null && !otherRunning;
 
-    if (status == ServerStatus.running ||
-        status == ServerStatus.starting ||
-        status == ServerStatus.stopping) {
-      final canStop = status == ServerStatus.running;
-      return Row(
-        children: [
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: canStop ? server.stop : null,
-              icon: const Icon(Icons.stop),
-              label: Text(context.tr('common.stop')),
-            ),
-          ),
-          const SizedBox(width: 12),
-          OutlinedButton.icon(
-            onPressed: () => _confirmForceStop(context, server, theme),
-            icon: const Icon(Icons.dangerous_outlined),
-            label: Text(context.tr('server.forceStopShort')),
-          ),
-        ],
-      );
-    }
-
-    if (status == ServerStatus.preparing) {
-      return FilledButton.icon(
+    // 第一行主按钮：已停止显示「启动」，准备中显示进度，
+    // 启动中/运行中/停止中显示「停止」（仅运行中可点）。
+    final Widget primaryButton = switch (status) {
+      ServerStatus.stopped => FilledButton.icon(
+        onPressed: canStart ? () => _start(server, ctx) : null,
+        icon: const Icon(Icons.play_arrow),
+        label: Text(context.tr('common.start')),
+      ),
+      ServerStatus.preparing => FilledButton.icon(
         onPressed: null,
         icon: const SizedBox(
           width: 18,
@@ -906,27 +897,54 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
         label: Text(context.tr('server.statusPreparing')),
-      );
-    }
+      ),
+      ServerStatus.starting ||
+      ServerStatus.running ||
+      ServerStatus.stopping => FilledButton.icon(
+        onPressed: status == ServerStatus.running ? server.stop : null,
+        icon: const Icon(Icons.stop),
+        label: Text(context.tr('common.stop')),
+      ),
+    };
 
-    // 已停止：可启动。无 jar 时按钮仍可点击，由 _start 在启动前校验并提示。
-    final otherRunning = server.isOtherRunning(widget.instance.id);
-    final canStart = ctx != null && !otherRunning;
+    // 重启仅在运行中可用；强制停止在非「已停止」状态均可用。
+    final canRestart = status == ServerStatus.running;
+    final canForceStop = status != ServerStatus.stopped;
 
-    String? hint;
-    if (otherRunning) {
-      hint = context.tr('server.otherRunningHint', {
-        'name': server.runningInstanceName ?? '',
-      });
-    }
+    // 已停止且有其它实例在运行时，提示需先停止对方。
+    final String? hint = (status == ServerStatus.stopped && otherRunning)
+        ? context.tr('server.otherRunningHint', {
+            'name': server.runningInstanceName ?? '',
+          })
+        : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        FilledButton.icon(
-          onPressed: canStart ? () => _start(server, ctx) : null,
-          icon: const Icon(Icons.play_arrow),
-          label: Text(context.tr('common.start')),
+        // 第一行：启动 / 停止（整行）。
+        primaryButton,
+        const SizedBox(height: 12),
+        // 第二行：重启（左半） | 强制停止（右半），等分。
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: canRestart ? server.restart : null,
+                icon: const Icon(Icons.restart_alt),
+                label: Text(context.tr('common.restart')),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: canForceStop
+                    ? () => _confirmForceStop(context, server, theme)
+                    : null,
+                icon: const Icon(Icons.dangerous_outlined),
+                label: Text(context.tr('server.forceStopShort')),
+              ),
+            ),
+          ],
         ),
         if (hint != null) ...[
           const SizedBox(height: 8),
@@ -1429,11 +1447,14 @@ Future<String?> _getLocalIp() async {
 
 /// 连接信息卡片：显示内网 IP、映射状态、公网 IP。
 ///
-/// 仅在服务器运行时显示。
+/// 仅在服务器运行时展示连接信息；未运行时显示“服务端未运行”占位提示。
 class _ConnectionCard extends StatelessWidget {
-  const _ConnectionCard({required this.server});
+  const _ConnectionCard({required this.server, required this.running});
 
   final ServerController server;
+
+  /// 当前实例是否处于运行相关状态（非 stopped）。
+  final bool running;
 
   @override
   Widget build(BuildContext context) {
@@ -1468,75 +1489,123 @@ class _ConnectionCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // 内网连接地址。
-            FutureBuilder<String?>(
-              future: _getLocalIp(),
-              builder: (context, snapshot) {
-                final localIp = snapshot.data ?? '…';
-                return _infoRow(
-                  context,
-                  theme,
-                  icon: Icons.lan_outlined,
-                  label: context.tr('server.lanAddress'),
-                  value: '$localIp:${serverPort ?? upnpPort ?? 25565}',
-                  canCopy: snapshot.hasData,
-                );
-              },
-            ),
-
-            // 映射状态指示器。
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                _statusChip(
-                  context,
-                  theme,
-                  icon: Icons.router_outlined,
-                  label: 'UPnP',
-                  active: upnpActive,
-                  success: upnpIp != null,
-                ),
-                _statusChip(
-                  context,
-                  theme,
-                  icon: Icons.cloud_outlined,
-                  label: 'FRP',
-                  active: tunnelActive,
-                  success: tunnelRunning,
-                  error: tunnelCrashed,
-                ),
-              ],
-            ),
-
-            // UPnP 公网 IP（映射成功时显示）。
-            if (upnpActive && upnpIp != null && upnpPort != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: _infoRow(
-                  context,
-                  theme,
-                  icon: Icons.public,
-                  label: context.tr('server.upnpPublic'),
-                  value: '$upnpIp:$upnpPort',
-                  canCopy: true,
-                ),
+            // 未运行时仅显示占位提示，不展示连接地址与映射状态。
+            if (!running)
+              Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    context.tr('server.serverNotRunning'),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              )
+            else ...[
+              // 内网连接地址。
+              FutureBuilder<String?>(
+                future: _getLocalIp(),
+                builder: (context, snapshot) {
+                  final localIp = snapshot.data ?? '…';
+                  return _infoRow(
+                    context,
+                    theme,
+                    icon: Icons.lan_outlined,
+                    label: context.tr('server.lanAddress'),
+                    value: '$localIp:${serverPort ?? upnpPort ?? 25565}',
+                    canCopy: snapshot.hasData,
+                  );
+                },
               ),
 
-            // FRP 公网地址（隧道真正连接成功后显示，与状态芯片的"已映射"一致）。
-            if (tunnelRunning && frpConfig != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: _infoRow(
-                  context,
-                  theme,
-                  icon: Icons.cloud_outlined,
-                  label: context.tr('server.frpPublic'),
-                  value: '${frpConfig.serverAddr}:${frpConfig.remotePort}',
-                  canCopy: true,
-                ),
+              // 映射状态指示器。
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  // 正版验证（online-mode / xbox-auth）状态，读取完成后显示。
+                  if (server.onlineMode != null)
+                    _authChip(context, theme, online: server.onlineMode!),
+                  _statusChip(
+                    context,
+                    theme,
+                    icon: Icons.router_outlined,
+                    label: 'UPnP',
+                    active: upnpActive,
+                    success: upnpIp != null,
+                  ),
+                  _statusChip(
+                    context,
+                    theme,
+                    icon: Icons.cloud_outlined,
+                    label: 'FRP',
+                    active: tunnelActive,
+                    success: tunnelRunning,
+                    error: tunnelCrashed,
+                  ),
+                ],
               ),
+
+              // 未启用任何端口映射时，明确提示当前地址仅限局域网访问。
+              if (!upnpActive && !tunnelActive)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 16,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          context.tr('server.lanOnlyHint'),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // UPnP 公网 IP（映射成功时显示）。
+              if (upnpActive && upnpIp != null && upnpPort != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: _infoRow(
+                    context,
+                    theme,
+                    icon: Icons.public,
+                    label: context.tr('server.upnpPublic'),
+                    value: '$upnpIp:$upnpPort',
+                    canCopy: true,
+                  ),
+                ),
+
+              // FRP 公网地址（隧道真正连接成功后显示，与状态芯片的"已映射"一致）。
+              if (tunnelRunning && frpConfig != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: _infoRow(
+                    context,
+                    theme,
+                    icon: Icons.cloud_outlined,
+                    label: context.tr('server.frpPublic'),
+                    value: '${frpConfig.serverAddr}:${frpConfig.remotePort}',
+                    canCopy: true,
+                  ),
+                ),
+            ],
           ],
         ),
       ),
@@ -1636,6 +1705,132 @@ class _ConnectionCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// 正版验证芯片：显示 online-mode / xbox-auth（统一称“正版验证”）是否开启，
+  /// 点击可弹出对话框快速开/关。
+  ///
+  /// 开启为绿色，关闭（允许离线/盗版加入）为灰色。
+  Widget _authChip(
+    BuildContext context,
+    ThemeData theme, {
+    required bool online,
+  }) {
+    final color = online ? Colors.green : theme.colorScheme.outline;
+    final statusText =
+        online ? context.tr('server.authOn') : context.tr('server.authOff');
+    return Material(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _showAuthDialog(context, theme, online),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.verified_user_outlined, size: 14, color: color),
+              const SizedBox(width: 4),
+              Text(
+                '${context.tr('server.onlineAuth')} $statusText',
+                style: theme.textTheme.labelSmall?.copyWith(color: color),
+              ),
+              const SizedBox(width: 3),
+              Icon(Icons.edit, size: 11, color: color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 点击正版验证芯片：弹出对话框快速开/关正版验证并写回配置文件。
+  ///
+  /// 写回成功后，若服务端正在运行则弹出「需要重启」对话框（立即 / 稍后重启），
+  /// 与退出服务器配置页时的提示一致；失败则用 SnackBar 提示。
+  Future<void> _showAuthDialog(
+    BuildContext context,
+    ThemeData theme,
+    bool online,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final failedMsg = context.tr('server.authChangeFailed');
+
+    final toValue = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.tr('server.onlineAuth')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(ctx.tr('server.authDialogDesc')),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  online ? Icons.verified_user : Icons.gpp_maybe_outlined,
+                  size: 18,
+                  color: online ? Colors.green : theme.colorScheme.outline,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  online
+                      ? ctx.tr('server.authStateOn')
+                      : ctx.tr('server.authStateOff'),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: online ? Colors.green : theme.colorScheme.outline,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(ctx.tr('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(!online),
+            child: Text(
+              online
+                  ? ctx.tr('server.authTurnOff')
+                  : ctx.tr('server.authTurnOn'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (toValue == null) return;
+    final ok = await server.setOnlineMode(toValue);
+    if (!ok) {
+      messenger.showSnackBar(SnackBar(content: Text(failedMsg)));
+      return;
+    }
+    // 写回成功：服务端运行中则弹「需要重启生效」对话框（复用配置页文案）。
+    if (context.mounted && server.isRunning) {
+      final restartNow = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(ctx.tr('serverProps.restartRequiredTitle')),
+          content: Text(ctx.tr('serverProps.restartRequiredMsg')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(ctx.tr('serverProps.restartLater')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(ctx.tr('serverProps.restartNow')),
+            ),
+          ],
+        ),
+      );
+      if (restartNow == true) await server.restart();
+    }
   }
 
   void _copyAddress(BuildContext context, String address) {

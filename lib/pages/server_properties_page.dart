@@ -8,7 +8,9 @@ import '../files/file_service.dart';
 import '../files/photo_picker.dart';
 import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
+import '../server/server_controller.dart';
 import '../server/server_properties.dart';
+import '../server/server_scope.dart';
 import 'server_icon_crop_page.dart';
 
 /// server.properties 可视化编辑页面。
@@ -39,6 +41,7 @@ class _PropDef {
     this.options,
     this.min,
     this.max,
+    this.boolFormat = BoolFormat.trueFalse,
   });
 
   /// server.properties 中的 key。
@@ -61,6 +64,9 @@ class _PropDef {
 
   /// 数字最大值（kind == number 时使用）。
   final int? max;
+
+  /// 布尔值序列化格式（kind == toggle 时使用）。
+  final BoolFormat boolFormat;
 }
 
 /// 属性分组定义。
@@ -86,6 +92,14 @@ const _gamemodeOptions = {
   'spectator': 'serverProps.gamemode.spectator',
 };
 
+/// PMMP gamemode 用大写值。
+const _gamemodeOptionsPmmp = {
+  'SURVIVAL': 'serverProps.gamemode.survival',
+  'CREATIVE': 'serverProps.gamemode.creative',
+  'ADVENTURE': 'serverProps.gamemode.adventure',
+  'SPECTATOR': 'serverProps.gamemode.spectator',
+};
+
 const _difficultyOptions = {
   'peaceful': 'serverProps.difficulty.peaceful',
   'easy': 'serverProps.difficulty.easy',
@@ -93,7 +107,36 @@ const _difficultyOptions = {
   'hard': 'serverProps.difficulty.hard',
 };
 
-final _sections = <_Section>[
+/// PMMP 难度用数字 0-3。
+const _difficultyOptionsPmmp = {
+  '0': 'serverProps.difficulty.peaceful',
+  '1': 'serverProps.difficulty.easy',
+  '2': 'serverProps.difficulty.normal',
+  '3': 'serverProps.difficulty.hard',
+};
+
+const _languageOptionsPmmp = {
+  'chs': '简体中文',
+  'cht': '繁體中文',
+  'eng': 'English',
+  'jpn': '日本語',
+  'kor': '한국어',
+  'deu': 'Deutsch',
+  'fra': 'Français',
+  'rus': 'Русский',
+  'spa': 'Español',
+};
+
+/// PMMP level-type 选项。
+const _levelTypeOptionsPmmp = {
+  'DEFAULT': 'serverProps.levelType.default',
+  'FLAT': 'serverProps.levelType.flat',
+  'NETHER': 'serverProps.levelType.nether',
+  'VOID': 'serverProps.levelType.void',
+  'SKYBLOCK': 'serverProps.levelType.skyblock',
+};
+
+final _javaSections = <_Section>[
   _Section('基础设置', Icons.settings_outlined, [
     _PropDef(
       key: 'motd',
@@ -389,6 +432,147 @@ final _sections = <_Section>[
   ], titleKey: 'sectionResourcePack'),
 ];
 
+/// PocketMine-MP 专属属性分组。PMMP 使用 `on/off` 布尔值、数字难度、大写 gamemode，
+/// 且没有 Java 版的 online-mode / server-ip / rcon 等选项，独有 xbox-auth / server-portv6 /
+/// auto-save / language / generator-settings 等。
+final _pmmpSections = <_Section>[
+  _Section('基础设置', Icons.settings_outlined, [
+    _PropDef(
+      key: 'motd',
+      label: '服务器描述 (MOTD)',
+      subtitle: '在服务器列表中显示的描述文字',
+      kind: _PropKind.text,
+    ),
+    _PropDef(
+      key: 'max-players',
+      label: '最大玩家数',
+      kind: _PropKind.number,
+      min: 1,
+      max: 10000,
+    ),
+    _PropDef(
+      key: 'gamemode',
+      label: '默认游戏模式',
+      kind: _PropKind.dropdown,
+      options: _gamemodeOptionsPmmp,
+    ),
+    _PropDef(
+      key: 'difficulty',
+      label: '难度',
+      kind: _PropKind.dropdown,
+      options: _difficultyOptionsPmmp,
+    ),
+    _PropDef(key: 'level-name', label: '世界名称', kind: _PropKind.text),
+    _PropDef(
+      key: 'level-seed',
+      label: '世界种子',
+      subtitle: '留空则随机生成',
+      kind: _PropKind.text,
+    ),
+    _PropDef(
+      key: 'level-type',
+      label: '世界类型',
+      kind: _PropKind.dropdown,
+      options: _levelTypeOptionsPmmp,
+    ),
+    _PropDef(
+      key: 'generator-settings',
+      label: '生成器设置',
+      subtitle: '世界生成器的预设参数（一般留空）',
+      kind: _PropKind.text,
+    ),
+    _PropDef(
+      key: 'language',
+      label: '服务器语言',
+      kind: _PropKind.dropdown,
+      options: _languageOptionsPmmp,
+    ),
+  ], titleKey: 'sectionBasic'),
+  _Section('游戏玩法', Icons.sports_esports_outlined, [
+    _PropDef(
+      key: 'hardcore',
+      label: '极限模式',
+      subtitle: '启用后难度锁定为困难，死亡后变为旁观模式',
+      kind: _PropKind.toggle,
+      boolFormat: BoolFormat.onOff,
+    ),
+    _PropDef(
+      key: 'force-gamemode',
+      label: '强制游戏模式',
+      subtitle: '玩家每次加入时重置为默认游戏模式',
+      kind: _PropKind.toggle,
+      boolFormat: BoolFormat.onOff,
+    ),
+    _PropDef(
+      key: 'pvp',
+      label: '启用 PvP',
+      subtitle: '玩家之间是否允许互相攻击',
+      kind: _PropKind.toggle,
+      boolFormat: BoolFormat.onOff,
+    ),
+    _PropDef(
+      key: 'auto-save',
+      label: '自动保存',
+      subtitle: '启用后服务器会定期自动保存世界数据',
+      kind: _PropKind.toggle,
+      boolFormat: BoolFormat.onOff,
+    ),
+  ], titleKey: 'sectionGameplay'),
+  _Section('网络设置', Icons.wifi_outlined, [
+    _PropDef(
+      key: 'server-port',
+      label: '服务器端口 (IPv4)',
+      kind: _PropKind.number,
+      min: 1,
+      max: 65535,
+    ),
+    _PropDef(
+      key: 'server-portv6',
+      label: '服务器端口 (IPv6)',
+      subtitle: 'IPv6 监听端口',
+      kind: _PropKind.number,
+      min: 1,
+      max: 65535,
+    ),
+    _PropDef(
+      key: 'enable-ipv6',
+      label: '启用 IPv6',
+      kind: _PropKind.toggle,
+      boolFormat: BoolFormat.onOff,
+    ),
+    _PropDef(
+      key: 'xbox-auth',
+      label: 'Xbox 认证',
+      subtitle: '要求玩家通过 Xbox Live 认证（关闭允许盗版客户端加入）',
+      kind: _PropKind.toggle,
+      boolFormat: BoolFormat.onOff,
+    ),
+    _PropDef(
+      key: 'white-list',
+      label: '启用白名单',
+      kind: _PropKind.toggle,
+      boolFormat: BoolFormat.onOff,
+    ),
+    _PropDef(
+      key: 'enable-query',
+      label: '启用 Query',
+      subtitle: '启用 GameSpy4 协议查询',
+      kind: _PropKind.toggle,
+      boolFormat: BoolFormat.onOff,
+    ),
+  ], titleKey: 'sectionNetwork'),
+  _Section('性能设置', Icons.speed_outlined, [
+    _PropDef(
+      key: 'view-distance',
+      label: '视距',
+      subtitle: '服务器发送给客户端的区块半径（3-32）',
+      kind: _PropKind.number,
+      min: 3,
+      max: 32,
+    ),
+  ], titleKey: 'sectionPerformance'),
+];
+
 // ---------------------------------------------------------------------------
 // 页面状态
 // ---------------------------------------------------------------------------
@@ -400,6 +584,13 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
   bool _loading = true;
   bool _saving = false;
   String? _error;
+
+  /// 本次进入页面后是否保存过配置（保存即写入 server.properties）。
+  /// 用于退出时提示：运行中的服务端需重启后新配置才能生效。
+  bool _savedOnce = false;
+
+  /// 当前实例是否为 PMMP（PHP 运行环境）。
+  bool _isPmmp = false;
 
   /// 每个 _PropDef.key 对应的当前值（在内存中编辑）。
   final Map<String, String> _values = {};
@@ -414,6 +605,9 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
   Uint8List? _iconBytes;
 
   bool get _isDirty => _dirtyKeys.isNotEmpty;
+
+  /// 当前实例使用的属性分组。
+  List<_Section> get _sections => _isPmmp ? _pmmpSections : _javaSections;
 
   @override
   void initState() {
@@ -432,6 +626,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
         });
         return;
       }
+      _isPmmp = instance.isPhp;
       final dir = await instanceCtrl.directoryFor(instance);
       _instanceDir = dir.path;
       final filePath = p.join(dir.path, 'server.properties');
@@ -482,6 +677,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
       final filePath = p.join(dir.path, 'server.properties');
       await _fileService.writeText(filePath, _props.toString());
       _dirtyKeys.clear();
+      _savedOnce = true;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -521,28 +717,74 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
 
   String _getValue(String key) => _values[key] ?? '';
 
+  /// 读取内存中的当前编辑值并解析为布尔（兼容 true/false 与 on/off）。
+  ///
+  /// 开关据此即时反映点击结果，而非等到保存后才从 _props 读取。
+  bool _getBool(String key) {
+    final v = (_values[key] ?? _props?[key])?.toLowerCase();
+    return v == 'true' || v == 'on';
+  }
+
   // —— 退出确认 ——
 
   Future<bool> _onWillPop() async {
-    if (!_isDirty) return true;
-    final result = await showDialog<bool>(
+    // 1. 有未保存的修改：先确认是否放弃，取消则不退出。
+    if (_isDirty) {
+      final discard = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(context.tr('serverProps.unsavedChanges')),
+          content: Text(context.tr('serverProps.unsavedChangesMsg')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(ctx.tr('common.cancel')),
+            ),
+            FilledButton.tonal(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(context.tr('serverProps.discard')),
+            ),
+          ],
+        ),
+      );
+      if (discard != true) return false;
+    }
+    // 2. 本次保存过配置且当前实例正在运行：提示需重启后新配置才能生效。
+    //    仅当运行中的进程正是本页所编辑的实例时才提示，避免误重启其它实例。
+    if (_savedOnce && mounted) {
+      final server = ServerScope.of(context);
+      final selected = InstanceScope.of(context).selected;
+      if (selected != null &&
+          server.isRunning &&
+          server.isActive(selected.id)) {
+        await _promptRestart(server);
+      }
+    }
+    return true;
+  }
+
+  /// 弹出「需重启生效」提示，用户可选立即重启或稍后重启。
+  Future<void> _promptRestart(ServerController server) async {
+    final restartNow = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(context.tr('serverProps.unsavedChanges')),
-        content: Text(context.tr('serverProps.unsavedChangesMsg')),
+        title: Text(context.tr('serverProps.restartRequiredTitle')),
+        content: Text(context.tr('serverProps.restartRequiredMsg')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
+            child: Text(context.tr('serverProps.restartLater')),
           ),
-          FilledButton.tonal(
+          FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(context.tr('serverProps.discard')),
+            child: Text(context.tr('serverProps.restartNow')),
           ),
         ],
       ),
     );
-    return result ?? false;
+    if (restartNow == true) {
+      await server.restart();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -552,7 +794,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_isDirty,
+      canPop: !_isDirty && !_savedOnce,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
         final shouldPop = await _onWillPop();
@@ -689,14 +931,21 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
   // —— Toggle ——
 
   Widget _buildToggle(_PropDef prop) {
-    final value = _getValue(prop.key) == 'true';
+    // 从内存编辑值读取，兼容 true/false/on/off，确保点击后即时更新。
+    final value = _getBool(prop.key);
     return SwitchListTile(
       title: Text(context.tr('serverProps.label.${prop.key}')),
       subtitle: prop.subtitle != null
           ? Text(context.tr('serverProps.subtitle.${prop.key}'))
           : null,
       value: value,
-      onChanged: (v) => _setValue(prop.key, v.toString()),
+      onChanged: (v) {
+        final str = switch (prop.boolFormat) {
+          BoolFormat.trueFalse => v.toString(),
+          BoolFormat.onOff => v ? 'on' : 'off',
+        };
+        _setValue(prop.key, str);
+      },
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
     );
   }

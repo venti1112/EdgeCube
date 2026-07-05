@@ -13,6 +13,7 @@ enum ModLoader {
   bukkit,
   bungeecord,
   velocity,
+  pocketmine,
   unknown,
 }
 
@@ -48,20 +49,34 @@ class ModMetadata {
     ModLoader.bukkit => 'Plugin',
     ModLoader.bungeecord => 'BungeeCord',
     ModLoader.velocity => 'Velocity',
+    ModLoader.pocketmine => 'PocketMine',
     ModLoader.unknown => '',
   };
 }
 
-/// 从 .jar（zip）中解析模组元数据。
+/// 从 .jar / .phar 中解析模组元数据。
 class ModMetadataParser {
   ModMetadataParser._();
 
-  /// 解析 [jarPath] 指向的 .jar 文件，返回元数据；无法识别返回 null。
+  /// 解析 [path] 指向的 .jar 或 .phar 文件，返回元数据；无法识别返回 null。
   ///
-  /// 解析在独立 isolate 中执行，避免 ZipDecoder 等 CPU 密集型操作
-  /// 阻塞 UI 线程（模组数量多时会导致界面卡顿）。
-  static Future<ModMetadata?> parse(String jarPath) async {
-    return compute(_parseJarSync, jarPath);
+  /// 解析在独立 isolate 中执行，避免 ZipDecoder / TarDecoder 等 CPU 密集型
+  /// 操作阻塞 UI 线程（模组数量多时会导致界面卡顿）。
+  static Future<ModMetadata?> parse(String path) async {
+    return compute(_parseSync, path);
+  }
+
+  /// 在 isolate 中同步执行：读取文件 → 解压 → 解析元数据。
+  /// 根据文件扩展名自动选择解析路径。
+  static ModMetadata? _parseSync(String path) {
+    final file = File(path);
+    if (!file.existsSync()) return null;
+
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.phar') || lower.endsWith('.phar.disabled')) {
+      return _parsePharSync(path);
+    }
+    return _parseJarSync(path);
   }
 
   /// 在 isolate 中同步执行：读取文件 → 解压 → 解析元数据。
@@ -77,6 +92,122 @@ class ModMetadataParser {
       return null;
     }
     return _extractMetadata(archive);
+  }
+
+  /// 解析 .phar 文件（PocketMine-MP 插件）。
+  ///
+  /// .phar 文件结构：
+  /// 1. PHP stub（一段 PHP 代码，以 `__HALT_COMPILER();` 结束）
+  /// 2. 文件内容（tar-based phar 后面是标准 tar 格式）
+  /// 3. 可选的签名（末尾）
+  ///
+  /// PocketMine-MP 插件通常使用 tar-based phar，内部包含 plugin.yml
+  /// 描述插件元数据（name、version、main、api、author、description 等）。
+  static ModMetadata? _parsePharSync(String pharPath) {
+    final file = File(pharPath);
+    if (!file.existsSync()) return null;
+    final bytes = file.readAsBytesSync();
+
+    Archive? archive;
+
+    // 1. 如果以 PK 开头，是 zip-based phar
+    if (bytes.length >= 4 &&
+        bytes[0] == 0x50 /* P */ &&
+        bytes[1] == 0x4B /* K */) {
+      try {
+        archive = ZipDecoder().decodeBytes(bytes);
+      } catch (_) {
+        archive = null;
+      }
+    } else {
+      // 2. 查找 __HALT_COMPILER 标记，跳过 stub
+      final haltBytes = utf8.encode('__HALT_COMPILER');
+      final haltIdx = _findBytes(bytes, haltBytes);
+      if (haltIdx < 0) return null;
+
+      // 跳过 __HALT_COMPILER(); （含括号分号）和可能的 ?> 与空白
+      var dataStart = haltIdx + haltBytes.length;
+      // 跳过 `();`
+      while (dataStart < bytes.length &&
+          (bytes[dataStart] == 0x28 /* ( */ ||
+              bytes[dataStart] == 0x29 /* ) */ ||
+              bytes[dataStart] == 0x3B /* ; */)) {
+        dataStart += 1;
+      }
+      // 跳过 `?>` 和空白字符
+      while (dataStart < bytes.length) {
+        final b = bytes[dataStart];
+        if (b == 0x3F /* ? */ ||
+            b == 0x3E /* > */ ||
+            b == 0x0D /* \r */ ||
+            b == 0x0A /* \n */ ||
+            b == 0x20 /* space */ ||
+            b == 0x09 /* \t */) {
+          dataStart += 1;
+        } else {
+          break;
+        }
+      }
+
+      // 从 dataStart 开始是标准 tar 格式（tar-based phar）
+      try {
+        archive = TarDecoder().decodeBytes(bytes.sublist(dataStart));
+      } catch (_) {
+        // 尝试整个文件作为 tar（裸 tar 情况）
+        try {
+          archive = TarDecoder().decodeBytes(bytes);
+        } catch (_) {
+          return null;
+        }
+      }
+    }
+
+    if (archive == null) return null;
+
+    // PocketMine-MP 插件元数据：plugin.yml（新）或 pocketmine.yml（旧）
+    final pluginYml =
+        _readEntry(archive, 'plugin.yml') ?? _readEntry(archive, 'pocketmine.yml');
+    if (pluginYml != null) {
+      return _parsePmmpPluginYml(pluginYml);
+    }
+
+    return null;
+  }
+
+  /// 解析 PocketMine-MP plugin.yml。
+  ///
+  /// 字段：name、main、version、api、description、author/authors、website、depend。
+  static ModMetadata? _parsePmmpPluginYml(String yml) {
+    final map = _parseSimpleYaml(yml);
+    final name = map['name'] as String? ?? map['main'] as String?;
+    if (name == null) return null;
+
+    return ModMetadata(
+      name: name,
+      version: map['version'] as String?,
+      description: map['description'] as String?,
+      modId: map['main'] as String?,
+      authors: (map['author'] as String?) ?? (map['authors'] as String?),
+      url: map['website'] as String?,
+      loader: ModLoader.pocketmine,
+    );
+  }
+
+  /// 在字节数组中查找子序列，返回首个匹配位置；未找到返回 -1。
+  static int _findBytes(Uint8List haystack, List<int> needle) {
+    if (needle.isEmpty) return -1;
+    final max = haystack.length - needle.length;
+    for (var i = 0; i <= max; i++) {
+      var match = true;
+      for (var j = 0; j < needle.length; j++) {
+        if (haystack[i + j] != needle[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) return i;
+    }
+    return -1;
   }
 
   /// 从已解压的 [archive] 中按优先级提取模组元数据。

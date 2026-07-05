@@ -1,10 +1,9 @@
 /*
  * libfrpcloader.so —— EdgeCube 的 frpc 启动器（dlopen 版）
  *
- * 与 Java 的 liblaunch.so（dlopen libjli.so）、PHP 的 libphploader.so
- * （dlopen libphpwrapper.so）完全同构，但更简单：libfrpc.so 是 Go 以
- * c-shared 方式编译的自包含库，静态链接了所有 Go 依赖，运行期不依赖任何
- * 额外的 .so，因此无需像 PHP 那样预加载一长串依赖库。
+ * 与 Java 的 liblaunch.so（dlopen libjli.so）同构，但更简单：libfrpc.so
+ * 是 Go 以 c-shared 方式编译的自包含库，静态链接了所有 Go 依赖，运行期
+ * 不依赖任何额外的 .so，因此无需预加载依赖。
  *
  * 背景：Android targetSdk >= 29 禁止 execve() 运行 app 私有数据目录里的
  * ELF（SELinux 对 app_data_file 拒绝 execute_no_trans），但仍允许 dlopen()

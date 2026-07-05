@@ -188,7 +188,10 @@ class _PortMappingPageState extends State<PortMappingPage> {
     setState(() => _tunnelEnabled = value);
     final server = ServerScope.of(context);
     if (value) {
-      server.enableTunnelNow(_buildFrpcConfig(), _selectedFrpcRuntimeId);
+      server.enableTunnelNow(
+        _useCustomFrpc ? null : _buildFrpcConfig(),
+        _selectedFrpcRuntimeId,
+      );
     } else {
       server.disableTunnelNow();
     }

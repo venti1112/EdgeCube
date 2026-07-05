@@ -10,6 +10,9 @@
 /// - 空行保留，序列化时原样输出。
 library;
 
+/// 布尔值序列化格式。Java/PNX 用 `true`/`false`，PMMP 用 `on`/`off`。
+enum BoolFormat { trueFalse, onOff }
+
 /// 单条 server.properties 条目：键值对或注释/空行。
 sealed class PropertiesEntry {
   const PropertiesEntry();
@@ -103,12 +106,16 @@ class ServerProperties {
 
   // —— 类型化快捷读取 ——
 
-  /// 读取布尔值（`true`/`false`），不存在或格式不符返回 null。
+  /// 读取布尔值，不存在或格式不符返回 null。
+  ///
+  /// 兼容三种格式：
+  /// - Java/PNX：`true` / `false`
+  /// - PMMP：`on` / `off`
   bool? getBool(String key) {
-    final v = this[key];
+    final v = this[key]?.toLowerCase();
     if (v == null) return null;
-    if (v == 'true') return true;
-    if (v == 'false') return false;
+    if (v == 'true' || v == 'on') return true;
+    if (v == 'false' || v == 'off') return false;
     return null;
   }
 
@@ -121,7 +128,17 @@ class ServerProperties {
 
   // —— 类型化快捷写入 ——
 
-  void setBool(String key, bool value) => this[key] = value.toString();
+  /// 写入布尔值。`format` 决定序列化格式：
+  /// - [BoolFormat.trueFalse]（默认）：写入 `true` / `false`（Java/PNX）
+  /// - [BoolFormat.onOff]：写入 `on` / `off`（PMMP）
+  void setBool(String key, bool value,
+      [BoolFormat format = BoolFormat.trueFalse]) {
+    this[key] = switch (format) {
+      BoolFormat.trueFalse => value.toString(),
+      BoolFormat.onOff => value ? 'on' : 'off',
+    };
+  }
+
   void setInt(String key, int value) => this[key] = value.toString();
 
   /// 将所有条目序列化为 server.properties 格式的字符串。

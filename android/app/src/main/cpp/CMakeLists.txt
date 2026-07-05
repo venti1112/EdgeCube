@@ -27,25 +27,9 @@ target_link_libraries(launch dl log)
 add_library(tagfix SHARED tagfix.c)
 target_link_libraries(tagfix dl log)
 
-# ─── libphploader.so ─── PHP 启动器（dlopen libphpwrapper.so，与 liblaunch.so 同构）
-# PHP 运行时本体（libphp.so / libphpwrapper.so 及其依赖）通过 .ecpkg 安装
-# 到 App 数据目录，由本加载器在 PTY 子进程中 dlopen 加载并调用 php_run。
-# PHP 以 --enable-zts --enable-static-tsrm-cache 构建，_tsrm_ls_cache 作为
-# __thread 变量（global-dynamic TLS 模型）定义在 libphp.so 内部，兼容 dlopen。
-add_executable(phploader phploader.c)
-
-set_target_properties(phploader PROPERTIES
-        PREFIX "lib"
-        SUFFIX ".so"
-        OUTPUT_NAME "phploader")
-
-target_compile_options(phploader PRIVATE -fPIE)
-target_link_options(phploader PRIVATE -fPIE -pie)
-target_link_libraries(phploader dl log)
-
 # ─── libfrpcloader.so ─── frpc 启动器（dlopen 数据目录里的 libfrpc.so）
-# 与 liblaunch.so / libphploader.so 同构，但更简单：libfrpc.so 是 Go c-shared
-# 自包含库，运行期无额外 .so 依赖，故无需预加载、无需 tsrm_cache、无需 tagfix。
+# 与 liblaunch.so 同构，但更简单：libfrpc.so 是 Go c-shared 自包含库，
+# 运行期无额外 .so 依赖，故无需预加载、无需 tagfix。
 add_executable(frpcloader frpcloader.c)
 
 set_target_properties(frpcloader PROPERTIES

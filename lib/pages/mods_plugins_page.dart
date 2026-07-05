@@ -14,6 +14,7 @@ import '../mods/icon_cache.dart';
 import '../mods/mod_metadata.dart';
 import '../mods/modrinth_service.dart';
 import 'mod_download_page.dart';
+import 'poggit_download_page.dart';
 
 /// 模组/插件管理页：根据实例目录下是否存在 plugins / mods 文件夹，
 /// 动态显示对应选项卡。
@@ -39,6 +40,7 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
   bool _loading = true;
   bool _hasPlugins = false;
   bool _hasMods = false;
+  bool _isPmmp = false;
   Directory? _pluginsDir;
   Directory? _modsDir;
   TabController? _tabCtrl;
@@ -70,6 +72,7 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
     final mods = Directory(p.join(dir.path, _kMods));
     final hasPlugins = plugins.existsSync();
     final hasMods = mods.existsSync();
+    final isPmmp = instance.isPhp;
 
     _tabCtrl?.dispose();
     // plugins → 管理选项卡 + 下载选项卡；mods → 管理选项卡 + 下载选项卡
@@ -80,6 +83,7 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
     setState(() {
       _hasPlugins = hasPlugins;
       _hasMods = hasMods;
+      _isPmmp = isPmmp;
       _pluginsDir = hasPlugins ? plugins : null;
       _modsDir = hasMods ? mods : null;
       _loading = false;
@@ -108,7 +112,11 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
                   if (_hasPlugins)
                     Tab(text: context.tr('modsPlugins.tab.plugins')),
                   if (_hasPlugins)
-                    Tab(text: context.tr('modsPlugins.tab.downloadPlugin')),
+                    Tab(
+                      text: _isPmmp
+                          ? context.tr('modsPlugins.tab.downloadPoggit')
+                          : context.tr('modsPlugins.tab.downloadPlugin'),
+                    ),
                   if (_hasMods) Tab(text: context.tr('modsPlugins.tab.mods')),
                   if (_hasMods)
                     Tab(text: context.tr('modsPlugins.tab.download')),
@@ -128,14 +136,23 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
               controller: _tabCtrl,
               children: [
                 if (_hasPlugins && _pluginsDir != null)
-                  _ContentTab(folder: _pluginsDir!, isJarContent: true),
-                if (_hasPlugins && _pluginsDir != null)
-                  ModDownloadPage(
-                    modsFolder: _pluginsDir!,
-                    embedded: true,
-                    projectType: 'plugin',
-                    titleKey: 'modsPlugins.downloadPlugin',
+                  _ContentTab(
+                    folder: _pluginsDir!,
+                    isJarContent: true,
+                    isPmmp: _isPmmp,
                   ),
+                if (_hasPlugins && _pluginsDir != null)
+                  _isPmmp
+                      ? PoggitDownloadPage(
+                          pluginsFolder: _pluginsDir!,
+                          embedded: true,
+                        )
+                      : ModDownloadPage(
+                          modsFolder: _pluginsDir!,
+                          embedded: true,
+                          projectType: 'plugin',
+                          titleKey: 'modsPlugins.downloadPlugin',
+                        ),
                 if (_hasMods && _modsDir != null)
                   _ContentTab(folder: _modsDir!, isJarContent: true),
                 if (_hasMods && _modsDir != null)
@@ -149,10 +166,16 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
 /// 单个选项卡内容。
 ///
 /// [isJarContent] 为 true 时启用模组/插件识别、图标获取与更新功能。
+/// [isPmmp] 为 true 时识别 .phar 文件（PocketMine-MP 插件），否则识别 .jar。
 class _ContentTab extends StatefulWidget {
-  const _ContentTab({required this.folder, this.isJarContent = false});
+  const _ContentTab({
+    required this.folder,
+    this.isJarContent = false,
+    this.isPmmp = false,
+  });
   final Directory folder;
   final bool isJarContent;
+  final bool isPmmp;
 
   @override
   State<_ContentTab> createState() => _ContentTabState();
@@ -190,16 +213,18 @@ class _ContentTabState extends State<_ContentTab> {
     setState(() => _loading = true);
     final entries = await _service.list(widget.folder);
     if (!mounted) return;
-    // 仅显示根目录下的 .jar 和 .jar.disabled 文件
-    final jars = entries.where((e) => e.isFile && _isJar(e.name)).toList();
+    // PMMP 识别 .phar 文件，Java 识别 .jar 文件
+    final files = entries.where((e) => e.isFile && _isPluginFile(e.name)).toList();
     setState(() {
-      _entries = jars;
+      _entries = files;
       _loading = false;
       _metadata.clear();
       _icons.clear();
       _sha1Hashes.clear();
       _updates.clear();
     });
+    // 元数据识别（.jar 和 .phar 都支持）
+    // PMMP 模式下仅识别元数据，不走 Modrinth 图标获取和更新检查
     if (widget.isJarContent) {
       _identifyMods();
     }
@@ -207,7 +232,7 @@ class _ContentTabState extends State<_ContentTab> {
 
   // ── 模组识别 ──────────────────────────────────────────────────
 
-  /// 单个 jar 解析失败时返回 null，避免异常中断批量处理。
+  /// 单个文件解析失败时返回 null，避免异常中断批量处理。
   Future<ModMetadata?> _safeParse(String path) async {
     try {
       return await ModMetadataParser.parse(path);
@@ -218,14 +243,17 @@ class _ContentTabState extends State<_ContentTab> {
 
   /// 分批并行解析模组元数据，每批完成后统一 setState，避免频繁重建列表。
   Future<void> _identifyMods() async {
-    final jars = _entries.where((e) => e.isFile && _isJar(e.name)).toList();
-    if (jars.isEmpty) return;
+    // 使用 _isPluginFile 而非 _isJar，使 .phar 文件也能被识别
+    final plugins = _entries
+        .where((e) => e.isFile && _isPluginFile(e.name))
+        .toList();
+    if (plugins.isEmpty) return;
 
     // 每批并行解析 6 个：平衡 isolate 开销与 UI 响应
     const batchSize = 6;
-    for (var i = 0; i < jars.length; i += batchSize) {
-      final end = (i + batchSize).clamp(0, jars.length);
-      final batch = jars.sublist(i, end);
+    for (var i = 0; i < plugins.length; i += batchSize) {
+      final end = (i + batchSize).clamp(0, plugins.length);
+      final batch = plugins.sublist(i, end);
       final results = await Future.wait(batch.map((e) => _safeParse(e.path)));
       if (!mounted) return;
       setState(() {
@@ -234,8 +262,8 @@ class _ContentTabState extends State<_ContentTab> {
         }
       });
     }
-    // 识别完成后获取模组图标
-    if (mounted) _fetchModIcons(jars);
+    // 仅 Java 模组通过 SHA1 查询 Modrinth 获取图标（Poggit 不支持 SHA1 查询）
+    if (mounted && !widget.isPmmp) _fetchModIcons(plugins);
   }
 
   // ── 获取模组图标 ──────────────────────────────────────────────
@@ -625,12 +653,15 @@ class _ContentTabState extends State<_ContentTab> {
 
   /// 切换模组/插件的启用状态。
   ///
-  /// `.jar` → `.jar.disabled`（禁用），`.jar.disabled` → `.jar`（启用）。
+  /// `.jar`/`.phar` → `.jar.disabled`/`.phar.disabled`（禁用），
+  /// `.jar.disabled`/`.phar.disabled` → `.jar`/`.phar`（启用）。
   /// 原地更新条目，保留已获取的元数据/图标/哈希（迁移到新路径）。
   Future<void> _toggleEnabled(FileEntry entry) async {
     final tr = LocaleScope.of(context).translations;
     final messenger = ScaffoldMessenger.of(context);
-    final isDisabled = entry.name.toLowerCase().endsWith('.jar.disabled');
+    final lower = entry.name.toLowerCase();
+    final isDisabled = lower.endsWith('.jar.disabled') ||
+        lower.endsWith('.phar.disabled');
 
     // 弹窗确认
     final confirmed = await showDialog<bool>(
@@ -752,7 +783,8 @@ class _ContentTabState extends State<_ContentTab> {
     final sourcePath = await pickFromSystem(
       context,
       mode: SystemPickMode.file,
-      allowedExtensions: const ['.jar'],
+      allowedExtensions:
+          widget.isPmmp ? const ['.phar'] : const ['.jar'],
     );
     if (sourcePath == null) return;
     if (!mounted) return;
@@ -822,6 +854,16 @@ class _ContentTabState extends State<_ContentTab> {
 
   // ── 辅助方法 ──────────────────────────────────────────────────
 
+  /// 判断文件是否为当前实例类型的插件文件。
+  /// PMMP 识别 .phar / .phar.disabled，Java 识别 .jar / .jar.disabled。
+  bool _isPluginFile(String name) {
+    final lower = name.toLowerCase();
+    if (widget.isPmmp) {
+      return lower.endsWith('.phar') || lower.endsWith('.phar.disabled');
+    }
+    return lower.endsWith('.jar') || lower.endsWith('.jar.disabled');
+  }
+
   bool _isJar(String name) =>
       name.toLowerCase().endsWith('.jar') ||
       name.toLowerCase().endsWith('.jar.disabled');
@@ -872,7 +914,7 @@ class _ContentTabState extends State<_ContentTab> {
             style: theme.textTheme.titleSmall,
           ),
           const Spacer(),
-          if (widget.isJarContent) ...[
+          if (widget.isJarContent && !widget.isPmmp) ...[
             if (_checkingUpdates)
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 4),
@@ -948,9 +990,10 @@ class _ContentTabState extends State<_ContentTab> {
     final iconUrl = _icons[entry.path];
     final hasUpdate = _updates.containsKey(entry.path);
     final isUpdating = _updatingPaths.contains(entry.path);
-    final isDisabled =
-        entry.isFile && entry.name.toLowerCase().endsWith('.jar.disabled');
-    final isJarFile = entry.isFile && _isJar(entry.name);
+    final lower = entry.name.toLowerCase();
+    final isDisabled = lower.endsWith('.jar.disabled') ||
+        lower.endsWith('.phar.disabled');
+    final isPluginFile = entry.isFile && _isPluginFile(entry.name);
 
     // 标题：模组名称 > 文件名（禁用时去掉 .disabled 后缀）
     String title;
@@ -1011,7 +1054,7 @@ class _ContentTabState extends State<_ContentTab> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (isJarFile)
+            if (isPluginFile)
               IconButton(
                 icon: Icon(
                   isDisabled ? Icons.check_circle_outline : Icons.block,
@@ -1091,6 +1134,7 @@ class _ContentTabState extends State<_ContentTab> {
       ModLoader.bukkit => const Color.fromARGB(255, 170, 255, 170),
       ModLoader.bungeecord => const Color.fromARGB(255, 255, 221, 107),
       ModLoader.velocity => const Color.fromARGB(255, 107, 221, 255),
+      ModLoader.pocketmine => const Color.fromARGB(255, 170, 255, 221),
       ModLoader.unknown => theme.colorScheme.surfaceContainerHighest,
     };
     return Container(

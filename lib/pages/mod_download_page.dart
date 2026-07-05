@@ -185,10 +185,21 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
         },
       ),
     ).then((downloaded) {
+      // sheet 关闭后，用父页面稳定的 context 显示 SnackBar，
+      // 避免 sheet 的 context 失效导致 SnackBar 永不消失或"查看队列"按钮无效。
       if (downloaded == true && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('modsPlugins.downloadSuccess'))),
-        );
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(context.tr('modsPlugins.downloadQueued')),
+              duration: const Duration(seconds: 4),
+              action: SnackBarAction(
+                label: context.tr('modsPlugins.viewQueue'),
+                onPressed: () => showDownloadQueueSheet(context),
+              ),
+            ),
+          );
       }
     });
   }
@@ -812,19 +823,10 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
           : widget.version.name,
       iconUrl: widget.iconUrl,
     );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(context.tr('modsPlugins.downloadQueued')),
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: context.tr('modsPlugins.viewQueue'),
-            onPressed: () => showDownloadQueueSheet(context),
-          ),
-        ),
-      );
+    // 不在此处显示 SnackBar：此处 context 是 sheet 的 BuildContext，
+    // sheet 关闭后会失效，导致 SnackBar 永不消失且"查看队列"按钮点击无效。
+    // 改由父页面在 sheet 关闭后的 .then() 回调中用稳定的 context 显示。
+    widget.onDownloaded();
   }
 
   String _dependencyLabel(ModrinthDependency dep) {
@@ -1195,16 +1197,22 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
         },
       ),
     ).then((downloaded) {
+      // sheet 关闭后，用父页面稳定的 context 显示 SnackBar，
+      // 避免 sheet 的 context 失效导致 SnackBar 永不消失或"查看队列"按钮无效。
       if (downloaded == true && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              LocaleScope.of(
-                context,
-              ).translations.get('modsPlugins.downloadSuccess'),
+        final tr = LocaleScope.of(context).translations;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(tr.get('modsPlugins.downloadQueued')),
+              duration: const Duration(seconds: 4),
+              action: SnackBarAction(
+                label: tr.get('modsPlugins.viewQueue'),
+                onPressed: () => showDownloadQueueSheet(context),
+              ),
             ),
-          ),
-        );
+          );
       }
     });
   }

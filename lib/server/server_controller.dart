@@ -285,6 +285,19 @@ class ServerController extends ChangeNotifier {
   int _pnxWizardStep = 0; // 0=未触发, 1=等待许可, 2=等待跳过, 3=等待启动
   bool _userForceStopping = false;
 
+  // —— 重启支持：缓存最近一次启动参数，供 restart() 在停止后复用 ——
+  String? _lastInstanceId;
+  String? _lastInstanceName;
+  String? _lastWorkingDir;
+  String? _lastRuntimeId;
+  String? _lastRuntime;
+  List<String> _lastJvmArgs = const [];
+  List<String> _lastProgramArgs = const [];
+  bool _lastCompatMode = false;
+
+  /// 优雅停止完成后是否自动重新启动（restart 流程中置位）。
+  bool _pendingRestart = false;
+
   // —— UPnP / FRP 即时状态标志 ——
   bool _upnpActive = false;
   bool _tunnelActive = false;
@@ -315,6 +328,7 @@ class ServerController extends ChangeNotifier {
   String? _upnpExternalIp; // UPnP 映射成功后的公网 IP
   FrpcConfig? _activeFrpcConfig; // 当前活跃的 FRP 配置
   int? _serverPort; // 从配置文件读取的服务端端口（启动时缓存）
+  bool? _onlineMode; // 正版验证（online-mode / xbox-auth）是否开启（启动时缓存）
 
   ServerStatus get status => _status;
   bool get isRunning => _status == ServerStatus.running;
@@ -347,6 +361,11 @@ class ServerController extends ChangeNotifier {
   /// 服务端实际监听端口（启动时从配置文件读取并缓存）。
   int? get serverPort => _serverPort;
 
+  /// 正版验证（Java 的 online-mode / 基岩版的 xbox-auth）是否开启。
+  ///
+  /// 启动时从配置文件读取并缓存；null 表示尚未读取或读取失败。
+  bool? get onlineMode => _onlineMode;
+
   /// 从实例目录的 server.properties 或 pnx.yml 读取服务端实际监听端口。
   ///
   /// 用于内网地址显示等需要真实端口的场景，与 UPnP 映射状态无关。
@@ -368,6 +387,73 @@ class ServerController extends ChangeNotifier {
       return 25565;
     } catch (_) {
       return 25565;
+    }
+  }
+
+  /// 从实例目录的 server.properties 或 pnx.yml 读取正版验证是否开启。
+  ///
+  /// 兼容 Java 的 `online-mode`、PMMP 的 `xbox-auth` 与 PNX 的
+  /// `settings.xboxAuth`；三者均默认开启（未显式关闭即视为正版验证）。
+  Future<bool?> readOnlineMode() async {
+    final dir = _workingDir;
+    if (dir == null) return null;
+    try {
+      final propsFile = File(p.join(dir, 'server.properties'));
+      if (await propsFile.exists()) {
+        final props =
+            ServerProperties.parse(await propsFile.readAsString());
+        return props.getBool('online-mode') ??
+            props.getBool('xbox-auth') ??
+            true;
+      }
+      final pnxFile = File(p.join(dir, 'pnx.yml'));
+      if (await pnxFile.exists()) {
+        final pnx = PnxProperties.parse(await pnxFile.readAsString());
+        return pnx.getBool('settings.xboxAuth') ?? true;
+      }
+      return true;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 切换正版验证并写回配置文件，成功返回 true。
+  ///
+  /// 与 [readOnlineMode] 的来源对应写回：server.properties 中的 online-mode
+  /// (Java，true/false) 或 xbox-auth (PMMP，on/off)，或 pnx.yml 的
+  /// settings.xboxAuth。
+  ///
+  /// 注意：**不更新** [onlineMode] 缓存——运行中的服务端仍在用旧设置，芯片应继续
+  /// 显示当前真实生效的状态，直到重启后 [_cacheServerInfo] 重新读盘刷新。
+  Future<bool> setOnlineMode(bool value) async {
+    final dir = _workingDir;
+    if (dir == null) return false;
+    try {
+      final propsFile = File(p.join(dir, 'server.properties'));
+      if (await propsFile.exists()) {
+        final props = ServerProperties.parse(await propsFile.readAsString());
+        // PMMP 用 xbox-auth(on/off)，Java 用 online-mode(true/false)；
+        // 与 readOnlineMode 一致，两者都在时优先 online-mode。
+        if (props.containsKey('xbox-auth') &&
+            !props.containsKey('online-mode')) {
+          props.setBool('xbox-auth', value, BoolFormat.onOff);
+        } else {
+          props.setBool('online-mode', value);
+        }
+        await propsFile.writeAsString(props.toString());
+        return true;
+      }
+      final pnxFile = File(p.join(dir, 'pnx.yml'));
+      if (await pnxFile.exists()) {
+        final pnx = PnxProperties.parse(await pnxFile.readAsString());
+        if (!pnx.containsKey('settings.xboxAuth')) return false;
+        pnx['settings.xboxAuth'] = value.toString();
+        await pnxFile.writeAsString(pnx.toString());
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -403,6 +489,15 @@ class ServerController extends ChangeNotifier {
     _runtimeId = runtimeId;
     _runtimeName = '';
     _runtimeVersion = '';
+    // 缓存本次启动参数，供 restart() 在完全停止后用相同配置重新拉起。
+    _lastInstanceId = instanceId;
+    _lastInstanceName = instanceName;
+    _lastWorkingDir = workingDir;
+    _lastRuntimeId = runtimeId;
+    _lastRuntime = runtime;
+    _lastJvmArgs = jvmArgs;
+    _lastProgramArgs = programArgs;
+    _lastCompatMode = compatMode;
     try {
       final runtimes = await const RuntimeService().installedRuntimes();
       for (final rt in runtimes) {
@@ -440,7 +535,7 @@ class ServerController extends ChangeNotifier {
             ? ServerStatus.running
             : ServerStatus.starting;
         if (_status == ServerStatus.running) {
-          _cacheServerPort();
+          _cacheServerInfo();
           _triggerUpnp();
           _triggerTunnel();
         }
@@ -452,6 +547,7 @@ class ServerController extends ChangeNotifier {
       _instanceId = null;
       _instanceName = null;
       _serverPort = null;
+      _onlineMode = null;
       notifyListeners();
     }
   }
@@ -472,6 +568,44 @@ class ServerController extends ChangeNotifier {
     _userForceStopping = true;
     _notice('[EdgeCube] 强制结束进程…');
     await _service.forceStop();
+  }
+
+  /// 是否可以重启：至少成功启动过一次（有缓存的启动参数）。
+  bool get canRestart => _lastInstanceId != null;
+
+  /// 重启服务端：正在运行时先发送 stop，待进程完全停止后用最近一次的参数重新启动；
+  /// 已停止时直接用缓存参数重新拉起；忙碌（准备/启动/停止中）时忽略。
+  Future<void> restart() async {
+    if (_lastInstanceId == null) return; // 从未启动过，无参数可用
+    if (_status == ServerStatus.stopped) {
+      await _relaunch();
+      return;
+    }
+    if (_status != ServerStatus.running) return; // 忙碌中不处理
+    _pendingRestart = true;
+    _notice('[EdgeCube] 正在重启服务端…');
+    await stop();
+  }
+
+  /// 用最近一次的启动参数重新拉起服务端。
+  Future<void> _relaunch() async {
+    final id = _lastInstanceId;
+    final dir = _lastWorkingDir;
+    final runtimeId = _lastRuntimeId;
+    final runtime = _lastRuntime;
+    if (id == null || dir == null || runtimeId == null || runtime == null) {
+      return;
+    }
+    await start(
+      instanceId: id,
+      instanceName: _lastInstanceName ?? id,
+      workingDir: dir,
+      runtimeId: runtimeId,
+      runtime: runtime,
+      jvmArgs: _lastJvmArgs,
+      programArgs: _lastProgramArgs,
+      compatMode: _lastCompatMode,
+    );
   }
 
   /// 程序化发送一行控制台命令（如玩家管理页的 op/kick/list；启动中、运行中、
@@ -850,7 +984,7 @@ class ServerController extends ChangeNotifier {
           };
           // 服务端进入运行态后触发 UPnP 端口映射和 FRP 隧道。
           if (_status == ServerStatus.running) {
-            _cacheServerPort();
+            _cacheServerInfo();
             if (!_upnpActive) _triggerUpnp();
             if (!_tunnelActive) _triggerTunnel();
           }
@@ -859,6 +993,7 @@ class ServerController extends ChangeNotifier {
           _lastExitCode = exitCode;
           _onlinePlayers.clear();
           _serverPort = null;
+          _onlineMode = null;
           if (_upnpActive) _stopUpnp();
           if (_tunnelActive && !_restartingTunnel) _stopTunnel();
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
@@ -871,6 +1006,13 @@ class ServerController extends ChangeNotifier {
           }
           _userStopping = false;
           _userForceStopping = false;
+          // 待执行的重启：进程已完全停止，稍作延迟确保原生侧清理后重新启动。
+          if (_pendingRestart) {
+            _pendingRestart = false;
+            Future.delayed(const Duration(milliseconds: 600), () {
+              if (_status == ServerStatus.stopped) _relaunch();
+            });
+          }
         }
         notifyListeners();
     }
@@ -988,10 +1130,14 @@ class ServerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 从配置文件读取并缓存服务端端口（服务端进入运行态时调用）。
-  void _cacheServerPort() {
+  /// 从配置文件读取并缓存服务端端口与正版验证状态（服务端进入运行态时调用）。
+  void _cacheServerInfo() {
     readServerPort().then((port) {
       _serverPort = port;
+      notifyListeners();
+    });
+    readOnlineMode().then((online) {
+      _onlineMode = online;
       notifyListeners();
     });
   }

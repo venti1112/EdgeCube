@@ -25,7 +25,7 @@ class _PlayersPageState extends State<PlayersPage>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 4, vsync: this);
+    _tabCtrl = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -48,6 +48,7 @@ class _PlayersPageState extends State<PlayersPage>
             Tab(text: context.tr('players.tab.online')),
             Tab(text: context.tr('players.tab.whitelist')),
             Tab(text: context.tr('players.tab.bans')),
+            Tab(text: context.tr('players.tab.banIps')),
             Tab(text: context.tr('players.tab.ops')),
           ],
         ),
@@ -60,6 +61,7 @@ class _PlayersPageState extends State<PlayersPage>
                 _OnlineTab(instance: instance),
                 _WhitelistTab(instance: instance),
                 _BansTab(instance: instance),
+                _BanIpsTab(instance: instance),
                 _OpsTab(instance: instance),
               ],
             ),
@@ -128,7 +130,7 @@ class _OnlineTabState extends State<_OnlineTab> {
     setState(() {
       _whitelist = loadWithFallback('whitelist.json', 'white-list.txt');
       _ops = loadWithFallback('ops.json', 'ops.txt');
-      _bans = loadJsonNames('banned-players.json');
+      _bans = loadWithFallback('banned-players.json', 'banned-players.txt');
     });
   }
 
@@ -578,27 +580,50 @@ class _BansTabState extends State<_BansTab> {
 
   Future<List<_BanEntry>> _loadBans() async {
     final dir = await InstanceScope.of(context).directoryFor(widget.instance);
-    final file = File(p.join(dir.path, 'banned-players.json'));
-    if (!await file.exists()) return [];
-    try {
-      final json = jsonDecode(await file.readAsString()) as List;
-      return json
-          .map(
-            (e) => _BanEntry(
-              name: e['name'] as String? ?? '',
-              uuid: e['uuid'] as String? ?? '',
-              reason: e['reason'] as String? ?? '',
-              source: e['source'] as String? ?? '',
-              // PNX uses "expireDate", Java uses "expires"
-              expires: (e['expires'] ?? e['expireDate'] ?? '') as String,
-              // PNX uses "creationDate", Java uses "created"
-              created: (e['created'] ?? e['creationDate'] ?? '') as String,
-            ),
-          )
-          .toList();
-    } catch (_) {
-      return [];
+
+    // 优先读取 Java/PNX 的 banned-players.json
+    final jsonFile = File(p.join(dir.path, 'banned-players.json'));
+    if (await jsonFile.exists()) {
+      try {
+        final json = jsonDecode(await jsonFile.readAsString()) as List;
+        return json
+            .map(
+              (e) => _BanEntry(
+                name: e['name'] as String? ?? '',
+                uuid: e['uuid'] as String? ?? '',
+                reason: e['reason'] as String? ?? '',
+                source: e['source'] as String? ?? '',
+                // PNX uses "expireDate", Java uses "expires"
+                expires: (e['expires'] ?? e['expireDate'] ?? '') as String,
+                // PNX uses "creationDate", Java uses "created"
+                created: (e['created'] ?? e['creationDate'] ?? '') as String,
+              ),
+            )
+            .toList();
+      } catch (_) {}
     }
+
+    // 回退到 PMMP 的 banned-players.txt（每行一个玩家名，无元数据）
+    final txtFile = File(p.join(dir.path, 'banned-players.txt'));
+    if (await txtFile.exists()) {
+      try {
+        final lines = await txtFile.readAsLines();
+        return lines
+            .map((l) => l.trim())
+            .where((l) => l.isNotEmpty)
+            .map((l) => _BanEntry(
+                  name: l,
+                  uuid: '',
+                  reason: '',
+                  source: '',
+                  expires: '',
+                  created: '',
+                ))
+            .toList();
+      } catch (_) {}
+    }
+
+    return [];
   }
 
   void _refresh() => setState(() => _future = _loadBans());
@@ -712,6 +737,176 @@ class _BansTabState extends State<_BansTab> {
                                     tooltip: context.tr('players.bans.pardon'),
                                     onPressed: () {
                                       server.sendCommand('pardon ${e.name}');
+                                      _refresh();
+                                    },
+                                  )
+                                : null,
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ───────────────────────────── IP 封禁 ─────────────────────────────
+
+class _BanIpsTab extends StatefulWidget {
+  const _BanIpsTab({required this.instance});
+  final Instance instance;
+
+  @override
+  State<_BanIpsTab> createState() => _BanIpsTabState();
+}
+
+class _BanIpsTabState extends State<_BanIpsTab> {
+  Future<List<_IpBanEntry>>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _loadBanIps();
+  }
+
+  Future<List<_IpBanEntry>> _loadBanIps() async {
+    final dir = await InstanceScope.of(context).directoryFor(widget.instance);
+
+    // Java 版 banned-ips.json
+    final jsonFile = File(p.join(dir.path, 'banned-ips.json'));
+    if (await jsonFile.exists()) {
+      try {
+        final json = jsonDecode(await jsonFile.readAsString()) as List;
+        return json
+            .map(
+              (e) => _IpBanEntry(
+                ip: e['ip'] as String? ?? '',
+                reason: e['reason'] as String? ?? '',
+                source: e['source'] as String? ?? '',
+                expires: (e['expires'] ?? e['expireDate'] ?? '') as String,
+                created: (e['created'] ?? e['creationDate'] ?? '') as String,
+              ),
+            )
+            .toList();
+      } catch (_) {}
+    }
+
+    // PMMP/Java 通用 banned-ips.txt（每行一个 IP）
+    final txtFile = File(p.join(dir.path, 'banned-ips.txt'));
+    if (await txtFile.exists()) {
+      try {
+        final lines = await txtFile.readAsLines();
+        return lines
+            .map((l) => l.trim())
+            .where((l) => l.isNotEmpty)
+            .map((l) => _IpBanEntry(
+                  ip: l,
+                  reason: '',
+                  source: '',
+                  expires: '',
+                  created: '',
+                ))
+            .toList();
+      } catch (_) {}
+    }
+
+    return [];
+  }
+
+  void _refresh() => setState(() => _future = _loadBanIps());
+
+  @override
+  Widget build(BuildContext context) {
+    final server = ServerScope.of(context);
+    final running = server.isRunning && server.isActive(widget.instance.id);
+    final theme = Theme.of(context);
+
+    return FutureBuilder<List<_IpBanEntry>>(
+      future: _future,
+      builder: (ctx, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final entries = snap.data ?? [];
+        return Column(
+          children: [
+            _ListHeader(
+              title: context.tr('players.banIps.count', {
+                'count': '${entries.length}',
+              }),
+              tooltip: context.tr('common.refresh'),
+              onRefresh: _refresh,
+              actionLabel: context.tr('players.action.banIp'),
+              actionIcon: Icons.add,
+              onAction: running
+                  ? () => _promptAndSend(
+                        context,
+                        server,
+                        title: context.tr('players.banIps.addTitle'),
+                        hint: context.tr('players.banIps.hint'),
+                        commandPrefix: 'ban-ip',
+                        onDone: _refresh,
+                        withReason: true,
+                      )
+                  : null,
+            ),
+            if (!running)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
+                child: Text(
+                  context.tr('players.readonlyNote'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            Expanded(
+              child: entries.isEmpty
+                  ? _emptyState(
+                      theme,
+                      Icons.check_circle_outline,
+                      context.tr('players.banIps.empty'),
+                      context.tr('players.banIps.emptyHint'),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: entries.length,
+                      itemBuilder: (ctx, i) {
+                        final e = entries[i];
+                        return Card(
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: theme.colorScheme.errorContainer,
+                              child: Icon(
+                                Icons.router,
+                                color: theme.colorScheme.onErrorContainer,
+                                size: 20,
+                              ),
+                            ),
+                            title: Text(e.ip),
+                            subtitle: e.reason.isNotEmpty
+                                ? Text(
+                                    context.tr('players.bans.reason', {
+                                      'reason': e.reason,
+                                    }),
+                                    style: theme.textTheme.bodySmall,
+                                  )
+                                : null,
+                            trailing: running
+                                ? IconButton(
+                                    icon: Icon(
+                                      Icons.delete,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                    tooltip: context.tr('players.banIps.pardon'),
+                                    onPressed: () {
+                                      server.sendCommand('pardon-ip ${e.ip}');
                                       _refresh();
                                     },
                                   )
@@ -1086,6 +1281,23 @@ class _BanEntry {
   });
   final String name;
   final String uuid;
+  final String reason;
+  final String source;
+  final String expires;
+  final String created;
+}
+
+/// IP 封禁条目。Java 版 banned-ips.json 含完整元数据，PMMP/通用 banned-ips.txt
+/// 仅含 IP，其余字段为空字符串。
+class _IpBanEntry {
+  const _IpBanEntry({
+    required this.ip,
+    required this.reason,
+    required this.source,
+    required this.expires,
+    required this.created,
+  });
+  final String ip;
   final String reason;
   final String source;
   final String expires;
