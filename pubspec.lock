@@ -199,10 +199,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_markdown_plus
-      sha256: "039177906850278e8fb1cd364115ee0a46281135932fa8ecea8455522166d2de"
+      sha256: "3893b00caa52ce75cf9212f2c159ea517b9d64a641fc2226811bf5f218b5b77e"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.7"
+    version: "1.0.9"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -521,10 +521,10 @@ packages:
     dependency: "direct main"
     description:
       name: re_editor
-      sha256: "73e5daf7041b382c07ed707d5efd2d0a53851bb9eb6d6987260229ae0ed2f458"
+      sha256: "66671c4774a6b4c5254c9a53ab35a083e7e7da9ae371c519bcf491c70a2a4e56"
       url: "https://pub.dev"
     source: hosted
-    version: "0.9.0"
+    version: "0.10.0"
   re_highlight:
     dependency: "direct main"
     description:

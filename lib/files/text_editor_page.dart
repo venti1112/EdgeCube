@@ -387,7 +387,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                 ],
               );
             },
-        sperator: Container(width: 1, color: Theme.of(context).dividerColor),
+        leadingDivider: Container(width: 1, color: Theme.of(context).dividerColor),
         style: CodeEditorStyle(
           fontFamily: 'monospace',
           fontSize: 13,

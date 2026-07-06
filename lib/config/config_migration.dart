@@ -134,7 +134,16 @@ class ConfigMigration {
     if (frpc != null && frpc.isNotEmpty) {
       try {
         final m = jsonDecode(frpc) as Map<String, dynamic>;
-        await NetworkStore.saveFrpc(FrpcConfig.fromJsonMap(m));
+        final config = FrpcConfig.fromJsonMap(m);
+        // 将旧配置写入 frpc.toml 供用户后续编辑。
+        final file = await NetworkStore.customFrpcFile();
+        if (!await file.exists()) {
+          final parent = file.parent;
+          if (!await parent.exists()) {
+            await parent.create(recursive: true);
+          }
+          await file.writeAsString(config.toToml(), flush: true);
+        }
       } catch (_) {
         // 损坏的 frpc 配置跳过。
       }

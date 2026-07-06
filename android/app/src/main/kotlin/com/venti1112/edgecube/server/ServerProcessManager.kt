@@ -72,9 +72,15 @@ recursionguard.enabled=0"""
         private const val DEFAULT_CELL_W = 8
         private const val DEFAULT_CELL_H = 16
 
-        /** 服务端初始化完成标志：匹配英文 "Done (Xs)!"（Velocity/Paper）或中文 "启动完成 (Xs)"。 */
+        /** 服务端初始化完成标志：匹配
+         *  - 英文 "Done (Xs)!"（Velocity/Paper）
+         *  - 中文 "启动完成 (Xs)"（Paper 中文）
+         *  - 中文 "加载完成 (X 秒)！"（PocketMine-MP）
+         *  - "Dragonfly server started."（Dragonfly）
+         *  - "Network interface started at <ip>:<port> [(... )] (<ms> ms)"（Allay，
+         *    IPv4-only 与 IPv6 双栈两种变体的公共前缀与尾缀）。 */
         private val DONE_PATTERN =
-            Regex("""Done\s*\([0-9.]+s\)!|启动完成\s*\([0-9.]+s\)""")
+            Regex("""Done\s*\([0-9.]+s\)!|启动完成\s*\([0-9.]+s\)|加载完成\s*\([0-9.]+\s*秒\)！?|Dragonfly server started\.|Network interface started at .+\([0-9]+\s*ms\)""")
 
         /** 日志中的 ANSI 转义序列（CSI，如颜色码 \x1B[36m）；按行解析前剔除。 */
         private val ANSI_PATTERN = Regex("\\x1B\\[[0-?]*[ -/]*[@-~]")
@@ -258,6 +264,32 @@ recursionguard.enabled=0"""
             env["TERM"] = "xterm-256color"
             // PHP 是 musl 静态链接，不依赖 Bionic，故不需要 LD_PRELOAD=libtagfix.so
             // （MTE 标签问题不存在），也不需要 LD_LIBRARY_PATH。
+        } else if (runtime == "dragonfly") {
+            // Dragonfly：执行 nativeLibraryDir 下的 libdragonflyloader.so，由它
+            // dlopen 数据目录里 .ecpkg 安装的 libdragonfly.so（Go c-shared）。
+            val manifest = RuntimeInstaller.installedRuntime(appContext, runtimeId)
+                ?: throw IllegalStateException("Dragonfly 运行时 $runtimeId 未安装，请先在「管理 → 运行环境」导入")
+            val runtimeDir = RuntimeInstaller.runtimeDir(appContext, runtimeId)
+            val dragonflyLib = File(runtimeDir, manifest.launcher.lib)
+            if (!dragonflyLib.exists()) {
+                throw IllegalStateException("未找到 Dragonfly 引擎库：${dragonflyLib.absolutePath}")
+            }
+
+            val loaderBin = File(nativeDir, "libdragonflyloader.so")
+            if (!loaderBin.exists()) {
+                throw IllegalStateException("未找到 libdragonflyloader.so，请确认其已随 APK 打包到 lib 目录")
+            }
+
+            cmd = loaderBin.absolutePath
+            argv.add(loaderBin.absolutePath)
+            argv.addAll(programArgs) // 即 [config.yml 绝对路径]
+
+            env["EC_DRAGONFLY_LIB"] = dragonflyLib.absolutePath
+            env["LD_LIBRARY_PATH"] = "${dragonflyLib.parentFile?.absolutePath}:$nativeDir"
+            env["HOME"] = workingDir
+            env["TMPDIR"] = appContext.cacheDir.absolutePath
+            env["LANG"] = "en_US.UTF-8"
+            env["TERM"] = "xterm-256color"
         } else {
             val manifest = RuntimeInstaller.installedRuntime(appContext, runtimeId)
                 ?: throw IllegalStateException("JRE 运行时 $runtimeId 未安装，请先在「管理 → 运行环境」导入")

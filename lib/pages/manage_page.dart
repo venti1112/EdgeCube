@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
+import 'allay_properties_page.dart';
 import 'instance_export_page.dart';
 import 'mods_plugins_page.dart';
 import 'players_page.dart';
@@ -119,7 +120,8 @@ class ManagePage extends StatelessWidget {
   }
 }
 
-/// 服务器配置入口：自动检测 pnx.yml 或 server.properties 并导航到对应编辑页。
+/// 服务器配置入口：自动检测 pnx.yml / server-settings.yml / server.properties
+/// 并导航到对应编辑页。
 class _ServerConfigTile extends StatefulWidget {
   const _ServerConfigTile();
 
@@ -127,8 +129,11 @@ class _ServerConfigTile extends StatefulWidget {
   State<_ServerConfigTile> createState() => _ServerConfigTileState();
 }
 
+/// 检测到的服务端配置类型。null 表示仍在加载。
+enum _ServerConfigKind { pnx, allay, vanilla }
+
 class _ServerConfigTileState extends State<_ServerConfigTile> {
-  bool? _isPnx; // null = loading
+  _ServerConfigKind? _kind; // null = loading
 
   @override
   void didChangeDependencies() {
@@ -140,30 +145,50 @@ class _ServerConfigTileState extends State<_ServerConfigTile> {
     final ctrl = InstanceScope.of(context);
     final instance = ctrl.selected;
     if (instance == null) {
-      if (mounted) setState(() => _isPnx = false);
+      if (mounted) setState(() => _kind = _ServerConfigKind.vanilla);
       return;
     }
     final dir = await ctrl.directoryFor(instance);
-    final pnxExists = File(p.join(dir.path, 'pnx.yml')).existsSync();
-    if (mounted) setState(() => _isPnx = pnxExists);
+    // 优先级：pnx.yml > server-settings.yml (Allay) > server.properties。
+    if (File(p.join(dir.path, 'pnx.yml')).existsSync()) {
+      if (mounted) setState(() => _kind = _ServerConfigKind.pnx);
+      return;
+    }
+    if (File(p.join(dir.path, 'server-settings.yml')).existsSync()) {
+      if (mounted) setState(() => _kind = _ServerConfigKind.allay);
+      return;
+    }
+    if (mounted) setState(() => _kind = _ServerConfigKind.vanilla);
   }
 
   @override
   Widget build(BuildContext context) {
-    final isPnx = _isPnx;
+    final kind = _kind;
+    final title = switch (kind) {
+      _ServerConfigKind.pnx => context.tr('manage.pnxProperties.title'),
+      _ServerConfigKind.allay => context.tr('manage.allayProperties.title'),
+      _ServerConfigKind.vanilla => context.tr('manage.serverProperties.title'),
+      null => context.tr('manage.serverProperties.title'),
+    };
+    final subtitle = switch (kind) {
+      _ServerConfigKind.pnx => context.tr('manage.pnxProperties.subtitle'),
+      _ServerConfigKind.allay => context.tr('manage.allayProperties.subtitle'),
+      _ServerConfigKind.vanilla =>
+        context.tr('manage.serverProperties.subtitle'),
+      null => context.tr('manage.serverProperties.subtitle'),
+    };
     return _ManageEntryTile(
       icon: Icons.tune,
-      title: isPnx == true
-          ? context.tr('manage.pnxProperties.title')
-          : context.tr('manage.serverProperties.title'),
-      subtitle: isPnx == true
-          ? context.tr('manage.pnxProperties.subtitle')
-          : context.tr('manage.serverProperties.subtitle'),
+      title: title,
+      subtitle: subtitle,
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => isPnx == true
-              ? const PnxPropertiesPage()
-              : const ServerPropertiesPage(),
+          builder: (_) => switch (kind) {
+            _ServerConfigKind.pnx => const PnxPropertiesPage(),
+            _ServerConfigKind.allay => const AllayPropertiesPage(),
+            _ServerConfigKind.vanilla => const ServerPropertiesPage(),
+            null => const ServerPropertiesPage(),
+          },
         ),
       ),
     );

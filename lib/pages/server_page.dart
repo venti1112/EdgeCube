@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config/network_store.dart';
 import '../i18n/locale_scope.dart';
 import '../instance/create_instance_page.dart';
 import '../instance/instance.dart';
@@ -67,6 +68,7 @@ class _LaunchContext {
     required this.phars,
     required this.versions,
     required this.phpRuntimes,
+    required this.dragonflyRuntimes,
     required this.runtimeNames,
   });
 
@@ -75,6 +77,7 @@ class _LaunchContext {
   final List<String> phars;
   final List<String> versions;
   final List<String> phpRuntimes;
+  final List<String> dragonflyRuntimes;
   final Map<String, String> runtimeNames;
 }
 
@@ -109,6 +112,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
   Future<_LaunchContext>? _ctxFuture;
 
   bool get _isPhp => _runtime == kRuntimePhp;
+  bool get _isDragonfly => _runtime == kRuntimeDragonfly;
 
   @override
   void initState() {
@@ -128,6 +132,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     server.onCrashExit = _onCrashExit;
     // FRP 隧道异常退出时复用同一崩溃弹窗（导出/上传日志）。
     server.onTunnelCrashExit = _onTunnelCrashExit;
+    // UPnP 超时提示。
+    server.onUpnpTimeout = _onUpnpTimeout;
     // 监听运行时导入/删除，自动刷新可用运行时列表。
     RuntimeService.refreshSignal.addListener(_onRuntimesChanged);
   }
@@ -158,6 +164,41 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       barrierDismissible: false,
       builder: (ctx) =>
           _CrashDialog(crash: crash, onlineService: widget.onlineService),
+    );
+  }
+
+  /// UPnP 超过 60 秒未成功时弹出提示。
+  void _onUpnpTimeout() {
+    if (!mounted) return;
+    final server = ServerScope.of(context);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.tr('server.upnpTimeoutTitle')),
+        content: Text(context.tr('server.upnpTimeoutMessage')),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              server.disableUpnpNow();
+              NetworkStore.saveUpnpEnabled(false);
+            },
+            child: Text(context.tr('server.upnpTimeoutDisable')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(context.tr('server.upnpTimeoutLater')),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              server.suppressUpnpTimeout();
+            },
+            child: Text(context.tr('server.upnpTimeoutSuppress')),
+          ),
+        ],
+      ),
     );
   }
 
@@ -295,12 +336,17 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       // 内置 PHP CLI（随 APK 打包）的友好名称；.ecpkg 安装的 PHP 会被同 id 覆盖。
       'php-cli-8.2': 'PHP 8.2 (内置)',
     };
+    final dragonflyRuntimes = runtimes
+        .where((rt) => rt.type == 'dragonfly')
+        .map((rt) => rt.id)
+        .toList();
     return _LaunchContext(
       workingDir: dir.path,
       jars: jars,
       phars: phars,
       versions: versions,
       phpRuntimes: phpRuntimes,
+      dragonflyRuntimes: dragonflyRuntimes,
       runtimeNames: runtimeNames,
     );
   }
@@ -387,6 +433,37 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
   void _start(ServerController server, _LaunchContext ctx) async {
     final file = _selectedJar;
 
+    // Dragonfly：用 Dragonfly 运行时执行 config.yml。
+    if (_isDragonfly) {
+      final runtimes = await const RuntimeService().installedRuntimes();
+      final dragonflyRuntimes = runtimes
+          .where((rt) => rt.type == 'dragonfly')
+          .toList();
+      if (dragonflyRuntimes.isEmpty) {
+        _showRuntimeRequiredDialog(isJava: false);
+        return;
+      }
+      final configFile = File(p.join(ctx.workingDir, 'config.yml'));
+      if (!await configFile.exists()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.tr('server.noConfigFound'))),
+        );
+        return;
+      }
+      server.start(
+        instanceId: widget.instance.id,
+        instanceName: widget.instance.name,
+        workingDir: ctx.workingDir,
+        runtimeId: dragonflyRuntimes.first.id,
+        runtime: kRuntimeDragonfly,
+        jvmArgs: const [],
+        programArgs: [configFile.path],
+        compatMode: _compatMode,
+      );
+      return;
+    }
+
     // PHP（PocketMine）：用 PHP 运行时执行选中的 .phar。
     if (_isPhp) {
       if (ctx.phpRuntimes.isEmpty) {
@@ -448,17 +525,16 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
   /// 未安装对应运行时，提示用户前往「运行环境」页导入。
   Future<void> _showRuntimeRequiredDialog({required bool isJava}) async {
     final tr = LocaleScope.of(context).translations;
+    final contentKey = _isDragonfly
+        ? 'server.runtimeRequiredContentDragonfly'
+        : isJava
+            ? 'server.runtimeRequiredContentJava'
+            : 'server.runtimeRequiredContentPhp';
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(tr.get('server.runtimeRequiredTitle')),
-        content: Text(
-          tr.get(
-            isJava
-                ? 'server.runtimeRequiredContentJava'
-                : 'server.runtimeRequiredContentPhp',
-          ),
-        ),
+        content: Text(tr.get(contentKey)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -642,6 +718,10 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                           value: kRuntimePhp,
                           child: Text(context.tr('server.runtimePhp')),
                         ),
+                        DropdownMenuItem(
+                          value: kRuntimeDragonfly,
+                          child: Text(context.tr('server.runtimeDragonfly')),
+                        ),
                       ],
                       selectedItemBuilder: (context) => [
                         DropdownMenuItem<String>(
@@ -658,6 +738,13 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        DropdownMenuItem<String>(
+                          value: kRuntimeDragonfly,
+                          child: Text(
+                            context.tr('server.runtimeDragonfly'),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ],
                       onChanged: (v) {
                         if (v == null || v == _runtime) return;
@@ -668,6 +755,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                             _selectedJar = ctx.phars.isNotEmpty
                                 ? ctx.phars.first
                                 : null;
+                          } else if (_isDragonfly) {
+                            _selectedJar = null;
                           } else {
                             _selectedJar = ctx.jars.isNotEmpty
                                 ? ctx.jars.first
@@ -683,7 +772,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                       },
                     ),
                     const SizedBox(height: 16),
-                    if (!_isPhp) ...[
+                    if (!_isPhp && !_isDragonfly) ...[
                       DropdownButtonFormField<String>(
                         isExpanded: true,
                         initialValue: ctx.versions.contains(_version)
@@ -727,6 +816,22 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                         ),
                       ),
                       const SizedBox(height: 16),
+                    ] else if (_isDragonfly) ...[
+                      // Dragonfly 运行时版本。
+                      InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: context.tr('server.runtimeVersionLabel'),
+                          border: const OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        child: Text(
+                          ctx.dragonflyRuntimes.isNotEmpty
+                              ? (ctx.runtimeNames[ctx.dragonflyRuntimes.first] ??
+                                    ctx.dragonflyRuntimes.first)
+                              : context.tr('server.noRuntimeAvailable'),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                     ] else ...[
                       // PHP 运行时版本（只读；当前仅 PHP 8.2，且仅 aarch64 提供）。
                       InputDecorator(
@@ -744,9 +849,12 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                       ),
                       const SizedBox(height: 16),
                     ],
-                    _serverFileField(dialogContext, ctx),
+                    if (_isDragonfly)
+                      _serverConfigField(dialogContext, ctx)
+                    else
+                      _serverFileField(dialogContext, ctx),
                     const SizedBox(height: 16),
-                    if (!_isPhp) ...[
+                    if (!_isPhp && !_isDragonfly) ...[
                       TextField(
                         controller: _jvmArgsController,
                         maxLines: 4,
@@ -819,6 +927,22 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       },
     );
     nameController.dispose();
+  }
+
+  Widget _serverConfigField(BuildContext context, _LaunchContext ctx) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(Icons.description_outlined, size: 20, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            context.tr('server.serverConfigLabel'),
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _serverFileField(BuildContext context, _LaunchContext ctx) {
@@ -1466,8 +1590,6 @@ class _ConnectionCard extends StatelessWidget {
     final upnpIp = server.upnpExternalIp;
     final upnpPort = server.upnpMappedPort;
     final serverPort = server.serverPort;
-    final frpConfig = server.activeFrpcConfig;
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1592,19 +1714,38 @@ class _ConnectionCard extends StatelessWidget {
                   ),
                 ),
 
-              // FRP 公网地址（隧道真正连接成功后显示，与状态芯片的"已映射"一致）。
-              if (tunnelRunning && frpConfig != null)
+              // UPnP 获取到的 IP 属于保留/私有地址段（CGNAT 等）时给出提示。
+              if (server.upnpIsCgnat)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
-                  child: _infoRow(
-                    context,
-                    theme,
-                    icon: Icons.cloud_outlined,
-                    label: context.tr('server.frpPublic'),
-                    value: '${frpConfig.serverAddr}:${frpConfig.remotePort}',
-                    canCopy: true,
+                  child: Card(
+                    color: theme.colorScheme.errorContainer,
+                    margin: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_outlined,
+                            size: 18,
+                            color: theme.colorScheme.onErrorContainer,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              context.tr('server.upnpCgnatWarning'),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
+
             ],
           ],
         ),

@@ -51,7 +51,7 @@ object EcPackage {
         }
 
         val type = root.getString("type")
-        if (type !in setOf("jre", "php", "frpc")) {
+        if (type !in setOf("jre", "php", "frpc", "dragonfly")) {
             throw IllegalArgumentException("不支持的运行时类型：$type")
         }
 
@@ -81,7 +81,7 @@ object EcPackage {
             type = launcherObj.getString("type"),
             lib = launcherObj.getString("lib"),
         )
-        if (launcher.type !in setOf("jli", "embed", "frpc")) {
+        if (launcher.type !in setOf("jli", "embed", "frpc", "dragonfly")) {
             throw IllegalArgumentException("不支持的启动器类型：${launcher.type}")
         }
 

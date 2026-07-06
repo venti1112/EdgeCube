@@ -2,16 +2,12 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-import '../tunnel/tunnel_service.dart';
 import 'config_store.dart';
 
-/// 网络映射配置（UPnP 开关、FRP 隧道开关与 frpc 配置）的本地持久化。
+/// 网络映射配置（UPnP 开关、FRP 隧道开关）的本地持久化。
 ///
-/// 全部存于 `config/network.json`，取代旧版散落在 SharedPreferences 中的
-/// `upnp_enabled` / `tunnel_enabled` / `frpc_config` 三个键。
-///
-/// 另支持「直接编辑配置文件」：用户可编辑原始 TOML 存于 `config/frpc.toml`，
-/// 启用 [loadUseCustomFrpc] 后隧道将使用该文件覆盖表单生成的配置。
+/// 全部存于 `config/network.json`。FRP 配置通过直接编辑 `config/frpc.toml`
+/// 文件完成，不再提供表单界面。
 ///
 class NetworkStore {
   NetworkStore._();
@@ -21,9 +17,7 @@ class NetworkStore {
   static const String _upnpExternalPortKey = 'upnpExternalPort';
   static const String _upnpProtocolKey = 'upnpProtocol';
   static const String _tunnelKey = 'tunnelEnabled';
-  static const String _frpcKey = 'frpc';
   static const String _frpcRuntimeIdKey = 'frpcRuntimeId';
-  static const String _useCustomFrpcKey = 'useCustomFrpc';
   static const String _useMirrorKey = 'useMirror';
   static const String _mirrorAskedKey = 'mirrorAsked';
   static const String _qqGroupAskedKey = 'qqGroupAsked';
@@ -34,30 +28,42 @@ class NetworkStore {
     return File(p.join(dir.path, 'frpc.toml'));
   }
 
-  /// 确保自定义配置文件存在；不存在时以 [base] 生成的 TOML 作为初始内容写入。
+  /// 确保自定义配置文件存在；不存在时写入默认模板。
   /// 返回该文件。
-  static Future<File> ensureCustomFrpcFile(FrpcConfig base) async {
+  static Future<File> ensureCustomFrpcFile() async {
     final file = await customFrpcFile();
     if (!await file.exists()) {
       final parent = file.parent;
       if (!await parent.exists()) {
         await parent.create(recursive: true);
       }
-      await file.writeAsString(base.toToml(), flush: true);
+      await file.writeAsString(_defaultTemplate(), flush: true);
     }
     return file;
   }
 
-  /// 是否启用「使用自定义配置文件」模式。
-  static Future<bool> loadUseCustomFrpc() async {
-    final configMap = await ConfigStore.readConfig(_fileName);
-    return configMap[_useCustomFrpcKey] as bool? ?? false;
-  }
+  static String _defaultTemplate() {
+    return '''# frpc 配置文件
+# 请根据你的 frps 服务器信息修改以下内容
+serverAddr = "frp.example.com"
+serverPort = 7000
+# auth.token = "your_token"
 
-  static Future<void> saveUseCustomFrpc(bool enabled) async {
-    final configMap = await ConfigStore.readConfig(_fileName);
-    configMap[_useCustomFrpcKey] = enabled;
-    await ConfigStore.writeConfig(_fileName, configMap);
+transport.protocol = "tcp"
+transport.tls.enable = true
+
+log.to = "console"
+log.level = "info"
+
+[[proxies]]
+name = "minecraft"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 25565
+remotePort = 25566
+# transport.useEncryption = true
+# transport.useCompression = true
+''';
   }
 
   /// 是否使用镜像源（MSL 开服器）下载服务端，默认关闭。
@@ -145,20 +151,6 @@ class NetworkStore {
   static Future<void> saveTunnelEnabled(bool enabled) async {
     final configMap = await ConfigStore.readConfig(_fileName);
     configMap[_tunnelKey] = enabled;
-    await ConfigStore.writeConfig(_fileName, configMap);
-  }
-
-  /// 读取已保存的 frpc 配置；未保存过返回 null。
-  static Future<FrpcConfig?> loadFrpc() async {
-    final configMap = await ConfigStore.readConfig(_fileName);
-    final frpc = configMap[_frpcKey];
-    if (frpc is! Map<String, dynamic>) return null;
-    return FrpcConfig.fromJsonMap(frpc);
-  }
-
-  static Future<void> saveFrpc(FrpcConfig config) async {
-    final configMap = await ConfigStore.readConfig(_fileName);
-    configMap[_frpcKey] = config.toJsonMap();
     await ConfigStore.writeConfig(_fileName, configMap);
   }
 

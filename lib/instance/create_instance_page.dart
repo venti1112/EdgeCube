@@ -25,7 +25,9 @@ import '../server/server_service.dart';
 
 enum _WizardStep {
   nameEntry,
+  editionSelect,
   serverType,
+  bedrockServerType,
   versionSelect,
   fabricMcVersionSelect,
   fabricLoaderVersionSelect,
@@ -48,7 +50,9 @@ enum CreateInstanceResult { done, cancelled }
 ///
 /// 流程：
 /// 1. 输入名称 → 选择「下载服务端」或「导入服务端」
-/// 2a. 下载服务端 → 选类型（官方/Paper/Fabric/Forge） → 选版本 → 创建实例并下载
+/// 2a. 下载服务端 → 选版本（Java 版 / 基岩版） → 选类型 → 选版本 → 创建实例并下载
+///     - Java 版类型：官方/Paper/Velocity/Fabric/Forge/NeoForge
+///     - 基岩版类型：PowerNukkitX
 ///     - Forge 特殊流程：下载 Installer jar → 运行 java -jar --installServer → 配置
 /// 2b. 导入服务端 → 创建实例 → 选文件导入
 ///
@@ -76,6 +80,12 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   /// 缓存版本详情页 URL（Vanilla）。
   Map<String, String> _vanillaVersionUrls = {};
+
+  /// 缓存 PocketMine-MP 版本对应的 MCBE 客户端版本（version → mcpe_version）。
+  final Map<String, String> _pocketmineMcpeVersions = {};
+
+  /// 缓存 PowerNukkitX 版本对应的 MCBE 客户端版本（version → mc_version）。
+  final Map<String, String> _powernukkitxMcVersions = {};
 
   /// 用户确认要下载的版本号（弹窗确认后记录，供下载和自动 Java 版本推断使用）。
   String? _selectedVersion;
@@ -187,7 +197,17 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   Future<void> _goToServerType() async {
     if (!await _validateName()) return;
+    setState(() => _step = _WizardStep.editionSelect);
+  }
+
+  /// 选择版本：Java 版 → 进入 Java 服务端类型选择页。
+  void _selectJavaEdition() {
     setState(() => _step = _WizardStep.serverType);
+  }
+
+  /// 选择版本：基岩版 → 进入基岩服务端类型选择页。
+  void _selectBedrockEdition() {
+    setState(() => _step = _WizardStep.bedrockServerType);
   }
 
   Future<void> _selectServerType(String type) async {
@@ -259,6 +279,15 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           });
         });
       }
+      return;
+    }
+    if (type == 'dragonfly') {
+      setState(() {
+        _step = _WizardStep.nameEntry;
+        _loadingVersions = false;
+        _versionError = null;
+        _versions = [];
+      });
       return;
     }
     setState(() {
@@ -418,6 +447,38 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     final name = _nameController.text.trim();
     try {
       final instance = await _instanceController.createInstance(name);
+      _instanceId = instance.id;
+      _completed = true;
+      _finishWizard();
+    } on DuplicateInstanceNameException {
+      if (!mounted) return;
+      _showDuplicateDialog(name);
+    }
+  }
+
+  Future<void> _createDragonflyInstance() async {
+    if (!await _validateName()) return;
+    final name = _nameController.text.trim();
+    try {
+      final instance = await _instanceController.createInstance(name);
+      await _instanceController.updateConfig(
+        instance.id,
+        runtime: kRuntimeDragonfly,
+      );
+      final dir = await _instanceController.directoryForId(instance.id);
+      final configYml = [
+        'network:',
+        '  address: ":19132"',
+        'server:',
+        '  name: "$name"',
+        '  authenabled: true',
+        'world:',
+        '  folder: "world"',
+        'players:',
+        '  folder: "players"',
+        '',
+      ].join('\n');
+      await File(p.join(dir.path, 'config.yml')).writeAsString(configYml);
       _instanceId = instance.id;
       _completed = true;
       _finishWizard();
@@ -781,12 +842,48 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   Future<void> _selectVersion(String version) async {
     // 步骤 1：确认弹窗
+    // PocketMine-MP / PowerNukkitX 额外显示对应的 MCBE 客户端版本。
+    final isPocketmine = _serverType == 'pocketmine';
+    final isPowernukkitx = _serverType == 'powernukkitx';
+    final isAllay = _serverType == 'allay';
+    final mcpeVersion = isPocketmine
+        ? _pocketmineMcpeVersions[version]
+        : (isPowernukkitx ? _powernukkitxMcVersions[version] : null);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(context.tr('instance.confirmVersionTitle')),
-        content: Text(
-          context.tr('instance.confirmDownload', {'version': version}),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isPocketmine
+                  ? context.tr('instance.confirmDownloadPmmp', {
+                      'version': version,
+                    })
+                  : isPowernukkitx
+                      ? context.tr('instance.confirmDownloadPowernukkitx', {
+                          'version': version,
+                        })
+                      : isAllay
+                          ? context.tr('instance.confirmDownloadAllay', {
+                              'version': version,
+                            })
+                          : context.tr('instance.confirmDownload', {
+                              'version': version,
+                            }),
+            ),
+            if (mcpeVersion != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                context.tr('instance.mcpeVersionLabel', {
+                  'version': mcpeVersion,
+                }),
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+            ],
+          ],
         ),
         actions: [
           TextButton(
@@ -1359,7 +1456,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     }
   }
 
-  /// 在下载页中先获取下载信息，再执行下载（Vanilla / Paper）。
+  /// 在下载页中先获取下载信息，再执行下载（Vanilla / Paper / PocketMine-MP）。
   Future<void> _fetchAndDownload(String instanceId, String version) async {
     setState(() {
       _downloadProgress = null;
@@ -1382,9 +1479,16 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       return;
     }
 
-    final jarName = _serverType == 'powernukkitx'
-        ? 'powernukkitx.jar'
-        : 'server.jar';
+    final String jarName;
+    if (_serverType == 'powernukkitx') {
+      jarName = 'powernukkitx.jar';
+    } else if (_serverType == 'pocketmine') {
+      jarName = 'PocketMine-MP.phar';
+    } else if (_serverType == 'allay') {
+      jarName = 'allay-server.jar';
+    } else {
+      jarName = 'server.jar';
+    }
     await _downloadJar(instanceId, info, jarName: jarName);
   }
 
@@ -1470,8 +1574,21 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       }
 
       final String javaVer;
-      if (_serverType == 'powernukkitx') {
+      if (_serverType == 'pocketmine') {
+        // PocketMine-MP 使用 PHP 运行环境，无需 Java 版本。
+        await _instanceController.updateConfig(
+          instanceId,
+          selectedJar: jarName,
+          runtime: kRuntimePhp,
+        );
+        _completed = true;
+        if (mounted) _finishWizard();
+        return;
+      } else if (_serverType == 'powernukkitx') {
         javaVer = await _resolveJavaVersion('1.20.5');
+      } else if (_serverType == 'allay') {
+        // Allay 需要 Java 21 及以上。
+        javaVer = await _resolveJavaVersion('1.21');
       } else {
         final mcVersion = _serverType == 'fabric'
             ? (_selectedMcVersion ?? '')
@@ -1546,10 +1663,18 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     switch (_step) {
       case _WizardStep.nameEntry:
         _closeWizard();
-      case _WizardStep.serverType:
+      case _WizardStep.editionSelect:
         setState(() => _step = _WizardStep.nameEntry);
+      case _WizardStep.serverType:
+        setState(() => _step = _WizardStep.editionSelect);
+      case _WizardStep.bedrockServerType:
+        setState(() => _step = _WizardStep.editionSelect);
       case _WizardStep.versionSelect:
-        setState(() => _step = _WizardStep.serverType);
+        setState(() => _step = (_serverType == 'powernukkitx' ||
+                _serverType == 'pocketmine' ||
+                _serverType == 'allay')
+            ? _WizardStep.bedrockServerType
+            : _WizardStep.serverType);
       case _WizardStep.fabricMcVersionSelect:
         setState(() {
           _step = _WizardStep.serverType;
@@ -1670,7 +1795,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   String get _appBarTitle {
     return switch (_step) {
       _WizardStep.nameEntry => context.tr('instance.titleNameEntry'),
-      _WizardStep.serverType => context.tr('instance.titleDownloadServer'),
+      _WizardStep.editionSelect => context.tr('instance.titleSelectEdition'),
+      _WizardStep.serverType => context.tr('instance.titleJavaServerType'),
+      _WizardStep.bedrockServerType => context.tr('instance.titleBedrockServerType'),
       _WizardStep.versionSelect => context.tr('instance.titleSelectVersion'),
       _WizardStep.fabricMcVersionSelect => context.tr(
         'instance.titleSelectMcVersion',
@@ -1705,7 +1832,9 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   Widget _buildStepContent(ThemeData theme) {
     return switch (_step) {
       _WizardStep.nameEntry => _buildNameEntry(theme),
+      _WizardStep.editionSelect => _buildEditionSelect(theme),
       _WizardStep.serverType => _buildServerTypeSelect(theme),
+      _WizardStep.bedrockServerType => _buildBedrockServerTypeSelect(theme),
       _WizardStep.versionSelect => _buildVersionSelect(theme),
       _WizardStep.fabricMcVersionSelect => _buildVersionSelect(theme),
       _WizardStep.fabricLoaderVersionSelect => _buildVersionSelect(theme),
@@ -1764,17 +1893,48 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           onTap: _startModpackImport,
         ),
         const SizedBox(height: 12),
+        if (_serverType == 'dragonfly')
+          _ServerTypeTile(
+            icon: Icons.auto_awesome_outlined,
+            title: context.tr('instance.dragonflyCreateTitle'),
+            subtitle: context.tr('instance.dragonflyCreateSubtitle'),
+            onTap: _createDragonflyInstance,
+          )
+        else
+          _ServerTypeTile(
+            icon: Icons.create_new_folder_outlined,
+            title: context.tr('instance.createEmptyTitle'),
+            subtitle: context.tr('instance.createEmptySubtitle'),
+            onTap: _createEmptyInstance,
+          ),
+      ],
+    );
+  }
+
+  /// 步骤 2：版本选择（Java 版 / 基岩版）。
+  Widget _buildEditionSelect(ThemeData theme) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const SizedBox(height: 8),
         _ServerTypeTile(
-          icon: Icons.create_new_folder_outlined,
-          title: context.tr('instance.createEmptyTitle'),
-          subtitle: context.tr('instance.createEmptySubtitle'),
-          onTap: _createEmptyInstance,
+          icon: Icons.coffee_outlined,
+          title: context.tr('instance.javaEditionTitle'),
+          subtitle: context.tr('instance.javaEditionSubtitle'),
+          onTap: _selectJavaEdition,
+        ),
+        const SizedBox(height: 12),
+        _ServerTypeTile(
+          icon: Icons.diamond_outlined,
+          title: context.tr('instance.bedrockEditionTitle'),
+          subtitle: context.tr('instance.bedrockEditionSubtitle'),
+          onTap: _selectBedrockEdition,
         ),
       ],
     );
   }
 
-  /// 步骤 2a：服务端类型选择（官方端 / Paper 端 / Fabric 端）。
+  /// 步骤 3a：Java 版服务端类型选择（官方端 / Paper / Velocity / Fabric / Forge / NeoForge）。
   Widget _buildServerTypeSelect(ThemeData theme) {
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1821,12 +1981,42 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           subtitle: context.tr('instance.neoforgeSubtitle'),
           onTap: () => _selectServerType('neoforge'),
         ),
+      ],
+    );
+  }
+
+  /// 步骤 3b：基岩版服务端类型选择（PocketMine-MP / PowerNukkitX / Allay）。
+  Widget _buildBedrockServerTypeSelect(ThemeData theme) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const SizedBox(height: 8),
+        _ServerTypeTile(
+          icon: Icons.code_outlined,
+          title: context.tr('instance.pocketmineTitle'),
+          subtitle: context.tr('instance.pocketmineSubtitle'),
+          onTap: () => _selectServerType('pocketmine'),
+        ),
         const SizedBox(height: 12),
         _ServerTypeTile(
           icon: Icons.phone_android_outlined,
           title: context.tr('instance.powernukkitxTitle'),
           subtitle: context.tr('instance.powernukkitxSubtitle'),
           onTap: () => _selectServerType('powernukkitx'),
+        ),
+        const SizedBox(height: 12),
+        _ServerTypeTile(
+          icon: Icons.bolt_outlined,
+          title: context.tr('instance.allayTitle'),
+          subtitle: context.tr('instance.allaySubtitle'),
+          onTap: () => _selectServerType('allay'),
+        ),
+        const SizedBox(height: 12),
+        _ServerTypeTile(
+          icon: Icons.auto_awesome_outlined,
+          title: context.tr('instance.dragonflyTitle'),
+          subtitle: context.tr('instance.dragonflySubtitle'),
+          onTap: () => _selectServerType('dragonfly'),
         ),
       ],
     );
@@ -1895,8 +2085,29 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       itemCount: _versions.length,
       itemBuilder: (_, i) {
         final v = _versions[i];
+        // PocketMine-MP / PowerNukkitX 版本列表：主标题显示 MCBE 客户端版本号，
+        // 副标题显示服务端自身版本。
+        final isVersionSelect = _step == _WizardStep.versionSelect;
+        final isPocketmineList = _serverType == 'pocketmine' && isVersionSelect;
+        final isPowernukkitxList =
+            _serverType == 'powernukkitx' && isVersionSelect;
+        final mcpe = isPocketmineList
+            ? _pocketmineMcpeVersions[v]
+            : (isPowernukkitxList ? _powernukkitxMcVersions[v] : null);
+        final String title = (isPocketmineList || isPowernukkitxList)
+            ? (mcpe ?? v)
+            : v;
+        final String? subtitle;
+        if (isPocketmineList) {
+          subtitle = context.tr('instance.pmmpVersionLabel', {'version': v});
+        } else if (isPowernukkitxList && mcpe != null) {
+          subtitle = context.tr('instance.pnxVersionLabel', {'version': v});
+        } else {
+          subtitle = null;
+        }
         return ListTile(
-          title: Text(v),
+          title: Text(title),
+          subtitle: subtitle != null ? Text(subtitle) : null,
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
             switch (_step) {
@@ -2421,6 +2632,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       return _fetchPaperVersions();
     } else if (type == 'powernukkitx') {
       return _fetchPowernukkitxVersions();
+    } else if (type == 'pocketmine') {
+      return _fetchPocketmineVersions();
+    } else if (type == 'allay') {
+      return _fetchAllayVersions();
     } else {
       return _fetchVelocityVersions();
     }
@@ -2652,6 +2867,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       return _fetchVelocityDownloadInfo(version);
     } else if (_serverType == 'powernukkitx') {
       return _fetchPowernukkitxDownloadInfo(version);
+    } else if (_serverType == 'pocketmine') {
+      return _fetchPocketmineDownloadInfo(version);
+    } else if (_serverType == 'allay') {
+      return _fetchAllayDownloadInfo(version);
     } else {
       return _fetchPaperDownloadInfo(version);
     }
@@ -2789,7 +3008,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     }
   }
 
-  /// 从 GitHub Releases 获取 PowerNukkitX 版本列表（tag_name）。
+  /// 从 GitHub Releases 获取 PowerNukkitX 版本列表（tag_name），
+  /// 同时从 release body 中提取 MCBE 版本号缓存在 [_powernukkitxMcVersions]。
   Future<List<String>> _fetchPowernukkitxVersions() async {
     final client = HttpClient();
     try {
@@ -2802,9 +3022,24 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as List<dynamic>;
-      return json
-          .map<String>((r) => (r as Map<String, dynamic>)['tag_name'] as String)
-          .toList();
+      final mcVersionRegex = RegExp(
+        r'\|\s*\*\*Supported Minecraft Version\*\*\s*\|\s*([\d.]+)\s*\|',
+      );
+      final versions = <String>[];
+      _powernukkitxMcVersions.clear();
+      for (final r in json) {
+        final release = r as Map<String, dynamic>;
+        final tagName = release['tag_name'] as String;
+        versions.add(tagName);
+        final bodyText = release['body'] as String?;
+        if (bodyText != null) {
+          final match = mcVersionRegex.firstMatch(bodyText);
+          if (match != null) {
+            _powernukkitxMcVersions[tagName] = match.group(1)!;
+          }
+        }
+      }
+      return versions;
     } finally {
       client.close();
     }
@@ -2837,6 +3072,239 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         throw Exception('No JAR found in release $version');
       }
       return _DownloadInfo(url: downloadUrl);
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 获取 PocketMine-MP 版本列表。
+  ///
+  /// 数据源：https://github.com/pmmp/update.pmmp.io/tree/master/channels
+  /// 列出 channels 目录下所有 JSON 文件，筛选出 5.x 稳定版本（PHP 运行环境
+  /// 仅支持 PocketMine-MP 5.0 及以上），按版本号降序返回。
+  ///
+  /// 同时并发获取每个版本的 mcpe_version，缓存在 [_pocketmineMcpeVersions]
+  /// 供版本列表副标题展示。
+  Future<List<String>> _fetchPocketmineVersions() async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://api.github.com/repos/pmmp/update.pmmp.io/contents/channels',
+        ),
+      );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as List<dynamic>;
+
+      // 仅匹配 5.x 稳定版本文件名（如 5、5.44、5.25.0），排除 alpha/beta 等。
+      final versionPattern = RegExp(r'^5(\.\d+)*$');
+      final versions = <String>[];
+      for (final item in json) {
+        final name = (item as Map<String, dynamic>)['name'] as String;
+        if (!name.endsWith('.json')) continue;
+        final base = name.substring(0, name.length - 5); // 去掉 .json
+        if (!versionPattern.hasMatch(base)) continue;
+        versions.add(base);
+      }
+
+      // 按版本号降序排列（最新版本在前）。
+      versions.sort((a, b) {
+        final pa = a.split('.').map(int.tryParse).toList();
+        final pb = b.split('.').map(int.tryParse).toList();
+        final len = pa.length > pb.length ? pa.length : pb.length;
+        for (int i = 0; i < len; i++) {
+          final va = i < pa.length ? (pa[i] ?? 0) : 0;
+          final vb = i < pb.length ? (pb[i] ?? 0) : 0;
+          if (va != vb) return vb.compareTo(va);
+        }
+        return 0;
+      });
+
+      // 并发获取每个版本的 mcpe_version，缓存到 _pocketmineMcpeVersions。
+      _pocketmineMcpeVersions.clear();
+      await Future.wait(
+        versions.map((v) => _fetchPocketmineMcpeVersion(client, v)),
+      );
+
+      return versions;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 获取单个 PocketMine-MP 版本对应的 MCBE 客户端版本。
+  ///
+  /// 从 `channels/<version>.json` 中读取 `mcpe_version` 字段，
+  /// 成功时写入 [_pocketmineMcpeVersions]；失败时静默跳过（不影响版本列表）。
+  Future<void> _fetchPocketmineMcpeVersion(
+    HttpClient client,
+    String version,
+  ) async {
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://raw.githubusercontent.com/pmmp/update.pmmp.io/master/channels/$version.json',
+        ),
+      );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      if (res.statusCode != 200) return;
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final mcpe = json['mcpe_version'] as String?;
+      if (mcpe != null && mcpe.isNotEmpty) {
+        _pocketmineMcpeVersions[version] = mcpe;
+      }
+    } catch (_) {
+      // 单个版本获取失败不影响整体列表。
+    }
+  }
+
+  /// 从 channels 目录下对应版本的 JSON 获取 PocketMine-MP 的 phar 下载地址。
+  ///
+  /// 例如版本 `5.44` 对应
+  /// `https://raw.githubusercontent.com/pmmp/update.pmmp.io/master/channels/5.44.json`，
+  /// 其中包含 `download_url`（指向 PocketMine-MP.phar）。
+  Future<_DownloadInfo> _fetchPocketmineDownloadInfo(String version) async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://raw.githubusercontent.com/pmmp/update.pmmp.io/master/channels/$version.json',
+        ),
+      );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      if (res.statusCode != 200) {
+        throw Exception('HTTP ${res.statusCode}');
+      }
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final downloadUrl = json['download_url'] as String?;
+      if (downloadUrl == null) {
+        throw Exception('No download_url in channel $version');
+      }
+      return _DownloadInfo(url: downloadUrl);
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 从 GitHub Releases 获取 Allay 版本列表（tag_name）。
+  ///
+  /// 数据源：`https://api.github.com/repos/AllayMC/Allay/releases`
+  /// 参考 AllayLauncher 的 `allay_server.cpp`：稳定版走 `/releases/latest`，
+  /// 夜间版走 `/releases/tags/nightly`。这里列出全部 release（含 nightly），
+  /// 夜间版始终排在首位（最新开发构建），其后为稳定版（按发布时间降序）。
+  Future<List<String>> _fetchAllayVersions() async {
+    final client = HttpClient();
+    try {
+      // 并发拉取全量 release 列表与 nightly 单独 release。
+      // nightly 是一个会被反复覆盖更新的 tag，可能不在 /releases 列表顶部，
+      // 单独拉取确保始终可用。
+      final releasesFuture = _fetchAllayReleases(client);
+      final nightlyFuture = _fetchAllayReleaseByTag(client, 'nightly');
+
+      final releases = await releasesFuture;
+      final nightly = await nightlyFuture;
+
+      // 合并：nightly 置顶，其后为稳定版（排除 nightly 自身，避免重复）。
+      final versions = <String>[];
+      if (nightly != null) {
+        versions.add('nightly');
+      }
+      for (final r in releases) {
+        final tag = r['tag_name'] as String?;
+        if (tag != null && tag != 'nightly') {
+          versions.add(tag);
+        }
+      }
+      return versions;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 拉取 Allay 的全量 release 列表（不含 draft）。
+  Future<List<Map<String, dynamic>>> _fetchAllayReleases(
+    HttpClient client,
+  ) async {
+    final req = await client.getUrl(
+      Uri.parse('https://api.github.com/repos/AllayMC/Allay/releases'),
+    );
+    req.headers.set('User-Agent', 'EdgeCube/1.0');
+    final res = await req.close();
+    if (res.statusCode != 200) {
+      throw Exception('HTTP ${res.statusCode}');
+    }
+    final body = await res.transform(utf8.decoder).join();
+    final json = jsonDecode(body) as List<dynamic>;
+    return json.cast<Map<String, dynamic>>();
+  }
+
+  /// 按 tag 拉取单个 Allay release；失败时返回 null（如 nightly 不存在）。
+  Future<Map<String, dynamic>?> _fetchAllayReleaseByTag(
+    HttpClient client,
+    String tag,
+  ) async {
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://api.github.com/repos/AllayMC/Allay/releases/tags/$tag',
+        ),
+      );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      if (res.statusCode != 200) return null;
+      final body = await res.transform(utf8.decoder).join();
+      return jsonDecode(body) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 从 GitHub Release Assets 获取 Allay 指定版本的 jar 下载 URL 与 SHA-256。
+  ///
+  /// 参考 AllayLauncher 的 `allay_server.cpp`：每个 release 仅含一个 asset，
+  /// 名称以 `allay` 开头；asset 的 `digest` 字段格式为 `sha256:...`。
+  Future<_DownloadInfo> _fetchAllayDownloadInfo(String version) async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://api.github.com/repos/AllayMC/Allay/releases/tags/$version',
+        ),
+      );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      if (res.statusCode != 200) {
+        throw Exception('HTTP ${res.statusCode}');
+      }
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final assets = json['assets'] as List<dynamic>;
+      if (assets.isEmpty) {
+        throw Exception('No asset found in release $version');
+      }
+      // 取第一个以 allay 开头的 asset（与 AllayLauncher 逻辑一致）。
+      Map<String, dynamic>? asset;
+      for (final a in assets) {
+        final name = (a as Map<String, dynamic>)['name'] as String? ?? '';
+        if (name.startsWith('allay')) {
+          asset = a;
+          break;
+        }
+      }
+      asset ??= assets.first as Map<String, dynamic>;
+      final downloadUrl = asset['browser_download_url'] as String;
+      // digest 格式为 "sha256:..."，去掉前缀得到纯哈希。
+      final digest = asset['digest'] as String?;
+      final sha256 = digest != null && digest.startsWith('sha256:')
+          ? digest.substring(7)
+          : null;
+      return _DownloadInfo(url: downloadUrl, sha256: sha256);
     } finally {
       client.close();
     }

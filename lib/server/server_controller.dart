@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:port_forwarder/port_forwarder.dart';
 import 'package:xterm/xterm.dart';
 
+import 'allay_properties.dart';
 import 'pnx_properties.dart';
 import 'server_properties.dart';
 import 'server_service.dart';
@@ -298,8 +299,14 @@ class ServerController extends ChangeNotifier {
   /// 优雅停止完成后是否自动重新启动（restart 流程中置位）。
   bool _pendingRestart = false;
 
+  // —— UPnP 超时检测 ——
+  Timer? _upnpTimer;
+  bool _upnpSucceeded = false;
+  bool _upnpTimeoutSuppressed = false;
+
   // —— UPnP / FRP 即时状态标志 ——
   bool _upnpActive = false;
+  bool _upnpIsCgnat = false;
   bool _tunnelActive = false;
   bool _restartingTunnel = false;
 
@@ -324,6 +331,10 @@ class ServerController extends ChangeNotifier {
   /// UI 层应监听此回调并展示与 [onCrashExit] 同款的崩溃报告弹窗。
   void Function(CrashData crash)? onTunnelCrashExit;
 
+  /// UPnP 启动超过 60 秒仍未成功时触发，通知 UI 弹出提示。
+  /// UI 层可通过 [suppressUpnpTimeout] 关闭后续超时检测。
+  void Function()? onUpnpTimeout;
+
   // —— 映射结果追踪 ——
   String? _upnpExternalIp; // UPnP 映射成功后的公网 IP
   FrpcConfig? _activeFrpcConfig; // 当前活跃的 FRP 配置
@@ -345,6 +356,7 @@ class ServerController extends ChangeNotifier {
 
   // —— 映射状态公共接口 ——
   bool get isUpnpActive => _upnpActive;
+  bool get upnpIsCgnat => _upnpIsCgnat;
   bool get isTunnelActive => _tunnelActive;
 
   /// frpc 是否真正连接到 frps 成功（看到 "login to server success"）。
@@ -366,7 +378,8 @@ class ServerController extends ChangeNotifier {
   /// 启动时从配置文件读取并缓存；null 表示尚未读取或读取失败。
   bool? get onlineMode => _onlineMode;
 
-  /// 从实例目录的 server.properties 或 pnx.yml 读取服务端实际监听端口。
+  /// 从实例目录的 server.properties / pnx.yml / server-settings.yml 读取
+  /// 服务端实际监听端口。
   ///
   /// 用于内网地址显示等需要真实端口的场景，与 UPnP 映射状态无关。
   Future<int?> readServerPort() async {
@@ -384,16 +397,32 @@ class ServerController extends ChangeNotifier {
         final pnx = PnxProperties.parse(await pnxFile.readAsString());
         return pnx.getPort();
       }
+      final allayFile = File(p.join(dir, 'server-settings.yml'));
+      if (await allayFile.exists()) {
+        final allay = AllayProperties.parse(await allayFile.readAsString());
+        return allay.getPort();
+      }
+      final dragonflyFile = File(p.join(dir, 'config.yml'));
+      if (await dragonflyFile.exists()) {
+        final content = await dragonflyFile.readAsString();
+        final portMatch = RegExp(r'^\s*address:\s*":(\d+)"', multiLine: true)
+            .firstMatch(content);
+        if (portMatch != null) {
+          return int.tryParse(portMatch.group(1)!);
+        }
+      }
       return 25565;
     } catch (_) {
       return 25565;
     }
   }
 
-  /// 从实例目录的 server.properties 或 pnx.yml 读取正版验证是否开启。
+  /// 从实例目录的 server.properties / pnx.yml / server-settings.yml 读取
+  /// 正版验证是否开启。
   ///
-  /// 兼容 Java 的 `online-mode`、PMMP 的 `xbox-auth` 与 PNX 的
-  /// `settings.xboxAuth`；三者均默认开启（未显式关闭即视为正版验证）。
+  /// 兼容 Java 的 `online-mode`、PMMP 的 `xbox-auth`、PNX 的
+  /// `settings.xboxAuth` 与 Allay 的 `network-settings.xbox-auth`；
+  /// 四者均默认开启（未显式关闭即视为正版验证）。
   Future<bool?> readOnlineMode() async {
     final dir = _workingDir;
     if (dir == null) return null;
@@ -411,6 +440,21 @@ class ServerController extends ChangeNotifier {
         final pnx = PnxProperties.parse(await pnxFile.readAsString());
         return pnx.getBool('settings.xboxAuth') ?? true;
       }
+      final allayFile = File(p.join(dir, 'server-settings.yml'));
+      if (await allayFile.exists()) {
+        final allay = AllayProperties.parse(await allayFile.readAsString());
+        return allay.getBool('network-settings.xbox-auth') ?? true;
+      }
+      final dragonflyFile = File(p.join(dir, 'config.yml'));
+      if (await dragonflyFile.exists()) {
+        final content = await dragonflyFile.readAsString();
+        final authMatch = RegExp(r'^\s*auth-enabled:\s*(true|false)\s*$',
+                multiLine: true)
+            .firstMatch(content);
+        if (authMatch != null) {
+          return authMatch.group(1) == 'true';
+        }
+      }
       return true;
     } catch (_) {
       return null;
@@ -421,7 +465,7 @@ class ServerController extends ChangeNotifier {
   ///
   /// 与 [readOnlineMode] 的来源对应写回：server.properties 中的 online-mode
   /// (Java，true/false) 或 xbox-auth (PMMP，on/off)，或 pnx.yml 的
-  /// settings.xboxAuth。
+  /// settings.xboxAuth，或 server-settings.yml 的 network-settings.xbox-auth。
   ///
   /// 注意：**不更新** [onlineMode] 缓存——运行中的服务端仍在用旧设置，芯片应继续
   /// 显示当前真实生效的状态，直到重启后 [_cacheServerInfo] 重新读盘刷新。
@@ -450,6 +494,26 @@ class ServerController extends ChangeNotifier {
         pnx['settings.xboxAuth'] = value.toString();
         await pnxFile.writeAsString(pnx.toString());
         return true;
+      }
+      final allayFile = File(p.join(dir, 'server-settings.yml'));
+      if (await allayFile.exists()) {
+        final allay = AllayProperties.parse(await allayFile.readAsString());
+        if (!allay.containsKey('network-settings.xbox-auth')) return false;
+        allay['network-settings.xbox-auth'] = value.toString();
+        await allayFile.writeAsString(allay.toString());
+        return true;
+      }
+      final dragonflyFile = File(p.join(dir, 'config.yml'));
+      if (await dragonflyFile.exists()) {
+        var content = await dragonflyFile.readAsString();
+        final updated = content.replaceAllMapped(
+          RegExp(r'^(\s*auth-enabled:\s*)(true|false)\s*$', multiLine: true),
+          (m) => '${m.group(1)}$value',
+        );
+        if (updated != content) {
+          await dragonflyFile.writeAsString(updated);
+          return true;
+        }
       }
       return false;
     } catch (_) {
@@ -534,7 +598,10 @@ class ServerController extends ChangeNotifier {
         _status = _compatFor(instanceId)
             ? ServerStatus.running
             : ServerStatus.starting;
-        if (_status == ServerStatus.running) {
+        // 启动中即预读端口/正版验证并触发端口映射，使连接信息卡片在
+        // 服务端完成初始化前就能显示正确端口与映射状态。
+        if (_status == ServerStatus.starting ||
+            _status == ServerStatus.running) {
           _cacheServerInfo();
           _triggerUpnp();
           _triggerTunnel();
@@ -968,6 +1035,7 @@ class ServerController extends ChangeNotifier {
         :final instanceName,
         :final exitCode,
       ):
+        final wasStopped = _status == ServerStatus.stopped;
         if (status != null) {
           // 界面重建后，从原生回放中恢复当前正在运行的实例。
           if (instanceId != null) _instanceId = instanceId;
@@ -982,8 +1050,10 @@ class ServerController extends ChangeNotifier {
             'running' => ServerStatus.running,
             _ => compat ? ServerStatus.running : ServerStatus.starting,
           };
-          // 服务端进入运行态后触发 UPnP 端口映射和 FRP 隧道。
-          if (_status == ServerStatus.running) {
+          // 「启动中」立即触发 UPnP 端口映射和 FRP 隧道，不必等 Done 标识；
+          // 应用被回收后重连（status == 'running' 且之前为 stopped）也一并触发，
+          // 使连接信息卡片在初始化完成前就能显示正确端口与映射状态。
+          if (status == 'starting' || (status == 'running' && wasStopped)) {
             _cacheServerInfo();
             if (!_upnpActive) _triggerUpnp();
             if (!_tunnelActive) _triggerTunnel();
@@ -995,7 +1065,7 @@ class ServerController extends ChangeNotifier {
           _serverPort = null;
           _onlineMode = null;
           if (_upnpActive) _stopUpnp();
-          if (_tunnelActive && !_restartingTunnel) _stopTunnel();
+          if (!_restartingTunnel) _stopTunnel();
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
           if (exitCode != null) {
             _notice('[EdgeCube] 服务端已退出（退出码 $exitCode）');
@@ -1142,6 +1212,21 @@ class ServerController extends ChangeNotifier {
     });
   }
 
+  /// UPnP 获取的公网 IP 是否属于保留/私有地址段（10/8、172.16/12、192.168/16
+  /// 以及 CGNAT 100.64/10），若是则说明运营商或上层还有一层 NAT，提示用户。
+  static bool _isPrivateIp(String ip) {
+    final parts = ip.split('.');
+    if (parts.length != 4) return false;
+    final first = int.tryParse(parts[0]);
+    final second = int.tryParse(parts[1]);
+    if (first == null || second == null) return false;
+    if (first == 10) return true;
+    if (first == 172 && second >= 16 && second <= 31) return true;
+    if (first == 192 && second == 168) return true;
+    if (first == 100 && second >= 64 && second <= 127) return true;
+    return false;
+  }
+
   /// 触发 UPnP 端口映射（服务端进入运行态时调用）。
   void _triggerUpnp() {
     final resolver = upnpEnabledResolver;
@@ -1156,6 +1241,8 @@ class ServerController extends ChangeNotifier {
     final dir = _workingDir;
     if (dir == null || _upnpActive) return;
     _upnpActive = true;
+    _upnpSucceeded = false;
+    _startUpnpTimer();
 
     // 并行加载：服务端端口、自定义外网端口、映射协议。
     final extResolver = upnpExternalPortResolver;
@@ -1181,10 +1268,34 @@ class ServerController extends ChangeNotifier {
         if (port != null) {
           _notice('[EdgeCube] 路由器端口映射成功：$port');
           _upnpExternalIp = await _upnp.getExternalIp();
+          _upnpIsCgnat = _upnpExternalIp != null && _isPrivateIp(_upnpExternalIp!);
+          _upnpSucceeded = true;
+          _cancelUpnpTimer();
           notifyListeners();
         }
       });
     });
+  }
+
+  void _startUpnpTimer() {
+    _cancelUpnpTimer();
+    if (_upnpTimeoutSuppressed) return;
+    _upnpTimer = Timer(const Duration(seconds: 60), () {
+      if (_upnpActive && !_upnpSucceeded) {
+        onUpnpTimeout?.call();
+      }
+    });
+  }
+
+  void _cancelUpnpTimer() {
+    _upnpTimer?.cancel();
+    _upnpTimer = null;
+  }
+
+  /// 后续启动 UPnP 时不再触发超时提示。
+  void suppressUpnpTimeout() {
+    _upnpTimeoutSuppressed = true;
+    _cancelUpnpTimer();
   }
 
   /// 解除 UPnP 端口映射。
@@ -1192,6 +1303,8 @@ class ServerController extends ChangeNotifier {
     if (!_upnpActive) return;
     _upnpActive = false;
     _upnpExternalIp = null;
+    _cancelUpnpTimer();
+    _upnpIsCgnat = false;
     _upnp.closePort().then((_) {
       // 静默处理，不影响主流程。
     });
@@ -1210,103 +1323,49 @@ class ServerController extends ChangeNotifier {
           _notice('[EdgeCube] FRP 隧道未找到 frpc 运行时，跳过启动（请前往「运行环境」导入 frpc）');
           return;
         }
-        _startTunnelWithConfig(null, runtimeId: runtimeId);
+        _startTunnelWithConfig(runtimeId: runtimeId);
       }
     });
   }
 
-  /// 使用指定配置启动 FRP 隧道（config 为 null 时从 config/network.json 读取）。
-  void _startTunnelWithConfig(FrpcConfig? config, {String? runtimeId}) {
+  /// 从 `config/frpc.toml` 读取配置并启动 FRP 隧道。
+  void _startTunnelWithConfig({String? runtimeId}) {
     final dir = _workingDir;
     if (dir == null || _tunnelActive) return;
     _tunnelActive = true;
     _tunnelRunning = false;
     _userStoppingTunnel = false;
-    _tunnelCrashed = false; // 重新启动，清除上次的异常退出标记
-    _tunnelLog.clear(); // 清空上次会话日志，避免崩溃报告混入历史
-    _tunnel.clearLog(); // 同步清空原生侧与 Dart 静态日志缓存
-    _doStartTunnel(config, dir, runtimeId: runtimeId);
+    _tunnelCrashed = false;
+    _tunnelLog.clear();
+    _tunnel.clearLog();
+    _doStartTunnel(dir, runtimeId: runtimeId);
   }
 
   Future<void> _doStartTunnel(
-    FrpcConfig? config,
     String dir, {
     String? runtimeId,
   }) async {
     try {
-      // 优先处理「直接编辑配置文件」模式：使用用户编辑的原始 TOML，
-      // 不再注入 localPort（由用户在配置文件中自行维护）。
-      final useCustom = await NetworkStore.loadUseCustomFrpc();
-      if (config == null && useCustom) {
-        final file = await NetworkStore.customFrpcFile();
-        if (await file.exists()) {
-          final raw = await file.readAsString();
-          if (raw.trim().isEmpty) {
-            _notice('[EdgeCube] 自定义 frpc.toml 为空，跳过启动');
-            _tunnelActive = false;
-            return;
-          }
-          if (_status != ServerStatus.running) {
-            _tunnelActive = false;
-            return;
-          }
-          final path = await _tunnel.writeRawConfig(raw);
-          await _tunnel.start(
-            configPath: path,
-            name: 'frpc',
-            runtimeId: runtimeId,
-          );
-          _activeFrpcConfig = null;
-          _notice('[EdgeCube] FRP 隧道正在启动…（自定义配置）');
-          notifyListeners();
-          return;
-        }
-      }
-
-      FrpcConfig finalConfig;
-      if (config != null) {
-        finalConfig = config;
-      } else {
-        // 从 config/network.json 读取（服务器启动时的路径）。
-        final saved = await NetworkStore.loadFrpc();
-        if (saved == null) {
-          _notice('[EdgeCube] FRP 隧道未配置，跳过启动');
-          _tunnelActive = false;
-          return;
-        }
-        if (saved.serverAddr.isEmpty) {
-          _notice('[EdgeCube] FRP 服务器地址未填写，跳过启动');
-          _tunnelActive = false;
-          return;
-        }
-        finalConfig = saved;
-      }
-      // 注入实际 localPort：优先 server.properties，回退 pnx.yml。
-      int localPort = finalConfig.localPort;
-      final propsFile = File(p.join(dir, 'server.properties'));
-      if (await propsFile.exists()) {
-        final props = ServerProperties.parse(await propsFile.readAsString());
-        localPort = props.getInt('server-port') ?? 25565;
-      } else {
-        final pnxFile = File(p.join(dir, 'pnx.yml'));
-        if (await pnxFile.exists()) {
-          final pnx = PnxProperties.parse(await pnxFile.readAsString());
-          localPort = pnx.getPort();
-        }
-      }
-      finalConfig = finalConfig.copyWith(localPort: localPort);
-      if (_status != ServerStatus.running) {
+      final file = await NetworkStore.customFrpcFile();
+      if (!await file.exists()) {
+        _notice('[EdgeCube] 未找到 frpc.toml，跳过启动（请先在网络映射页编辑配置文件）');
         _tunnelActive = false;
         return;
       }
-      final path = await _tunnel.writeConfig(finalConfig);
+      final raw = await file.readAsString();
+      if (raw.trim().isEmpty) {
+        _notice('[EdgeCube] frpc.toml 为空，跳过启动');
+        _tunnelActive = false;
+        return;
+      }
+      final path = await _tunnel.writeRawConfig(raw);
       await _tunnel.start(
         configPath: path,
-        name: finalConfig.proxyName,
+        name: 'frpc',
         runtimeId: runtimeId,
       );
-      _activeFrpcConfig = finalConfig;
-      _notice('[EdgeCube] FRP 隧道正在启动…（本地端口 $localPort）');
+      _activeFrpcConfig = null;
+      _notice('[EdgeCube] FRP 隧道正在启动…（frpc.toml）');
       notifyListeners();
     } catch (e) {
       _notice('[EdgeCube] FRP 隧道启动失败：$e');
@@ -1316,7 +1375,6 @@ class ServerController extends ChangeNotifier {
 
   /// 停止 FRP 隧道。
   void _stopTunnel() {
-    if (!_tunnelActive) return;
     _tunnelActive = false;
     _tunnelRunning = false;
     _userStoppingTunnel = true; // 标记为主动停止，避免退出事件误报"异常退出"
@@ -1417,10 +1475,9 @@ class ServerController extends ChangeNotifier {
   }
 
   /// 立即启用 FRP 隧道（用户在 UI 中打开开关时调用）。
-  /// [config] 可选，传入当前 UI 配置；为 null 时从 config/network.json 读取。
   void enableTunnelNow([FrpcConfig? config, String? runtimeId]) {
     if (_tunnelActive || _status != ServerStatus.running) return;
-    _startTunnelWithConfig(config, runtimeId: runtimeId);
+    _startTunnelWithConfig(runtimeId: runtimeId);
   }
 
   /// 立即停用 FRP 隧道（用户在 UI 中关闭开关时调用）。
@@ -1429,21 +1486,19 @@ class ServerController extends ChangeNotifier {
     _stopTunnel();
   }
 
-  /// 以指定配置重启 FRP 隧道（用户在运行中修改配置后调用）。
-  Future<void> applyTunnelConfig(FrpcConfig config, [String? runtimeId]) async {
+  /// 重启 FRP 隧道以应用最新配置（读取 `config/frpc.toml`）。
+  Future<void> applyTunnelConfig([String? runtimeId]) async {
     if (!_tunnelActive || _status != ServerStatus.running) return;
     _restartingTunnel = true;
     await _tunnel.stop();
     await Future.delayed(const Duration(milliseconds: 300));
     if (_status == ServerStatus.running && _workingDir != null) {
-      _doStartTunnel(config, _workingDir!, runtimeId: runtimeId);
+      _doStartTunnel(_workingDir!, runtimeId: runtimeId);
     }
     _restartingTunnel = false;
   }
 
-  /// 重启 FRP 隧道以应用最新配置（自定义模式读取 `config/frpc.toml`，
-  /// 表单模式读取 `config/network.json`）。用户在运行中编辑自定义配置或切换
-  /// 模式后调用。
+  /// 重启 FRP 隧道以应用最新配置（读取 `config/frpc.toml`）。
   Future<void> restartTunnel() async {
     if (!_tunnelActive || _status != ServerStatus.running) return;
     _restartingTunnel = true;
@@ -1451,7 +1506,7 @@ class ServerController extends ChangeNotifier {
     await Future.delayed(const Duration(milliseconds: 300));
     if (_status == ServerStatus.running && _workingDir != null) {
       final runtimeId = await NetworkStore.loadFrpcRuntimeId();
-      _doStartTunnel(null, _workingDir!, runtimeId: runtimeId);
+      _doStartTunnel(_workingDir!, runtimeId: runtimeId);
     }
     _restartingTunnel = false;
   }

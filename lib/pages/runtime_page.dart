@@ -32,6 +32,7 @@ class _RuntimePageState extends State<RuntimePage> {
     super.initState();
     _load();
     EcpkgHandler.onOpenEcpkg = _handleOpenEcpkg;
+    RuntimeService.refreshSignal.addListener(_onRuntimesChanged);
     // 处理从文件关联传入的路径
     if (widget.initialEcpkgPath != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -42,8 +43,13 @@ class _RuntimePageState extends State<RuntimePage> {
 
   @override
   void dispose() {
+    RuntimeService.refreshSignal.removeListener(_onRuntimesChanged);
     EcpkgHandler.onOpenEcpkg = null;
     super.dispose();
+  }
+
+  void _onRuntimesChanged() {
+    if (mounted) _load();
   }
 
   void _handleOpenEcpkg(String path) {

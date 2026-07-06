@@ -1,6 +1,7 @@
 /// 运行环境标识：Java 版（JVM 跑 .jar）与 PHP 版（PocketMine 跑 .phar）。
 const String kRuntimeJava = 'java';
 const String kRuntimePhp = 'php';
+const String kRuntimeDragonfly = 'dragonfly';
 
 /// 实例索引项：仅包含选择列表所需的 [id] 与 [name]。
 ///

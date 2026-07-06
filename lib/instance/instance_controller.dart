@@ -78,14 +78,24 @@ class InstanceController extends ChangeNotifier {
   /// 返回更新后的选中项 id（若 [preservedSelectedId] 对应的实例被清理则为 null）。
   Future<String?> _pruneMissingInstances(String? preservedSelectedId) async {
     final root = await _rootResolver();
-    // 根目录不存在时（如存储未挂载）不清理，避免误删全部索引。
-    if (!await root.exists()) return preservedSelectedId;
 
     final existingDirIds = <String>{};
-    await for (final entity in root.list(followLinks: false)) {
-      if (entity is Directory) {
-        existingDirIds.add(p.basename(entity.path));
+    if (await root.exists()) {
+      await for (final entity in root.list(followLinks: false)) {
+        if (entity is Directory) {
+          existingDirIds.add(p.basename(entity.path));
+        }
       }
+    } else {
+      // 根目录不存在时尝试创建：若创建成功说明父目录可写，实例目录确实已被
+      // 用户删除（整个 instances 或 EdgeCube 文件夹），应将所有实例视为
+      // 丢失并清理；若创建失败（如存储未挂载）则跳过清理，避免误删索引。
+      try {
+        await root.create(recursive: true);
+      } catch (_) {
+        return preservedSelectedId;
+      }
+      // 创建成功，所有实例已丢失。
     }
 
     final kept = <InstanceSummary>[];
