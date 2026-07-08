@@ -63,13 +63,15 @@ int main(int argc, char **argv) {
 
     void *handle = dlopen(dragonfly_lib, RTLD_NOW | RTLD_GLOBAL);
     if (!handle) {
-        LOGE("dlopen(%s) 失败: %s", dragonfly_lib, dlerror());
+        const char *dl_err = dlerror();
+        LOGE("dlopen(%s) 失败: %s", dragonfly_lib, dl_err ? dl_err : "(无错误信息)");
         return 1;
     }
 
     run_dragonfly_t run_dragonfly = (run_dragonfly_t) dlsym(handle, "RunDragonfly");
     if (!run_dragonfly) {
-        LOGE("dlsym(RunDragonfly) 失败: %s", dlerror());
+        const char *dl_err = dlerror();
+        LOGE("dlsym(RunDragonfly) 失败: %s", dl_err ? dl_err : "(无错误信息)");
         dlclose(handle);
         return 1;
     }

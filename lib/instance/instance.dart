@@ -2,6 +2,7 @@
 const String kRuntimeJava = 'java';
 const String kRuntimePhp = 'php';
 const String kRuntimeDragonfly = 'dragonfly';
+const String kRuntimeProot = 'proot';
 
 /// 实例索引项：仅包含选择列表所需的 [id] 与 [name]。
 ///

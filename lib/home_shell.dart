@@ -8,12 +8,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'config/config_store.dart';
 import 'config/network_store.dart' show NetworkStore;
 import 'config/user_agreement_store.dart';
-import 'config/version_store.dart';
 import 'files/file_browser.dart';
 import 'files/storage_permission.dart';
 import 'i18n/locale_scope.dart';
-import 'instance/instance_migration.dart';
-import 'instance/instance_scope.dart';
 import 'online/online_service.dart';
 import 'online/update_service.dart';
 import 'pages/console_page.dart';
@@ -29,10 +26,9 @@ import 'widgets/user_agreement_dialog.dart';
 
 /// 应用主壳：底部导航栏 + 页面切换。
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key, required this.onlineService, this.lastVersion});
+  const HomeShell({super.key, required this.onlineService});
 
   final OnlineService onlineService;
-  final String? lastVersion;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -118,7 +114,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     // 未确认则退出应用，不再继续后续任何流程。
     final noticed = await _ensureOpenSourceNoticeAcknowledged();
     if (!noticed || !mounted) return;
-    // 用户协议必须紧随其后：在权限申请、迁移、首次启动弹窗之前。
+    // 用户协议必须紧随其后：在权限申请、首次启动弹窗之前。
     // 未同意则退出应用，不再继续后续任何流程。
     final agreed = await _ensureUserAgreementAccepted();
     if (!agreed || !mounted) return;
@@ -128,8 +124,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (!mounted) return;
     final storageReady = await _ensureStoragePermissionGuard();
     if (!storageReady || !mounted) return;
-    await _maybeAutoMigrateInstances();
-    if (!mounted) return;
     await _showFirstLaunchDialog();
     if (!mounted) return;
     await _checkUpdatesInBackground();
@@ -252,22 +246,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             child: Text(ctx.tr('instance.goGrant')),
           ),
         ],
-      ),
-    );
-  }
-
-  Future<void> _maybeAutoMigrateInstances() async {
-    if (!InstanceMigration.shouldAutoMigrateFrom(widget.lastVersion)) return;
-    if (!mounted) return;
-    final instances = InstanceScope.of(context);
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _InstanceMigrationDialog(
-        onComplete: () async {
-          await instances.init();
-          await VersionStore.recordOpen();
-        },
       ),
     );
   }
@@ -482,101 +460,5 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         ),
       );
     }
-  }
-}
-
-class _InstanceMigrationDialog extends StatefulWidget {
-  const _InstanceMigrationDialog({required this.onComplete});
-
-  final Future<void> Function() onComplete;
-
-  @override
-  State<_InstanceMigrationDialog> createState() =>
-      _InstanceMigrationDialogState();
-}
-
-class _InstanceMigrationDialogState extends State<_InstanceMigrationDialog> {
-  int _processed = 0;
-  int _total = 0;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _migrate());
-  }
-
-  Future<void> _migrate() async {
-    try {
-      final result = await InstanceMigration.migrateLegacyInstances(
-        onProgress: (processed, total) {
-          if (!mounted) return;
-          setState(() {
-            _processed = processed;
-            _total = total;
-          });
-        },
-      );
-      if (!result.success) {
-        throw result.error ?? StateError('Instance migration failed');
-      }
-      await widget.onComplete();
-      if (mounted) Navigator.of(context).pop();
-    } catch (error) {
-      await VersionStore.recordOpen();
-      if (!mounted) return;
-      setState(() => _error = error.toString());
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final progress = _total == 0 ? null : _processed / _total;
-    return PopScope(
-      canPop: _error != null,
-      child: AlertDialog(
-        title: Text(context.tr('settings.storage.autoMigrateTitle')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_error == null) ...[
-              Row(
-                children: [
-                  CircularProgressIndicator(value: progress),
-                  const SizedBox(width: 20),
-                  Expanded(
-                    child: Text(
-                      _total == 0
-                          ? context.tr('settings.storage.migrating')
-                          : context.tr('settings.storage.migratingProgress', {
-                              'processed': '$_processed',
-                              'total': '$_total',
-                            }),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(context.tr('settings.storage.migratingDoNotClose')),
-            ] else ...[
-              Text(
-                context.tr('settings.storage.migrateFailed', {
-                  'error': _error!,
-                }),
-              ),
-            ],
-          ],
-        ),
-        actions: _error == null
-            ? null
-            : [
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text(context.tr('common.ok')),
-                ),
-              ],
-      ),
-    );
   }
 }

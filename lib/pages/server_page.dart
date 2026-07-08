@@ -17,6 +17,7 @@ import '../instance/instance_scope.dart';
 import '../online/error_report_service.dart';
 import '../online/online_service.dart';
 import '../route_observer.dart';
+import '../server/proot_service.dart';
 import '../server/runtime_service.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
@@ -69,6 +70,7 @@ class _LaunchContext {
     required this.versions,
     required this.phpRuntimes,
     required this.dragonflyRuntimes,
+    required this.prootRootfs,
     required this.runtimeNames,
   });
 
@@ -78,6 +80,10 @@ class _LaunchContext {
   final List<String> versions;
   final List<String> phpRuntimes;
   final List<String> dragonflyRuntimes;
+
+  /// 已导入的 proot rootfs id 列表（每个 id 对应一个含原版 Java 的 Linux 根文件系统）。
+  final List<String> prootRootfs;
+
   final Map<String, String> runtimeNames;
 }
 
@@ -111,8 +117,12 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
   bool _compatMode = false;
   Future<_LaunchContext>? _ctxFuture;
 
+  /// proot 模式下选中的 rootfs id（作为 runtimeId 传给原生侧）。
+  String _prootRootfsId = '';
+
   bool get _isPhp => _runtime == kRuntimePhp;
   bool get _isDragonfly => _runtime == kRuntimeDragonfly;
+  bool get _isProot => _runtime == kRuntimeProot;
 
   @override
   void initState() {
@@ -124,7 +134,14 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       text: widget.instance.customJvmArgs ?? '',
     );
     _runtime = widget.instance.runtime;
-    _version = widget.instance.javaVersion ?? 'jre21';
+    // proot 运行时把所选 rootfs id 存入 javaVersion 字段（proot 不用 EdgeCube JRE，
+    // 该字段在此场景下闲置，复用可避免给 Instance 增加新字段）。
+    if (_isProot && widget.instance.javaVersion != null) {
+      _prootRootfsId = widget.instance.javaVersion!;
+      _version = 'jre21';
+    } else {
+      _version = widget.instance.javaVersion ?? 'jre21';
+    }
     _selectedJar = widget.instance.selectedJar;
     _compatMode = widget.instance.compatMode;
     // 设置崩溃回调：服务端意外退出时弹出报告弹窗。
@@ -136,6 +153,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     server.onUpnpTimeout = _onUpnpTimeout;
     // 监听运行时导入/删除，自动刷新可用运行时列表。
     RuntimeService.refreshSignal.addListener(_onRuntimesChanged);
+    ProotService.refreshSignal.addListener(_onRuntimesChanged);
   }
 
   /// 运行时列表变化时重新加载上下文。
@@ -229,7 +247,12 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
         oldWidget.instance.compatMode != widget.instance.compatMode;
     if (configChanged) {
       _runtime = widget.instance.runtime;
-      _version = widget.instance.javaVersion ?? 'jre21';
+      if (_isProot && widget.instance.javaVersion != null) {
+        _prootRootfsId = widget.instance.javaVersion!;
+        _version = 'jre21';
+      } else {
+        _version = widget.instance.javaVersion ?? 'jre21';
+      }
       _selectedJar = widget.instance.selectedJar;
       _compatMode = widget.instance.compatMode;
     }
@@ -243,6 +266,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
   @override
   void dispose() {
     RuntimeService.refreshSignal.removeListener(_onRuntimesChanged);
+    ProotService.refreshSignal.removeListener(_onRuntimesChanged);
     appRouteObserver.unsubscribe(this);
     _memController.dispose();
     _jvmArgsController.dispose();
@@ -257,7 +281,11 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       widget.instance.id,
       runtime: _runtime,
       maxMemory: int.tryParse(_memController.text.trim()),
-      javaVersion: _version,
+      // proot 复用 javaVersion 字段保存所选 rootfs id；
+      // 非 proot 则保存 JRE 版本号。
+      javaVersion: _isProot
+          ? (_prootRootfsId.isEmpty ? null : _prootRootfsId)
+          : _version,
       selectedJar: _selectedJar,
       customJvmArgs: argsText.isEmpty ? null : argsText,
       compatMode: _compatMode,
@@ -331,15 +359,20 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     final phpRuntimes = await server.availablePhpIds();
     final runtimeService = const RuntimeService();
     final runtimes = await runtimeService.installedRuntimes();
+    // proot rootfs 列表（每个含原版 Java，可作为服务端运行环境）
+    final prootRootfsList = await const ProotService().listRootfs();
     final runtimeNames = <String, String>{
       for (final rt in runtimes) rt.id: rt.name,
       // 内置 PHP CLI（随 APK 打包）的友好名称；.ecpkg 安装的 PHP 会被同 id 覆盖。
       'php-cli-8.2': 'PHP 8.2 (内置)',
+      // proot rootfs 的友好名称：直接用 id
+      for (final r in prootRootfsList) r.id: 'proot: ${r.id}',
     };
     final dragonflyRuntimes = runtimes
         .where((rt) => rt.type == 'dragonfly')
         .map((rt) => rt.id)
         .toList();
+    final prootRootfs = prootRootfsList.map((r) => r.id).toList();
     return _LaunchContext(
       workingDir: dir.path,
       jars: jars,
@@ -347,6 +380,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       versions: versions,
       phpRuntimes: phpRuntimes,
       dragonflyRuntimes: dragonflyRuntimes,
+      prootRootfs: prootRootfs,
       runtimeNames: runtimeNames,
     );
   }
@@ -489,13 +523,51 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       return;
     }
 
+    // —— proot 分支：在用户导入的 Linux rootfs 内运行原版 Java ——
+    // 绕过 Android JRE 兼容性问题。proot 不需要 EdgeCube 自带的 JRE，
+    // 故此分支放在 JRE 版本检查之前。
+    if (_isProot) {
+      if (ctx.prootRootfs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('未导入任何 proot rootfs，请先在「管理 → 运行环境」导入 rootfs.tar.zst')),
+        );
+        return;
+      }
+      final rootfsId = _prootRootfsId.isNotEmpty
+          ? _prootRootfsId
+          : ctx.prootRootfs.first;
+      if (file == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.tr('server.noJarFound'))),
+        );
+        return;
+      }
+      final mem = int.tryParse(_memController.text.trim());
+      final jvmArgs = <String>[
+        if (mem != null && mem > 0) '-Xmx${mem}M',
+        ..._parseCustomJvmArgs(widget.instance.customJvmArgs),
+      ];
+      if (!await _ensureEula(ctx.workingDir)) return;
+      server.start(
+        instanceId: widget.instance.id,
+        instanceName: widget.instance.name,
+        workingDir: ctx.workingDir,
+        runtimeId: rootfsId,
+        runtime: kRuntimeProot,
+        jvmArgs: jvmArgs,
+        programArgs: ['-jar', file, 'nogui'],
+        compatMode: _compatMode,
+      );
+      return;
+    }
+
     // Java：需要至少一个 JRE 运行时。
     if (ctx.versions.isEmpty) {
       _showRuntimeRequiredDialog(isJava: true);
       return;
     }
 
-    // Java：用 JRE 执行选中的 .jar。
+    // Java（默认）：用 EdgeCube 自带 JRE 执行选中的 .jar。
     if (file == null) {
       ScaffoldMessenger.of(
         context,
@@ -700,7 +772,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // 运行环境：Java（JVM 跑 .jar）/ PHP（PocketMine 跑 .phar）。
+                    // 运行环境：Java（JVM 跑 .jar）/ PHP（PocketMine 跑 .phar）/
+                    // Dragonfly（Go 引擎）/ proot（rootfs 内运行原版 Java）。
                     DropdownButtonFormField<String>(
                       isExpanded: true,
                       initialValue: _runtime,
@@ -722,6 +795,12 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                           value: kRuntimeDragonfly,
                           child: Text(context.tr('server.runtimeDragonfly')),
                         ),
+                        // proot 选项仅在有已导入的 rootfs 时显示
+                        if (ctx.prootRootfs.isNotEmpty)
+                          DropdownMenuItem(
+                            value: kRuntimeProot,
+                            child: const Text('proot（原版 Java）'),
+                          ),
                       ],
                       selectedItemBuilder: (context) => [
                         DropdownMenuItem<String>(
@@ -745,6 +824,14 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (ctx.prootRootfs.isNotEmpty)
+                          DropdownMenuItem<String>(
+                            value: kRuntimeProot,
+                            child: const Text(
+                              'proot（原版 Java）',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                       ],
                       onChanged: (v) {
                         if (v == null || v == _runtime) return;
@@ -757,6 +844,16 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                                 : null;
                           } else if (_isDragonfly) {
                             _selectedJar = null;
+                          } else if (_isProot) {
+                            // proot 跑 .jar，与 Java 一样需要选 jar 文件
+                            _selectedJar = ctx.jars.isNotEmpty
+                                ? ctx.jars.first
+                                : null;
+                            // 默认选第一个 rootfs
+                            if (_prootRootfsId.isEmpty &&
+                                ctx.prootRootfs.isNotEmpty) {
+                              _prootRootfsId = ctx.prootRootfs.first;
+                            }
                           } else {
                             _selectedJar = ctx.jars.isNotEmpty
                                 ? ctx.jars.first
@@ -772,7 +869,54 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                       },
                     ),
                     const SizedBox(height: 16),
-                    if (!_isPhp && !_isDragonfly) ...[
+                    if (_isProot) ...[
+                      // proot rootfs 选择器：选择在哪个 Linux rootfs 内运行 Java。
+                      DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        initialValue: ctx.prootRootfs.contains(_prootRootfsId)
+                            ? _prootRootfsId
+                            : (ctx.prootRootfs.isNotEmpty
+                                ? ctx.prootRootfs.first
+                                : null),
+                        decoration: const InputDecoration(
+                          labelText: 'proot rootfs',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: [
+                          for (final r in ctx.prootRootfs)
+                            DropdownMenuItem(
+                              value: r,
+                              child: Text(ctx.runtimeNames[r] ?? r),
+                            ),
+                        ],
+                        selectedItemBuilder: (context) => [
+                          for (final r in ctx.prootRootfs)
+                            DropdownMenuItem<String>(
+                              value: r,
+                              child: Text(
+                                ctx.runtimeNames[r] ?? r,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: (v) {
+                          setDialogState(() => _prootRootfsId = v ?? _prootRootfsId);
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _memController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: context.tr('server.maxMemoryLabel'),
+                          suffixText: 'MB',
+                          border: const OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ] else if (!_isPhp && !_isDragonfly) ...[
                       DropdownButtonFormField<String>(
                         isExpanded: true,
                         initialValue: ctx.versions.contains(_version)

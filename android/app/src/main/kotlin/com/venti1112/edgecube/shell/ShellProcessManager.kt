@@ -6,6 +6,7 @@ import android.os.Looper
 import android.system.Os
 import android.system.OsConstants
 import com.venti1112.edgecube.server.EcPty
+import com.venti1112.edgecube.server.ProotEnvironment
 import io.flutter.plugin.common.EventChannel
 import java.io.File
 import java.io.FileInputStream
@@ -84,24 +85,61 @@ class ShellProcessManager private constructor(private val appContext: Context) {
         }
     }
 
-    /** 启动交互 shell。[cwd] 为初始工作目录（空/无效则用外部存储根或私有目录）。 */
+    /**
+     * 启动交互 shell。
+     *
+     * [shellId] 决定启动哪种 shell：
+     *  - "system_sh" 或 null/空：系统自带的 /system/bin/sh（默认）
+     *  - "proot:<rootfsId>"：进入指定 rootfs 的 proot 容器交互 shell
+     *
+     * [cwd] 为初始工作目录：
+     *  - 系统 sh：空/无效则用外部存储根或私有目录（host 路径）
+     *  - proot：空则用容器内 /root；非空时若是 host 路径会被忽略（proot 容器
+     *    独立文件系统，host 路径无意义），需传容器内绝对路径如 /mnt/server
+     */
     @Synchronized
-    fun start(cwd: String?) {
+    fun start(cwd: String?, shellId: String? = null) {
         if (isRunning) return
 
-        val workDir = cwd?.takeIf { File(it).isDirectory } ?: ShellResolver.defaultCwd(appContext)
-        val spec = ShellResolver.resolveInteractive()
-        val env = ShellResolver.baseEnv(appContext, workDir)
+        val isProot = shellId != null && shellId.startsWith("proot:")
+        val cmd: String
+        val argv: ArrayList<String>
+        val env: Map<String, String>
+        val label: String
+        val ptyCwd: String
 
-        val argv = ArrayList<String>()
-        argv.add(spec.cmd)
-        argv.addAll(spec.argvPrefix)
+        if (isProot) {
+            val rootfsId = shellId!!.removePrefix("proot:")
+            // proot 的 cwd 是容器内路径，不能复用 host 的 workDir
+            val guestCwd = cwd?.takeIf { it.isNotBlank() } ?: "/root"
+            val prootCmd = ProotEnvironment.buildShellCommand(appContext, rootfsId, guestCwd)
+            cmd = prootCmd.cmd
+            argv = ArrayList(prootCmd.argv)
+            env = prootCmd.env
+            label = "proot: $rootfsId"
+            // EcPty.createSubprocess 的 cwd 参数是 host 进程的 cwd；proot 通过 --cwd
+            // 设置容器内 cwd，host cwd 用 app 私有目录即可（避免权限问题）。
+            ptyCwd = appContext.filesDir.absolutePath
+        } else {
+            val workDir = cwd?.takeIf { File(it).isDirectory } ?: ShellResolver.defaultCwd(appContext)
+            val spec = ShellResolver.resolveInteractive()
+            val baseEnv = ShellResolver.baseEnv(appContext, workDir)
+            cmd = spec.cmd
+            argv = ArrayList<String>().apply {
+                add(spec.cmd)
+                addAll(spec.argvPrefix)
+            }
+            env = baseEnv
+            label = spec.label
+            ptyCwd = workDir
+        }
+
         val envp = env.map { "${it.key}=${it.value}" }.toTypedArray()
 
         val pidHolder = IntArray(1)
         val fd = EcPty.createSubprocess(
-            spec.cmd,
-            workDir,
+            cmd,
+            ptyCwd,
             argv.toTypedArray(),
             envp,
             pidHolder,
@@ -116,9 +154,9 @@ class ShellProcessManager private constructor(private val appContext: Context) {
         processId = pidHolder[0]
         ptyOutput = FileOutputStream(EcPty.fdFromInt(fd))
         running = true
-        currentLabel = spec.label
-        emitState("running", spec.label, null)
-        emitTerm("[EdgeCube] shell: ${spec.label} @ $workDir\r\n".toByteArray(StandardCharsets.UTF_8))
+        currentLabel = label
+        emitState("running", label, null)
+        emitTerm("[EdgeCube] shell: $label\r\n".toByteArray(StandardCharsets.UTF_8))
 
         thread(name = "shell-pty") {
             val input = FileInputStream(EcPty.fdFromInt(fd))

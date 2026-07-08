@@ -2,6 +2,7 @@ package com.venti1112.edgecube.shell
 
 import android.content.Context
 import android.os.Environment
+import com.venti1112.edgecube.server.ProotEnvironment
 
 /**
  * 一个可执行 shell 的解析结果。
@@ -16,14 +17,32 @@ data class ShellSpec(
 )
 
 /**
+ * UI 可选的 shell 条目。
+ *
+ * - [id] 用于在 `start(shellId=...)` 时指定要启动哪个 shell：
+ *   - "system_sh"：系统自带的 /system/bin/sh
+ *   - "proot:<rootfsId>"：进入指定 rootfs 的 proot 容器交互 shell
+ * - [label] 为展示名（如 "system sh"、"proot: debian-12-jdk21"）
+ * - [type] 为 "system" 或 "proot"，便于 UI 分组渲染
+ */
+data class ShellOption(
+    val id: String,
+    val label: String,
+    val type: String,
+)
+
+/**
  * shell 解析与环境构造。
  *
- * 统一使用系统自带的 `/system/bin/sh`（Android 上为 mksh/toybox），
+ * 默认 shell 为系统自带的 `/system/bin/sh`（Android 上为 mksh/toybox），
  * 附带系统 toybox 提供的常用命令（ls/cd/cat/grep/mount 等），无需额外打包 shell 二进制。
+ *
+ * proot 集成后另支持进入用户导入的 Linux rootfs 交互 shell，详见 [availableOptions]。
  */
 object ShellResolver {
     private const val SYSTEM_SH = "/system/bin/sh"
     private const val SYSTEM_SH_LABEL = "system sh"
+    const val SYSTEM_SH_ID = "system_sh"
 
     /** 交互式 shell（用于 PTY 终端）。 */
     fun resolveInteractive(): ShellSpec =
@@ -33,8 +52,37 @@ object ShellResolver {
     fun resolveOnce(): ShellSpec =
         ShellSpec(SYSTEM_SH, listOf("-c"), SYSTEM_SH_LABEL)
 
-    /** 当前可用的 shell 列表，用于界面展示。 */
-    fun availableLabels(): List<String> = listOf(SYSTEM_SH_LABEL)
+    /**
+     * 当前可用的 shell 列表，用于界面展示。
+     *
+     * 始终包含 [SYSTEM_SH_LABEL]；若已导入 proot rootfs，则追加每个 rootfs 对应的
+     * `proot:<rootfsId>` 条目。返回值为简单 label 列表，向后兼容旧调用方；
+     * 需要结构化信息（含 id/type）请用 [availableOptions]。
+     */
+    fun availableLabels(context: Context): List<String> =
+        availableOptions(context).map { it.label }
+
+    /**
+     * 当前可用的 shell 条目（结构化）。
+     *
+     * 顺序：系统 sh 在前，proot rootfs 在后（按 rootfs id 字典序）。
+     * proot 条目仅在 [ProotEnvironment] 已安装至少一个 rootfs 时出现。
+     */
+    fun availableOptions(context: Context): List<ShellOption> {
+        val result = mutableListOf<ShellOption>()
+        result.add(ShellOption(SYSTEM_SH_ID, SYSTEM_SH_LABEL, "system"))
+        try {
+            val rootfsList = ProotEnvironment.installedRootfs(context)
+            for (rootfs in rootfsList) {
+                val id = "proot:${rootfs.id}"
+                val label = "proot: ${rootfs.id}"
+                result.add(ShellOption(id, label, "proot"))
+            }
+        } catch (_: Throwable) {
+            // proot bootstrap 未就位或 native 库缺失时，跳过 proot 条目
+        }
+        return result
+    }
 
     /** 默认工作目录：优先外部存储根（应用持有 MANAGE_EXTERNAL_STORAGE），否则应用私有目录。 */
     fun defaultCwd(context: Context): String {

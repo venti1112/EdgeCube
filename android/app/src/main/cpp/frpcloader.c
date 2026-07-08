@@ -62,13 +62,15 @@ int main(int argc, char **argv) {
 
     void *handle = dlopen(frpc_lib, RTLD_NOW | RTLD_GLOBAL);
     if (!handle) {
-        LOGE("dlopen(%s) 失败: %s", frpc_lib, dlerror());
+        const char *dl_err = dlerror();
+        LOGE("dlopen(%s) 失败: %s", frpc_lib, dl_err ? dl_err : "(无错误信息)");
         return 1;
     }
 
     run_frpc_t run_frpc = (run_frpc_t) dlsym(handle, "RunFrpc");
     if (!run_frpc) {
-        LOGE("dlsym(RunFrpc) 失败: %s", dlerror());
+        const char *dl_err = dlerror();
+        LOGE("dlsym(RunFrpc) 失败: %s", dl_err ? dl_err : "(无错误信息)");
         dlclose(handle);
         return 1;
     }

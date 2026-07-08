@@ -25,6 +25,12 @@ class MslMirror {
     'fabric': 'fabric',
     'forge': 'forge',
     'neoforge': 'neoforge',
+    'purpur': 'purpur',
+    'leaf': 'leaf',
+    'spigot': 'spigot',
+    'craftbukkit': 'bukkit',
+    'leaves': 'leaves',
+    'bungeecord': 'bungeecord',
   };
 
   /// 获取指定核心 + 版本的镜像下载信息。

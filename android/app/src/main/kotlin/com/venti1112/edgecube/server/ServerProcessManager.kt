@@ -290,6 +290,23 @@ recursionguard.enabled=0"""
             env["TMPDIR"] = appContext.cacheDir.absolutePath
             env["LANG"] = "en_US.UTF-8"
             env["TERM"] = "xterm-256color"
+        } else if (runtime == "proot") {
+            // proot：在用户导入的 Linux rootfs 内运行「原版 Java」。
+            // runtimeId 此处为 rootfs id（如 "debian-12-jdk21"），rootfs 内自带
+            // 未打补丁的 OpenJDK，绕过 Android JRE 的兼容性问题。
+            // proot 进程不继承 Android 系统环境变量（ANDROID_DATA/BOOTCLASSPATH 等
+            // 会泄漏进容器造成干扰），改用 ProotEnvironment 返回的干净环境。
+            val prootCmd = ProotEnvironment.buildServerCommand(
+                appContext,
+                runtimeId,
+                workingDir,
+                jvmArgs,
+                programArgs,
+            )
+            cmd = prootCmd.cmd
+            argv.addAll(prootCmd.argv)
+            env.clear()
+            env.putAll(prootCmd.env)
         } else {
             val manifest = RuntimeInstaller.installedRuntime(appContext, runtimeId)
                 ?: throw IllegalStateException("JRE 运行时 $runtimeId 未安装，请先在「管理 → 运行环境」导入")

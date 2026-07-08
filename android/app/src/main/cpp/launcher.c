@@ -176,13 +176,15 @@ int main(int argc, char **argv) {
      * RTLD_LAZY：与 FCL 一致，libjli 的部分符号要到运行时才由 libjvm 等补齐。 */
     void *libjli = dlopen(libjli_path, RTLD_LAZY | RTLD_GLOBAL);
     if (libjli == NULL) {
-        LOGE("dlopen(%s) 失败: %s", libjli_path, dlerror());
+        const char *dl_err = dlerror();
+        LOGE("dlopen(%s) 失败: %s", libjli_path, dl_err ? dl_err : "(无错误信息)");
         return 1;
     }
 
     JLI_Launch_t *JLI_Launch = (JLI_Launch_t *) dlsym(libjli, "JLI_Launch");
     if (JLI_Launch == NULL) {
-        LOGE("dlsym(JLI_Launch) 失败: %s", dlerror());
+        const char *dl_err = dlerror();
+        LOGE("dlsym(JLI_Launch) 失败: %s", dl_err ? dl_err : "(无错误信息)");
         return 1;
     }
 

@@ -52,10 +52,14 @@ class ShellController extends ChangeNotifier {
   }
 
   /// 启动交互 shell（已在运行则忽略）。[cwd] 为初始工作目录。
-  Future<void> start({String? cwd}) async {
+  ///
+  /// [shellId] 决定启动哪种 shell：
+  ///  - null/"system_sh"：系统 sh（默认）
+  ///  - "proot:<rootfsId>"：进入指定 rootfs 的 proot 容器
+  Future<void> start({String? cwd, String? shellId}) async {
     if (_running) return;
     try {
-      await _service.start(cwd: cwd);
+      await _service.start(cwd: cwd, shellId: shellId);
     } catch (e) {
       _writeTerm('\r\n[EdgeCube] 启动 shell 失败：$e\r\n');
     }
@@ -68,7 +72,7 @@ class ShellController extends ChangeNotifier {
   Future<void> forceStop() => _service.forceStop();
 
   /// 重启：强制结束当前 shell 后重新启动。
-  Future<void> restart({String? cwd}) async {
+  Future<void> restart({String? cwd, String? shellId}) async {
     if (_running) {
       await _service.forceStop();
       // 等待退出事件把状态翻回未运行，避免 start 因仍在运行而被忽略。
@@ -76,7 +80,7 @@ class ShellController extends ChangeNotifier {
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
     }
-    await start(cwd: cwd);
+    await start(cwd: cwd, shellId: shellId);
   }
 
   /// 清空终端画面与原生缓冲。

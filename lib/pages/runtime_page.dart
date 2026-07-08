@@ -6,6 +6,7 @@ import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
 import '../server/ecpkg_handler.dart';
+import '../server/proot_service.dart';
 import '../server/runtime_service.dart';
 import '../server/runtime_update_service.dart';
 import 'ecpkg_download_page.dart';
@@ -23,9 +24,13 @@ class RuntimePage extends StatefulWidget {
 
 class _RuntimePageState extends State<RuntimePage> {
   final _service = const RuntimeService();
+  final _prootService = const ProotService();
   List<RuntimeInfo> _runtimes = [];
+  List<ProotRootfsInfo> _prootRootfs = [];
+  bool _prootAvailable = false;
   bool _loading = true;
   bool _importing = false;
+  bool _importingRootfs = false;
 
   @override
   void initState() {
@@ -33,6 +38,7 @@ class _RuntimePageState extends State<RuntimePage> {
     _load();
     EcpkgHandler.onOpenEcpkg = _handleOpenEcpkg;
     RuntimeService.refreshSignal.addListener(_onRuntimesChanged);
+    ProotService.refreshSignal.addListener(_onRuntimesChanged);
     // 处理从文件关联传入的路径
     if (widget.initialEcpkgPath != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -44,6 +50,7 @@ class _RuntimePageState extends State<RuntimePage> {
   @override
   void dispose() {
     RuntimeService.refreshSignal.removeListener(_onRuntimesChanged);
+    ProotService.refreshSignal.removeListener(_onRuntimesChanged);
     EcpkgHandler.onOpenEcpkg = null;
     super.dispose();
   }
@@ -67,8 +74,17 @@ class _RuntimePageState extends State<RuntimePage> {
     setState(() => _loading = true);
     try {
       final list = await _service.installedRuntimes();
+      // proot rootfs 与可用性并行加载，任一失败不影响另一个
+      final results = await Future.wait([
+        _prootService.listRootfs().catchError((_) => <ProotRootfsInfo>[]),
+        _prootService.isAvailable().catchError((_) => false),
+      ]);
       if (!mounted) return;
-      setState(() => _runtimes = list);
+      setState(() {
+        _runtimes = list;
+        _prootRootfs = results[0] as List<ProotRootfsInfo>;
+        _prootAvailable = results[1] as bool;
+      });
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -228,6 +244,177 @@ class _RuntimePageState extends State<RuntimePage> {
         ),
       );
     }
+  }
+
+  // —— proot rootfs 导入/删除 ——
+
+  Future<void> _importRootfs() async {
+    if (!_prootAvailable) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'proot 原生库未打包。请从 tiny_container releases 下载 jniLibs.zip '
+            '解压到 android/app/src/main/jniLibs/arm64-v8a/ 后重新构建。',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!await StoragePermission.isGranted()) {
+      if (!mounted) return;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(ctx.tr('fileBrowser.permissionTitle')),
+          content: Text(ctx.tr('fileBrowser.permissionContent')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(ctx.tr('common.cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(ctx.tr('fileBrowser.grantPermission')),
+            ),
+          ],
+        ),
+      );
+      if (go != true) return;
+      await StoragePermission.request();
+      if (!mounted) return;
+      return _importRootfs();
+    }
+
+    if (!mounted) return;
+    final path = await pickFromSystem(
+      context,
+      mode: SystemPickMode.file,
+      allowedExtensions: const ['.tar.zst', '.tar.xz', '.tar.gz', '.tgz'],
+    );
+    if (path == null) return;
+
+    await _doImportRootfs(path);
+  }
+
+  Future<void> _doImportRootfs(String path, {String? id}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _importingRootfs = true);
+    try {
+      await _prootService.importRootfs(path, id: id);
+      if (!mounted) return;
+      await _load();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('rootfs 导入成功')),
+      );
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      if (e.code == 'ROOTFS_EXISTS') {
+        // 同名 rootfs 已存在，让用户输入新 id 或取消
+        final newId = await _promptForRootfsId(e.message ?? 'ROOTFS_EXISTS');
+        if (newId != null && mounted) {
+          await _doImportRootfs(path, id: newId);
+        }
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(content: Text('rootfs 导入失败：${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('rootfs 导入失败：$e')),
+      );
+    } finally {
+      if (mounted) setState(() => _importingRootfs = false);
+    }
+  }
+
+  /// 导入同名 rootfs 冲突时，弹出对话框让用户输入新的 rootfs id。
+  Future<String?> _promptForRootfsId(String message) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('rootfs 已存在'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            const SizedBox(height: 12),
+            const Text('请输入新的 rootfs 名称：'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: '如 debian-12-jdk21',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteRootfs(ProotRootfsInfo info) async {
+    final theme = Theme.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除 rootfs'),
+        content: Text('确认删除 rootfs「${info.id}」？此操作不可撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await _prootService.deleteRootfs(info.id);
+      if (!mounted) return;
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('删除 rootfs 失败：$e')),
+      );
+    }
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
   }
 
   /// 检查单个运行时更新。
@@ -537,6 +724,7 @@ class _RuntimePageState extends State<RuntimePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final showProotSection = _prootAvailable || _prootRootfs.isNotEmpty;
     return Scaffold(
       appBar: AppBar(
   title: Text(context.tr('runtime.title')),
@@ -552,87 +740,174 @@ class _RuntimePageState extends State<RuntimePage> {
 ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _runtimes.isEmpty
+          : (_runtimes.isEmpty && !showProotSection)
           ? _EmptyBody(onImport: _import)
-          : ListView.builder(
+          : ListView(
               padding: const EdgeInsets.all(16),
-              itemCount: _runtimes.length,
-              itemBuilder: (_, i) {
-                final rt = _runtimes[i];
-                return Card(
-                  child: ListTile(
-                    leading: Icon(switch (rt.type) {
-                      'jre' => Icons.coffee,
-                      'php' => Icons.code,
-                      'frpc' => Icons.network_check,
-                      _ => Icons.memory,
-                    }, size: 32),
-                    title: Text(rt.name),
-                    subtitle: Text(
-                      '${_typeLabel(rt.type)} · ${context.tr('runtime.versionWithBuild', {
-                        'version': rt.displayVersion,
-                        'build': rt.version.toString(),
-                      })}',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.system_update_alt),
-                          tooltip: context.tr('runtime.update.tooltip'),
-                          onPressed: rt.canCheckUpdate
-                              ? () => _checkUpdate(rt)
-                              : null,
+              children: [
+                // —— .ecpkg 运行时区 ——
+                if (_runtimes.isNotEmpty) ...[
+                  for (final rt in _runtimes)
+                    Card(
+                      child: ListTile(
+                        leading: Icon(switch (rt.type) {
+                          'jre' => Icons.coffee,
+                          'php' => Icons.code,
+                          'frpc' => Icons.network_check,
+                          _ => Icons.memory,
+                        }, size: 32),
+                        title: Text(rt.name),
+                        subtitle: Text(
+                          '${_typeLabel(rt.type)} · ${context.tr('runtime.versionWithBuild', {
+                            'version': rt.displayVersion,
+                            'build': rt.version.toString(),
+                          })}',
+                          style: theme.textTheme.bodySmall,
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => _delete(rt),
-                        ),
-                        PopupMenuButton<String>(
-                          tooltip: context.tr('runtime.more'),
-                          icon: const Icon(Icons.more_vert),
-                          onSelected: (action) {
-                            if (action == 'homepage') {
-                              launchUrl(Uri.parse(rt.homepage!),
-                                  mode: LaunchMode.externalApplication);
-                            } else if (action == 'repository') {
-                              launchUrl(Uri.parse(rt.repository!),
-                                  mode: LaunchMode.externalApplication);
-                            }
-                          },
-                          itemBuilder: (ctx) => [
-                            if (rt.homepage != null && rt.homepage!.isNotEmpty)
-                              PopupMenuItem(
-                                value: 'homepage',
-                                child: ListTile(
-                                  leading: const Icon(Icons.home_outlined),
-                                  title: Text(ctx.tr('runtime.openHomepage')),
-                                  contentPadding: EdgeInsets.zero,
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              ),
-                            if (rt.repository != null &&
-                                rt.repository!.isNotEmpty)
-                              PopupMenuItem(
-                                value: 'repository',
-                                child: ListTile(
-                                  leading: const Icon(Icons.code),
-                                  title:
-                                      Text(ctx.tr('runtime.openRepository')),
-                                  contentPadding: EdgeInsets.zero,
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.system_update_alt),
+                              tooltip: context.tr('runtime.update.tooltip'),
+                              onPressed: rt.canCheckUpdate
+                                  ? () => _checkUpdate(rt)
+                                  : null,
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => _delete(rt),
+                            ),
+                            PopupMenuButton<String>(
+                              tooltip: context.tr('runtime.more'),
+                              icon: const Icon(Icons.more_vert),
+                              onSelected: (action) {
+                                if (action == 'homepage') {
+                                  launchUrl(Uri.parse(rt.homepage!),
+                                      mode: LaunchMode.externalApplication);
+                                } else if (action == 'repository') {
+                                  launchUrl(Uri.parse(rt.repository!),
+                                      mode: LaunchMode.externalApplication);
+                                }
+                              },
+                              itemBuilder: (ctx) => [
+                                if (rt.homepage != null && rt.homepage!.isNotEmpty)
+                                  PopupMenuItem(
+                                    value: 'homepage',
+                                    child: ListTile(
+                                      leading: const Icon(Icons.home_outlined),
+                                      title: Text(ctx.tr('runtime.openHomepage')),
+                                      contentPadding: EdgeInsets.zero,
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  ),
+                                if (rt.repository != null &&
+                                    rt.repository!.isNotEmpty)
+                                  PopupMenuItem(
+                                    value: 'repository',
+                                    child: ListTile(
+                                      leading: const Icon(Icons.code),
+                                      title:
+                                          Text(ctx.tr('runtime.openRepository')),
+                                      contentPadding: EdgeInsets.zero,
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ],
                         ),
+                      ),
+                    ),
+                ],
+                // —— proot rootfs 区 ——
+                if (showProotSection) ...[
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.dns_outlined, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          'proot 容器 rootfs',
+                          style: theme.textTheme.titleSmall,
+                        ),
+                        const Spacer(),
+                        if (_prootRootfs.isNotEmpty)
+                          Text(
+                            '${_prootRootfs.length} 个',
+                            style: theme.textTheme.bodySmall,
+                          ),
                       ],
                     ),
                   ),
-                );
-              },
+                  if (!_prootAvailable)
+                    Card(
+                      color: theme.colorScheme.errorContainer.withValues(alpha: 0.3),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber,
+                                color: theme.colorScheme.error),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'proot 原生库未打包。请从 tiny_container releases '
+                                '下载 jniLibs.zip 解压到 jniLibs/arm64-v8a/ 后重新构建。',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  for (final rootfs in _prootRootfs)
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.terminal, size: 32),
+                        title: Text(rootfs.id),
+                        subtitle: Text(
+                          rootfs.hasJava
+                              ? '${_formatBytes(rootfs.sizeBytes)} · java: ${rootfs.javaBin}'
+                              : '${_formatBytes(rootfs.sizeBytes)} · 未安装 Java（进 shell 执行 apt install openjdk-17-jre-headless）',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: rootfs.hasJava
+                                ? null
+                                : theme.colorScheme.error,
+                          ),
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _deleteRootfs(rootfs),
+                        ),
+                      ),
+                    ),
+                  if (_prootAvailable)
+                    Card(
+                      child: ListTile(
+                        leading: _importingRootfs
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.add),
+                        title: Text(
+                          _importingRootfs ? '导入中…' : '导入 rootfs.tar.zst',
+                        ),
+                        subtitle: Text(
+                          '从 rootfs.tar.zst 导入 Linux 根文件系统（含原版 Java）',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        onTap: _importingRootfs ? null : _importRootfs,
+                      ),
+                    ),
+                ],
+              ],
             ),
-      floatingActionButton: _importing
+      floatingActionButton: _importing || _importingRootfs
           ? const FloatingActionButton(
               onPressed: null,
               child: SizedBox(

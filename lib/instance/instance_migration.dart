@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../files/storage_permission.dart';
-import 'instance_store.dart';
 
 class InstanceMigrationResult {
   const InstanceMigrationResult({
@@ -28,21 +27,6 @@ class InstanceMigrationResult {
 
 class InstanceMigration {
   InstanceMigration._();
-
-  static const int autoMigrateMaxBuild = 6;
-
-  static bool shouldAutoMigrateFrom(String? lastVersion) {
-    final build = _buildNumberFromVersion(lastVersion);
-    return build != null && build <= autoMigrateMaxBuild;
-  }
-
-  static Future<InstanceMigrationResult> migrateLegacyInstances({
-    void Function(int processed, int total)? onProgress,
-  }) async {
-    final source = await legacyPrivateInstancesRoot();
-    final target = await defaultInstancesRoot();
-    return _migrateBetween(source, target, onProgress: onProgress);
-  }
 
   /// 在两个 EdgeCube 数据文件夹之间迁移内容：将 [source] 下所有条目
   /// （含 `instances/` 子目录）移动到 [target]。
@@ -148,13 +132,6 @@ class InstanceMigration {
       targetPath: target.path,
       error: firstError,
     );
-  }
-
-  static int? _buildNumberFromVersion(String? version) {
-    if (version == null || version.isEmpty) return null;
-    final plus = version.lastIndexOf('+');
-    if (plus < 0 || plus == version.length - 1) return null;
-    return int.tryParse(version.substring(plus + 1));
   }
 
   static Future<bool> _migrateEntry(

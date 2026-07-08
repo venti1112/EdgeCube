@@ -4,7 +4,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'account/account_controller.dart';
 import 'account/account_scope.dart';
-import 'config/config_migration.dart';
 import 'config/network_store.dart';
 import 'config/version_store.dart';
 import 'server/runtime_migration.dart';
@@ -15,7 +14,6 @@ import 'home_shell.dart';
 import 'i18n/locale_controller.dart';
 import 'i18n/locale_scope.dart';
 import 'instance/instance_controller.dart';
-import 'instance/instance_migration.dart';
 import 'instance/instance_scope.dart';
 import 'mcp/mcp_controller.dart';
 import 'mcp/mcp_scope.dart';
@@ -40,9 +38,6 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 初始化 .ecpkg 文件关联处理器
   EcpkgHandler.init();
-  // 把旧版 SharedPreferences 中的历史配置迁移到新的文件式布局（只执行一次），
-  // 必须先于下面任何新配置读取。
-  await ConfigMigration.run();
   final lastVersion = await VersionStore.loadLastVersion();
   // 旧版内置于 assets 的运行时与新版 .ecpkg 管理系统冲突，
   // 升级时清除旧 runtimes 目录，让用户重新导入所需运行时。
@@ -50,10 +45,7 @@ Future<void> main() async {
     await RuntimeMigration.clearOldRuntimes();
   }
   // 记录本次启动的版本到 config/version.json（更新 lastVersion 并追加历史）。
-  // 自动迁移需在首帧后显示进度，因此迁移完成后由应用内流程记录。
-  if (!InstanceMigration.shouldAutoMigrateFrom(lastVersion)) {
-    await VersionStore.recordOpen();
-  }
+  await VersionStore.recordOpen();
   // 多语言：加载已选语言与内置/自定义翻译表，须先于首帧渲染。
   final localeController = LocaleController();
   await localeController.init();
@@ -122,7 +114,6 @@ Future<void> main() async {
       mcpController: mcpController,
       shellController: shellController,
       sshController: sshController,
-      lastVersion: lastVersion,
     ),
   );
 }
@@ -175,7 +166,6 @@ class EdgeCubeApp extends StatefulWidget {
     required this.mcpController,
     required this.shellController,
     required this.sshController,
-    required this.lastVersion,
   });
 
   final ThemeMode initialThemeMode;
@@ -193,7 +183,6 @@ class EdgeCubeApp extends StatefulWidget {
   final McpController mcpController;
   final ShellController shellController;
   final SshController sshController;
-  final String? lastVersion;
 
   @override
   State<EdgeCubeApp> createState() => _EdgeCubeAppState();
@@ -341,7 +330,6 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                                   },
                                   home: HomeShell(
                                     onlineService: widget.onlineService,
-                                    lastVersion: widget.lastVersion,
                                   ),
                                 );
                               },

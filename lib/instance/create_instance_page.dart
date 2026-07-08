@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -6,7 +5,6 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../config/network_store.dart';
@@ -22,10 +20,19 @@ import '../instance/instance_scope.dart';
 import '../mods/modpack_service.dart';
 import '../net/msl_mirror.dart';
 import '../server/server_service.dart';
+import 'download_info.dart';
+import 'download_info_service.dart';
+import 'name_entry_step.dart';
+import 'progress_steps.dart';
+import 'server_select_step.dart';
+import 'version_fetch_service.dart';
+import 'version_select_step.dart';
+import 'forge_installer_page.dart';
 
 enum _WizardStep {
   nameEntry,
   editionSelect,
+  javaServerCategory,
   serverType,
   bedrockServerType,
   versionSelect,
@@ -36,7 +43,6 @@ enum _WizardStep {
   neoforgeMcVersionSelect,
   neoforgeVersionSelect,
   downloading,
-  forgeInstalling,
   importFile,
   importArchive,
   extractArchive,
@@ -50,8 +56,12 @@ enum CreateInstanceResult { done, cancelled }
 ///
 /// 流程：
 /// 1. 输入名称 → 选择「下载服务端」或「导入服务端」
-/// 2a. 下载服务端 → 选版本（Java 版 / 基岩版） → 选类型 → 选版本 → 创建实例并下载
-///     - Java 版类型：官方/Paper/Velocity/Fabric/Forge/NeoForge
+/// 2a. 下载服务端 → 选版本（Java 版 / 基岩版） → 选类型分类（原版/插件/模组/代理）
+///     → 选类型 → 选版本 → 创建实例并下载
+///     - 原版：Vanilla
+///     - 插件服：Paper/Spigot/CraftBukkit/Purpur/Leaf/Leaves
+///     - 模组服：Fabric/Forge/NeoForge
+///     - 代理端：Velocity/BungeeCord
 ///     - 基岩版类型：PowerNukkitX
 ///     - Forge 特殊流程：下载 Installer jar → 运行 java -jar --installServer → 配置
 /// 2b. 导入服务端 → 创建实例 → 选文件导入
@@ -71,6 +81,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   final _nameController = TextEditingController();
   String? _instanceId;
   String? _serverType;
+  String? _javaServerCategory;
   List<String> _versions = [];
   bool _loadingVersions = false;
   String? _versionError;
@@ -109,18 +120,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   String? _selectedNeoforgeMcVersion;
   String? _selectedNeoforgeVersion;
 
-  /// Forge/NeoForge 安装日志输出。
-  final List<String> _forgeInstallLogs = [];
-  bool _forgeInstalling = false;
-  String? _forgeInstallError;
-  StreamSubscription<dynamic>? _forgeEventSub;
-
   bool _extracting = false;
   String? _extractError;
   double? _extractProgress;
 
   /// 整合包导入状态。
-  ModpackFormat? _modpackFormat;
   String _modpackPhase =
       ''; // parsing / downloading / extracting / preparing / idle
   int _modpackCurrent = 0;
@@ -128,13 +132,12 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   String _modpackCurrentFile = '';
   String? _modpackError;
 
-  /// 当前安装器类型（'forge' 或 'neoforge'），用于 UI 文案和日志文件名区分。
-  String _installerType = 'forge';
-
-  static const _forgeChannel = MethodChannel('com.venti1112.edgecube/forge');
-  static const _forgeEventChannel = EventChannel(
-    'com.venti1112.edgecube/forge_events',
-  );
+  static const Map<String, List<String>> _javaServerCategories = {
+    'vanilla': ['vanilla'],
+    'plugin': ['paper', 'spigot', 'craftbukkit', 'purpur', 'leaf', 'leaves'],
+    'mod': ['fabric', 'forge', 'neoforge'],
+    'proxy': ['velocity', 'bungeecord'],
+  };
 
   late InstanceController _instanceController;
 
@@ -148,8 +151,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   @override
   void dispose() {
     _nameController.dispose();
-    _forgeEventSub?.cancel();
-    _forgeEventSub = null;
     // 如果向导未完成且已创建了实例，清理空实例。
     if (!_completed && _instanceId != null) {
       _instanceController.deleteInstance(_instanceId!);
@@ -200,9 +201,17 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     setState(() => _step = _WizardStep.editionSelect);
   }
 
-  /// 选择版本：Java 版 → 进入 Java 服务端类型选择页。
+  /// 选择版本：Java 版 → 进入 Java 服务端分类选择页。
   void _selectJavaEdition() {
-    setState(() => _step = _WizardStep.serverType);
+    setState(() => _step = _WizardStep.javaServerCategory);
+  }
+
+  /// 选择 Java 服务端分类并跳转到该分类下的具体服务端类型列表。
+  void _selectJavaServerCategory(String category) {
+    setState(() {
+      _javaServerCategory = category;
+      _step = _WizardStep.serverType;
+    });
   }
 
   /// 选择版本：基岩版 → 进入基岩服务端类型选择页。
@@ -220,7 +229,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         _versions = [];
       });
       try {
-        _fabricMcVersions = await _fetchFabricMcVersions();
+        _fabricMcVersions = await VersionFetchService.fetchFabricMcVersions();
         _versions = _fabricMcVersions;
         if (!mounted) return;
         setState(() => _loadingVersions = false);
@@ -243,7 +252,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         _versions = [];
       });
       try {
-        _forgeVersionMap = await _fetchAllForgeVersions();
+        _forgeVersionMap = await VersionFetchService.fetchAllForgeVersions();
         _versions = _forgeVersionMap.keys.toList();
         if (!mounted) return;
         setState(() => _loadingVersions = false);
@@ -266,7 +275,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         _versions = [];
       });
       try {
-        _neoforgeVersionMap = await _fetchAllNeoforgeVersions();
+        _neoforgeVersionMap = await VersionFetchService.fetchAllNeoforgeVersions();
         _versions = _neoforgeVersionMap.keys.toList();
         if (!mounted) return;
         setState(() => _loadingVersions = false);
@@ -282,6 +291,15 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       return;
     }
     if (type == 'dragonfly') {
+      setState(() {
+        _step = _WizardStep.nameEntry;
+        _loadingVersions = false;
+        _versionError = null;
+        _versions = [];
+      });
+      return;
+    }
+    if (type == 'bungeecord') {
       setState(() {
         _step = _WizardStep.nameEntry;
         _loadingVersions = false;
@@ -488,6 +506,21 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     }
   }
 
+  Future<void> _createAndDownloadBungeeCord() async {
+    if (!await _validateName()) return;
+    final name = _nameController.text.trim();
+    try {
+      final instance = await _instanceController.createInstance(name);
+      if (!mounted) return;
+      _instanceId = instance.id;
+      setState(() => _step = _WizardStep.downloading);
+      await _fetchAndDownloadBungeeCord(instance.id);
+    } on DuplicateInstanceNameException {
+      if (!mounted) return;
+      _showDuplicateDialog(name);
+    }
+  }
+
   // —— 整合包导入流程 ——
   // 参考 PCL-CE 的 ModModpack.ModpackInstall / InstallPackModrinth：
   // 1. 选择整合包文件 → 2. 检测格式 → 3.（Modrinth）解析清单 →
@@ -505,7 +538,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         _step = _WizardStep.modpackImport;
         _modpackPhase = '';
         _modpackError = null;
-        _modpackFormat = null;
       });
       await _doModpackImport(instance.id);
     } on DuplicateInstanceNameException {
@@ -562,7 +594,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     setState(() => _modpackPhase = 'parsing');
     try {
       final format = await ModpackService.detectFormat(sourcePath);
-      _modpackFormat = format;
       if (format == ModpackFormat.plainZip) {
         // 普通 zip：直接解压到实例目录后完成。
         await _extractPlainZip(instanceId, sourcePath);
@@ -690,16 +721,47 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       await _fetchAndDownloadFabric(instanceId);
     } else if (forge != null) {
       _serverType = 'forge';
-      _selectedForgeMcVersion = mcVersion;
-      _selectedForgeVersion = forge;
-      if (mounted) setState(() => _step = _WizardStep.downloading);
-      await _fetchAndDownloadForge(instanceId);
+      if (mounted) {
+        final result = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ForgeInstallerPage(
+              instanceController: _instanceController,
+              instanceId: instanceId,
+              mcVersion: mcVersion,
+              forgeVersion: forge,
+              installerType: 'forge',
+            ),
+          ),
+        );
+        if (result == true && mounted) {
+          _completed = true;
+          _finishWizard();
+        }
+      }
+      return;
     } else if (neoforge != null) {
       _serverType = 'neoforge';
-      _selectedNeoforgeVersion = neoforge;
-      _selectedNeoforgeMcVersion = _deriveNeoforgeMcKey(neoforge);
-      if (mounted) setState(() => _step = _WizardStep.downloading);
-      await _fetchAndDownloadNeoforge(instanceId);
+      final neoforgeMcKey = _deriveNeoforgeMcKey(neoforge);
+      if (mounted) {
+        final result = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ForgeInstallerPage(
+              instanceController: _instanceController,
+              instanceId: instanceId,
+              mcVersion: neoforgeMcKey,
+              forgeVersion: neoforge,
+              installerType: 'neoforge',
+            ),
+          ),
+        );
+        if (result == true && mounted) {
+          _completed = true;
+          _finishWizard();
+        }
+      }
+      return;
     } else if (quiltLoader != null) {
       // Quilt 无独立服务端下载流程：Fabric 兼容，下载 Fabric 服务端。
       _serverType = 'fabric';
@@ -925,7 +987,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _versions = [];
     });
     try {
-      _versions = await _fetchFabricLoaderVersions(mcVersion);
+      _versions = await VersionFetchService.fetchFabricLoaderVersions(mcVersion);
       if (!mounted) return;
       setState(() => _loadingVersions = false);
     } catch (e) {
@@ -991,7 +1053,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     });
   }
 
-  /// Forge 流程：选择 Forge 版本后确认并下载。
   Future<void> _selectForgeVersion(String forgeVersion) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1023,199 +1084,26 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       if (!mounted) return;
       _instanceId = instance.id;
       _selectedForgeVersion = forgeVersion;
-      setState(() => _step = _WizardStep.downloading);
-      await _fetchAndDownloadForge(instance.id);
+      final result = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ForgeInstallerPage(
+            instanceController: _instanceController,
+            instanceId: instance.id,
+            mcVersion: _selectedForgeMcVersion!,
+            forgeVersion: forgeVersion,
+            installerType: 'forge',
+          ),
+        ),
+      );
+      if (result == true && mounted) {
+        _completed = true;
+        _finishWizard();
+      }
     } on DuplicateInstanceNameException {
       if (!mounted) return;
       _showDuplicateDialog(name);
     }
-  }
-
-  /// Forge 下载流程：下载 Installer jar，然后进入安装步骤。
-  Future<void> _fetchAndDownloadForge(String instanceId) async {
-    setState(() {
-      _downloadProgress = null;
-      _downloadError = null;
-    });
-
-    final mcVersion = _selectedForgeMcVersion!;
-    final forgeVersion = _selectedForgeVersion!;
-    // 镜像开启时按所选 MC 版本走 MSL（installer），失败回退官方 Maven。
-    final info =
-        await _tryMirrorDownloadInfo('forge', mcVersion) ??
-        _DownloadInfo(
-          url:
-              'https://maven.minecraftforge.net/net/minecraftforge/forge/$mcVersion-$forgeVersion/forge-$mcVersion-$forgeVersion-installer.jar',
-        );
-
-    await _downloadForgeJar(instanceId, info);
-  }
-
-  /// 下载 Forge Installer jar 到实例目录，完成后启动安装。
-  Future<void> _downloadForgeJar(String instanceId, _DownloadInfo info) async {
-    setState(() {
-      _downloadProgress = null;
-      _downloadError = null;
-    });
-
-    final client = HttpClient();
-    try {
-      final request = await client.getUrl(Uri.parse(info.url));
-      final response = await request.close();
-
-      if (response.statusCode != 200) {
-        if (!mounted) return;
-        setState(
-          () => _downloadError = context.tr('instance.downloadFailedHttp', {
-            'status': '${response.statusCode}',
-          }),
-        );
-        return;
-      }
-
-      final dir = await _instanceController.directoryForId(instanceId);
-      final file = File(p.join(dir.path, 'forge-installer.jar'));
-
-      final contentLength = response.contentLength;
-      int received = 0;
-
-      final sink = file.openWrite();
-      final allBytes = BytesBuilder(copy: false);
-      await for (final chunk in response) {
-        received += chunk.length;
-        allBytes.add(chunk);
-        if (contentLength > 0 && mounted) {
-          setState(() => _downloadProgress = received / contentLength);
-        }
-        sink.add(chunk);
-      }
-      await sink.close();
-
-      // 下载完成，进入安装步骤。
-      if (!mounted) return;
-      await _runForgeInstaller(instanceId, file.path);
-    } catch (e) {
-      if (!mounted) return;
-      setState(
-        () => _downloadError = context.tr('instance.downloadFailed', {
-          'error': '$e',
-        }),
-      );
-    } finally {
-      client.close();
-    }
-  }
-
-  /// 调用原生平台运行 Forge Installer，安装完成后配置实例。
-  Future<void> _runForgeInstaller(
-    String instanceId,
-    String installerPath,
-  ) async {
-    _installerType = 'forge';
-    setState(() {
-      _step = _WizardStep.forgeInstalling;
-      _forgeInstalling = true;
-      _forgeInstallError = null;
-      _forgeInstallLogs.clear();
-    });
-
-    // 监听安装器日志。
-    _forgeEventSub = _forgeEventChannel.receiveBroadcastStream().listen((
-      event,
-    ) {
-      if (mounted && event is String) {
-        setState(() {
-          _forgeInstallLogs.add(event);
-          // 保留最近 200 行。
-          if (_forgeInstallLogs.length > 200) {
-            _forgeInstallLogs.removeRange(0, _forgeInstallLogs.length - 200);
-          }
-        });
-      }
-    });
-
-    try {
-      final mcVersion = _selectedForgeMcVersion!;
-      final javaVer = await _resolveJavaVersion(mcVersion);
-
-      final exitCode = await _forgeChannel.invokeMethod<int>('runInstaller', {
-        'installerJar': installerPath,
-        'workingDir': (await _instanceController.directoryForId(
-          instanceId,
-        )).path,
-        'javaVersion': javaVer,
-      });
-
-      await _forgeEventSub?.cancel();
-      _forgeEventSub = null;
-
-      if (exitCode != 0) {
-        if (!mounted) return;
-        setState(() {
-          _forgeInstalling = false;
-          _forgeInstallError = context.tr('instance.forgeInstallerExited', {
-            'code': '$exitCode',
-          });
-        });
-        return;
-      }
-
-      // 安装成功：扫描目录找到 forge 服务端 jar。
-      final dir = await _instanceController.directoryForId(instanceId);
-      final forgeJar = _findForgeServerJar(dir);
-      if (forgeJar == null) {
-        if (!mounted) return;
-        setState(() {
-          _forgeInstalling = false;
-          _forgeInstallError = context.tr('instance.serverJarNotFound');
-        });
-        return;
-      }
-
-      await _instanceController.updateConfig(
-        instanceId,
-        selectedJar: forgeJar,
-        javaVersion: javaVer,
-      );
-
-      // 清理 installer jar。
-      try {
-        await File(p.join(dir.path, 'forge-installer.jar')).delete();
-      } catch (_) {}
-
-      _completed = true;
-      if (mounted) {
-        setState(() => _forgeInstalling = false);
-        _finishWizard();
-      }
-    } catch (e) {
-      await _forgeEventSub?.cancel();
-      _forgeEventSub = null;
-      if (!mounted) return;
-      setState(() {
-        _forgeInstalling = false;
-        _forgeInstallError = context.tr('instance.forgeInstallFailed', {
-          'error': '$e',
-        });
-      });
-    }
-  }
-
-  /// 在实例目录中查找 Forge/NeoForge 安装后生成的服务端 jar。
-  String? _findForgeServerJar(Directory dir, {String prefix = 'forge-'}) {
-    final files = dir.listSync();
-    String? forgeJar;
-    for (final f in files) {
-      if (f is! File) continue;
-      final name = p.basename(f.path);
-      // 跳过 installer、不相关的 jar。
-      if (name == 'forge-installer.jar') continue;
-      if (name == 'server.jar') continue;
-      if (name.startsWith(prefix) && name.endsWith('.jar')) {
-        forgeJar = name;
-      }
-    }
-    return forgeJar;
   }
 
   /// NeoForge 流程：选择 MC 版本后进入 NeoForge 版本选择。
@@ -1230,7 +1118,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     });
   }
 
-  /// NeoForge 流程：选择 NeoForge 版本后确认并下载。
   Future<void> _selectNeoforgeVersion(String neoforgeVersion) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1262,197 +1149,25 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       if (!mounted) return;
       _instanceId = instance.id;
       _selectedNeoforgeVersion = neoforgeVersion;
-      setState(() => _step = _WizardStep.downloading);
-      await _fetchAndDownloadNeoforge(instance.id);
+      final result = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ForgeInstallerPage(
+            instanceController: _instanceController,
+            instanceId: instance.id,
+            mcVersion: _selectedNeoforgeMcVersion!,
+            forgeVersion: neoforgeVersion,
+            installerType: 'neoforge',
+          ),
+        ),
+      );
+      if (result == true && mounted) {
+        _completed = true;
+        _finishWizard();
+      }
     } on DuplicateInstanceNameException {
       if (!mounted) return;
       _showDuplicateDialog(name);
-    }
-  }
-
-  /// NeoForge 下载流程：下载 Installer jar，然后进入安装步骤。
-  Future<void> _fetchAndDownloadNeoforge(String instanceId) async {
-    setState(() {
-      _downloadProgress = null;
-      _downloadError = null;
-    });
-
-    final neoforgeVersion = _selectedNeoforgeVersion!;
-    // 镜像开启时按所选 MC 版本走 MSL（installer），失败回退官方 Maven。
-    final mslVersion = _neoforgeMcToMslVersion(_selectedNeoforgeMcVersion!);
-    final info =
-        await _tryMirrorDownloadInfo('neoforge', mslVersion) ??
-        _DownloadInfo(
-          url:
-              'https://maven.neoforged.net/releases/net/neoforged/neoforge/$neoforgeVersion/neoforge-$neoforgeVersion-installer.jar',
-        );
-
-    await _downloadNeoforgeJar(instanceId, info);
-  }
-
-  /// 下载 NeoForge Installer jar 到实例目录，完成后启动安装。
-  Future<void> _downloadNeoforgeJar(
-    String instanceId,
-    _DownloadInfo info,
-  ) async {
-    setState(() {
-      _downloadProgress = null;
-      _downloadError = null;
-    });
-
-    final client = HttpClient();
-    try {
-      final request = await client.getUrl(Uri.parse(info.url));
-      final response = await request.close();
-
-      if (response.statusCode != 200) {
-        if (!mounted) return;
-        setState(
-          () => _downloadError = context.tr('instance.downloadFailedHttp', {
-            'status': '${response.statusCode}',
-          }),
-        );
-        return;
-      }
-
-      final dir = await _instanceController.directoryForId(instanceId);
-      final file = File(p.join(dir.path, 'neoforge-installer.jar'));
-
-      final contentLength = response.contentLength;
-      int received = 0;
-
-      final sink = file.openWrite();
-      final allBytes = BytesBuilder(copy: false);
-      await for (final chunk in response) {
-        received += chunk.length;
-        allBytes.add(chunk);
-        if (contentLength > 0 && mounted) {
-          setState(() => _downloadProgress = received / contentLength);
-        }
-        sink.add(chunk);
-      }
-      await sink.close();
-
-      // 下载完成，进入安装步骤。
-      if (!mounted) return;
-      await _runNeoforgeInstaller(instanceId, file.path);
-    } catch (e) {
-      if (!mounted) return;
-      setState(
-        () => _downloadError = context.tr('instance.downloadFailed', {
-          'error': '$e',
-        }),
-      );
-    } finally {
-      client.close();
-    }
-  }
-
-  /// 调用原生平台运行 NeoForge Installer，安装完成后配置实例。
-  Future<void> _runNeoforgeInstaller(
-    String instanceId,
-    String installerPath,
-  ) async {
-    _installerType = 'neoforge';
-    setState(() {
-      _step = _WizardStep.forgeInstalling;
-      _forgeInstalling = true;
-      _forgeInstallError = null;
-      _forgeInstallLogs.clear();
-    });
-
-    // 监听安装器日志。
-    _forgeEventSub = _forgeEventChannel.receiveBroadcastStream().listen((
-      event,
-    ) {
-      if (mounted && event is String) {
-        setState(() {
-          _forgeInstallLogs.add(event);
-          // 保留最近 200 行。
-          if (_forgeInstallLogs.length > 200) {
-            _forgeInstallLogs.removeRange(0, _forgeInstallLogs.length - 200);
-          }
-        });
-      }
-    });
-
-    try {
-      final mcVersion = _selectedNeoforgeMcVersion!;
-      // NeoForge MC 版本格式为 "major.minor.patch"（如 21.1.0），
-      // 转换为 Minecraft 版本格式 "1.major.minor"（如 1.21.1）以供 Java 版本推断。
-      // MC 26+（年份命名）直接使用 _javaVersionForMc 的原生逻辑。
-      final nfParts = mcVersion.split('.');
-      final nfMajor = int.tryParse(nfParts[0]) ?? 1;
-      final String mcVerForJava;
-      if (nfMajor >= 26) {
-        mcVerForJava = mcVersion; // 26.1.2 → 直接传入，major≥26 走 jre25 分支
-      } else {
-        mcVerForJava = nfParts.length >= 2
-            ? '1.${nfParts[0]}.${nfParts[1]}'
-            : mcVersion;
-      }
-      final javaVer = await _resolveJavaVersion(mcVerForJava);
-
-      final exitCode = await _forgeChannel.invokeMethod<int>('runInstaller', {
-        'installerJar': installerPath,
-        'workingDir': (await _instanceController.directoryForId(
-          instanceId,
-        )).path,
-        'javaVersion': javaVer,
-      });
-
-      await _forgeEventSub?.cancel();
-      _forgeEventSub = null;
-
-      if (exitCode != 0) {
-        if (!mounted) return;
-        setState(() {
-          _forgeInstalling = false;
-          _forgeInstallError = context.tr('instance.neoforgeInstallerExited', {
-            'code': '$exitCode',
-          });
-        });
-        return;
-      }
-
-      // 安装成功：扫描目录找到 neoforge 服务端 jar。
-      final dir = await _instanceController.directoryForId(instanceId);
-      final neoforgeJar = _findForgeServerJar(dir, prefix: 'neoforge-');
-      if (neoforgeJar == null) {
-        if (!mounted) return;
-        setState(() {
-          _forgeInstalling = false;
-          _forgeInstallError = context.tr('instance.serverJarNotFound');
-        });
-        return;
-      }
-
-      await _instanceController.updateConfig(
-        instanceId,
-        selectedJar: neoforgeJar,
-        javaVersion: javaVer,
-      );
-
-      // 清理 installer jar。
-      try {
-        await File(p.join(dir.path, 'neoforge-installer.jar')).delete();
-      } catch (_) {}
-
-      _completed = true;
-      if (mounted) {
-        setState(() => _forgeInstalling = false);
-        _finishWizard();
-      }
-    } catch (e) {
-      await _forgeEventSub?.cancel();
-      _forgeEventSub = null;
-      if (!mounted) return;
-      setState(() {
-        _forgeInstalling = false;
-        _forgeInstallError = context.tr('instance.neoforgeInstallFailed', {
-          'error': '$e',
-        });
-      });
     }
   }
 
@@ -1463,7 +1178,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _downloadError = null;
     });
 
-    _DownloadInfo info;
+    DownloadInfo info;
     try {
       // 镜像开启时优先走 MSL，失败回退官方源。
       info =
@@ -1499,7 +1214,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _downloadError = null;
     });
 
-    _DownloadInfo info;
+    DownloadInfo info;
     try {
       // 镜像开启时按所选 MC 版本走 MSL，失败回退官方源。
       info =
@@ -1518,9 +1233,33 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     await _downloadJar(instanceId, info);
   }
 
+  Future<void> _fetchAndDownloadBungeeCord(String instanceId) async {
+    setState(() {
+      _downloadProgress = null;
+      _downloadError = null;
+    });
+
+    DownloadInfo info;
+    try {
+      info =
+          await _tryMirrorDownloadInfo('bungeecord', 'latest') ??
+          await DownloadInfoService.fetchBungeeCordDownloadInfo();
+    } catch (e) {
+      if (!mounted) return;
+      setState(
+        () => _downloadError = context.tr('instance.fetchDownloadInfoFailed', {
+          'error': '$e',
+        }),
+      );
+      return;
+    }
+
+    await _downloadJar(instanceId, info, jarName: 'bungeecord.jar');
+  }
+
   Future<void> _downloadJar(
     String instanceId,
-    _DownloadInfo info, {
+    DownloadInfo info, {
     String jarName = 'server.jar',
   }) async {
     setState(() {
@@ -1648,7 +1387,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   }
 
   /// 根据下载信息校验文件哈希（Vanilla 用 SHA-1，Paper 用 SHA-256）。
-  bool _verifyHash(Uint8List bytes, _DownloadInfo info) {
+  bool _verifyHash(Uint8List bytes, DownloadInfo info) {
     if (info.sha1 != null) {
       final digest = sha1.convert(bytes).toString();
       return digest == info.sha1;
@@ -1665,8 +1404,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         _closeWizard();
       case _WizardStep.editionSelect:
         setState(() => _step = _WizardStep.nameEntry);
-      case _WizardStep.serverType:
+      case _WizardStep.javaServerCategory:
         setState(() => _step = _WizardStep.editionSelect);
+      case _WizardStep.serverType:
+        setState(() => _step = _WizardStep.javaServerCategory);
       case _WizardStep.bedrockServerType:
         setState(() => _step = _WizardStep.editionSelect);
       case _WizardStep.versionSelect:
@@ -1674,10 +1415,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
                 _serverType == 'pocketmine' ||
                 _serverType == 'allay')
             ? _WizardStep.bedrockServerType
-            : _WizardStep.serverType);
+            : _WizardStep.javaServerCategory);
       case _WizardStep.fabricMcVersionSelect:
         setState(() {
-          _step = _WizardStep.serverType;
+          _step = _WizardStep.javaServerCategory;
           _selectedMcVersion = null;
         });
       case _WizardStep.fabricLoaderVersionSelect:
@@ -1690,7 +1431,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         });
       case _WizardStep.forgeMcVersionSelect:
         setState(() {
-          _step = _WizardStep.serverType;
+          _step = _WizardStep.javaServerCategory;
           _selectedForgeMcVersion = null;
         });
       case _WizardStep.forgeVersionSelect:
@@ -1703,7 +1444,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         });
       case _WizardStep.neoforgeMcVersionSelect:
         setState(() {
-          _step = _WizardStep.serverType;
+          _step = _WizardStep.javaServerCategory;
           _selectedNeoforgeMcVersion = null;
         });
       case _WizardStep.neoforgeVersionSelect:
@@ -1725,9 +1466,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       case _WizardStep.downloading:
         _deleteCreatedInstance();
         _closeWizard();
-      case _WizardStep.forgeInstalling:
-        // 安装进行中，不允许返回（已创建实例）。
-        break;
       case _WizardStep.modpackImport:
         _deleteCreatedInstance();
         _closeWizard();
@@ -1796,6 +1534,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     return switch (_step) {
       _WizardStep.nameEntry => context.tr('instance.titleNameEntry'),
       _WizardStep.editionSelect => context.tr('instance.titleSelectEdition'),
+      _WizardStep.javaServerCategory => context.tr('instance.titleJavaServerCategory'),
       _WizardStep.serverType => context.tr('instance.titleJavaServerType'),
       _WizardStep.bedrockServerType => context.tr('instance.titleBedrockServerType'),
       _WizardStep.versionSelect => context.tr('instance.titleSelectVersion'),
@@ -1818,10 +1557,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
         'instance.titleSelectNeoforgeVersion',
       ),
       _WizardStep.downloading => context.tr('instance.titleDownloading'),
-      _WizardStep.forgeInstalling =>
-        _installerType == 'neoforge'
-            ? context.tr('instance.titleInstallNeoforge')
-            : context.tr('instance.titleInstallForge'),
       _WizardStep.importFile => context.tr('instance.titleImportServer'),
       _WizardStep.importArchive => context.tr('instance.titleImportServer'),
       _WizardStep.extractArchive => context.tr('instance.titleImportArchive'),
@@ -1833,6 +1568,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     return switch (_step) {
       _WizardStep.nameEntry => _buildNameEntry(theme),
       _WizardStep.editionSelect => _buildEditionSelect(theme),
+      _WizardStep.javaServerCategory => _buildJavaServerCategorySelect(theme),
       _WizardStep.serverType => _buildServerTypeSelect(theme),
       _WizardStep.bedrockServerType => _buildBedrockServerTypeSelect(theme),
       _WizardStep.versionSelect => _buildVersionSelect(theme),
@@ -1843,7 +1579,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       _WizardStep.neoforgeMcVersionSelect => _buildVersionSelect(theme),
       _WizardStep.neoforgeVersionSelect => _buildVersionSelect(theme),
       _WizardStep.downloading => _buildDownloading(theme),
-      _WizardStep.forgeInstalling => _buildForgeInstalling(theme),
       _WizardStep.importFile => _buildImporting(theme),
       _WizardStep.importArchive => _buildImporting(theme),
       _WizardStep.extractArchive => _buildExtractingArchive(theme),
@@ -1851,382 +1586,166 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     };
   }
 
-  /// 步骤 1：名称输入 + 两个大选项卡。
   Widget _buildNameEntry(ThemeData theme) {
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        TextField(
-          controller: _nameController,
-          decoration: InputDecoration(
-            labelText: context.tr('instance.nameLabel'),
-            hintText: context.tr('instance.nameHint'),
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 24),
-        _ServerTypeTile(
-          icon: Icons.cloud_download_outlined,
-          title: context.tr('instance.titleDownloadServer'),
-          subtitle: context.tr('instance.downloadServerSubtitle'),
-          onTap: _goToServerType,
-        ),
-        const SizedBox(height: 12),
-        _ServerTypeTile(
-          icon: Icons.file_upload_outlined,
-          title: context.tr('instance.titleImportServer'),
-          subtitle: context.tr('instance.importServerSubtitle'),
-          onTap: _startImport,
-        ),
-        const SizedBox(height: 12),
-        _ServerTypeTile(
-          icon: Icons.archive_outlined,
-          title: context.tr('instance.titleImportArchive'),
-          subtitle: context.tr('instance.importArchiveSubtitle'),
-          onTap: _startImportArchive,
-        ),
-        const SizedBox(height: 12),
-        _ServerTypeTile(
-          icon: Icons.inventory_2_outlined,
-          title: context.tr('instance.titleModpackImport'),
-          subtitle: context.tr('instance.modpackImportSubtitle'),
-          onTap: _startModpackImport,
-        ),
-        const SizedBox(height: 12),
-        if (_serverType == 'dragonfly')
-          _ServerTypeTile(
-            icon: Icons.auto_awesome_outlined,
-            title: context.tr('instance.dragonflyCreateTitle'),
-            subtitle: context.tr('instance.dragonflyCreateSubtitle'),
-            onTap: _createDragonflyInstance,
-          )
-        else
-          _ServerTypeTile(
-            icon: Icons.create_new_folder_outlined,
-            title: context.tr('instance.createEmptyTitle'),
-            subtitle: context.tr('instance.createEmptySubtitle'),
-            onTap: _createEmptyInstance,
-          ),
-      ],
+    return NameEntryStep(
+      controller: _nameController,
+      showDragonflyTile: _serverType == 'dragonfly',
+      showBungeeCordTile: _serverType == 'bungeecord',
+      onGoToServerType: _goToServerType,
+      onStartImport: _startImport,
+      onStartArchive: _startImportArchive,
+      onStartModpack: _startModpackImport,
+      onCreateDragonfly: _createDragonflyInstance,
+      onCreateBungeeCord: _createAndDownloadBungeeCord,
+      onCreateEmpty: _createEmptyInstance,
     );
   }
 
-  /// 步骤 2：版本选择（Java 版 / 基岩版）。
   Widget _buildEditionSelect(ThemeData theme) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const SizedBox(height: 8),
-        _ServerTypeTile(
-          icon: Icons.coffee_outlined,
-          title: context.tr('instance.javaEditionTitle'),
-          subtitle: context.tr('instance.javaEditionSubtitle'),
-          onTap: _selectJavaEdition,
-        ),
-        const SizedBox(height: 12),
-        _ServerTypeTile(
-          icon: Icons.diamond_outlined,
-          title: context.tr('instance.bedrockEditionTitle'),
-          subtitle: context.tr('instance.bedrockEditionSubtitle'),
-          onTap: _selectBedrockEdition,
-        ),
-      ],
+    return EditionSelectStep(
+      onSelectJavaEdition: _selectJavaEdition,
+      onSelectBedrockEdition: _selectBedrockEdition,
     );
   }
 
-  /// 步骤 3a：Java 版服务端类型选择（官方端 / Paper / Velocity / Fabric / Forge / NeoForge）。
+  Widget _buildJavaServerCategorySelect(ThemeData theme) {
+    return JavaServerCategoryStep(
+      onSelectCategory: _selectJavaServerCategory,
+    );
+  }
+
   Widget _buildServerTypeSelect(ThemeData theme) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const SizedBox(height: 8),
-        _ServerTypeTile(
-          icon: Icons.storage_outlined,
-          title: context.tr('instance.vanillaTitle'),
-          subtitle: context.tr('instance.vanillaSubtitle'),
-          onTap: () => _selectServerType('vanilla'),
-        ),
-        const SizedBox(height: 12),
-        _ServerTypeTile(
-          icon: Icons.article_outlined,
-          title: context.tr('instance.paperTitle'),
-          subtitle: context.tr('instance.paperSubtitle'),
-          onTap: () => _selectServerType('paper'),
-        ),
-        const SizedBox(height: 12),
-        _ServerTypeTile(
-          icon: Icons.speed_outlined,
-          title: context.tr('instance.velocityTitle'),
-          subtitle: context.tr('instance.velocitySubtitle'),
-          onTap: () => _selectServerType('velocity'),
-        ),
-        const SizedBox(height: 12),
-        _ServerTypeTile(
-          icon: Icons.layers_outlined,
-          title: context.tr('instance.fabricTitle'),
-          subtitle: context.tr('instance.fabricSubtitle'),
-          onTap: () => _selectServerType('fabric'),
-        ),
-        const SizedBox(height: 12),
-        _ServerTypeTile(
-          icon: Icons.build_outlined,
-          title: context.tr('instance.forgeTitle'),
-          subtitle: context.tr('instance.forgeSubtitle'),
-          onTap: () => _selectServerType('forge'),
-        ),
-        const SizedBox(height: 12),
-        _ServerTypeTile(
-          icon: Icons.extension_outlined,
-          title: context.tr('instance.neoforgeTitle'),
-          subtitle: context.tr('instance.neoforgeSubtitle'),
-          onTap: () => _selectServerType('neoforge'),
-        ),
-      ],
+    final types = _javaServerCategories[_javaServerCategory] ?? <String>[];
+    return ServerTypeTileList(
+      types: types,
+      onSelect: _selectServerType,
     );
   }
 
-  /// 步骤 3b：基岩版服务端类型选择（PocketMine-MP / PowerNukkitX / Allay）。
   Widget _buildBedrockServerTypeSelect(ThemeData theme) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const SizedBox(height: 8),
-        _ServerTypeTile(
-          icon: Icons.code_outlined,
-          title: context.tr('instance.pocketmineTitle'),
-          subtitle: context.tr('instance.pocketmineSubtitle'),
-          onTap: () => _selectServerType('pocketmine'),
-        ),
-        const SizedBox(height: 12),
-        _ServerTypeTile(
-          icon: Icons.phone_android_outlined,
-          title: context.tr('instance.powernukkitxTitle'),
-          subtitle: context.tr('instance.powernukkitxSubtitle'),
-          onTap: () => _selectServerType('powernukkitx'),
-        ),
-        const SizedBox(height: 12),
-        _ServerTypeTile(
-          icon: Icons.bolt_outlined,
-          title: context.tr('instance.allayTitle'),
-          subtitle: context.tr('instance.allaySubtitle'),
-          onTap: () => _selectServerType('allay'),
-        ),
-        const SizedBox(height: 12),
-        _ServerTypeTile(
-          icon: Icons.auto_awesome_outlined,
-          title: context.tr('instance.dragonflyTitle'),
-          subtitle: context.tr('instance.dragonflySubtitle'),
-          onTap: () => _selectServerType('dragonfly'),
-        ),
-      ],
+    return ServerTypeTileList(
+      types: const ['pocketmine', 'powernukkitx', 'allay', 'dragonfly'],
+      onSelect: _selectServerType,
     );
   }
 
   /// 步骤 3a/3b/4b：版本列表选择（Vanilla、Paper、Fabric MC、Fabric Loader）。
   Widget _buildVersionSelect(ThemeData theme) {
-    if (_loadingVersions) {
-      return const Center(child: CircularProgressIndicator());
+    final isVersionSelect = _step == _WizardStep.versionSelect;
+    final isPocketmineList = _serverType == 'pocketmine' && isVersionSelect;
+    final isPowernukkitxList =
+        _serverType == 'powernukkitx' && isVersionSelect;
+    final Map<String, String>? subtitles;
+    if (isPocketmineList) {
+      subtitles = {
+        for (final v in _versions)
+          if (_pocketmineMcpeVersions.containsKey(v))
+            v: context.tr('instance.pmmpVersionLabel', {
+              'version': v,
+            }),
+      };
+    } else if (isPowernukkitxList) {
+      subtitles = {
+        for (final v in _versions)
+          if (_powernukkitxMcVersions.containsKey(v))
+            v: context.tr('instance.pnxVersionLabel', {
+              'version': v,
+            }),
+      };
+    } else {
+      subtitles = null;
     }
-    if (_versionError != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.error_outline,
-                size: 48,
-                color: theme.colorScheme.error,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _versionError!,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: theme.colorScheme.error),
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () {
-                  if (_step == _WizardStep.fabricMcVersionSelect) {
-                    _selectServerType('fabric');
-                  } else if (_step == _WizardStep.fabricLoaderVersionSelect) {
-                    if (_selectedMcVersion != null) {
-                      _selectFabricMcVersion(_selectedMcVersion!);
-                    }
-                  } else if (_step == _WizardStep.forgeMcVersionSelect) {
-                    _selectServerType('forge');
-                  } else if (_step == _WizardStep.forgeVersionSelect) {
-                    if (_selectedForgeMcVersion != null) {
-                      _selectForgeMcVersion(_selectedForgeMcVersion!);
-                    }
-                  } else if (_step == _WizardStep.neoforgeMcVersionSelect) {
-                    _selectServerType('neoforge');
-                  } else if (_step == _WizardStep.neoforgeVersionSelect) {
-                    if (_selectedNeoforgeMcVersion != null) {
-                      _selectNeoforgeMcVersion(_selectedNeoforgeMcVersion!);
-                    }
-                  } else {
-                    _selectServerType(_serverType!);
-                  }
-                },
-                child: Text(context.tr('common.retry')),
-              ),
-            ],
-          ),
-        ),
-      );
+    final List<String> displayVersions;
+    if (isPocketmineList) {
+      displayVersions = _versions.map((v) => _pocketmineMcpeVersions[v] ?? v).toList();
+    } else if (isPowernukkitxList) {
+      displayVersions = _versions.map((v) => _powernukkitxMcVersions[v] ?? v).toList();
+    } else {
+      displayVersions = _versions;
     }
-    if (_versions.isEmpty) {
-      return Center(child: Text(context.tr('instance.noVersionsAvailable')));
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: _versions.length,
-      itemBuilder: (_, i) {
-        final v = _versions[i];
-        // PocketMine-MP / PowerNukkitX 版本列表：主标题显示 MCBE 客户端版本号，
-        // 副标题显示服务端自身版本。
-        final isVersionSelect = _step == _WizardStep.versionSelect;
-        final isPocketmineList = _serverType == 'pocketmine' && isVersionSelect;
-        final isPowernukkitxList =
-            _serverType == 'powernukkitx' && isVersionSelect;
-        final mcpe = isPocketmineList
-            ? _pocketmineMcpeVersions[v]
-            : (isPowernukkitxList ? _powernukkitxMcVersions[v] : null);
-        final String title = (isPocketmineList || isPowernukkitxList)
-            ? (mcpe ?? v)
-            : v;
-        final String? subtitle;
-        if (isPocketmineList) {
-          subtitle = context.tr('instance.pmmpVersionLabel', {'version': v});
-        } else if (isPowernukkitxList && mcpe != null) {
-          subtitle = context.tr('instance.pnxVersionLabel', {'version': v});
+    return VersionSelectStep(
+      versions: displayVersions,
+      loading: _loadingVersions,
+      error: _versionError,
+      subtitles: subtitles,
+      onRetry: () {
+        if (_step == _WizardStep.fabricMcVersionSelect) {
+          _selectServerType('fabric');
+        } else if (_step == _WizardStep.fabricLoaderVersionSelect) {
+          if (_selectedMcVersion != null) {
+            _selectFabricMcVersion(_selectedMcVersion!);
+          }
+        } else if (_step == _WizardStep.forgeMcVersionSelect) {
+          _selectServerType('forge');
+        } else if (_step == _WizardStep.forgeVersionSelect) {
+          if (_selectedForgeMcVersion != null) {
+            _selectForgeMcVersion(_selectedForgeMcVersion!);
+          }
+        } else if (_step == _WizardStep.neoforgeMcVersionSelect) {
+          _selectServerType('neoforge');
+        } else if (_step == _WizardStep.neoforgeVersionSelect) {
+          if (_selectedNeoforgeMcVersion != null) {
+            _selectNeoforgeMcVersion(_selectedNeoforgeMcVersion!);
+          }
         } else {
-          subtitle = null;
+          _selectServerType(_serverType!);
         }
-        return ListTile(
-          title: Text(title),
-          subtitle: subtitle != null ? Text(subtitle) : null,
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            switch (_step) {
-              case _WizardStep.versionSelect:
-                _selectVersion(v);
-              case _WizardStep.fabricMcVersionSelect:
-                _selectFabricMcVersion(v);
-              case _WizardStep.fabricLoaderVersionSelect:
-                _selectFabricLoaderVersion(v);
-              case _WizardStep.forgeMcVersionSelect:
-                _selectForgeMcVersion(v);
-              case _WizardStep.forgeVersionSelect:
-                _selectForgeVersion(v);
-              case _WizardStep.neoforgeMcVersionSelect:
-                _selectNeoforgeMcVersion(v);
-              case _WizardStep.neoforgeVersionSelect:
-                _selectNeoforgeVersion(v);
-              default:
-                break;
-            }
-          },
-        );
+      },
+      onSelect: (v) {
+        final originalVersion = isPocketmineList || isPowernukkitxList
+            ? _versions[displayVersions.indexOf(v)]
+            : v;
+        switch (_step) {
+          case _WizardStep.versionSelect:
+            _selectVersion(originalVersion);
+          case _WizardStep.fabricMcVersionSelect:
+            _selectFabricMcVersion(v);
+          case _WizardStep.fabricLoaderVersionSelect:
+            _selectFabricLoaderVersion(v);
+          case _WizardStep.forgeMcVersionSelect:
+            _selectForgeMcVersion(v);
+          case _WizardStep.forgeVersionSelect:
+            _selectForgeVersion(v);
+          case _WizardStep.neoforgeMcVersionSelect:
+            _selectNeoforgeMcVersion(v);
+          case _WizardStep.neoforgeVersionSelect:
+            _selectNeoforgeVersion(v);
+          default:
+            break;
+        }
       },
     );
   }
 
   /// 步骤 4a：下载进度页。
   Widget _buildDownloading(ThemeData theme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: CircularProgressIndicator(value: _downloadProgress),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  _downloadProgress != null
-                      ? context.tr('instance.downloadingServer')
-                      : context.tr('instance.preparingDownload'),
-                  style: theme.textTheme.titleMedium,
-                ),
-                if (_downloadProgress != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    '${(_downloadProgress! * 100).toStringAsFixed(1)}%',
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                ],
-                if (_downloadError != null) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    _downloadError!,
-                    style: TextStyle(color: theme.colorScheme.error),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      OutlinedButton(
-                        onPressed: () {
-                          _deleteCreatedInstance();
-                          _closeWizard();
-                        },
-                        child: Text(context.tr('common.cancel')),
-                      ),
-                      const SizedBox(width: 12),
-                      FilledButton(
-                        onPressed: () {
-                          _deleteCreatedInstance();
-                          setState(() {
-                            if (_serverType == 'fabric') {
-                              _step = _selectedLoaderVersion != null
-                                  ? _WizardStep.fabricLoaderVersionSelect
-                                  : _WizardStep.fabricMcVersionSelect;
-                            } else if (_serverType == 'forge') {
-                              _step = _selectedForgeVersion != null
-                                  ? _WizardStep.forgeVersionSelect
-                                  : _WizardStep.forgeMcVersionSelect;
-                            } else if (_serverType == 'neoforge') {
-                              _step = _selectedNeoforgeVersion != null
-                                  ? _WizardStep.neoforgeVersionSelect
-                                  : _WizardStep.neoforgeMcVersionSelect;
-                            } else {
-                              _step = _WizardStep.versionSelect;
-                            }
-                          });
-                        },
-                        child: Text(context.tr('instance.reselect')),
-                      ),
-                    ],
-                  ),
-                ] else ...[
-                  const SizedBox(height: 16),
-                  OutlinedButton(
-                    onPressed: () {
-                      _deleteCreatedInstance();
-                      _closeWizard();
-                    },
-                    child: Text(context.tr('common.cancel')),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
+    return DownloadingStep(
+      progress: _downloadProgress,
+      error: _downloadError,
+      onRetry: () {
+        _deleteCreatedInstance();
+        setState(() {
+          if (_serverType == 'fabric') {
+            _step = _selectedLoaderVersion != null
+                ? _WizardStep.fabricLoaderVersionSelect
+                : _WizardStep.fabricMcVersionSelect;
+          } else if (_serverType == 'forge') {
+            _step = _selectedForgeVersion != null
+                ? _WizardStep.forgeVersionSelect
+                : _WizardStep.forgeMcVersionSelect;
+          } else if (_serverType == 'neoforge') {
+            _step = _selectedNeoforgeVersion != null
+                ? _WizardStep.neoforgeVersionSelect
+                : _WizardStep.neoforgeMcVersionSelect;
+          } else {
+            _step = _WizardStep.versionSelect;
+          }
+        });
+      },
+      onCancel: _deleteCreatedInstance,
     );
   }
 
-  /// 步骤 2b：导入中提示。
   Widget _buildImporting(ThemeData theme) {
     return Center(
       child: Column(
@@ -2244,383 +1763,28 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   }
 
   Widget _buildExtractingArchive(ThemeData theme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_extracting)
-                  SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: CircularProgressIndicator(value: _extractProgress),
-                  )
-                else if (_extractError == null)
-                  Icon(
-                    Icons.check_circle_outline,
-                    size: 48,
-                    color: theme.colorScheme.primary,
-                  )
-                else
-                  Icon(
-                    Icons.error_outline,
-                    size: 48,
-                    color: theme.colorScheme.error,
-                  ),
-                const SizedBox(height: 24),
-                Text(
-                  _extracting
-                      ? context.tr('instance.extractingArchive')
-                      : (_extractError != null
-                            ? context.tr('instance.extractArchiveFailed', {
-                                'error': _extractError!,
-                              })
-                            : context.tr('instance.installComplete')),
-                  style: theme.textTheme.titleMedium,
-                ),
-                if (_extracting && _extractProgress != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    '${(_extractProgress! * 100).toStringAsFixed(1)}%',
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                ],
-                if (_extractError != null) ...[
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      OutlinedButton(
-                        onPressed: () {
-                          _deleteCreatedInstance();
-                          _closeWizard();
-                        },
-                        child: Text(context.tr('common.cancel')),
-                      ),
-                      const SizedBox(width: 12),
-                      FilledButton(
-                        onPressed: () {
-                          _deleteCreatedInstance();
-                          setState(() => _step = _WizardStep.nameEntry);
-                        },
-                        child: Text(context.tr('instance.reselect')),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
+    return ExtractingArchiveStep(
+      extracting: _extracting,
+      progress: _extractProgress,
+      error: _extractError,
+      onCancel: _deleteCreatedInstance,
+      onReselect: () {
+        _deleteCreatedInstance();
+        setState(() => _step = _WizardStep.nameEntry);
+      },
     );
   }
 
   /// 整合包导入进度页。
   Widget _buildModpackImport(ThemeData theme) {
-    final hasError = _modpackError != null;
-    final isDownloading = _modpackPhase == 'downloading';
-    final isExtracting = _modpackPhase == 'extracting';
-    final isPreparing = _modpackPhase == 'preparing';
-
-    double? progress;
-    String phaseText;
-    if (isDownloading) {
-      progress = _modpackTotal > 0 ? _modpackCurrent / _modpackTotal : null;
-      phaseText = context.tr('instance.modpackDownloadingMods', {
-        'current': '$_modpackCurrent',
-        'total': '$_modpackTotal',
-      });
-    } else if (isExtracting && _modpackFormat == ModpackFormat.plainZip) {
-      progress = _extractProgress;
-      phaseText = context.tr('instance.extractingArchive');
-    } else if (isExtracting) {
-      phaseText = context.tr('instance.modpackExtracting');
-    } else if (isPreparing) {
-      phaseText = context.tr('instance.modpackPreparing');
-    } else {
-      phaseText = context.tr('instance.modpackParsing');
-    }
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (hasError)
-                  Icon(
-                    Icons.error_outline,
-                    size: 48,
-                    color: theme.colorScheme.error,
-                  )
-                else
-                  SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: CircularProgressIndicator(value: progress),
-                  ),
-                const SizedBox(height: 24),
-                Text(
-                  hasError ? _modpackError! : phaseText,
-                  style: hasError
-                      ? TextStyle(color: theme.colorScheme.error)
-                      : theme.textTheme.titleMedium,
-                  textAlign: TextAlign.center,
-                ),
-                if (!hasError && isDownloading) ...[
-                  const SizedBox(height: 8),
-                  if (_modpackTotal > 0)
-                    Text(
-                      '${(progress! * 100).toStringAsFixed(1)}%',
-                      style: theme.textTheme.bodyLarge,
-                    ),
-                  if (_modpackCurrentFile.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      _modpackCurrentFile,
-                      style: theme.textTheme.bodySmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-                if (!hasError &&
-                    isExtracting &&
-                    _modpackFormat == ModpackFormat.plainZip &&
-                    _extractProgress != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    '${(_extractProgress! * 100).toStringAsFixed(1)}%',
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                ],
-                const SizedBox(height: 16),
-                if (hasError)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      OutlinedButton(
-                        onPressed: () {
-                          _deleteCreatedInstance();
-                          _closeWizard();
-                        },
-                        child: Text(context.tr('common.cancel')),
-                      ),
-                      const SizedBox(width: 12),
-                      FilledButton(
-                        onPressed: () {
-                          _deleteCreatedInstance();
-                          setState(() => _step = _WizardStep.nameEntry);
-                        },
-                        child: Text(context.tr('instance.reselect')),
-                      ),
-                    ],
-                  )
-                else
-                  OutlinedButton(
-                    onPressed: () {
-                      _deleteCreatedInstance();
-                      _closeWizard();
-                    },
-                    child: Text(context.tr('common.cancel')),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return ModpackImportStep(
+      phase: _modpackPhase,
+      current: _modpackCurrent,
+      total: _modpackTotal,
+      currentFile: _modpackCurrentFile,
+      error: _modpackError,
+      onCancel: _deleteCreatedInstance,
     );
-  }
-
-  /// Forge 安装进度页：显示安装器日志输出。
-  Widget _buildForgeInstalling(ThemeData theme) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_forgeInstalling)
-                    const SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: CircularProgressIndicator(),
-                    )
-                  else if (_forgeInstallError == null)
-                    Icon(
-                      Icons.check_circle_outline,
-                      size: 36,
-                      color: theme.colorScheme.primary,
-                    )
-                  else
-                    Icon(
-                      Icons.error_outline,
-                      size: 36,
-                      color: theme.colorScheme.error,
-                    ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _forgeInstalling
-                        ? (_installerType == 'neoforge'
-                              ? context.tr('instance.installingNeoforge')
-                              : context.tr('instance.installingForge'))
-                        : (_forgeInstallError != null
-                              ? context.tr('instance.installFailed')
-                              : context.tr('instance.installComplete')),
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  if (_forgeInstallError != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      _forgeInstallError!,
-                      style: TextStyle(color: theme.colorScheme.error),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.save_outlined, size: 18),
-                          onPressed: _exportForgeLogs,
-                          label: Text(context.tr('instance.exportForgeLog')),
-                        ),
-                        OutlinedButton(
-                          onPressed: () {
-                            _deleteCreatedInstance();
-                            _closeWizard();
-                          },
-                          child: Text(context.tr('common.cancel')),
-                        ),
-                        FilledButton(
-                          onPressed: () {
-                            _deleteCreatedInstance();
-                            setState(
-                              () => _step = _installerType == 'neoforge'
-                                  ? _WizardStep.neoforgeVersionSelect
-                                  : _WizardStep.forgeVersionSelect,
-                            );
-                          },
-                          child: Text(context.tr('instance.reselect')),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: _forgeInstallLogs.isEmpty
-                    ? Center(
-                        child: Text(
-                          context.tr('instance.waitingInstallerOutput'),
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: _forgeInstallLogs.length,
-                        itemBuilder: (_, i) => Text(
-                          _forgeInstallLogs[i],
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 导出 Forge 安装日志到用户选择的外部目录。
-  Future<void> _exportForgeLogs() async {
-    if (_forgeInstallLogs.isEmpty) return;
-    if (!await StoragePermission.isGranted()) {
-      if (!mounted) return;
-      final go = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(ctx.tr('instance.storagePermissionTitle')),
-          content: Text(ctx.tr('instance.exportLogPermissionMessage')),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(ctx.tr('common.cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(ctx.tr('instance.goGrant')),
-            ),
-          ],
-        ),
-      );
-      if (go != true) return;
-      await StoragePermission.request();
-      // 授权后重新尝试导出。
-      _exportForgeLogs();
-      return;
-    }
-
-    if (!mounted) return;
-    final destDir = await pickFromSystem(
-      context,
-      mode: SystemPickMode.directory,
-    );
-    if (destDir == null) return;
-
-    try {
-      final now = DateTime.now();
-      final ts =
-          '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_'
-          '${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
-      final fileName =
-          '${_installerType == 'neoforge' ? 'neoforge' : 'forge'}_install_log_$ts.txt';
-      final content = _forgeInstallLogs.join('\n');
-      final file = File(p.join(destDir, fileName));
-      await file.writeAsString(content, flush: true);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            context.tr('instance.logExportedTo', {
-              'path': '$destDir/$fileName',
-            }),
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            context.tr('instance.logExportFailed', {'error': '$e'}),
-          ),
-        ),
-      );
-    }
   }
 
   // —— 网络请求 ——
@@ -2629,162 +1793,25 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     if (type == 'vanilla') {
       return _fetchVanillaVersions();
     } else if (type == 'paper') {
-      return _fetchPaperVersions();
+      return VersionFetchService.fetchPaperVersions();
+    } else if (type == 'spigot') {
+      return VersionFetchService.fetchSpigotVersions();
+    } else if (type == 'craftbukkit') {
+      return VersionFetchService.fetchCraftBukkitVersions();
+    } else if (type == 'purpur') {
+      return VersionFetchService.fetchPurpurVersions();
+    } else if (type == 'leaf') {
+      return VersionFetchService.fetchLeafVersions();
+    } else if (type == 'leaves') {
+      return VersionFetchService.fetchLeavesVersions();
     } else if (type == 'powernukkitx') {
       return _fetchPowernukkitxVersions();
     } else if (type == 'pocketmine') {
       return _fetchPocketmineVersions();
     } else if (type == 'allay') {
-      return _fetchAllayVersions();
+      return VersionFetchService.fetchAllayVersions();
     } else {
-      return _fetchVelocityVersions();
-    }
-  }
-
-  /// 获取 Fabric 支持的 Minecraft 版本列表（仅稳定版）。
-  Future<List<String>> _fetchFabricMcVersions() async {
-    final client = HttpClient();
-    try {
-      final req = await client.getUrl(
-        Uri.parse('https://meta.fabricmc.net/v2/versions/game'),
-      );
-      final res = await req.close();
-      final body = await res.transform(utf8.decoder).join();
-      final json = jsonDecode(body) as List<dynamic>;
-      return json
-          .where((v) => v['stable'] == true)
-          .map<String>((v) => v['version'] as String)
-          .toList();
-    } finally {
-      client.close();
-    }
-  }
-
-  /// 获取指定 Minecraft 版本的 Fabric Loader 版本列表。
-  Future<List<String>> _fetchFabricLoaderVersions(String mcVersion) async {
-    final client = HttpClient();
-    try {
-      final req = await client.getUrl(
-        Uri.parse('https://meta.fabricmc.net/v2/versions/loader/$mcVersion'),
-      );
-      final res = await req.close();
-      final body = await res.transform(utf8.decoder).join();
-      final json = jsonDecode(body) as List<dynamic>;
-      return json
-          .map<String>(
-            (v) => (v['loader'] as Map<String, dynamic>)['version'] as String,
-          )
-          .toList();
-    } finally {
-      client.close();
-    }
-  }
-
-  /// 解析 Forge Maven 元数据 XML，返回 {mcVersion: [forgeVersion...]}。
-  /// 版本格式为 "{mcVersion}-{forgeVersion}"，按最后一个 "-" 分割。
-  Future<Map<String, List<String>>> _fetchAllForgeVersions() async {
-    final client = HttpClient();
-    try {
-      final req = await client.getUrl(
-        Uri.parse(
-          'https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml',
-        ),
-      );
-      final res = await req.close();
-      final body = await res.transform(utf8.decoder).join();
-
-      // 解析 XML 中的 <version> 标签。
-      final versionPattern = RegExp(r'<version>([^<]+)</version>');
-      final matches = versionPattern.allMatches(body);
-
-      // 按 MC 版本分组。
-      final map = <String, List<String>>{};
-      for (final m in matches) {
-        final full = m.group(1)!;
-        final lastDash = full.lastIndexOf('-');
-        if (lastDash < 0) continue;
-        final mcVersion = full.substring(0, lastDash);
-        final forgeVersion = full.substring(lastDash + 1);
-        map.putIfAbsent(mcVersion, () => []).add(forgeVersion);
-      }
-
-      // 按 MC 版本号降序排列（最新版本在前）。
-      final sortedKeys = map.keys.toList()
-        ..sort((a, b) {
-          final pa = a.split('.').map(int.tryParse).toList();
-          final pb = b.split('.').map(int.tryParse).toList();
-          for (int i = 0; i < 3; i++) {
-            final va = i < pa.length ? (pa[i] ?? 0) : 0;
-            final vb = i < pb.length ? (pb[i] ?? 0) : 0;
-            if (va != vb) return vb.compareTo(va);
-          }
-          return 0;
-        });
-
-      return {for (final k in sortedKeys) k: map[k]!};
-    } finally {
-      client.close();
-    }
-  }
-
-  /// 解析 NeoForge Maven 元数据 XML，返回 {mcVersion: [neoforgeVersion...]}。
-  /// NeoForge 版本格式为 "major.minor.patch.build[-beta]"，
-  /// 其中 major.minor.patch 对应 MC 版本号（1.major.minor.patch 或 major.minor.patch）。
-  Future<Map<String, List<String>>> _fetchAllNeoforgeVersions() async {
-    final client = HttpClient();
-    try {
-      final req = await client.getUrl(
-        Uri.parse(
-          'https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml',
-        ),
-      );
-      final res = await req.close();
-      final body = await res.transform(utf8.decoder).join();
-
-      // 解析 XML 中的 <version> 标签。
-      final versionPattern = RegExp(r'<version>([^<]+)</version>');
-      final matches = versionPattern.allMatches(body);
-
-      // 按 MC 版本分组。
-      // NeoForge 版本格式：
-      //   三段式 major.minor.build[-beta]（如 21.1.234 → MC 1.21.1）
-      //   四段式 major.minor.patch.build[-beta]（如 26.1.2.71 → MC 26.1.2）
-      final map = <String, List<String>>{};
-      for (final m in matches) {
-        final full = m.group(1)!;
-        // 过滤掉 beta 版本。
-        if (full.contains('-beta')) continue;
-        // 分割版本号段（去掉可能的 -beta 后缀）。
-        final cleanFull = full.split('-').first;
-        final parts = cleanFull.split('.');
-        if (parts.length < 3) continue;
-        final String mcVersion;
-        if (parts.length >= 4) {
-          // 四段式：MC 版本 = 前三段。
-          mcVersion = '${parts[0]}.${parts[1]}.${parts[2]}';
-        } else {
-          // 三段式：MC 版本 = 前两段。
-          mcVersion = '${parts[0]}.${parts[1]}';
-        }
-        map.putIfAbsent(mcVersion, () => []).add(full);
-      }
-
-      // 按 MC 版本号降序排列（最新版本在前）。
-      final sortedKeys = map.keys.toList()
-        ..sort((a, b) {
-          final pa = a.split('.').map(int.tryParse).toList();
-          final pb = b.split('.').map(int.tryParse).toList();
-          for (int i = 0; i < 3; i++) {
-            final va = i < pa.length ? (pa[i] ?? 0) : 0;
-            final vb = i < pb.length ? (pb[i] ?? 0) : 0;
-            if (va != vb) return vb.compareTo(va);
-          }
-          return 0;
-        });
-
-      return {for (final k in sortedKeys) k: map[k]!};
-    } finally {
-      client.close();
+      return VersionFetchService.fetchVelocityVersions();
     }
   }
 
@@ -2813,71 +1840,46 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     }
   }
 
-  /// 获取 Paper 端版本列表，过滤掉含 rc/pre 的预发布版本。
-  Future<List<String>> _fetchPaperVersions() async {
-    final client = HttpClient();
-    try {
-      final req = await client.getUrl(
-        Uri.parse('https://fill.papermc.io/v3/projects/paper'),
-      );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
-      final res = await req.close();
-      final body = await res.transform(utf8.decoder).join();
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      final versions = json['versions'] as Map<String, dynamic>;
-      final result = <String>[];
-      for (final group in versions.keys) {
-        final groupVersions = versions[group] as List<dynamic>;
-        for (final v in groupVersions) {
-          final lower = (v as String).toLowerCase();
-          if (!lower.contains('rc') && !lower.contains('pre')) {
-            result.add(v);
-          }
-        }
-      }
-      return result;
-    } finally {
-      client.close();
-    }
-  }
-
   /// 镜像开启且成功时返回 MSL 下载信息，否则返回 null（调用方回退官方源）。
-  Future<_DownloadInfo?> _tryMirrorDownloadInfo(
+  Future<DownloadInfo?> _tryMirrorDownloadInfo(
     String serverType,
     String version,
   ) async {
     if (!await NetworkStore.loadUseMirror()) return null;
     final info = await MslMirror.fetchDownloadInfo(serverType, version);
     if (info == null) return null;
-    return _DownloadInfo(url: info.url, sha256: info.sha256);
-  }
-
-  /// 将 NeoForge 流程中的 MC 版本键转换为 MSL 镜像所用的版本格式。
-  /// 旧命名（如 `21.1`）加 `1.` 前缀得 `1.21.1`；年份命名（如 `26.1.2`）直接沿用。
-  String _neoforgeMcToMslVersion(String key) {
-    final major = int.tryParse(key.split('.').first) ?? 0;
-    return major >= 26 ? key : '1.$key';
+    return DownloadInfo(url: info.url, sha256: info.sha256);
   }
 
   /// 根据服务端类型获取指定版本的下载信息。
-  Future<_DownloadInfo> _fetchDownloadInfo(String version) async {
+  Future<DownloadInfo> _fetchDownloadInfo(String version) async {
     if (_serverType == 'vanilla') {
       return _fetchVanillaDownloadInfo(version);
     } else if (_serverType == 'velocity') {
-      return _fetchVelocityDownloadInfo(version);
+      return DownloadInfoService.fetchVelocityDownloadInfo(version);
+    } else if (_serverType == 'spigot') {
+      return DownloadInfoService.fetchSpigotDownloadInfo(version);
+    } else if (_serverType == 'craftbukkit') {
+      return DownloadInfoService.fetchCraftBukkitDownloadInfo(version);
+    } else if (_serverType == 'purpur') {
+      return DownloadInfoService.fetchPurpurDownloadInfo(version);
+    } else if (_serverType == 'leaf') {
+      return DownloadInfoService.fetchLeafDownloadInfo(version);
+    } else if (_serverType == 'leaves') {
+      return DownloadInfoService.fetchLeavesDownloadInfo(version);
     } else if (_serverType == 'powernukkitx') {
-      return _fetchPowernukkitxDownloadInfo(version);
+      return DownloadInfoService.fetchPowernukkitxDownloadInfo(version);
     } else if (_serverType == 'pocketmine') {
-      return _fetchPocketmineDownloadInfo(version);
+      return DownloadInfoService.fetchPocketmineDownloadInfo(version);
     } else if (_serverType == 'allay') {
-      return _fetchAllayDownloadInfo(version);
+      return DownloadInfoService.fetchAllayDownloadInfo(version);
     } else {
-      return _fetchPaperDownloadInfo(version);
+      return DownloadInfoService.fetchPaperDownloadInfo(version);
     }
   }
 
   /// Fabric 下载信息：查询最新 Installer 版本并组装直接下载 URL。
-  Future<_DownloadInfo> _fetchFabricDownloadInfo() async {
+  Future<DownloadInfo> _fetchFabricDownloadInfo() async {
     final mcVersion = _selectedMcVersion!;
     final loaderVersion = _selectedLoaderVersion!;
 
@@ -2892,7 +1894,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       final json = jsonDecode(body) as List<dynamic>;
       final latestInstaller = json.first['version'] as String;
 
-      return _DownloadInfo(
+      return DownloadInfo(
         url:
             'https://meta.fabricmc.net/v2/versions/loader/$mcVersion/$loaderVersion/$latestInstaller/server/jar',
       );
@@ -2902,7 +1904,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   }
 
   /// 从版本详情 JSON 获取官方端服务端的真实下载 URL 和 SHA-1。
-  Future<_DownloadInfo> _fetchVanillaDownloadInfo(String version) async {
+  Future<DownloadInfo> _fetchVanillaDownloadInfo(String version) async {
     final detailUrl = _vanillaVersionUrls[version];
     if (detailUrl == null) {
       throw Exception(
@@ -2919,7 +1921,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       if (server == null) {
         throw Exception(tr('instance.noServerJar'));
       }
-      return _DownloadInfo(
+      return DownloadInfo(
         url: server['url'] as String,
         sha1: server['sha1'] as String?,
       );
@@ -2927,87 +1929,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       client.close();
     }
   }
-
-  /// 获取 Velocity 端版本列表，显示快照版本（过滤 rc/pre）。
-  Future<List<String>> _fetchVelocityVersions() async {
-    final client = HttpClient();
-    try {
-      final req = await client.getUrl(
-        Uri.parse('https://fill.papermc.io/v3/projects/velocity'),
-      );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
-      final res = await req.close();
-      final body = await res.transform(utf8.decoder).join();
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      final versions = json['versions'] as Map<String, dynamic>;
-      final result = <String>[];
-      for (final group in versions.keys) {
-        final groupVersions = versions[group] as List<dynamic>;
-        for (final v in groupVersions) {
-          final lower = (v as String).toLowerCase();
-          if (!lower.contains('rc') && !lower.contains('pre')) {
-            result.add(v);
-          }
-        }
-      }
-      return result;
-    } finally {
-      client.close();
-    }
-  }
-
-  /// 通过 PaperMC Fill v3 API 获取 Velocity 最新构建的下载 URL 和 SHA-256。
-  Future<_DownloadInfo> _fetchVelocityDownloadInfo(String version) async {
-    final client = HttpClient();
-    try {
-      final buildReq = await client.getUrl(
-        Uri.parse(
-          'https://fill.papermc.io/v3/projects/velocity/versions/$version/builds/latest',
-        ),
-      );
-      buildReq.headers.set('User-Agent', 'EdgeCube/1.0');
-      final buildRes = await buildReq.close();
-      final buildBody = await buildRes.transform(utf8.decoder).join();
-      final buildJson = jsonDecode(buildBody) as Map<String, dynamic>;
-      final serverDefault =
-          (buildJson['downloads'] as Map<String, dynamic>)['server:default']
-              as Map<String, dynamic>;
-      final sha256 =
-          (serverDefault['checksums'] as Map<String, dynamic>)['sha256']
-              as String;
-      final downloadUrl = serverDefault['url'] as String;
-      return _DownloadInfo(url: downloadUrl, sha256: sha256);
-    } finally {
-      client.close();
-    }
-  }
-
-  /// 通过 PaperMC Fill v3 API 获取 Paper 最新构建的下载 URL 和 SHA-256。
-  Future<_DownloadInfo> _fetchPaperDownloadInfo(String version) async {
-    final client = HttpClient();
-    try {
-      final buildReq = await client.getUrl(
-        Uri.parse(
-          'https://fill.papermc.io/v3/projects/paper/versions/$version/builds/latest',
-        ),
-      );
-      buildReq.headers.set('User-Agent', 'EdgeCube/1.0');
-      final buildRes = await buildReq.close();
-      final buildBody = await buildRes.transform(utf8.decoder).join();
-      final buildJson = jsonDecode(buildBody) as Map<String, dynamic>;
-      final serverDefault =
-          (buildJson['downloads'] as Map<String, dynamic>)['server:default']
-              as Map<String, dynamic>;
-      final sha256 =
-          (serverDefault['checksums'] as Map<String, dynamic>)['sha256']
-              as String;
-      final downloadUrl = serverDefault['url'] as String;
-      return _DownloadInfo(url: downloadUrl, sha256: sha256);
-    } finally {
-      client.close();
-    }
-  }
-
   /// 从 GitHub Releases 获取 PowerNukkitX 版本列表（tag_name），
   /// 同时从 release body 中提取 MCBE 版本号缓存在 [_powernukkitxMcVersions]。
   Future<List<String>> _fetchPowernukkitxVersions() async {
@@ -3044,39 +1965,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       client.close();
     }
   }
-
-  /// 从 GitHub Release Assets 获取 PowerNukkitX 指定版本的 jar 下载 URL。
-  Future<_DownloadInfo> _fetchPowernukkitxDownloadInfo(String version) async {
-    final client = HttpClient();
-    try {
-      final req = await client.getUrl(
-        Uri.parse(
-          'https://api.github.com/repos/PowerNukkitX/PowerNukkitX/releases/tags/$version',
-        ),
-      );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
-      final res = await req.close();
-      final body = await res.transform(utf8.decoder).join();
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      final assets = json['assets'] as List<dynamic>;
-      // 优先匹配 shaded jar，否则取第一个 jar。
-      String? downloadUrl;
-      for (final asset in assets) {
-        final name = (asset as Map<String, dynamic>)['name'] as String;
-        if (name.endsWith('.jar')) {
-          downloadUrl = asset['browser_download_url'] as String;
-          if (name.toLowerCase().contains('shaded')) break;
-        }
-      }
-      if (downloadUrl == null) {
-        throw Exception('No JAR found in release $version');
-      }
-      return _DownloadInfo(url: downloadUrl);
-    } finally {
-      client.close();
-    }
-  }
-
   /// 获取 PocketMine-MP 版本列表。
   ///
   /// 数据源：https://github.com/pmmp/update.pmmp.io/tree/master/channels
@@ -3161,190 +2049,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
       // 单个版本获取失败不影响整体列表。
     }
   }
-
-  /// 从 channels 目录下对应版本的 JSON 获取 PocketMine-MP 的 phar 下载地址。
-  ///
-  /// 例如版本 `5.44` 对应
-  /// `https://raw.githubusercontent.com/pmmp/update.pmmp.io/master/channels/5.44.json`，
-  /// 其中包含 `download_url`（指向 PocketMine-MP.phar）。
-  Future<_DownloadInfo> _fetchPocketmineDownloadInfo(String version) async {
-    final client = HttpClient();
-    try {
-      final req = await client.getUrl(
-        Uri.parse(
-          'https://raw.githubusercontent.com/pmmp/update.pmmp.io/master/channels/$version.json',
-        ),
-      );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
-      final res = await req.close();
-      if (res.statusCode != 200) {
-        throw Exception('HTTP ${res.statusCode}');
-      }
-      final body = await res.transform(utf8.decoder).join();
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      final downloadUrl = json['download_url'] as String?;
-      if (downloadUrl == null) {
-        throw Exception('No download_url in channel $version');
-      }
-      return _DownloadInfo(url: downloadUrl);
-    } finally {
-      client.close();
-    }
-  }
-
-  /// 从 GitHub Releases 获取 Allay 版本列表（tag_name）。
-  ///
-  /// 数据源：`https://api.github.com/repos/AllayMC/Allay/releases`
-  /// 参考 AllayLauncher 的 `allay_server.cpp`：稳定版走 `/releases/latest`，
-  /// 夜间版走 `/releases/tags/nightly`。这里列出全部 release（含 nightly），
-  /// 夜间版始终排在首位（最新开发构建），其后为稳定版（按发布时间降序）。
-  Future<List<String>> _fetchAllayVersions() async {
-    final client = HttpClient();
-    try {
-      // 并发拉取全量 release 列表与 nightly 单独 release。
-      // nightly 是一个会被反复覆盖更新的 tag，可能不在 /releases 列表顶部，
-      // 单独拉取确保始终可用。
-      final releasesFuture = _fetchAllayReleases(client);
-      final nightlyFuture = _fetchAllayReleaseByTag(client, 'nightly');
-
-      final releases = await releasesFuture;
-      final nightly = await nightlyFuture;
-
-      // 合并：nightly 置顶，其后为稳定版（排除 nightly 自身，避免重复）。
-      final versions = <String>[];
-      if (nightly != null) {
-        versions.add('nightly');
-      }
-      for (final r in releases) {
-        final tag = r['tag_name'] as String?;
-        if (tag != null && tag != 'nightly') {
-          versions.add(tag);
-        }
-      }
-      return versions;
-    } finally {
-      client.close();
-    }
-  }
-
-  /// 拉取 Allay 的全量 release 列表（不含 draft）。
-  Future<List<Map<String, dynamic>>> _fetchAllayReleases(
-    HttpClient client,
-  ) async {
-    final req = await client.getUrl(
-      Uri.parse('https://api.github.com/repos/AllayMC/Allay/releases'),
-    );
-    req.headers.set('User-Agent', 'EdgeCube/1.0');
-    final res = await req.close();
-    if (res.statusCode != 200) {
-      throw Exception('HTTP ${res.statusCode}');
-    }
-    final body = await res.transform(utf8.decoder).join();
-    final json = jsonDecode(body) as List<dynamic>;
-    return json.cast<Map<String, dynamic>>();
-  }
-
-  /// 按 tag 拉取单个 Allay release；失败时返回 null（如 nightly 不存在）。
-  Future<Map<String, dynamic>?> _fetchAllayReleaseByTag(
-    HttpClient client,
-    String tag,
-  ) async {
-    try {
-      final req = await client.getUrl(
-        Uri.parse(
-          'https://api.github.com/repos/AllayMC/Allay/releases/tags/$tag',
-        ),
-      );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
-      final res = await req.close();
-      if (res.statusCode != 200) return null;
-      final body = await res.transform(utf8.decoder).join();
-      return jsonDecode(body) as Map<String, dynamic>;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// 从 GitHub Release Assets 获取 Allay 指定版本的 jar 下载 URL 与 SHA-256。
-  ///
-  /// 参考 AllayLauncher 的 `allay_server.cpp`：每个 release 仅含一个 asset，
-  /// 名称以 `allay` 开头；asset 的 `digest` 字段格式为 `sha256:...`。
-  Future<_DownloadInfo> _fetchAllayDownloadInfo(String version) async {
-    final client = HttpClient();
-    try {
-      final req = await client.getUrl(
-        Uri.parse(
-          'https://api.github.com/repos/AllayMC/Allay/releases/tags/$version',
-        ),
-      );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
-      final res = await req.close();
-      if (res.statusCode != 200) {
-        throw Exception('HTTP ${res.statusCode}');
-      }
-      final body = await res.transform(utf8.decoder).join();
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      final assets = json['assets'] as List<dynamic>;
-      if (assets.isEmpty) {
-        throw Exception('No asset found in release $version');
-      }
-      // 取第一个以 allay 开头的 asset（与 AllayLauncher 逻辑一致）。
-      Map<String, dynamic>? asset;
-      for (final a in assets) {
-        final name = (a as Map<String, dynamic>)['name'] as String? ?? '';
-        if (name.startsWith('allay')) {
-          asset = a;
-          break;
-        }
-      }
-      asset ??= assets.first as Map<String, dynamic>;
-      final downloadUrl = asset['browser_download_url'] as String;
-      // digest 格式为 "sha256:..."，去掉前缀得到纯哈希。
-      final digest = asset['digest'] as String?;
-      final sha256 = digest != null && digest.startsWith('sha256:')
-          ? digest.substring(7)
-          : null;
-      return _DownloadInfo(url: downloadUrl, sha256: sha256);
-    } finally {
-      client.close();
-    }
-  }
 }
 
-/// 服务端 JAR 的下载信息。
-class _DownloadInfo {
-  const _DownloadInfo({required this.url, this.sha1, this.sha256});
 
-  final String url;
-  final String? sha1;
-  final String? sha256;
-}
-
-/// 服务端类型选择项。
-class _ServerTypeTile extends StatelessWidget {
-  const _ServerTypeTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        leading: Icon(icon, size: 36),
-        title: Text(title, style: const TextStyle(fontSize: 16)),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        onTap: onTap,
-      ),
-    );
-  }
-}

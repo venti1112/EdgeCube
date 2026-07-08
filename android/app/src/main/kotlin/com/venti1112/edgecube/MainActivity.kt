@@ -21,6 +21,7 @@ import android.provider.Settings
 import android.util.Size
 import androidx.annotation.NonNull
 import com.venti1112.edgecube.server.JreLayout
+import com.venti1112.edgecube.server.ProotEnvironment
 import com.venti1112.edgecube.server.RuntimeInstaller
 import com.venti1112.edgecube.server.ServerProcessManager
 import com.venti1112.edgecube.server.TunnelProcessManager
@@ -56,6 +57,7 @@ class MainActivity : FlutterActivity() {
     private val archiveEventChannel = "com.venti1112.edgecube/archive_events"
     private val shellChannel = "com.venti1112.edgecube/shell"
     private val shellEventChannel = "com.venti1112.edgecube/shell_events"
+    private val prootChannel = "com.venti1112.edgecube/proot"
     private val permissionChannel = "com.venti1112.edgecube/permission"
     private var pendingPhotoPermissionResult: MethodChannel.Result? = null
     private var pendingStoragePermissionResult: MethodChannel.Result? = null
@@ -740,14 +742,25 @@ class MainActivity : FlutterActivity() {
         MethodChannel(messenger, shellChannel).setMethodCallHandler { call, result ->
             when (call.method) {
                 "availableShells" -> {
-                    result.success(ShellResolver.availableLabels())
+                    // 返回结构化 shell 选项列表（含 id/label/type）。
+                    // 旧调用方若直接当 List<String> 用，Map.toString() 仍可显示，但推荐用 availableShellOptions。
+                    val options = ShellResolver.availableOptions(applicationContext).map { opt ->
+                        mapOf(
+                            "id" to opt.id,
+                            "label" to opt.label,
+                            "type" to opt.type,
+                        )
+                    }
+                    result.success(options)
                 }
 
                 "isRunning" -> result.success(shellManager.isRunning)
 
                 "start" -> {
                     try {
-                        shellManager.start(call.argument<String>("cwd"))
+                        val cwd = call.argument<String>("cwd")
+                        val shellId = call.argument<String>("shellId")
+                        shellManager.start(cwd, shellId)
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("SHELL_START_FAILED", e.message, null)
@@ -994,6 +1007,98 @@ class MainActivity : FlutterActivity() {
                     val dir = File(base, "Download/EdgeCube")
                     if (!dir.exists()) dir.mkdirs()
                     result.success(dir.absolutePath)
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+
+        // proot 容器通道：rootfs 导入、列表、删除。
+        // 与 runtime 通道分离，因 rootfs.tar.zst 与 .ecpkg 是不同的产物类型，
+        // 校验/解压/布局逻辑由 ProotEnvironment 独立实现。
+        MethodChannel(messenger, prootChannel).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "listRootfs" -> {
+                    // 即便有缓存，遍历目录 + 读元数据文件仍可能在 rootfs
+                    // 数量多时造成主线程卡顿，放后台线程执行。
+                    thread {
+                        try {
+                            val list = ProotEnvironment.installedRootfs(applicationContext).map { r ->
+                                mapOf(
+                                    "id" to r.id,
+                                    "dir" to r.dir.absolutePath,
+                                    "sizeBytes" to r.sizeBytes,
+                                    "javaBin" to r.javaBin,
+                                )
+                            }
+                            runOnUiThread { result.success(list) }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                result.error("PROOT_LIST_FAILED", e.message, null)
+                            }
+                        }
+                    }
+                }
+
+                "importRootfs" -> {
+                    val path = call.argument<String>("path")
+                    val id = call.argument<String>("id")
+                    if (path == null) {
+                        result.error("BAD_ARGS", "缺少 path", null)
+                    } else {
+                        // 解压可能耗时数十秒到数分钟，放后台线程。
+                        thread {
+                            try {
+                                val rootfs = ProotEnvironment.importRootfs(
+                                    applicationContext, path, id,
+                                )
+                                runOnUiThread {
+                                    result.success(
+                                        mapOf(
+                                            "id" to rootfs.id,
+                                            "dir" to rootfs.dir.absolutePath,
+                                            "sizeBytes" to rootfs.sizeBytes,
+                                            "javaBin" to rootfs.javaBin,
+                                        ),
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    // ROOTFS_EXISTS 等业务错误用语义化 code，便于 UI 区分
+                                    val code = e.message?.takeIf { it == "ROOTFS_EXISTS" }
+                                        ?: "PROOT_IMPORT_FAILED"
+                                    result.error(code, e.message, null)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                "deleteRootfs" -> {
+                    val id = call.argument<String>("id")
+                    if (id == null) {
+                        result.error("BAD_ARGS", "缺少 id", null)
+                    } else {
+                        // deleteRecursively 需遍历几万文件，放后台线程避免 UI 卡顿。
+                        thread {
+                            try {
+                                ProotEnvironment.deleteRootfs(applicationContext, id)
+                                runOnUiThread { result.success(null) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error("PROOT_DELETE_FAILED", e.message, null)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 检查 proot 二进制是否已随 APK 打包（jniLibs 是否含 lib__bin__proot-classic__.so）。
+                // UI 据此决定是否显示 proot 入口与提示用户安装原生库。
+                "isProotAvailable" -> {
+                    val nativeDir = applicationContext.applicationInfo.nativeLibraryDir
+                    val prootSo = File(nativeDir, "lib__bin__proot-classic__.so")
+                    result.success(prootSo.exists())
                 }
 
                 else -> result.notImplemented()

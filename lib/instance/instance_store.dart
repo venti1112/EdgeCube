@@ -56,12 +56,6 @@ Future<Directory> builtinInstancesRoot() async {
   return Directory(p.join(edgeCubeRoot.path, kInstancesSubDirName));
 }
 
-/// 旧版实例根目录 `<documents>/instances`，用于一次性数据迁移。
-Future<Directory> legacyPrivateInstancesRoot() async {
-  final docs = await getApplicationDocumentsDirectory();
-  return Directory(p.join(docs.path, 'instances'));
-}
-
 /// 实例索引与单实例配置的文件持久化。
 ///
 /// 配置统一存放在应用文档目录的 `config/` 下：

@@ -1,5 +1,28 @@
 import 'package:flutter/services.dart';
 
+/// UI 可选的 shell 条目。
+///
+/// - [id] 传给 `start(shellId: ...)` 指定要启动哪个 shell：
+///   - "system_sh"：系统自带的 /system/bin/sh
+///   - "proot:<rootfsId>"：进入指定 rootfs 的 proot 容器交互 shell
+/// - [label] 为展示名（如 "system sh"、"proot: debian-12-jdk21"）
+/// - [type] 为 "system" 或 "proot"，便于 UI 分组渲染
+class ShellOption {
+  const ShellOption({required this.id, required this.label, required this.type});
+
+  final String id;
+  final String label;
+  final String type;
+
+  factory ShellOption.fromMap(Map<String, dynamic> m) {
+    return ShellOption(
+      id: m['id'] as String? ?? '',
+      label: m['label'] as String? ?? '',
+      type: m['type'] as String? ?? 'system',
+    );
+  }
+}
+
 /// 与原生 shell 通道对接：交互式 PTY shell 的起停与读写，以及一次性命令执行。
 ///
 /// 对应 [MainActivity] 中注册的：
@@ -13,10 +36,13 @@ class ShellService {
     'com.venti1112.edgecube/shell_events',
   );
 
-  /// 当前可用的 shell 列表（如 ['system sh']）。
-  Future<List<String>> availableShells() async {
+  /// 当前可用的 shell 选项列表（含系统 sh 与已导入的 proot rootfs）。
+  Future<List<ShellOption>> availableShells() async {
     final list = await _method.invokeMethod<List<dynamic>>('availableShells');
-    return list?.cast<String>() ?? const [];
+    return list?.cast<Map<dynamic, dynamic>>().map((m) {
+          return ShellOption.fromMap(m.cast<String, dynamic>());
+        }).toList() ??
+        const [];
   }
 
   /// 交互 shell 是否在运行。
@@ -25,9 +51,17 @@ class ShellService {
     return running ?? false;
   }
 
-  /// 启动交互 shell。[cwd] 为初始工作目录（空则用默认目录）。
-  Future<void> start({String? cwd}) =>
-      _method.invokeMethod('start', {'cwd': cwd});
+  /// 启动交互 shell。
+  ///
+  /// [cwd] 为初始工作目录：
+  ///  - 系统 sh：host 路径（空则用默认目录）
+  ///  - proot：容器内绝对路径（空则用 /root）
+  ///
+  /// [shellId] 决定启动哪种 shell：
+  ///  - null/"system_sh"：系统 sh（默认）
+  ///  - "proot:<rootfsId>"：进入指定 rootfs 的 proot 容器
+  Future<void> start({String? cwd, String? shellId}) =>
+      _method.invokeMethod('start', {'cwd': cwd, 'shellId': shellId});
 
   /// 向 shell PTY 写入原始按键字节。
   Future<void> writeInput(Uint8List bytes) =>
