@@ -3,23 +3,41 @@ const String kRuntimeJava = 'java';
 const String kRuntimePhp = 'php';
 const String kRuntimeProot = 'proot';
 
-/// 实例索引项：仅包含选择列表所需的 [id] 与 [name]。
+/// 实例索引项：仅包含选择列表所需的 [id]、[name] 与可选的 [path]。
 ///
 /// 实例选择列表只读取索引（`config/instances.json`），无需加载每个实例
 /// 完整的启动配置（那些存在各自的 `config/instances/<id>.json` 中）。
+/// [path] 为实例目录的完整路径；为 null 时使用默认路径 `<root>/<id>`。
+/// Survivalcraft 等需要将文件放入 proot 容器 rootfs 的实例会设置此字段。
 class InstanceSummary {
-  const InstanceSummary({required this.id, required this.name});
+  const InstanceSummary({required this.id, required this.name, this.path});
 
   final String id;
   final String name;
 
-  InstanceSummary copyWith({String? name}) =>
-      InstanceSummary(id: id, name: name ?? this.name);
+  /// 实例目录的完整路径（Android 文件系统路径）。
+  /// null 表示使用默认路径 `<instances-root>/<id>`。
+  final String? path;
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name};
+  InstanceSummary copyWith({String? name, String? path, bool clearPath = false}) =>
+      InstanceSummary(
+        id: id,
+        name: name ?? this.name,
+        path: clearPath ? null : (path ?? this.path),
+      );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    if (path != null) 'path': path,
+  };
 
   factory InstanceSummary.fromJson(Map<String, dynamic> json) =>
-      InstanceSummary(id: json['id'] as String, name: json['name'] as String);
+      InstanceSummary(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        path: json['path'] as String?,
+      );
 }
 
 /// 单个服务器实例的元数据。
@@ -46,6 +64,7 @@ class Instance {
     this.customJvmArgs,
     this.compatMode = false,
     this.prootStartupCommand,
+    this.path,
   });
 
   final String id;
@@ -62,6 +81,12 @@ class Instance {
   /// 带元数据的 rootfs 不使用此字段。
   final String? prootStartupCommand;
 
+  /// 实例目录的完整路径（Android 文件系统路径）。
+  /// null 表示使用默认路径 `<instances-root>/<id>`。
+  /// Survivalcraft 等需要将文件放入 proot 容器 rootfs 的实例会设置此字段
+  /// （如 `<filesDir>/proot_rootfs/<rootfsId>/opt/<id>`）。
+  final String? path;
+
   /// 是否为 PHP（PocketMine）运行环境。
   bool get isPhp => runtime == kRuntimePhp;
 
@@ -74,11 +99,13 @@ class Instance {
     String? customJvmArgs,
     bool? compatMode,
     String? prootStartupCommand,
+    String? path,
     bool clearMaxMemory = false,
     bool clearJavaVersion = false,
     bool clearSelectedJar = false,
     bool clearCustomJvmArgs = false,
     bool clearProotStartupCommand = false,
+    bool clearPath = false,
   }) => Instance(
     id: id,
     name: name ?? this.name,
@@ -93,6 +120,7 @@ class Instance {
     prootStartupCommand: clearProotStartupCommand
         ? null
         : (prootStartupCommand ?? this.prootStartupCommand),
+    path: clearPath ? null : (path ?? this.path),
   );
 
   Map<String, dynamic> toJson() => {
@@ -105,6 +133,7 @@ class Instance {
     if (customJvmArgs != null) 'customJvmArgs': customJvmArgs,
     if (compatMode) 'compatMode': true,
     if (prootStartupCommand != null) 'prootStartupCommand': prootStartupCommand,
+    if (path != null) 'path': path,
   };
 
   factory Instance.fromJson(Map<String, dynamic> json) => Instance(
@@ -117,5 +146,6 @@ class Instance {
     customJvmArgs: json['customJvmArgs'] as String?,
     compatMode: json['compatMode'] as bool? ?? false,
     prootStartupCommand: json['prootStartupCommand'] as String?,
+    path: json['path'] as String?,
   );
 }

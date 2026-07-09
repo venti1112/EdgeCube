@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/network_store.dart';
 import '../i18n/locale_scope.dart';
 import '../instance/create_instance_page.dart';
+import '../instance/forge_launch.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
@@ -246,12 +247,16 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
   @override
   void didUpdateWidget(covariant _ServerControlPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 实例配置变化（如下载完成后 selectedJar/javaVersion 更新、导入 phar 改变 runtime）时，同步表单值。
+    // 实例配置变化（如下载完成后 selectedJar/javaVersion 更新、导入 phar 改变 runtime、
+    // Survivalcraft 安装完成后更新 path/prootStartupCommand）时，同步表单值。
     final configChanged =
         oldWidget.instance.selectedJar != widget.instance.selectedJar ||
         oldWidget.instance.javaVersion != widget.instance.javaVersion ||
         oldWidget.instance.runtime != widget.instance.runtime ||
-        oldWidget.instance.compatMode != widget.instance.compatMode;
+        oldWidget.instance.compatMode != widget.instance.compatMode ||
+        oldWidget.instance.prootStartupCommand !=
+            widget.instance.prootStartupCommand ||
+        oldWidget.instance.path != widget.instance.path;
     if (configChanged) {
       _runtime = widget.instance.runtime;
       if (_isProot && widget.instance.javaVersion != null) {
@@ -262,6 +267,12 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       }
       _selectedJar = widget.instance.selectedJar;
       _compatMode = widget.instance.compatMode;
+      // 同步 proot 启动命令（Survivalcraft 等场景下，实例创建初期可能为空，
+      // 安装完成后 updateConfig 才会写入，此时须刷新 TextEditingController）。
+      final newStartupCmd = widget.instance.prootStartupCommand ?? '';
+      if (_prootStartupCommandController.text != newStartupCmd) {
+        _prootStartupCommandController.text = newStartupCmd;
+      }
     }
     // 配置变化，或用户在「文件」页导入 jar 使 filesRevision 自增时，重新扫描目录。
     // 仅文件变化时不重置表单，扫描完成后由 _loadContext 回退无效的 jar 选择。
@@ -376,6 +387,13 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     });
     phars.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     allFiles.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    // 现代 Forge/NeoForge（MC 1.17+）无根 jar，改为通过 libraries 下的
+    // unix_args.txt @argfile 启动。检测到时把哨兵作为可选「服务端文件」加入，
+    // 使实例可被选中并正常启动（详见 ForgeLaunch）。
+    final forgeArgfile = ForgeLaunch.detectArgfile(dir);
+    if (forgeArgfile != null && !jars.contains(forgeArgfile)) {
+      jars.insert(0, forgeArgfile);
+    }
     final versions = await server.availableJreIds();
     final phpRuntimes = await server.availablePhpIds();
     final runtimeService = const RuntimeService();
@@ -536,6 +554,24 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
         if (mem != null && mem > 0) '-Xmx${mem}M',
         ..._parseCustomJvmArgs(widget.instance.customJvmArgs),
       ];
+      // Survivalcraft 等容器内直接运行的场景：实例文件在 rootfs 的 /opt/{id} 下，
+      // prootStartupCommand 已预设为容器内主程序路径，直接执行（directExecute），
+      // 无论 rootfs 是否带元数据都走 sh -c 包裹执行。
+      final prootCmd = _prootStartupCommandController.text.trim();
+      if (widget.instance.path != null && prootCmd.isNotEmpty) {
+        server.start(
+          instanceId: widget.instance.id,
+          instanceName: widget.instance.name,
+          workingDir: ctx.workingDir,
+          runtimeId: rootfsId,
+          runtime: kRuntimeProot,
+          jvmArgs: const [],
+          programArgs: [prootCmd],
+          compatMode: _compatMode,
+          directExecute: true,
+        );
+        return;
+      }
       if (rootfsInfo.isGeneric) {
         // 纯容器：用户必须提供完整启动命令
         final command = _prootStartupCommandController.text.trim();
@@ -569,6 +605,14 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
         if (!await _ensureEula(ctx.workingDir)) return;
         // Java 用 -jar file nogui；其他环境（php/node/python/box64）直接传文件名。
         final isJavaEnv = rootfsInfo.envType == 'java';
+        // 现代 Forge/NeoForge（@argfile 哨兵）：@argfile 必须作为 JVM 参数传递，
+        // 不能作为程序参数，否则 JVM 会把它当成 main class。普通 jar 仍走 -jar。
+        final List<String> javaJvmArgs = ForgeLaunch.isArgfile(file)
+            ? [...jvmArgs, '@${ForgeLaunch.argfilePath(file)}']
+            : jvmArgs;
+        final List<String> javaProgramArgs = ForgeLaunch.isArgfile(file)
+            ? const ['nogui']
+            : ['-jar', file, 'nogui'];
         server.start(
           instanceId: widget.instance.id,
           instanceName: widget.instance.name,
@@ -576,8 +620,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
           runtimeId: rootfsId,
           runtime: kRuntimeProot,
           // -Xmx 等仅对 JVM 有意义，非 Java 环境不传 jvmArgs。
-          jvmArgs: isJavaEnv ? jvmArgs : const [],
-          programArgs: isJavaEnv ? ['-jar', file, 'nogui'] : [file],
+          jvmArgs: isJavaEnv ? javaJvmArgs : const [],
+          programArgs: isJavaEnv ? javaProgramArgs : [file],
           compatMode: _compatMode,
         );
       }
@@ -611,8 +655,14 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       workingDir: ctx.workingDir,
       runtimeId: _version,
       runtime: kRuntimeJava,
-      jvmArgs: jvmArgs,
-      programArgs: ['-jar', file, 'nogui'],
+      // 现代 Forge/NeoForge（@argfile 哨兵）：@argfile 必须放在 JVM 参数里，
+      // 这样 JVM 才会按参数文件展开；作为 programArgs 传会被识别为 main class。
+      jvmArgs: ForgeLaunch.isArgfile(file)
+          ? [...jvmArgs, '@${ForgeLaunch.argfilePath(file)}']
+          : jvmArgs,
+      programArgs: ForgeLaunch.isArgfile(file)
+          ? const ['nogui']
+          : ['-jar', file, 'nogui'],
       compatMode: _compatMode,
     );
   }
@@ -928,8 +978,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                         },
                       ),
                       const SizedBox(height: 16),
-                      if (isGenericRootfs)
-                        // 纯容器：用户须填写完整的启动命令（含主程序路径与参数）。
+                      if (isGenericRootfs || widget.instance.path != null)
+                        // 纯容器或 Survivalcraft 等容器内直接运行场景：
+                        // 用户须填写完整的启动命令（含主程序路径与参数）。
                         TextField(
                           controller: _prootStartupCommandController,
                           maxLines: 4,
@@ -1021,12 +1072,13 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                       ),
                       const SizedBox(height: 16),
                     ],
-                    if (!isGenericRootfs)
+                    if (!isGenericRootfs && widget.instance.path == null)
                       _serverFileField(dialogContext, ctx),
                     const SizedBox(height: 16),
                     // JVM 参数仅对 Java 环境有意义（含 proot Java 元数据 rootfs）；
-                    // 纯容器、PHP、Node、Python 等均不显示。
+                    // 纯容器、PHP、Node、Python、Survivalcraft 等均不显示。
                     if (!_isPhp && !isGenericRootfs &&
+                        widget.instance.path == null &&
                         (!_isProot || isProotJavaEnv)) ...[
                       TextField(
                         controller: _jvmArgsController,
@@ -1147,19 +1199,31 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
         isDense: true,
       ),
       items: [
-        for (final f in files) DropdownMenuItem(value: f, child: Text(f)),
+        for (final f in files)
+          DropdownMenuItem(value: f, child: Text(_jarDisplayName(context, f))),
       ],
       selectedItemBuilder: (context) => [
         for (final f in files)
           DropdownMenuItem<String>(
             value: f,
-            child: Text(f, overflow: TextOverflow.ellipsis),
+            child: Text(
+              _jarDisplayName(context, f),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
       ],
       onChanged: (v) {
         _selectedJar = v;
       },
     );
+  }
+
+  /// 下拉展示名：现代 Forge/NeoForge 的 @argfile 哨兵显示友好名，其余显示文件名。
+  String _jarDisplayName(BuildContext context, String file) {
+    if (ForgeLaunch.isArgfile(file)) {
+      return context.tr('server.forgeModLauncher');
+    }
+    return file;
   }
 
   /// 返回当前所选 proot rootfs 的 envType（如 'java'/'php'/'generic'）。

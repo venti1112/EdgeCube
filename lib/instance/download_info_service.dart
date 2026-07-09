@@ -276,4 +276,66 @@ class DownloadInfoService {
       client.close();
     }
   }
+
+  /// 获取 SurvivalcraftNet 联机版指定 tag 的服务端下载信息。
+  ///
+  /// 数据源：`https://gitee.com/api/v5/repos/SC-SPM/SurvivalcraftNet/releases/tags/{tag}`
+  /// 从 release assets 中筛选服务端文件（文件名含「服务端」），优先选 Linux
+  /// 版本（可通过 proot 运行），其次选未标明平台的通用包，最后回退到首个服务端文件。
+  /// 无服务端文件时抛出异常。
+  static Future<DownloadInfo> fetchSurvivalcraftDownloadInfo(
+    String tag,
+  ) async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://gitee.com/api/v5/repos/SC-SPM/SurvivalcraftNet/releases/tags/$tag',
+        ),
+      );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      if (res.statusCode != 200) {
+        throw Exception('HTTP ${res.statusCode}');
+      }
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final assets = (json['assets'] as List<dynamic>?) ?? [];
+      if (assets.isEmpty) {
+        throw Exception('No asset found in release $tag');
+      }
+
+      // 筛选服务端文件：文件名含「服务端」（中文名），回退匹配「server」（英文名）。
+      final serverAssets = assets.where((a) {
+        final name = (a as Map<String, dynamic>)['name'] as String? ?? '';
+        final lower = name.toLowerCase();
+        return name.contains('服务端') || lower.contains('server');
+      }).toList();
+
+      if (serverAssets.isEmpty) {
+        throw Exception('No server asset found in release $tag');
+      }
+
+      // 优先级：Linux 版 > 未标明 Windows 的通用包 > 首个服务端文件。
+      Map<String, dynamic>? linuxAsset;
+      Map<String, dynamic>? nonWindowsAsset;
+      for (final a in serverAssets) {
+        final name =
+            (a as Map<String, dynamic>)['name'] as String? ?? '';
+        final lower = name.toLowerCase();
+        if (lower.contains('linux')) {
+          linuxAsset = a;
+          break;
+        }
+        if (!lower.contains('windows') && nonWindowsAsset == null) {
+          nonWindowsAsset = a;
+        }
+      }
+      final asset = linuxAsset ?? nonWindowsAsset ?? serverAssets.first;
+      final downloadUrl = asset['browser_download_url'] as String;
+      return DownloadInfo(url: downloadUrl);
+    } finally {
+      client.close();
+    }
+  }
 }

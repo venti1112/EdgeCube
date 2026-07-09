@@ -184,6 +184,7 @@ recursionguard.enabled=0"""
         runtime: String,
         jvmArgs: List<String>,
         programArgs: List<String>,
+        directExecute: Boolean = false,
     ) {
         if (isRunning) throw IllegalStateException("已有服务端正在运行，请先停止")
 
@@ -282,9 +283,11 @@ recursionguard.enabled=0"""
             // 会泄漏进容器造成干扰），改用 ProotEnvironment 返回的干净环境。
             val rootfs = ProotEnvironment.installedRootfs(appContext, runtimeId)
                 ?: throw IllegalStateException("proot rootfs '$runtimeId' 未安装，请先在「管理 → 运行环境」导入 rootfs.tar.zst")
-            val prootCmd = if (rootfs.isGeneric) {
-                // 纯容器：用户必须在实例配置中提供完整启动命令。
-                // programArgs 各元素以空格拼接为完整命令行（如 ["/usr/bin/python3", "main.py"]）。
+            // directExecute=true 时（如 Survivalcraft 直接运行容器内二进制），
+            // 无论 rootfs 是否带元数据都走 buildGenericCommand（sh -c 包裹执行）。
+            val prootCmd = if (rootfs.isGeneric || directExecute) {
+                // 纯容器或直接执行模式：programArgs 各元素以空格拼接为完整命令行
+                // （如 ["/opt/{id}/Survivalcraft"] 或 ["/usr/bin/python3", "main.py"]）。
                 val command = programArgs.joinToString(" ").trim()
                 ProotEnvironment.buildGenericCommand(
                     appContext,
@@ -477,12 +480,21 @@ recursionguard.enabled=0"""
         sendCommand("stop")
     }
 
-    /** 强制结束进程（SIGTERM，与原 Process.destroy() 语义一致）。 */
+    /** 强制结束进程。 */
     fun forceStop() {
         val p = processId
         if (p <= 0) return
         try {
-            Os.kill(p, OsConstants.SIGTERM)
+            if (runningIsProot) {
+                // proot 模式：顶层 proot 进程不向子孙传播信号，且其子进程
+                //（sh / 容器内二进制）会变孤儿继续运行、占用端口。PTY 子进程
+                // 已 setsid 成为新进程组首（PGID = pid），杀整个进程组才能连子进程
+                // 一起清理。用 SIGKILL 确保彻底结束（SIGTERM 可能被忽略或不传播）。
+                Os.kill(-p, OsConstants.SIGKILL)
+            } else {
+                // 普通模式：SIGTERM，与原 Process.destroy() 语义一致，给进程清理机会。
+                Os.kill(p, OsConstants.SIGTERM)
+            }
         } catch (e: Exception) {
             emitNotice("[EdgeCube] 强制结束失败：${e.message}")
         }

@@ -103,7 +103,12 @@ class InstanceController extends ChangeNotifier {
     var changed = false;
 
     for (final summary in _summaries) {
-      if (existingDirIds.contains(summary.id)) {
+      // 有自定义路径的实例（如 proot rootfs 内的 /opt/{id}）检查其路径是否存在；
+      // 无自定义路径的实例检查默认根目录下是否有对应文件夹。
+      final exists = summary.path != null && summary.path!.isNotEmpty
+          ? await Directory(summary.path!).exists()
+          : existingDirIds.contains(summary.id);
+      if (exists) {
         kept.add(summary);
       } else {
         await _store.deleteConfig(summary.id);
@@ -166,7 +171,18 @@ class InstanceController extends ChangeNotifier {
       directoryForId(instance.id);
 
   /// 按 id 解析实例在磁盘上的文件夹。
+  ///
+  /// 优先使用摘要中存储的自定义路径（如 proot 容器 rootfs 内的
+  /// `/opt/{id}`），为 null 时回退到默认路径 `<instances-root>/<id>`。
   Future<Directory> directoryForId(String id) async {
+    final summary = _summaries.firstWhere(
+      (s) => s.id == id,
+      orElse: () => InstanceSummary(id: id, name: id),
+    );
+    final customPath = summary.path;
+    if (customPath != null && customPath.isNotEmpty) {
+      return Directory(customPath);
+    }
     final root = await _rootResolver();
     return Directory(p.join(root.path, id));
   }
@@ -257,6 +273,32 @@ class InstanceController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 更新实例的存储路径（用于 Survivalcraft 等需要将文件放入 proot 容器
+  /// rootfs 的场景）。同步更新索引摘要与实例配置中的 [Instance.path] 字段。
+  Future<void> updatePath(String id, String? newPath) async {
+    final config = await _configFor(id);
+    if (config != null) {
+      final updated = newPath == null || newPath.isEmpty
+          ? config.copyWith(clearPath: true)
+          : config.copyWith(path: newPath);
+      await _store.saveConfig(updated);
+      if (id == _selectedId) _selected = updated;
+    }
+    final clear = newPath == null || newPath.isEmpty;
+    _summaries = [
+      for (final s in _summaries)
+        if (s.id == id)
+          s.copyWith(
+            path: newPath,
+            clearPath: clear,
+          )
+        else
+          s,
+    ];
+    await _store.saveIndex(_summaries, _selectedId);
+    notifyListeners();
+  }
+
   /// 实例目录内文件发生变化的修订号。用户在「文件」页导入文件后自增，
   /// 供依赖文件列表的页面（如服务器页扫描 jar）感知并刷新。
   int _filesRevision = 0;
@@ -264,6 +306,22 @@ class InstanceController extends ChangeNotifier {
 
   /// 通知当前实例目录内的文件发生变化（如导入 jar），触发依赖方重新扫描。
   void notifyInstanceFilesChanged() {
+    _filesRevision++;
+    notifyListeners();
+  }
+
+  /// 强制从磁盘重新加载当前选中实例的配置，并触发 UI 刷新。
+  ///
+  /// 用于 Survivalcraft 下载解压完成、整合包导入完成等场景：实例配置在流程中
+  /// 已被多次写入（path / runtime / prootStartupCommand 等），但依赖方
+  /// （控制面板、文件管理等）可能持有过期缓存。调用此方法从磁盘重新读取配置，
+  /// 自增 [filesRevision] 并通知所有监听方重建。
+  Future<void> refreshSelected() async {
+    if (_selectedId == null) return;
+    final config = await _store.loadConfig(_selectedId!);
+    if (config != null) {
+      _selected = config;
+    }
     _filesRevision++;
     notifyListeners();
   }

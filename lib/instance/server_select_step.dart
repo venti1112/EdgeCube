@@ -7,10 +7,12 @@ class EditionSelectStep extends StatelessWidget {
     super.key,
     required this.onSelectJavaEdition,
     required this.onSelectBedrockEdition,
+    this.onSelectSurvivalcraftEdition,
   });
 
   final VoidCallback onSelectJavaEdition;
   final VoidCallback onSelectBedrockEdition;
+  final VoidCallback? onSelectSurvivalcraftEdition;
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +33,15 @@ class EditionSelectStep extends StatelessWidget {
           subtitle: context.tr('instance.bedrockEditionSubtitle'),
           onTap: onSelectBedrockEdition,
         ),
+        if (onSelectSurvivalcraftEdition != null) ...[
+          const SizedBox(height: 12),
+          ServerTypeTile(
+            icon: Icons.public_outlined,
+            title: context.tr('instance.survivalcraftEditionTitle'),
+            subtitle: context.tr('instance.survivalcraftEditionSubtitle'),
+            onTap: onSelectSurvivalcraftEdition!,
+          ),
+        ],
       ],
     );
   }
@@ -171,6 +182,11 @@ const Map<String, ServerTypeEntry> _serverTypeEntries = {
     imageAssetPath: 'assets/images/allay_logo.png',
     titleKey: 'instance.allayTitle',
     subtitleKey: 'instance.allaySubtitle',
+  ),
+  'survivalcraft': ServerTypeEntry(
+    icon: Icons.public_outlined,
+    titleKey: 'instance.survivalcraftTitle',
+    subtitleKey: 'instance.survivalcraftSubtitle',
   ),
 };
 

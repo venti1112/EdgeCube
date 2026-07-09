@@ -54,6 +54,7 @@ class ServerService {
     required String runtime,
     required List<String> jvmArgs,
     required List<String> programArgs,
+    bool directExecute = false,
   }) {
     return _method.invokeMethod('start', {
       'instanceId': instanceId,
@@ -63,6 +64,7 @@ class ServerService {
       'runtime': runtime,
       'jvmArgs': jvmArgs,
       'programArgs': programArgs,
+      'directExecute': directExecute,
     });
   }
 

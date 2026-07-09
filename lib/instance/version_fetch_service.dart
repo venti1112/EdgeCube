@@ -308,6 +308,154 @@ class VersionFetchService {
     }
   }
 
+  /// 获取 SurvivalcraftNet 联机版的发行版列表（Gitee Releases）。
+  ///
+  /// 数据源：`https://gitee.com/api/v5/repos/SC-SPM/SurvivalcraftNet/releases`
+  /// 返回每个发行版的 `tag_name`，按发布时间倒序（最新在前）。
+  /// 同时缓存每个 tag 对应的服务端资产名，供下载时使用。
+  static Future<List<String>> fetchSurvivalcraftVersions() async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://gitee.com/api/v5/repos/SC-SPM/SurvivalcraftNet/releases?per_page=40',
+        ),
+      );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      if (res.statusCode != 200) {
+        throw Exception('HTTP ${res.statusCode}');
+      }
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as List<dynamic>;
+      return json
+          .map<String>((r) => (r as Map<String, dynamic>)['tag_name'] as String)
+          .where((tag) => tag.isNotEmpty)
+          .toList();
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 从 GitHub Releases 获取 PowerNukkitX 版本列表（tag_name），
+  /// 同时从 release body 中提取对应的 MCBE 版本号返回。
+  static Future<({List<String> versions, Map<String, String> mcVersions})>
+      fetchPowernukkitxVersions() async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://api.github.com/repos/PowerNukkitX/PowerNukkitX/releases',
+        ),
+      );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as List<dynamic>;
+      final mcVersionRegex = RegExp(
+        r'\|\s*\*\*Supported Minecraft Version\*\*\s*\|\s*([\d.]+)\s*\|',
+      );
+      final versions = <String>[];
+      final mcVersions = <String, String>{};
+      for (final r in json) {
+        final release = r as Map<String, dynamic>;
+        final tagName = release['tag_name'] as String;
+        versions.add(tagName);
+        final bodyText = release['body'] as String?;
+        if (bodyText != null) {
+          final match = mcVersionRegex.firstMatch(bodyText);
+          if (match != null) {
+            mcVersions[tagName] = match.group(1)!;
+          }
+        }
+      }
+      return (versions: versions, mcVersions: mcVersions);
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 获取 PocketMine-MP 版本列表（5.x 稳定版，降序）及每个版本对应的 MCBE 版本。
+  ///
+  /// 数据源：https://github.com/pmmp/update.pmmp.io/tree/master/channels
+  static Future<({List<String> versions, Map<String, String> mcpeVersions})>
+      fetchPocketmineVersions() async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://api.github.com/repos/pmmp/update.pmmp.io/contents/channels',
+        ),
+      );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as List<dynamic>;
+
+      // 仅匹配 5.x 稳定版本文件名（如 5、5.44、5.25.0），排除 alpha/beta 等。
+      final versionPattern = RegExp(r'^5(\.\d+)*$');
+      final versions = <String>[];
+      for (final item in json) {
+        final name = (item as Map<String, dynamic>)['name'] as String;
+        if (!name.endsWith('.json')) continue;
+        final base = name.substring(0, name.length - 5); // 去掉 .json
+        if (!versionPattern.hasMatch(base)) continue;
+        versions.add(base);
+      }
+
+      // 按版本号降序排列（最新版本在前）。
+      versions.sort((a, b) {
+        final pa = a.split('.').map(int.tryParse).toList();
+        final pb = b.split('.').map(int.tryParse).toList();
+        final len = pa.length > pb.length ? pa.length : pb.length;
+        for (int i = 0; i < len; i++) {
+          final va = i < pa.length ? (pa[i] ?? 0) : 0;
+          final vb = i < pb.length ? (pb[i] ?? 0) : 0;
+          if (va != vb) return vb.compareTo(va);
+        }
+        return 0;
+      });
+
+      // 并发获取每个版本的 mcpe_version。
+      final mcpeVersions = <String, String>{};
+      await Future.wait(
+        versions
+            .map((v) => _fetchPocketmineMcpeVersion(client, v, mcpeVersions)),
+      );
+
+      return (versions: versions, mcpeVersions: mcpeVersions);
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 获取单个 PocketMine-MP 版本对应的 MCBE 客户端版本，写入 [into]。
+  /// 失败时静默跳过（不影响版本列表）。
+  static Future<void> _fetchPocketmineMcpeVersion(
+    HttpClient client,
+    String version,
+    Map<String, String> into,
+  ) async {
+    try {
+      final req = await client.getUrl(
+        Uri.parse(
+          'https://raw.githubusercontent.com/pmmp/update.pmmp.io/master/channels/$version.json',
+        ),
+      );
+      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      final res = await req.close();
+      if (res.statusCode != 200) return;
+      final body = await res.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final mcpe = json['mcpe_version'] as String?;
+      if (mcpe != null && mcpe.isNotEmpty) {
+        into[version] = mcpe;
+      }
+    } catch (_) {
+      // 单个版本获取失败不影响整体列表。
+    }
+  }
+
   /// 解析 NeoForge Maven 元数据 XML，返回 {mcVersion: [neoforgeVersion...]}。
   static Future<Map<String, List<String>>> fetchAllNeoforgeVersions() async {
     final client = HttpClient();

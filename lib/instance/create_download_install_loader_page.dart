@@ -11,29 +11,47 @@ import '../instance/instance_controller.dart';
 import '../net/msl_mirror.dart';
 import '../server/server_service.dart';
 import 'download_info.dart';
+import 'forge_launch.dart';
 import 'progress_steps.dart';
 
-class ForgeInstallerPage extends StatefulWidget {
-  const ForgeInstallerPage({
+/// 安装加载器页的阶段：先下载 Installer，再运行安装器。
+enum _LoaderPhase { downloading, installing }
+
+/// 流程第 7 页：安装模组加载器（Forge / NeoForge 独有）。
+///
+/// 下载 Installer jar → 通过原生 MethodChannel 运行 `java -jar --installServer`
+/// → 定位生成的服务端 jar 并写入实例配置。安装成功时 `pop(true)`，由上一页
+/// （加载器版本页）负责结束整个下载流程。
+///
+/// （从旧的 forge_installer_page.dart 迁移而来，统一命名。）
+class InstallLoaderPage extends StatefulWidget {
+  const InstallLoaderPage({
     super.key,
     required this.instanceController,
     required this.instanceId,
     required this.mcVersion,
-    required this.forgeVersion,
+    required this.loaderVersion,
     required this.installerType,
   });
 
   final InstanceController instanceController;
   final String instanceId;
   final String mcVersion;
-  final String forgeVersion;
+  final String loaderVersion;
   final String installerType; // 'forge' or 'neoforge'
 
   @override
-  State<ForgeInstallerPage> createState() => _ForgeInstallerPageState();
+  State<InstallLoaderPage> createState() => _InstallLoaderPageState();
 }
 
-class _ForgeInstallerPageState extends State<ForgeInstallerPage> {
+class _InstallLoaderPageState extends State<InstallLoaderPage> {
+  /// 当前处于「下载」还是「安装」阶段，决定展示哪个视图。
+  ///
+  /// 先下载 Installer（[_LoaderPhase.downloading]），下载完成后切到安装阶段
+  /// （[_LoaderPhase.installing]）运行安装器，安装成功后 `pop(true)`。用显式阶段
+  /// 而非「进度是否为 null」来判断，避免下载 100% 后卡在下载页无法进入安装页。
+  _LoaderPhase _phase = _LoaderPhase.downloading;
+
   double? _downloadProgress;
   String? _downloadError;
   bool _installing = false;
@@ -60,12 +78,12 @@ class _ForgeInstallerPageState extends State<ForgeInstallerPage> {
 
   Future<void> _start() async {
     setState(() {
+      _phase = _LoaderPhase.downloading;
       _downloadProgress = null;
       _downloadError = null;
     });
 
-    final info = await _tryMirrorDownloadInfo() ??
-        _defaultDownloadInfo();
+    final info = await _tryMirrorDownloadInfo() ?? _defaultDownloadInfo();
     if (!mounted) return;
 
     await _downloadJar(info);
@@ -85,12 +103,12 @@ class _ForgeInstallerPageState extends State<ForgeInstallerPage> {
     if (widget.installerType == 'forge') {
       return DownloadInfo(
         url:
-            'https://maven.minecraftforge.net/net/minecraftforge/forge/${widget.mcVersion}-${widget.forgeVersion}/forge-${widget.mcVersion}-${widget.forgeVersion}-installer.jar',
+            'https://maven.minecraftforge.net/net/minecraftforge/forge/${widget.mcVersion}-${widget.loaderVersion}/forge-${widget.mcVersion}-${widget.loaderVersion}-installer.jar',
       );
     }
     return DownloadInfo(
       url:
-          'https://maven.neoforged.net/releases/net/neoforged/neoforge/${widget.forgeVersion}/neoforge-${widget.forgeVersion}-installer.jar',
+          'https://maven.neoforged.net/releases/net/neoforged/neoforge/${widget.loaderVersion}/neoforge-${widget.loaderVersion}-installer.jar',
     );
   }
 
@@ -154,7 +172,9 @@ class _ForgeInstallerPageState extends State<ForgeInstallerPage> {
   }
 
   Future<void> _runInstaller(String installerPath) async {
+    // 下载完成，切换到安装阶段。
     setState(() {
+      _phase = _LoaderPhase.installing;
       _installing = true;
       _installError = null;
       _installLogs.clear();
@@ -200,7 +220,10 @@ class _ForgeInstallerPageState extends State<ForgeInstallerPage> {
       final dir = await widget.instanceController.directoryForId(
         widget.instanceId,
       );
-      final serverJar = _findServerJar(dir, prefix: prefix);
+      // 先找旧版布局的根 jar（≤MC 1.16 可 `-jar` 运行）；找不到再检测现代布局
+      // （MC 1.17+ 无根 jar，通过 libraries/.../unix_args.txt 的 @argfile 启动）。
+      final serverJar =
+          _findServerJar(dir, prefix: prefix) ?? ForgeLaunch.detectArgfile(dir);
       if (serverJar == null) {
         if (!mounted) return;
         setState(() {
@@ -285,21 +308,19 @@ class _ForgeInstallerPageState extends State<ForgeInstallerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final downloading = _phase == _LoaderPhase.downloading;
+    final title = downloading
+        ? context.tr('instance.titleDownloading')
+        : (widget.installerType == 'neoforge'
+            ? context.tr('instance.titleInstallNeoforge')
+            : context.tr('instance.titleInstallForge'));
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.installerType == 'neoforge'
-              ? context.tr('instance.titleInstallNeoforge')
-              : context.tr('instance.titleInstallForge'),
-        ),
-      ),
-      body: _downloadError != null || _downloadProgress != null
+      appBar: AppBar(title: Text(title)),
+      body: downloading
           ? DownloadingStep(
               progress: _downloadProgress,
               error: _downloadError,
-              onRetry: () {
-                Navigator.of(context).pop(false);
-              },
+              onRetry: () => Navigator.of(context).pop(false),
               onCancel: () => Navigator.of(context).pop(false),
             )
           : ForgeInstallingStep(

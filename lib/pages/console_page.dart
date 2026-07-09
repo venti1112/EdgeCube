@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:xterm/xterm.dart';
 
 import '../config/terminal_store.dart';
 import '../i18n/locale_scope.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
+import '../widgets/terminal_keys_bar.dart';
 import '../widgets/terminal_zoom.dart';
 
 /// 控制台终端页：直接交互的伪终端（PTY + xterm）+ Termux 式扩展按键栏。
@@ -170,7 +170,7 @@ class _ConsolePageState extends State<ConsolePage> {
             ),
             // RepaintBoundary 让按键栏拥有独立合成层，与 TerminalView 同步清除，
             // 避免 IndexedStack 切换时按键栏比终端慢一帧消失的视觉残留。
-            RepaintBoundary(child: _ExtraKeysBar(server)),
+            RepaintBoundary(child: TerminalKeysBar(server)),
           ],
         ),
       ),
@@ -197,123 +197,5 @@ class _ConsolePageState extends State<ConsolePage> {
             ? context.tr('console.statusNotRunning')
             : context.tr('console.statusStopped', {'name': name}),
     };
-  }
-}
-
-/// 终端扩展按键栏：两排补齐软键盘缺失的终端控制键。
-///
-/// CTRL / ALT 是粘滞修饰键（点亮后对下一次输入生效一次）；其余为瞬时键，
-/// 通过 [ServerController.sendKey] / [ServerController.sendText] 送往 PTY。
-class _ExtraKeysBar extends StatelessWidget {
-  const _ExtraKeysBar(this.server);
-
-  final ServerController server;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surfaceContainerHigh,
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                _key(context, 'ESC', () => server.sendKey(TerminalKey.escape)),
-                _key(context, '/', () => server.sendText('/')),
-                _key(context, '-', () => server.sendText('-')),
-                _key(context, 'HOME', () => server.sendKey(TerminalKey.home)),
-                _key(context, '↑', () => server.sendKey(TerminalKey.arrowUp)),
-                _key(context, 'END', () => server.sendKey(TerminalKey.end)),
-                _key(context, 'PgUp', () => server.sendKey(TerminalKey.pageUp)),
-              ],
-            ),
-            Row(
-              children: [
-                _key(context, 'TAB', () => server.sendKey(TerminalKey.tab)),
-                _key(
-                  context,
-                  'CTRL',
-                  server.toggleCtrl,
-                  active: server.ctrlDown,
-                ),
-                _key(context, 'ALT', server.toggleAlt, active: server.altDown),
-                _key(context, '←', () => server.sendKey(TerminalKey.arrowLeft)),
-                _key(context, '↓', () => server.sendKey(TerminalKey.arrowDown)),
-                _key(
-                  context,
-                  '→',
-                  () => server.sendKey(TerminalKey.arrowRight),
-                ),
-                _key(
-                  context,
-                  'PgDn',
-                  () => server.sendKey(TerminalKey.pageDown),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _key(
-    BuildContext context,
-    String label,
-    VoidCallback onTap, {
-    bool active = false,
-  }) => Expanded(
-    child: _KeyButton(label: label, onTap: onTap, active: active),
-  );
-}
-
-class _KeyButton extends StatelessWidget {
-  const _KeyButton({
-    required this.label,
-    required this.onTap,
-    this.active = false,
-  });
-
-  final String label;
-  final VoidCallback onTap;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final bg = active ? scheme.primary : scheme.surfaceContainerHighest;
-    final fg = active ? scheme.onPrimary : scheme.onSurface;
-    return Padding(
-      padding: const EdgeInsets.all(2),
-      child: Material(
-        color: bg,
-        borderRadius: BorderRadius.circular(6),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(6),
-          onTap: onTap,
-          // 不抢焦点，避免点击扩展键时收起软键盘 / 让终端失焦。
-          canRequestFocus: false,
-          child: Container(
-            height: 38,
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.clip,
-              style: TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: fg,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }

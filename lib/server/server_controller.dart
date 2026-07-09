@@ -17,6 +17,7 @@ import '../config/network_store.dart';
 import '../config/terminal_store.dart';
 import '../tunnel/tunnel_service.dart';
 import 'runtime_service.dart';
+import '../widgets/terminal_keys_bar.dart';
 
 /// 匹配 Minecraft 服务端日志中玩家加入/离开的正则（兼容英文与中文输出）。
 ///
@@ -169,7 +170,7 @@ class CrashData {
 ///
 /// 单活动进程模型：同一时刻只跟踪一个正在运行的服务端，[runningInstanceId]
 /// 标识它属于哪个实例。日志为所有页面共享，故本控制器置于全局 Scope。
-class ServerController extends ChangeNotifier {
+class ServerController extends ChangeNotifier implements TerminalKeysController {
   ServerController({
     ServerService? service,
     UpnpService? upnp,
@@ -206,7 +207,9 @@ class ServerController extends ChangeNotifier {
   /// （与 Termux 的 CTRL/ALT 行为一致）。仅在原始终端模式下用于变换软键盘按键。
   bool _ctrlDown = false;
   bool _altDown = false;
+  @override
   bool get ctrlDown => _ctrlDown;
+  @override
   bool get altDown => _altDown;
 
   // ——————————————————————————————————————————————————————————
@@ -295,6 +298,7 @@ class ServerController extends ChangeNotifier {
   List<String> _lastJvmArgs = const [];
   List<String> _lastProgramArgs = const [];
   bool _lastCompatMode = false;
+  bool _lastDirectExecute = false;
 
   /// 优雅停止完成后是否自动重新启动（restart 流程中置位）。
   bool _pendingRestart = false;
@@ -509,8 +513,15 @@ class ServerController extends ChangeNotifier {
     required List<String> jvmArgs,
     required List<String> programArgs,
     bool compatMode = false,
+    bool directExecute = false,
   }) async {
     if (_status != ServerStatus.stopped) return;
+    // directExecute（如 Survivalcraft 直接运行容器内二进制）的程序使用
+    // 原始终端交互，命令行编辑模式会导致无法操作、控制台闪烁。启动前先
+    // 切到原始终端模式，PTY 建立后回显即为原始模式所需的开回显状态。
+    if (directExecute && _lineMode) {
+      setLineMode(false);
+    }
     if (await TerminalStore.loadAutoClearLogOnStart()) {
       clearLog();
     }
@@ -531,6 +542,7 @@ class ServerController extends ChangeNotifier {
     _lastJvmArgs = jvmArgs;
     _lastProgramArgs = programArgs;
     _lastCompatMode = compatMode;
+    _lastDirectExecute = directExecute;
     try {
       final runtimes = await const RuntimeService().installedRuntimes();
       for (final rt in runtimes) {
@@ -560,6 +572,7 @@ class ServerController extends ChangeNotifier {
         runtime: runtime,
         jvmArgs: jvmArgs,
         programArgs: programArgs,
+        directExecute: directExecute,
       );
       // 兜底：若 state 事件尚未把状态推进到 starting/running。
       // 兼容模式下跳过「启动中」，直接视为「运行中」。
@@ -641,6 +654,7 @@ class ServerController extends ChangeNotifier {
       jvmArgs: _lastJvmArgs,
       programArgs: _lastProgramArgs,
       compatMode: _lastCompatMode,
+      directExecute: _lastDirectExecute,
     );
   }
 
@@ -695,12 +709,14 @@ class ServerController extends ChangeNotifier {
   }
 
   /// 切换粘滞 Ctrl（扩展按键栏的 CTRL 键）。
+  @override
   void toggleCtrl() {
     _ctrlDown = !_ctrlDown;
     notifyListeners();
   }
 
   /// 切换粘滞 Alt（扩展按键栏的 ALT 键）。
+  @override
   void toggleAlt() {
     _altDown = !_altDown;
     notifyListeners();
@@ -726,6 +742,7 @@ class ServerController extends ChangeNotifier {
 
   /// 发送一个特殊键（ESC / TAB / 方向键 / HOME / END / PgUp / PgDn 等）。
   /// 行编辑模式直接操作编辑器；原始模式经 xterm 的 inputHandler 生成转义序列。
+  @override
   void sendKey(TerminalKey key) {
     final ctrl = _ctrlDown;
     final alt = _altDown;
@@ -738,6 +755,7 @@ class ServerController extends ChangeNotifier {
   }
 
   /// 发送一段字面文本（扩展按键栏的 `-` `/` `|` 等）。
+  @override
   void sendText(String text) {
     if (_lineMode) {
       for (var i = 0; i < text.length; i++) {

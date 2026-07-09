@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:xterm/xterm.dart';
 
 import '../config/terminal_store.dart';
 import '../i18n/locale_scope.dart';
 import '../shell/shell_controller.dart';
 import '../shell/shell_scope.dart';
 import '../shell/shell_service.dart';
+import '../widgets/terminal_keys_bar.dart';
 import '../widgets/terminal_zoom.dart';
 
 /// Shell 终端页：在设备上运行一个交互式 shell（系统 sh 或 proot 容器）。
@@ -165,7 +165,7 @@ class _ShellPageState extends State<ShellPage> {
                 onFontSizeChangeEnd: _saveFontSize,
               ),
             ),
-            _ExtraKeysBar(shell),
+            TerminalKeysBar(shell),
           ],
         ),
       ),
@@ -173,112 +173,3 @@ class _ShellPageState extends State<ShellPage> {
   }
 }
 
-/// 终端扩展按键栏：两排补齐软键盘缺失的终端控制键（与控制台页一致）。
-///
-/// CTRL / ALT 是粘滞修饰键（点亮后对下一次输入生效一次）；其余为瞬时键，
-/// 直接发送到 PTY（与控制台页共用同一套按键栏逻辑，但 shell 控制器不维护
-/// 命令行编辑模式，所有键均以原始字节写入）。
-class _ExtraKeysBar extends StatelessWidget {
-  const _ExtraKeysBar(this.shell);
-
-  final ShellController shell;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-      child: Column(
-        children: [
-          // 第一排：粘滞修饰键 + ESC/TAB/方向/DEL
-          Row(
-            children: [
-              _StickyKey('CTRL', shell.ctrlDown, shell.toggleCtrl),
-              _StickyKey('ALT', shell.altDown, shell.toggleAlt),
-              _InstantKey('ESC', () => shell.sendKey(TerminalKey.escape)),
-              _InstantKey('TAB', () => shell.sendKey(TerminalKey.tab)),
-              _InstantKey('↑', () => shell.sendKey(TerminalKey.arrowUp)),
-              _InstantKey('↓', () => shell.sendKey(TerminalKey.arrowDown)),
-              _InstantKey('←', () => shell.sendKey(TerminalKey.arrowLeft)),
-              _InstantKey('→', () => shell.sendKey(TerminalKey.arrowRight)),
-            ],
-          ),
-          // 第二排：HOME/END/PgUp/PgDn/INS/DEL + 常用符号
-          Row(
-            children: [
-              _InstantKey('HOME', () => shell.sendKey(TerminalKey.home)),
-              _InstantKey('END', () => shell.sendKey(TerminalKey.end)),
-              _InstantKey('PGUP', () => shell.sendKey(TerminalKey.pageUp)),
-              _InstantKey('PGDN', () => shell.sendKey(TerminalKey.pageDown)),
-              _InstantKey('INS', () => shell.sendKey(TerminalKey.insert)),
-              _InstantKey('DEL', () => shell.sendKey(TerminalKey.delete)),
-              _InstantKey('-', () => shell.sendText('-')),
-              _InstantKey('/', () => shell.sendText('/')),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 粘滞修饰键：点亮后对下一次输入生效一次，然后自动复位。
-class _StickyKey extends StatelessWidget {
-  const _StickyKey(this.label, this.active, this.onToggle);
-
-  final String label;
-  final bool active;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-        child: FilledButton(
-          onPressed: onToggle,
-          style: FilledButton.styleFrom(
-            backgroundColor: active
-                ? theme.colorScheme.primary
-                : theme.colorScheme.surfaceContainerHighest,
-            foregroundColor: active
-                ? theme.colorScheme.onPrimary
-                : theme.colorScheme.onSurface,
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            minimumSize: const Size(0, 0),
-          ),
-          child: Text(label, style: const TextStyle(fontSize: 12)),
-        ),
-      ),
-    );
-  }
-}
-
-/// 瞬时键：点击立即发送对应字节，无状态。
-class _InstantKey extends StatelessWidget {
-  const _InstantKey(this.label, this.onTap);
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-        child: FilledButton(
-          onPressed: onTap,
-          style: FilledButton.styleFrom(
-            backgroundColor: theme.colorScheme.surfaceContainerHighest,
-            foregroundColor: theme.colorScheme.onSurface,
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            minimumSize: const Size(0, 0),
-          ),
-          child: Text(label, style: const TextStyle(fontSize: 12)),
-        ),
-      ),
-    );
-  }
-}

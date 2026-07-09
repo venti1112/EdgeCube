@@ -5,13 +5,14 @@ import 'package:flutter/foundation.dart';
 import 'package:xterm/xterm.dart';
 
 import 'shell_service.dart';
+import '../widgets/terminal_keys_bar.dart';
 
 /// 交互式 shell 终端的全局控制器。
 ///
 /// 持有 xterm [Terminal]（故切页/重建不丢内容），把按键写入原生 PTY、把 PTY 输出
 /// 喂给终端渲染。与 [ServerController] 不同，shell 在真实 TTY 上自带行编辑/历史/补全，
 /// 因此这里**只有原始模式**：不做本地行编辑，仅转发字节并应用粘滞 CTRL/ALT 修饰键。
-class ShellController extends ChangeNotifier {
+class ShellController extends ChangeNotifier implements TerminalKeysController {
   ShellController({ShellService? service})
     : _service = service ?? ShellService() {
     _sub = _service.events().listen(_onEvent);
@@ -42,7 +43,9 @@ class ShellController extends ChangeNotifier {
   // —— 粘滞修饰键（扩展按键栏的 CTRL/ALT，点亮后对下一次输入生效一次）——
   bool _ctrlDown = false;
   bool _altDown = false;
+  @override
   bool get ctrlDown => _ctrlDown;
+  @override
   bool get altDown => _altDown;
 
   /// 初始化：同步当前运行状态（进程在原生侧为单例，跨页面/重建存活）。
@@ -55,7 +58,7 @@ class ShellController extends ChangeNotifier {
   ///
   /// [shellId] 决定启动哪种 shell：
   ///  - null/"system_sh"：系统 sh（默认）
-  ///  - "proot:<rootfsId>"：进入指定 rootfs 的 proot 容器
+  ///  - "proot:`<rootfsId>`"：进入指定 rootfs 的 proot 容器
   Future<void> start({String? cwd, String? shellId}) async {
     if (_running) return;
     try {
@@ -125,17 +128,20 @@ class ShellController extends ChangeNotifier {
     notifyListeners();
   }
 
+  @override
   void toggleCtrl() {
     _ctrlDown = !_ctrlDown;
     notifyListeners();
   }
 
+  @override
   void toggleAlt() {
     _altDown = !_altDown;
     notifyListeners();
   }
 
   /// 发送特殊键（ESC / TAB / 方向键 / HOME / END / PgUp / PgDn 等）。
+  @override
   void sendKey(TerminalKey key) {
     final ctrl = _ctrlDown;
     final alt = _altDown;
@@ -144,6 +150,7 @@ class ShellController extends ChangeNotifier {
   }
 
   /// 发送一段字面文本（扩展按键栏的 `-` `/` 等）。
+  @override
   void sendText(String text) => _onTerminalOutput(text);
 
   void _onTerminalResize(

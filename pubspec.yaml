@@ -29,7 +29,7 @@ dependencies:
   mcp_dart: ^2.2.2
   image: ^4.8.0
   archive: ^4.0.9
-  flutter_markdown_plus: ^1.0.9
+  flutter_markdown_plus: ^1.0.11
   re_editor: ^0.10.0
   re_highlight: ^0.0.3
   flutter_svg: ^2.3.0

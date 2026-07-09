@@ -80,6 +80,8 @@ object ProotEnvironment {
     const val ENV_PYTHON = "python"
     /** box64：ARM64 上运行 x86_64 二进制的模拟器，envMainBin 为 /usr/local/bin/box64。 */
     const val ENV_BOX64 = "box64"
+    /** .NET (ASP.NET Core)：运行时通过 Microsoft 源安装 aspnetcore-runtime，envMainBin 为 /usr/bin/dotnet。 */
+    const val ENV_DOTNET = "dotnet"
     /** 纯容器：rootfs 无清单或 envType=generic；用户须提供完整启动命令。 */
     const val ENV_GENERIC = "generic"
 
@@ -87,7 +89,7 @@ object ProotEnvironment {
      * rootfs 内嵌入的元数据清单（[MANIFEST_FILE]）。
      *
      * - [formatVersion]：清单格式版本，目前固定为 2。
-     * - [envType]：环境类型（java/php/node/python/box64/generic/…），决定默认启动方式。
+     * - [envType]：环境类型（java/php/node/python/box64/dotnet/generic/…），决定默认启动方式。
      * - [envName]：展示名（如 "OpenJDK 21"），用于 UI。
      * - [envVersionName]：运行时版本字符串（如 "21.0.5+11"）。
      * - [envMainBin]：环境主程序的容器内绝对路径（如 "/usr/bin/java"）；
@@ -451,8 +453,9 @@ object ProotEnvironment {
      * 根据 rootfs 元数据 [RootfsManifest.envType] 决定启动方式：
      *  - java：执行 [RootfsManifest.envMainBin]（如 /usr/bin/java），附加 -XX:ErrorFile
      *    与 -Djava.io.tmpdir 等容器内可用的 JVM 标准参数，再追加 [jvmArgs] 与 [programArgs]。
-     *  - php / node / python / box64：执行 envMainBin，附加 envArgs（如有）+ programArgs。
+     *  - php / node / python / box64 / dotnet：执行 envMainBin，附加 envArgs（如有）+ programArgs。
      *    box64 的 envMainBin 为 /usr/local/bin/box64，programArgs 为 x86_64 服务端文件。
+     *    dotnet 的 envMainBin 为 /usr/bin/dotnet，programArgs 为 .dll 文件。
      *  - generic（无清单或 envMainBin 为空）：调用方必须改用 [buildGenericCommand]
      *    并提供完整启动命令；本方法对 generic rootfs 抛出 [IllegalStateException]。
      *
@@ -527,13 +530,21 @@ object ProotEnvironment {
                 argv.add("-Djava.io.tmpdir=/tmp")
             }
             else -> {
-                // php/node/python/box64 等：附加清单声明的固定前缀参数。
+                // php/node/python/box64/dotnet 等：附加清单声明的固定前缀参数。
                 // box64 的 envMainBin 是 /usr/local/bin/box64，programArgs 是 x86_64 文件。
+                // dotnet 的 envMainBin 是 /usr/bin/dotnet，programArgs 是 .dll 文件。
             }
         }
-        // 清单声明的固定前缀参数（如 java 的 ["-jar"]）
-        argv.addAll(manifest.envArgs)
-        // 调用方传入的运行时参数（如 -Xmx2G）
+        // 清单声明的固定前缀参数（如 java 的 ["-jar"]）。
+        // 现代 Forge/NeoForge（1.17+）通过 @argfile（libraries/.../unix_args.txt）
+        // 启动，argfile 内部已含主类（BootstrapLauncher），不需要 -jar。
+        // 当 jvmArgs 中存在以 "@" 开头的参数时跳过 envArgs，
+        // 避免 JVM 把 -jar 之后的内容误当成 jar 文件名。
+        val hasArgfile = jvmArgs.any { it.startsWith("@") }
+        if (!hasArgfile) {
+            argv.addAll(manifest.envArgs)
+        }
+        // 调用方传入的运行时参数（如 -Xmx2G、@libraries/.../unix_args.txt）
         argv.addAll(jvmArgs)
         // 调用方传入的程序参数（如 server.jar nogui）
         argv.addAll(programArgs)
@@ -594,7 +605,12 @@ object ProotEnvironment {
         argv.add("-c")
         argv.add(command)
 
-        val env = baseHostEnv(context)
+        val env = baseHostEnv(context).toMutableMap()
+        // 用户命令可能调用容器内系统工具（chmod / cp / ls 等），PATH 必须包含
+        // 容器内标准目录；baseHostEnv 的 PATH 只含 bootstrap/bin 与 /system/bin，
+        // 会导致 sh -c "chmod ..." 报「未找到命令」。
+        env["PATH"] = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        env["HOME"] = "/root"
         return ProotCommand(prootBin, argv, env, work.absolutePath)
     }
 

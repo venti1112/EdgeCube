@@ -416,6 +416,7 @@ class MainActivity : FlutterActivity() {
                     val runtime = call.argument<String>("runtime") ?: "java"
                     val jvmArgs = call.argument<List<String>>("jvmArgs") ?: emptyList()
                     val programArgs = call.argument<List<String>>("programArgs") ?: emptyList()
+                    val directExecute = call.argument<Boolean>("directExecute") ?: false
                     if (instanceId == null || workingDir == null || runtimeId == null) {
                         result.error("BAD_ARGS", "缺少 instanceId/workingDir/runtimeId", null)
                     } else {
@@ -424,7 +425,7 @@ class MainActivity : FlutterActivity() {
                         thread {
                             try {
                                 serverManager.start(
-                                    instanceId, instanceName, workingDir, runtimeId, runtime, jvmArgs, programArgs,
+                                    instanceId, instanceName, workingDir, runtimeId, runtime, jvmArgs, programArgs, directExecute,
                                 )
                                 runOnUiThread { result.success(true) }
                             } catch (e: Exception) {
