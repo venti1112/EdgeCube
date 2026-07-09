@@ -1,9 +1,6 @@
 package com.venti1112.edgecube.server
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.LinkProperties
-import android.net.Network
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
@@ -76,11 +73,10 @@ recursionguard.enabled=0"""
          *  - 英文 "Done (Xs)!"（Velocity/Paper）
          *  - 中文 "启动完成 (Xs)"（Paper 中文）
          *  - 中文 "加载完成 (X 秒)！"（PocketMine-MP）
-         *  - "Dragonfly server started."（Dragonfly）
          *  - "Network interface started at <ip>:<port> [(... )] (<ms> ms)"（Allay，
          *    IPv4-only 与 IPv6 双栈两种变体的公共前缀与尾缀）。 */
         private val DONE_PATTERN =
-            Regex("""Done\s*\([0-9.]+s\)!|启动完成\s*\([0-9.]+s\)|加载完成\s*\([0-9.]+\s*秒\)！?|Dragonfly server started\.|Network interface started at .+\([0-9]+\s*ms\)""")
+            Regex("""Done\s*\([0-9.]+s\)!|启动完成\s*\([0-9.]+s\)|加载完成\s*\([0-9.]+\s*秒\)！?|Network interface started at .+\([0-9]+\s*ms\)""")
 
         /** 日志中的 ANSI 转义序列（CSI，如颜色码 \x1B[36m）；按行解析前剔除。 */
         private val ANSI_PATTERN = Regex("\\x1B\\[[0-?]*[ -/]*[@-~]")
@@ -117,6 +113,8 @@ recursionguard.enabled=0"""
     @Volatile private var runningInstanceName: String? = null
     @Volatile private var runningRuntimeId: String? = null
     @Volatile private var currentStatus: String? = null
+    /** 当前启动是否为 proot 模式（顶层进程是 proot，实际服务端在其子进程中）。 */
+    @Volatile private var runningIsProot: Boolean = false
 
     // —— 最近一次由界面上报的终端尺寸；新进程沿用，避免一闪一变。 ——
     @Volatile private var lastRows = DEFAULT_ROWS
@@ -132,6 +130,9 @@ recursionguard.enabled=0"""
 
     /** 子进程 PID；未运行时返回 -1。 */
     val pid: Int get() = if (running) processId else -1
+
+    /** 当前启动是否为 proot 模式（顶层进程是 proot，服务端在其子进程中）。 */
+    val isProotLaunch: Boolean get() = running && runningIsProot
 
     /**
      * 设置/解除事件接收端。设置时回放历史（清洗日志行 + 原始终端字节）与当前状态，
@@ -185,6 +186,9 @@ recursionguard.enabled=0"""
         programArgs: List<String>,
     ) {
         if (isRunning) throw IllegalStateException("已有服务端正在运行，请先停止")
+
+        // 重置上一次运行的 proot 标记（防止误读旧值）
+        runningIsProot = false
 
         val work = File(workingDir)
         if (!work.isDirectory) throw IllegalStateException("工作目录不存在：$workingDir")
@@ -264,45 +268,39 @@ recursionguard.enabled=0"""
             env["TERM"] = "xterm-256color"
             // PHP 是 musl 静态链接，不依赖 Bionic，故不需要 LD_PRELOAD=libtagfix.so
             // （MTE 标签问题不存在），也不需要 LD_LIBRARY_PATH。
-        } else if (runtime == "dragonfly") {
-            // Dragonfly：执行 nativeLibraryDir 下的 libdragonflyloader.so，由它
-            // dlopen 数据目录里 .ecpkg 安装的 libdragonfly.so（Go c-shared）。
-            val manifest = RuntimeInstaller.installedRuntime(appContext, runtimeId)
-                ?: throw IllegalStateException("Dragonfly 运行时 $runtimeId 未安装，请先在「管理 → 运行环境」导入")
-            val runtimeDir = RuntimeInstaller.runtimeDir(appContext, runtimeId)
-            val dragonflyLib = File(runtimeDir, manifest.launcher.lib)
-            if (!dragonflyLib.exists()) {
-                throw IllegalStateException("未找到 Dragonfly 引擎库：${dragonflyLib.absolutePath}")
-            }
-
-            val loaderBin = File(nativeDir, "libdragonflyloader.so")
-            if (!loaderBin.exists()) {
-                throw IllegalStateException("未找到 libdragonflyloader.so，请确认其已随 APK 打包到 lib 目录")
-            }
-
-            cmd = loaderBin.absolutePath
-            argv.add(loaderBin.absolutePath)
-            argv.addAll(programArgs) // 即 [config.yml 绝对路径]
-
-            env["EC_DRAGONFLY_LIB"] = dragonflyLib.absolutePath
-            env["LD_LIBRARY_PATH"] = "${dragonflyLib.parentFile?.absolutePath}:$nativeDir"
-            env["HOME"] = workingDir
-            env["TMPDIR"] = appContext.cacheDir.absolutePath
-            env["LANG"] = "en_US.UTF-8"
-            env["TERM"] = "xterm-256color"
         } else if (runtime == "proot") {
-            // proot：在用户导入的 Linux rootfs 内运行「原版 Java」。
-            // runtimeId 此处为 rootfs id（如 "debian-12-jdk21"），rootfs 内自带
-            // 未打补丁的 OpenJDK，绕过 Android JRE 的兼容性问题。
+            // proot：在用户导入的 Linux rootfs 内运行服务端。
+            runningIsProot = true
+            // runtimeId 此处为 rootfs id（如 "debian-12-jdk21"）。
+            // 根据 rootfs 内嵌清单（edgecube-rootfs.json）决定启动方式：
+            //  - 带元数据且 envMainBin 非空：按清单声明的 envType/envArgs 启动主程序
+            //    （java/php/node/python…），jvmArgs 作为运行时参数追加，programArgs
+            //    作为程序参数追加（如 server.jar nogui）。
+            //  - 无清单或 envType=generic（纯容器）：programArgs 拼接为完整启动命令，
+            //    由 buildGenericCommand 用 sh -c 包裹执行，支持 shell 语法。
             // proot 进程不继承 Android 系统环境变量（ANDROID_DATA/BOOTCLASSPATH 等
             // 会泄漏进容器造成干扰），改用 ProotEnvironment 返回的干净环境。
-            val prootCmd = ProotEnvironment.buildServerCommand(
-                appContext,
-                runtimeId,
-                workingDir,
-                jvmArgs,
-                programArgs,
-            )
+            val rootfs = ProotEnvironment.installedRootfs(appContext, runtimeId)
+                ?: throw IllegalStateException("proot rootfs '$runtimeId' 未安装，请先在「管理 → 运行环境」导入 rootfs.tar.zst")
+            val prootCmd = if (rootfs.isGeneric) {
+                // 纯容器：用户必须在实例配置中提供完整启动命令。
+                // programArgs 各元素以空格拼接为完整命令行（如 ["/usr/bin/python3", "main.py"]）。
+                val command = programArgs.joinToString(" ").trim()
+                ProotEnvironment.buildGenericCommand(
+                    appContext,
+                    runtimeId,
+                    workingDir,
+                    command,
+                )
+            } else {
+                ProotEnvironment.buildServerCommand(
+                    appContext,
+                    runtimeId,
+                    workingDir,
+                    jvmArgs,
+                    programArgs,
+                )
+            }
             cmd = prootCmd.cmd
             argv.addAll(prootCmd.argv)
             env.clear()
@@ -323,6 +321,12 @@ recursionguard.enabled=0"""
             argv.add("-XX:ErrorFile=/proc/self/fd/2")
             // Android 上 /tmp 不可写，全局指定可写的 tmpdir
             argv.add("-Djava.io.tmpdir=${appContext.cacheDir.absolutePath}")
+            // 用户自定义 DNS：Android 无 /etc/resolv.conf，JVM 默认 DNS 解析可能
+            // 失败或使用系统 DNS。通过该属性显式注入用户配置的 DNS 服务器列表。
+            val dnsServers = ProotEnvironment.loadCustomDnsServers(appContext)
+            if (dnsServers.isNotEmpty()) {
+                argv.add("-Dsun.net.spi.nameserver.nameservers=${dnsServers.joinToString(",")}")
+            }
             argv.addAll(jvmArgs)
             argv.addAll(programArgs)
 
@@ -417,6 +421,7 @@ recursionguard.enabled=0"""
                     runningInstanceId = null
                     runningInstanceName = null
                     runningRuntimeId = null
+                    runningIsProot = false
                     currentStatus = null
                     emitState(null, id, name, code)
                 }
@@ -616,21 +621,18 @@ recursionguard.enabled=0"""
     }
 
     /**
-     * 把当前系统的 DNS 服务器写入 /sdcard/resolv.conf。
+     * 把用户配置的 DNS 服务器写入 /sdcard/resolv.conf。
      *
      * PMMP 的 musl libc patch（sdcard-resolv-conf.diff）把 resolv.conf 路径从
      * /etc/resolv.conf 改到 /sdcard/resolv.conf（Android /etc 不可写）。PHP 静态
      * 链接 musl，所有 getaddrinfo 调用都从该路径读取 DNS 服务器。Android 不维护
-     * 这个文件，故须在启动 PHP 前主动写入当前网络的 DNS。
+     * 这个文件，故须在启动 PHP 前主动写入用户配置的 DNS。
      *
-     * 通过 ConnectivityManager.getLinkProperties() 获取活动网络的 DNS 服务器列表
-     * （与 Android 系统一致，跟随 WiFi/移动数据切换）。若获取失败则回退到公共 DNS。
+     * DNS 来源：用户在「网络设置」中配置的自定义 DNS（默认 8.8.8.8,1.1.1.1），
+     * 通过 [ProotEnvironment.loadCustomDnsServers] 从 config/network.json 读取。
      */
     private fun writeResolvConf() {
-        val dnsServers = collectDnsServers().ifEmpty {
-            // 回退：无法获取系统 DNS 时用公共 DNS（Google + Cloudflare）。
-            listOf("8.8.8.8", "1.1.1.1")
-        }
+        val dnsServers = ProotEnvironment.loadCustomDnsServers(appContext)
         val sb = StringBuilder()
         sb.append("# Generated by EdgeCube for PocketMine-MP (musl libc resolv.conf)\n")
         for (dns in dnsServers) {
@@ -649,33 +651,5 @@ recursionguard.enabled=0"""
             // 即使写失败也不阻断启动——PHP 启动后仍可访问 IP 直连的服务。
             emitNotice("[EdgeCube] 写入 resolv.conf 失败：${e.message}，DNS 解析可能不可用")
         }
-    }
-
-    /** 通过 ConnectivityManager 收集活动网络的 DNS 服务器地址。 */
-    private fun collectDnsServers(): List<String> {
-        val result = LinkedHashSet<String>()
-        try {
-            val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE)
-                as? ConnectivityManager ?: return emptyList()
-
-            // 优先取活动网络的 DNS；若没有（如 Android 7+ getActiveNetwork 返回 null），
-            // 遍历所有网络。
-            val networks = mutableListOf<Network>()
-            cm.activeNetwork?.let { networks.add(it) }
-            if (networks.isEmpty()) {
-                cm.allNetworks?.let { networks.addAll(it) }
-            }
-
-            for (net in networks) {
-                val lp: LinkProperties = cm.getLinkProperties(net) ?: continue
-                for (addr in lp.dnsServers) {
-                    if (addr.isLoopbackAddress || addr.isLinkLocalAddress) continue
-                    val ip = addr.hostAddress ?: continue
-                    result.add(ip)
-                }
-            }
-        } catch (_: Exception) {
-        }
-        return result.toList()
     }
 }

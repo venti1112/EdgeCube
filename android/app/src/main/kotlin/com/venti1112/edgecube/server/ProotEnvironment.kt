@@ -24,8 +24,8 @@ import org.json.JSONObject
  *  - bootstrap 目录（`filesDir/bootstrap/{bin,lib}`）通过 symlink 暴露这些 .so，
  *    使 proot 在构造子进程 PATH、解释器路径时拿到「正常的 Linux 路径」。
  *  - rootfs 存放在 `filesDir/proot_rootfs/<id>/`，用户导入 `rootfs.tar.zst` 解压得到。
- *  - 服务端工作目录通过 bind 挂载到容器内 `/mnt/server`，cwd 设为该路径，使 Java
- *    在容器内看到的 server.jar / world / plugins 等文件实际位于 Android 可写存储。
+ *  - 服务端工作目录通过 bind 挂载到容器内 `/mnt/server`，cwd 设为该路径，使容器内
+ *    看到的 server.jar / world / plugins 等文件实际位于 Android 可写存储。
  *
  * 必须随 APK 打包的原生库（来自 tiny_container releases 的 jniLibs.zip）：
  *  - lib__bin__proot-classic__.so       proot 可执行文件（带 tiny_computer 补丁）
@@ -39,6 +39,13 @@ import org.json.JSONObject
  *    libbusybox.so.1.37.0   proot/busybox/tar 的运行时依赖
  *
  *  详见 README「proot 集成」一节。
+ *
+ * ## 多环境支持（formatVersion=2）
+ *
+ * 每个 rootfs 在根目录可携带 `edgecube-rootfs.json` 清单，声明环境类型
+ * （java/php/node/python/generic…）与主程序路径。EdgeCube 导入时直接读取该清单，
+ * 不再扫描文件系统判断 Java 路径。缺失清单的 rootfs 视为 `generic` 纯容器，
+ * 启动时必须由用户在实例配置中提供完整启动命令（[buildGenericCommand]）。
  */
 object ProotEnvironment {
 
@@ -63,18 +70,71 @@ object ProotEnvironment {
     /** 容器内 Android 共享存储的挂载点。 */
     const val GUEST_SDCARD_DIR = "/mnt/sdcard"
 
+    /** rootfs 内的元数据清单文件名（位于 rootfs 根目录）。 */
+    const val MANIFEST_FILE = "edgecube-rootfs.json"
+
+    /** 已识别的环境类型常量。未携带清单的 rootfs 视为 [ENV_GENERIC]。 */
+    const val ENV_JAVA = "java"
+    const val ENV_PHP = "php"
+    const val ENV_NODE = "node"
+    const val ENV_PYTHON = "python"
+    /** box64：ARM64 上运行 x86_64 二进制的模拟器，envMainBin 为 /usr/local/bin/box64。 */
+    const val ENV_BOX64 = "box64"
+    /** 纯容器：rootfs 无清单或 envType=generic；用户须提供完整启动命令。 */
+    const val ENV_GENERIC = "generic"
+
+    /**
+     * rootfs 内嵌入的元数据清单（[MANIFEST_FILE]）。
+     *
+     * - [formatVersion]：清单格式版本，目前固定为 2。
+     * - [envType]：环境类型（java/php/node/python/box64/generic/…），决定默认启动方式。
+     * - [envName]：展示名（如 "OpenJDK 21"），用于 UI。
+     * - [envVersionName]：运行时版本字符串（如 "21.0.5+11"）。
+     * - [envMainBin]：环境主程序的容器内绝对路径（如 "/usr/bin/java"）；
+     *   generic 时为空串，表示不预定义主程序。
+     * - [envArgs]：主程序固定前缀参数（如 java 的 ["-jar"]）；generic 时为空数组。
+     * - [serverFileHint]：服务端文件扩展名提示（如 ".jar"、".phar"、".js"），
+     *   用于 UI 在实例目录中筛选可作为服务端的文件。
+     * - [description]：人类可读的描述。
+     * - [buildDate]：构建日期字符串（YYYYMMDD）。
+     */
+    data class RootfsManifest(
+        val formatVersion: Int,
+        val envType: String,
+        val envName: String,
+        val envVersionName: String,
+        val envMainBin: String,
+        val envArgs: List<String>,
+        val serverFileHint: String,
+        val description: String,
+        val buildDate: String,
+    ) {
+        /** 是否为纯容器（无预定义主程序）。 */
+        val isGeneric: Boolean get() = envType == ENV_GENERIC || envMainBin.isBlank()
+    }
+
     /** 已安装 rootfs 的描述。 */
     data class ProotRootfs(
         val id: String,
         val dir: File,
-        val sizeBytes: Long,
         /**
-         * rootfs 内 java 可执行文件的绝对路径（容器视角）。
-         * 为 null 表示 rootfs 尚未安装 OpenJDK——可进入 shell 自行 apt install，
-         * 此时服务端启动会在 [buildServerCommand] 报错。
+         * rootfs 内嵌的元数据清单；rootfs 未携带清单时为 null（视为 generic 纯容器）。
+         *
+         * 调用方据此判断：
+         *  - 非空且 [RootfsManifest.envMainBin] 非空：按元数据 envType 启动主程序。
+         *  - null 或 envMainBin 为空：纯容器，须由用户提供完整启动命令。
          */
-        val javaBin: String?,
-    )
+        val manifest: RootfsManifest?,
+    ) {
+        /** 兼容旧调用方：返回主程序路径（容器视角），无则 null。 */
+        val envMainBin: String? get() = manifest?.envMainBin?.takeIf { it.isNotBlank() }
+
+        /** 环境类型；无清单时为 [ENV_GENERIC]。 */
+        val envType: String get() = manifest?.envType ?: ENV_GENERIC
+
+        /** 是否为纯容器（无主程序）。 */
+        val isGeneric: Boolean get() = manifest?.isGeneric ?: true
+    }
 
     /** proot 启动命令的完整描述。 */
     data class ProotCommand(
@@ -101,102 +161,67 @@ object ProotEnvironment {
             // 必须看起来像个 rootfs（含 /bin/sh 或 /usr/bin/sh）
             val sh = File(child, "bin/sh")
             if (!sh.exists() && !File(child, "usr/bin/sh").exists()) continue
-            // size 与 javaBin 优先读缓存（导入时已计算），避免每次列表都遍历
-            // 整个 rootfs（几万文件）导致 UI 卡顿。
-            val size = readOrComputeSize(context, child.name, child)
-            val javaBin = readOrComputeJavaBin(context, child.name, child)
-            result.add(ProotRootfs(child.name, child, size, javaBin))
+            // 元数据直接读 rootfs 内的 edgecube-rootfs.json。
+            val manifest = readManifest(child)
+            result.add(ProotRootfs(child.name, child, manifest))
         }
         return result.sortedBy { it.id }
     }
 
     /** 取指定 id 的 rootfs；不存在或无效返回 null。 */
     fun installedRootfs(context: Context, id: String): ProotRootfs? {
-        // 直接查目标目录，不遍历所有 rootfs（避免 buildServerCommand /
-        // buildShellCommand 每次启动都对所有 rootfs 计算 size）。
         val dir = rootfsDir(context, id)
         if (!dir.isDirectory) return null
         val sh = File(dir, "bin/sh")
         if (!sh.exists() && !File(dir, "usr/bin/sh").exists()) return null
-        val size = readOrComputeSize(context, id, dir)
-        val javaBin = readOrComputeJavaBin(context, id, dir)
-        return ProotRootfs(id, dir, size, javaBin)
+        val manifest = readManifest(dir)
+        return ProotRootfs(id, dir, manifest)
     }
 
-    // —— 元数据缓存（size / javaBin）——
-    // rootfs 含数万文件，每次列表/查询都 walkTopDown 计算大小会导致严重卡顿。
-    // 导入时计算一次写入 JSON 文件，后续直接读缓存。
-    // 应用已全面转向文件式 JSON 配置，不再使用 SharedPreferences。
+    // —— 元数据清单（rootfs 内嵌）——
 
-    private fun metaFile(context: Context): File =
-        File(context.filesDir, "proot_meta.json")
-
-    /** 读取整个元数据表；文件缺失或损坏时返回空表。 */
-    @Synchronized
-    private fun readMeta(context: Context): JSONObject {
-        val file = metaFile(context)
-        if (!file.exists()) return JSONObject()
+    /**
+     * 读取 rootfs 根目录下的 [MANIFEST_FILE]。
+     *
+     * 文件不存在或解析失败时返回 null（调用方据此把 rootfs 视为 generic 纯容器）。
+     * 不再扫描文件系统判断 Java 路径——一切以清单为准。
+     */
+    fun readManifest(rootfsDir: File): RootfsManifest? {
+        val file = File(rootfsDir, MANIFEST_FILE)
+        if (!file.isFile) return null
         return try {
             val raw = file.readText()
-            if (raw.isBlank()) JSONObject() else JSONObject(raw)
+            if (raw.isBlank()) return null
+            parseManifest(JSONObject(raw))
         } catch (_: Throwable) {
-            JSONObject()
+            null
         }
     }
 
-    /** 原子写入整个元数据表（临时文件 + rename，避免中途崩溃损坏）。 */
-    @Synchronized
-    private fun writeMeta(context: Context, meta: JSONObject) {
-        val file = metaFile(context)
-        val tmp = File(file.parentFile, "proot_meta.json.tmp")
-        tmp.writeText(meta.toString())
-        tmp.renameTo(file)
-    }
-
-    private fun readOrComputeSize(context: Context, id: String, dir: File): Long {
-        val meta = readMeta(context)
-        val entry = meta.optJSONObject(id)
-        if (entry != null && entry.has("size")) return entry.getLong("size")
-        val s = dirSize(dir)
-        val updated = readMeta(context)
-        val item = updated.optJSONObject(id) ?: JSONObject()
-        item.put("size", s)
-        updated.put(id, item)
-        writeMeta(context, updated)
-        return s
-    }
-
-    private fun readOrComputeJavaBin(context: Context, id: String, dir: File): String? {
-        val meta = readMeta(context)
-        val entry = meta.optJSONObject(id)
-        if (entry != null && entry.has("java")) {
-            return entry.optString("java").takeIf { it.isNotEmpty() }
+    /** 解析清单 JSON 为 [RootfsManifest]；字段缺失时给安全默认值。 */
+    private fun parseManifest(root: JSONObject): RootfsManifest {
+        val formatVersion = root.optInt("formatVersion", 1)
+        val envType = root.optString("envType").takeIf { it.isNotEmpty() } ?: ENV_GENERIC
+        val envMainBin = root.optString("envMainBin")
+        // envArgs：JSON 数组，逐项取字符串；缺失或类型不符时空数组
+        val envArgs = mutableListOf<String>()
+        root.optJSONArray("envArgs")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                arr.optString(i).takeIf { it.isNotEmpty() }?.let { envArgs.add(it) }
+            }
         }
-        val j = detectJavaBin(dir)
-        val updated = readMeta(context)
-        val item = updated.optJSONObject(id) ?: JSONObject()
-        // 空字符串表示「已检测但无 Java」，避免重复探测；调用方见空串视为 null。
-        item.put("java", j ?: "")
-        updated.put(id, item)
-        writeMeta(context, updated)
-        return j
-    }
-
-    private fun cacheMeta(context: Context, id: String, size: Long, javaBin: String?) {
-        val meta = readMeta(context)
-        val item = meta.optJSONObject(id) ?: JSONObject()
-        item.put("size", size)
-        item.put("java", javaBin ?: "")
-        meta.put(id, item)
-        writeMeta(context, meta)
-    }
-
-    private fun clearMeta(context: Context, id: String) {
-        val meta = readMeta(context)
-        if (meta.has(id)) {
-            meta.remove(id)
-            writeMeta(context, meta)
-        }
+        return RootfsManifest(
+            formatVersion = formatVersion,
+            envType = envType,
+            envName = root.optString("envName").takeIf { it.isNotEmpty() }
+                ?: envType.replaceFirstChar { it.uppercase() },
+            envVersionName = root.optString("envVersionName"),
+            envMainBin = envMainBin,
+            envArgs = envArgs,
+            serverFileHint = root.optString("serverFileHint"),
+            description = root.optString("description"),
+            buildDate = root.optString("buildDate"),
+        )
     }
 
     /**
@@ -283,7 +308,7 @@ object ProotEnvironment {
         fixPasswdForAndroid(tmpDir)
         // 写入 DNS 解析配置：proot 不自动继承 Android DNS，必须显式提供，
         // 否则容器内 apt/Minecraft 等所有域名解析都会失败。
-        ensureResolvConf(tmpDir)
+        ensureResolvConf(context, tmpDir)
 
         // 原子替换
         if (!tmpDir.renameTo(target)) {
@@ -298,8 +323,6 @@ object ProotEnvironment {
     /** 删除指定 rootfs。 */
     fun deleteRootfs(context: Context, id: String) {
         rootfsDir(context, id).deleteRecursively()
-        // 清除元数据缓存，避免残留的 size/javaBin 指向已删除的 rootfs。
-        clearMeta(context, id)
     }
 
     /**
@@ -423,14 +446,22 @@ object ProotEnvironment {
     }
 
     /**
-     * 构造「在 rootfs 内运行服务端 Java」的 proot 命令。
+     * 构造「在 rootfs 内运行服务端」的 proot 命令。
+     *
+     * 根据 rootfs 元数据 [RootfsManifest.envType] 决定启动方式：
+     *  - java：执行 [RootfsManifest.envMainBin]（如 /usr/bin/java），附加 -XX:ErrorFile
+     *    与 -Djava.io.tmpdir 等容器内可用的 JVM 标准参数，再追加 [jvmArgs] 与 [programArgs]。
+     *  - php / node / python / box64：执行 envMainBin，附加 envArgs（如有）+ programArgs。
+     *    box64 的 envMainBin 为 /usr/local/bin/box64，programArgs 为 x86_64 服务端文件。
+     *  - generic（无清单或 envMainBin 为空）：调用方必须改用 [buildGenericCommand]
+     *    并提供完整启动命令；本方法对 generic rootfs 抛出 [IllegalStateException]。
      *
      * 服务端工作目录（[workingDir]，Android 路径）会被 bind 到容器内
-     * [GUEST_SERVER_DIR]，proot 的 cwd 设为该挂载点。Java 本体来自 rootfs
-     * （[ProotRootfs.javaBin]），故运行的是原版、未打补丁的 OpenJDK。
+     * [GUEST_SERVER_DIR]，proot 的 cwd 设为该挂载点。运行时本体（Java/PHP/…）
+     * 来自 rootfs，故运行的是 rootfs 内未打补丁的原版。
      *
-     * @param jvmArgs JVM 参数（如 -Xmx2G -jar server.jar nogui）
-     * @param programArgs 程序参数（如 --no-wizard）
+     * @param jvmArgs 运行时参数（如 -Xmx2G）；非 java 环境也会原样追加到主程序后。
+     * @param programArgs 程序参数（如 -jar server.jar nogui；或脚本文件路径 + 参数）。
      */
     fun buildServerCommand(
         context: Context,
@@ -441,17 +472,21 @@ object ProotEnvironment {
     ): ProotCommand {
         val rootfs = installedRootfs(context, rootfsId)
             ?: throw IllegalStateException("proot rootfs '$rootfsId' 未安装，请先在「管理 → 运行环境」导入 rootfs.tar.zst")
-        val javaBin = rootfs.javaBin
-            ?: throw IllegalStateException(
-                "rootfs '$rootfsId' 内未安装 OpenJDK。请进入 proot shell 执行：" +
-                    " apt update && apt install -y openjdk-17-jre-headless"
+        val manifest = rootfs.manifest
+        if (manifest == null || manifest.isGeneric) {
+            throw IllegalStateException(
+                "rootfs '$rootfsId' 是纯容器（无元数据或 envType=generic），" +
+                    "请在实例配置中填写完整的启动命令，或导入带元数据的环境 rootfs。"
             )
+        }
+        val envMainBin = manifest.envMainBin
+            ?: throw IllegalStateException("rootfs '$rootfsId' 元数据缺少 envMainBin")
         val work = File(workingDir)
         if (!work.isDirectory) throw IllegalStateException("工作目录不存在：$workingDir")
 
         ensureBootstrap(context)
         // 每次启动前确保 DNS 配置存在（apt 等操作可能清空 resolv.conf）
-        ensureResolvConf(rootfs.dir)
+        ensureResolvConf(context, rootfs.dir)
 
         val prootBin = File(bootstrapDir(context), "bin/proot").absolutePath
         val argv = mutableListOf<String>()
@@ -459,14 +494,14 @@ object ProotEnvironment {
         argv.add("--rootfs=${rootfs.dir.absolutePath}")
         argv.add("--cwd=$GUEST_SERVER_DIR")
         argv.add("--link2symlink")
-        // -0：伪造 root 身份（proot-distro 标准做法）。Minecraft 服务端常尝试
+        // -0：伪造 root 身份（proot-distro 标准做法）。服务端常尝试
         // chmod/eula.txt 写入等操作，伪造 root 可避免权限相关失败。
         argv.add("-0")
         // 必备文件系统 bind：dev/proc/sys 是任何 Linux 程序的硬依赖
         argv.add("--bind=/dev")
         argv.add("--bind=/proc")
         argv.add("--bind=/sys")
-        // /dev/urandom -> /dev/random：Java SecureRandom 在容器内偶发读 /dev/random 阻塞
+        // /dev/urandom -> /dev/random：SecureRandom 在容器内偶发读 /dev/random 阻塞
         argv.add("--bind=/dev/urandom:/dev/random")
         // 服务端工作目录：bind 到容器内固定挂载点，cwd 即此处
         argv.add("--bind=${work.absolutePath}:$GUEST_SERVER_DIR")
@@ -481,14 +516,83 @@ object ProotEnvironment {
         argv.add("--bind=${tmpDir.absolutePath}:/tmp")
         argv.add("--bind=${tmpDir.absolutePath}:/run")
 
-        // 容器内执行的命令：原版 java
-        argv.add(javaBin)
-        // JVM 崩溃时把 hs_err 写到 stderr（PTY 从设备），父进程能收到
-        argv.add("-XX:ErrorFile=/proc/self/fd/2")
-        // 容器内 /tmp 已 bind，可直接用
-        argv.add("-Djava.io.tmpdir=/tmp")
+        // 容器内执行的命令：环境主程序（如 /usr/bin/java、/usr/bin/php、…）
+        argv.add(envMainBin)
+
+        when (manifest.envType) {
+            ENV_JAVA -> {
+                // JVM 崩溃时把 hs_err 写到 stderr（PTY 从设备），父进程能收到
+                argv.add("-XX:ErrorFile=/proc/self/fd/2")
+                // 容器内 /tmp 已 bind，可直接用
+                argv.add("-Djava.io.tmpdir=/tmp")
+            }
+            else -> {
+                // php/node/python/box64 等：附加清单声明的固定前缀参数。
+                // box64 的 envMainBin 是 /usr/local/bin/box64，programArgs 是 x86_64 文件。
+            }
+        }
+        // 清单声明的固定前缀参数（如 java 的 ["-jar"]）
+        argv.addAll(manifest.envArgs)
+        // 调用方传入的运行时参数（如 -Xmx2G）
         argv.addAll(jvmArgs)
+        // 调用方传入的程序参数（如 server.jar nogui）
         argv.addAll(programArgs)
+
+        val env = baseHostEnv(context)
+        return ProotCommand(prootBin, argv, env, work.absolutePath)
+    }
+
+    /**
+     * 构造「在纯容器 rootfs 内运行用户自定义命令」的 proot 命令。
+     *
+     * 用于无元数据或 envType=generic 的 rootfs：用户须在实例配置中提供完整启动命令
+     * （含主程序路径与所有参数），由本方法在容器内 [GUEST_SERVER_DIR] 下执行。
+     *
+     * [command] 已含主程序路径（容器内绝对路径，如 /usr/bin/python3 /mnt/server/main.py），
+     * 用 busybox sh -c 包裹以支持 shell 语法（管道、引号、变量展开等）。
+     */
+    fun buildGenericCommand(
+        context: Context,
+        rootfsId: String,
+        workingDir: String,
+        command: String,
+    ): ProotCommand {
+        val rootfs = installedRootfs(context, rootfsId)
+            ?: throw IllegalStateException("proot rootfs '$rootfsId' 未安装")
+        val work = File(workingDir)
+        if (!work.isDirectory) throw IllegalStateException("工作目录不存在：$workingDir")
+        if (command.isBlank()) throw IllegalStateException("纯容器环境必须提供启动命令")
+
+        ensureBootstrap(context)
+        ensureResolvConf(context, rootfs.dir)
+
+        val prootBin = File(bootstrapDir(context), "bin/proot").absolutePath
+        val argv = mutableListOf<String>()
+        argv.add(prootBin)
+        argv.add("--rootfs=${rootfs.dir.absolutePath}")
+        argv.add("--cwd=$GUEST_SERVER_DIR")
+        argv.add("--link2symlink")
+        argv.add("-0")
+        argv.add("--bind=/dev")
+        argv.add("--bind=/proc")
+        argv.add("--bind=/sys")
+        argv.add("--bind=/dev/urandom:/dev/random")
+        argv.add("--bind=${work.absolutePath}:$GUEST_SERVER_DIR")
+        val sdcard = Environment.getExternalStorageDirectory()
+        if (sdcard != null && sdcard.isDirectory) {
+            argv.add("--bind=${sdcard.absolutePath}:$GUEST_SDCARD_DIR")
+        }
+        val tmpDir = File(context.cacheDir, "proot_tmp")
+        tmpDir.mkdirs()
+        argv.add("--bind=${tmpDir.absolutePath}:/tmp")
+        argv.add("--bind=${tmpDir.absolutePath}:/run")
+
+        // 用 rootfs 内的 sh -c 包裹用户命令：支持 shell 语法（管道/重定向/引号）。
+        // 优先 /bin/bash（更友好），否则回退 /bin/sh。
+        val shellBin = if (File(rootfs.dir, "bin/bash").exists()) "/bin/bash" else "/bin/sh"
+        argv.add(shellBin)
+        argv.add("-c")
+        argv.add(command)
 
         val env = baseHostEnv(context)
         return ProotCommand(prootBin, argv, env, work.absolutePath)
@@ -511,7 +615,7 @@ object ProotEnvironment {
             ?: throw IllegalStateException("proot rootfs '$rootfsId' 未安装")
         ensureBootstrap(context)
         // 每次进入 shell 前确保 DNS 配置存在（apt 等操作可能清空 resolv.conf）
-        ensureResolvConf(rootfs.dir)
+        ensureResolvConf(context, rootfs.dir)
 
         val prootBin = File(bootstrapDir(context), "bin/proot").absolutePath
         val guestCwd = cwd?.takeIf { it.isNotBlank() } ?: "/root"
@@ -591,24 +695,14 @@ object ProotEnvironment {
      * 若不在 rootfs 内显式写入，容器内所有域名解析都会失败（apt update、
      * Mojang 服务器连接等）。
      *
-     * 策略：尝试从 Android 系统属性读取当前 DNS（net.dns1 / net.dns2），
-     * 失败或为空时回退到公共 DNS（阿里 + 腾讯 + Google，兼顾国内外网络）。
+     * 策略：优先使用用户在「网络设置」中配置的自定义 DNS（默认 8.8.8.8,1.1.1.1），
+     * 从 `<filesDir>/config/network.json` 的 `customDns` 字段读取。
      */
-    private fun ensureResolvConf(rootfsDir: File) {
+    private fun ensureResolvConf(context: Context, rootfsDir: File) {
         val resolvConf = File(rootfsDir, "etc/resolv.conf")
-        // 收集 DNS 服务器列表
-        val dnsServers = mutableListOf<String>()
-        // 尝试读取 Android 系统属性 net.dns1 / net.dns2（部分机型有效）
-        for (prop in listOf("net.dns1", "net.dns2")) {
-            val value = getSystemProperty(prop)?.takeIf { it.isNotBlank() && it != "0.0.0.0" }
-            if (value != null) dnsServers.add(value)
-        }
-        // 回退：公共 DNS（阿里 + 腾讯 + Google，覆盖国内外）
-        if (dnsServers.isEmpty()) {
-            dnsServers.addAll(listOf("223.5.5.5", "119.29.29.29", "8.8.8.8"))
-        }
+        val dnsServers = loadCustomDnsServers(context)
         val content = buildString {
-            dnsServers.distinct().forEach { appendLine("nameserver $it") }
+            dnsServers.forEach { appendLine("nameserver $it") }
         }
         // 仅在内容变化时写入，避免每次启动都触发文件修改
         val existing = if (resolvConf.exists()) resolvConf.readText() else ""
@@ -618,50 +712,30 @@ object ProotEnvironment {
         }
     }
 
-    /** 反射读取 Android 系统属性（避免直接依赖 android.os.SystemProperties 隐藏 API）。 */
-    private fun getSystemProperty(name: String): String? = try {
-        val cls = Class.forName("android.os.SystemProperties")
-        val method = cls.getMethod("get", String::class.java)
-        method.invoke(null, name) as? String
-    } catch (e: Exception) {
-        null
-    }
-
     /**
-     * 探测 rootfs 内的 java 可执行文件路径（容器视角的绝对路径）。
-     * 优先 /usr/bin/java，回退到 /usr/lib/jvm/<jdk>/bin/java 的首个匹配。
-     * 未找到时返回 null（不抛异常），允许导入无 Java 的 rootfs 后再进 shell 安装。
+     * 从 `<filesDir>/config/network.json` 读取用户配置的自定义 DNS 服务器列表。
+     *
+     * Dart 侧 [NetworkStore] 将 DNS 存为逗号分隔字符串（`customDns` 字段），
+     * 默认值 "8.8.8.8,1.1.1.1"。此处直接读取该 JSON 文件，避免通过 MethodChannel
+     * 传参的额外开销。
      */
-    private fun detectJavaBin(rootfsDir: File): String? {
-        val candidates = listOf(
-            "/usr/bin/java",
-            "/usr/local/bin/java",
-            "/opt/java/bin/java",
-        )
-        for (c in candidates) {
-            if (File(rootfsDir, c.removePrefix("/")).exists()) return c
+    fun loadCustomDnsServers(context: Context): List<String> {
+        val defaultDns = listOf("8.8.8.8", "1.1.1.1")
+        return try {
+            val configFile = File(context.filesDir, "config/network.json")
+            if (!configFile.isFile) return defaultDns
+            val raw = configFile.readText()
+            if (raw.isBlank()) return defaultDns
+            val json = JSONObject(raw)
+            val dnsStr = json.optString("customDns").takeIf { it.isNotBlank() }
+                ?: return defaultDns
+            val servers = dnsStr.split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+            if (servers.isEmpty()) defaultDns else servers
+        } catch (_: Throwable) {
+            defaultDns
         }
-        // 扫描 /usr/lib/jvm/<jdk>/bin/java
-        val jvmBase = File(rootfsDir, "usr/lib/jvm")
-        if (jvmBase.isDirectory) {
-            jvmBase.listFiles()?.forEach { jdk ->
-                if (jdk.isDirectory) {
-                    val java = File(jdk, "bin/java")
-                    if (java.exists()) return "/usr/lib/jvm/${jdk.name}/bin/java"
-                }
-            }
-        }
-        // 扫描 /usr/lib/jvm-*/bin/java（debian 风格扁平布局）
-        val usrLib = File(rootfsDir, "usr/lib")
-        if (usrLib.isDirectory) {
-            usrLib.listFiles()?.forEach { dir ->
-                if (dir.isDirectory && dir.name.startsWith("jvm-")) {
-                    val java = File(dir, "bin/java")
-                    if (java.exists()) return "/usr/lib/${dir.name}/bin/java"
-                }
-            }
-        }
-        return null
     }
 
     /**
@@ -695,14 +769,5 @@ object ProotEnvironment {
                 // 修补失败不阻断导入——容器仍可运行，仅 id 命令异常
             }
         }
-    }
-
-    /** 递归计算目录总字节数（用于展示）。 */
-    private fun dirSize(dir: File): Long {
-        var size = 0L
-        dir.walkTopDown().forEach { f ->
-            if (f.isFile) size += f.length()
-        }
-        return size
     }
 }

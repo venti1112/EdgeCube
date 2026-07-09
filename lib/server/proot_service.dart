@@ -2,36 +2,90 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// 已安装的 proot rootfs 信息。
+///
+/// rootfs 可携带内嵌清单 `edgecube-rootfs.json`（formatVersion=2），声明环境类型、
+/// 主程序路径等元数据。EdgeCube 导入时直接读取该清单，不再扫描文件系统判断 Java 路径。
+/// 缺失清单的 rootfs 视为 `generic` 纯容器（[isGeneric] = true），启动时必须由
+/// 用户在实例配置中提供完整启动命令。
+/// 支持的环境类型：java / php / node / python / box64 / generic。
 class ProotRootfsInfo {
   const ProotRootfsInfo({
     required this.id,
     required this.dir,
-    required this.sizeBytes,
-    required this.javaBin,
+    required this.envType,
+    required this.envName,
+    required this.envVersionName,
+    required this.envMainBin,
+    required this.envArgs,
+    required this.serverFileHint,
+    required this.description,
+    required this.buildDate,
+    required this.isGeneric,
   });
 
   /// rootfs 标识（同时是目录名，也是 server 启动时的 runtimeId）。
   final String id;
 
   /// rootfs 在 Android 文件系统中的绝对路径。
+  /// 调用方需要展示大小时，应基于此路径在 isolate 中实时计算
+  /// （rootfs 含数万文件，放 isolate 中计算不会卡 UI，且避免缓存失效）。
   final String dir;
 
-  /// rootfs 目录总字节数（用于展示）。
-  final int sizeBytes;
+  /// 环境类型：'java' / 'php' / 'node' / 'python' / 'box64' / 'generic'。
+  /// 无清单时为 'generic'。
+  final String envType;
 
-  /// rootfs 内 java 可执行文件路径（容器视角的绝对路径，如 /usr/bin/java）。
-  /// 为 null 表示 rootfs 尚未安装 OpenJDK——可进 shell apt install 后再启动服务端。
-  final String? javaBin;
+  /// 展示名（如 "OpenJDK 21"）。无清单时为空串。
+  final String envName;
 
-  /// 是否已安装 Java（服务端启动的前置条件）。
-  bool get hasJava => javaBin != null && javaBin!.isNotEmpty;
+  /// 运行时版本字符串（如 "21.0.5+11"）。无清单或未声明时为空串。
+  final String envVersionName;
+
+  /// 环境主程序的容器内绝对路径（如 "/usr/bin/java"）。
+  /// generic 环境或无清单时为空串，表示不预定义主程序。
+  final String envMainBin;
+
+  /// 主程序固定前缀参数（如 java 的 ["-jar"]）。generic 时为空数组。
+  final List<String> envArgs;
+
+  /// 服务端文件扩展名提示（如 ".jar"、".phar"、".js"），用于 UI 筛选服务端文件。
+  /// 无清单时为空串。
+  final String serverFileHint;
+
+  /// 人类可读的描述。无清单时为空串。
+  final String description;
+
+  /// 构建日期字符串（YYYYMMDD）。无清单时为空串。
+  final String buildDate;
+
+  /// 是否为纯容器（无元数据或 envType=generic）。
+  /// true 时启动服务端必须由用户提供完整启动命令。
+  final bool isGeneric;
+
+  /// 兼容旧调用方：返回主程序路径（容器视角），无则 null。
+  /// 新代码应直接使用 [envMainBin]。
+  String? get javaBin => envMainBin.isEmpty ? null : envMainBin;
+
+  /// 是否已安装 Java（envType=java 且 envMainBin 非空）。
+  bool get hasJava =>
+      envType == 'java' && envMainBin.isNotEmpty;
 
   factory ProotRootfsInfo.fromMap(Map<String, dynamic> m) {
     return ProotRootfsInfo(
       id: m['id'] as String? ?? '',
       dir: m['dir'] as String? ?? '',
-      sizeBytes: m['sizeBytes'] as int? ?? 0,
-      javaBin: m['javaBin'] as String?,
+      envType: m['envType'] as String? ?? 'generic',
+      envName: m['envName'] as String? ?? '',
+      envVersionName: m['envVersionName'] as String? ?? '',
+      envMainBin: m['envMainBin'] as String? ?? '',
+      envArgs: (m['envArgs'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      serverFileHint: m['serverFileHint'] as String? ?? '',
+      description: m['description'] as String? ?? '',
+      buildDate: m['buildDate'] as String? ?? '',
+      isGeneric: m['isGeneric'] as bool? ?? true,
     );
   }
 }
@@ -40,8 +94,8 @@ class ProotRootfsInfo {
 ///
 /// 对应 [MainActivity] 中注册的 MethodChannel `com.venti1112.edgecube/proot`。
 ///
-/// rootfs.tar.zst 与 `.ecpkg` 是不同的产物类型（无清单文件、无启动器配置、
-/// 内含完整 Linux 根文件系统），故独立通道管理，不走 RuntimeService。
+/// rootfs.tar.zst 与 `.ecpkg` 是不同的产物类型（rootfs 内嵌 edgecube-rootfs.json
+/// 清单、含完整 Linux 根文件系统），故独立通道管理，不走 RuntimeService。
 class ProotService {
   const ProotService();
 

@@ -181,4 +181,25 @@ remotePort = 25566
     configMap[_betaUpdatesKey] = enabled;
     await ConfigStore.writeConfig(_fileName, configMap);
   }
+
+  /// 自定义 DNS 服务器列表键。存储为逗号分隔的字符串（如 "8.8.8.8,1.1.1.1"）。
+  /// 原生侧（Kotlin）直接从 `<filesDir>/config/network.json` 读取该字段，
+  /// 用于 proot rootfs 的 /etc/resolv.conf、PHP 的 /sdcard/resolv.conf
+  /// 以及 JVM 的 -Dsun.net.spi.nameserver.nameservers 参数。
+  static const String _customDnsKey = 'customDns';
+  static const String _defaultCustomDns = '8.8.8.8,1.1.1.1';
+
+  /// 读取自定义 DNS 字符串（逗号分隔）；未设置时返回默认值。
+  static Future<String> loadCustomDns() async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    final value = configMap[_customDnsKey] as String?;
+    if (value == null || value.trim().isEmpty) return _defaultCustomDns;
+    return value;
+  }
+
+  static Future<void> saveCustomDns(String dns) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    configMap[_customDnsKey] = dns;
+    await ConfigStore.writeConfig(_fileName, configMap);
+  }
 }

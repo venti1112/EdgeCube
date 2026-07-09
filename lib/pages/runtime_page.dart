@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../files/storage_permission.dart';
@@ -295,10 +296,31 @@ class _RuntimePageState extends State<RuntimePage> {
     );
     if (path == null) return;
 
-    await _doImportRootfs(path);
+    // 始终弹出名称输入框，默认为去掉压缩包扩展名的文件名
+    final defaultName = _rootfsNameFromPath(path);
+    final id = await _promptForRootfsId(
+      title: '导入 rootfs',
+      message: '请输入 rootfs 名称：',
+      defaultName: defaultName,
+    );
+    if (id == null || id.isEmpty) return; // 用户取消
+    await _doImportRootfs(path, id: id);
   }
 
-  Future<void> _doImportRootfs(String path, {String? id}) async {
+  /// 从文件路径推导 rootfs 名称：取 basename 并剥离已知压缩包扩展名。
+  String _rootfsNameFromPath(String path) {
+    var name = p.basename(path);
+    const exts = ['.tar.zst', '.tar.xz', '.tar.gz', '.tgz', '.tar'];
+    for (final ext in exts) {
+      if (name.toLowerCase().endsWith(ext)) {
+        name = name.substring(0, name.length - ext.length);
+        break;
+      }
+    }
+    return name;
+  }
+
+  Future<void> _doImportRootfs(String path, {required String id}) async {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _importingRootfs = true);
     try {
@@ -311,9 +333,14 @@ class _RuntimePageState extends State<RuntimePage> {
     } on PlatformException catch (e) {
       if (!mounted) return;
       if (e.code == 'ROOTFS_EXISTS') {
-        // 同名 rootfs 已存在，让用户输入新 id 或取消
-        final newId = await _promptForRootfsId(e.message ?? 'ROOTFS_EXISTS');
-        if (newId != null && mounted) {
+        // 同名 rootfs 已存在，让用户输入新 id 或取消；默认填入刚试过的名称
+        // 方便用户在其基础上修改（如加后缀）。
+        final newId = await _promptForRootfsId(
+          title: 'rootfs 已存在',
+          message: '${e.message ?? 'ROOTFS_EXISTS'}\n请输入新的 rootfs 名称：',
+          defaultName: id,
+        );
+        if (newId != null && newId.isNotEmpty && mounted) {
           await _doImportRootfs(path, id: newId);
         }
         return;
@@ -331,28 +358,63 @@ class _RuntimePageState extends State<RuntimePage> {
     }
   }
 
-  /// 导入同名 rootfs 冲突时，弹出对话框让用户输入新的 rootfs id。
-  Future<String?> _promptForRootfsId(String message) {
-    final controller = TextEditingController();
+  /// 弹出对话框让用户输入 rootfs 名称。
+  ///
+  /// [defaultName] 为输入框默认内容（通常为去掉扩展名的文件名）；冲突重试时
+  /// 传入刚试过的名称，方便用户在其基础上修改。
+  ///
+  /// 名称仅允许英文字母、数字、`.`、`_`、`-`（与原生侧 rootfs 目录命名规则
+  /// [ProotEnvironment.importRootfs] 的正则 `[^A-Za-z0-9._-]` 一致）；
+  /// 且不能以 `.` 开头（rootfs 列表会跳过 `.` 开头的目录）。
+  Future<String?> _promptForRootfsId({
+    required String title,
+    required String message,
+    String? defaultName,
+  }) {
+    final controller = TextEditingController(text: defaultName ?? '');
+    // 输入错误提示；用 ValueNotifier 让对话框内可局部刷新。
+    final errorNotifier = ValueNotifier<String?>(null);
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('rootfs 已存在'),
+        title: Text(title),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(message),
-            const SizedBox(height: 12),
-            const Text('请输入新的 rootfs 名称：'),
             const SizedBox(height: 8),
             TextField(
               controller: controller,
               decoration: const InputDecoration(
                 hintText: '如 debian-12-jdk21',
+                helperText: '仅允许字母、数字、. _ -',
                 border: OutlineInputBorder(),
               ),
               autofocus: true,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9._-]')),
+              ],
+              onChanged: (_) {
+                if (errorNotifier.value != null) {
+                  errorNotifier.value = null;
+                }
+              },
+            ),
+            ValueListenableBuilder<String?>(
+              valueListenable: errorNotifier,
+              builder: (_, err, _) => err == null
+                  ? const SizedBox.shrink()
+                  : Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        err,
+                        style: TextStyle(
+                          color: Theme.of(ctx).colorScheme.error,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
             ),
           ],
         ),
@@ -362,8 +424,18 @@ class _RuntimePageState extends State<RuntimePage> {
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(controller.text.trim()),
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isEmpty) {
+                errorNotifier.value = '名称不能为空';
+                return;
+              }
+              if (name.startsWith('.')) {
+                errorNotifier.value = '名称不能以 . 开头';
+                return;
+              }
+              Navigator.of(ctx).pop(name);
+            },
             child: const Text('确定'),
           ),
         ],
@@ -406,15 +478,6 @@ class _RuntimePageState extends State<RuntimePage> {
         SnackBar(content: Text('删除 rootfs 失败：$e')),
       );
     }
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
   }
 
   /// 检查单个运行时更新。
@@ -740,15 +803,31 @@ class _RuntimePageState extends State<RuntimePage> {
 ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : (_runtimes.isEmpty && !showProotSection)
-          ? _EmptyBody(onImport: _import)
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // —— .ecpkg 运行时区 ——
-                if (_runtimes.isNotEmpty) ...[
-                  for (final rt in _runtimes)
-                    Card(
+                // —— 原生运行时区（直接在 Android 上运行，区别于 proot 容器）——
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.extension_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        '原生运行时',
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const Spacer(),
+                      if (_runtimes.isNotEmpty)
+                        Text(
+                          '${_runtimes.length} 个',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+                ),
+                for (final rt in _runtimes)
+                  Card(
                       child: ListTile(
                         leading: Icon(switch (rt.type) {
                           'jre' => Icons.coffee,
@@ -819,7 +898,23 @@ class _RuntimePageState extends State<RuntimePage> {
                         ),
                       ),
                     ),
-                ],
+                Card(
+                  child: ListTile(
+                    leading: _importing
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.add),
+                    title: Text(_importing ? '导入中…' : '导入 .ecpkg'),
+                    subtitle: Text(
+                      '从 .ecpkg 文件导入 Java / PHP / FRP 运行时',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    onTap: _importing ? null : _import,
+                  ),
+                ),
                 // —— proot rootfs 区 ——
                 if (showProotSection) ...[
                   const SizedBox(height: 8),
@@ -867,15 +962,20 @@ class _RuntimePageState extends State<RuntimePage> {
                     Card(
                       child: ListTile(
                         leading: const Icon(Icons.terminal, size: 32),
-                        title: Text(rootfs.id),
+                        title: Text(
+                          rootfs.envName.isNotEmpty
+                              ? '${rootfs.envName} (${rootfs.id})'
+                              : rootfs.id,
+                        ),
                         subtitle: Text(
-                          rootfs.hasJava
-                              ? '${_formatBytes(rootfs.sizeBytes)} · java: ${rootfs.javaBin}'
-                              : '${_formatBytes(rootfs.sizeBytes)} · 未安装 Java（进 shell 执行 apt install openjdk-17-jre-headless）',
+                          rootfs.isGeneric
+                              ? '纯容器（无元数据，需手动填写启动命令）'
+                              : '${rootfs.envType}: ${rootfs.envMainBin}'
+                                  '${rootfs.envVersionName.isNotEmpty ? ' (${rootfs.envVersionName})' : ''}',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: rootfs.hasJava
-                                ? null
-                                : theme.colorScheme.error,
+                            color: rootfs.isGeneric
+                                ? theme.colorScheme.primary
+                                : null,
                           ),
                         ),
                         trailing: IconButton(
@@ -898,7 +998,7 @@ class _RuntimePageState extends State<RuntimePage> {
                           _importingRootfs ? '导入中…' : '导入 rootfs.tar.zst',
                         ),
                         subtitle: Text(
-                          '从 rootfs.tar.zst 导入 Linux 根文件系统（含原版 Java）',
+                          '从 rootfs.tar.zst 导入 Linux 根文件系统（带元数据或纯容器）',
                           style: theme.textTheme.bodySmall,
                         ),
                         onTap: _importingRootfs ? null : _importRootfs,
@@ -907,77 +1007,6 @@ class _RuntimePageState extends State<RuntimePage> {
                 ],
               ],
             ),
-      floatingActionButton: _importing || _importingRootfs
-          ? const FloatingActionButton(
-              onPressed: null,
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              ),
-            )
-          : FloatingActionButton.extended(
-              onPressed: _import,
-              icon: const Icon(Icons.add),
-              label: Text(context.tr('runtime.import')),
-            ),
-    );
-  }
-}
-
-class _EmptyBody extends StatelessWidget {
-  const _EmptyBody({required this.onImport});
-  final VoidCallback onImport;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.memory,
-              size: 64,
-              color: theme.colorScheme.outline,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              context.tr('runtime.emptyTitle'),
-              style: theme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              context.tr('runtime.emptyDescription'),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: onImport,
-              icon: const Icon(Icons.add),
-              label: Text(context.tr('runtime.import')),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const EcpkgDownloadPage(),
-                ),
-              ),
-              icon: const Icon(Icons.cloud_download_outlined),
-              label: Text(context.tr('ecpkgDownload.browse')),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

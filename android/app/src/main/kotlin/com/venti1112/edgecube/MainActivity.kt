@@ -1024,12 +1024,7 @@ class MainActivity : FlutterActivity() {
                     thread {
                         try {
                             val list = ProotEnvironment.installedRootfs(applicationContext).map { r ->
-                                mapOf(
-                                    "id" to r.id,
-                                    "dir" to r.dir.absolutePath,
-                                    "sizeBytes" to r.sizeBytes,
-                                    "javaBin" to r.javaBin,
-                                )
+                                rootfsToMap(r)
                             }
                             runOnUiThread { result.success(list) }
                         } catch (e: Exception) {
@@ -1053,14 +1048,7 @@ class MainActivity : FlutterActivity() {
                                     applicationContext, path, id,
                                 )
                                 runOnUiThread {
-                                    result.success(
-                                        mapOf(
-                                            "id" to rootfs.id,
-                                            "dir" to rootfs.dir.absolutePath,
-                                            "sizeBytes" to rootfs.sizeBytes,
-                                            "javaBin" to rootfs.javaBin,
-                                        ),
-                                    )
+                                    result.success(rootfsToMap(rootfs))
                                 }
                             } catch (e: Exception) {
                                 runOnUiThread {
@@ -1115,6 +1103,28 @@ class MainActivity : FlutterActivity() {
                     tunnelManager.setEventSink(null)
                 }
             },
+        )
+    }
+
+    private fun rootfsToMap(r: ProotEnvironment.ProotRootfs): Map<String, Any?> {
+        // 把 rootfs 信息与内嵌清单字段平铺为一个 Map 返回给 Dart 端。
+        // manifest 为 null（无清单文件）时所有清单字段给安全默认值，
+        // 调用方据此把 rootfs 视为 generic 纯容器。
+        // 大小不在此返回——由 Dart 端在 isolate 中实时计算（rootfs 含数万文件，
+        // 但放在 isolate 中不会卡 UI，且能避免缓存与实际不一致）。
+        val m = r.manifest
+        return mapOf(
+            "id" to r.id,
+            "dir" to r.dir.absolutePath,
+            "envType" to (m?.envType ?: ProotEnvironment.ENV_GENERIC),
+            "envName" to (m?.envName ?: ""),
+            "envVersionName" to (m?.envVersionName ?: ""),
+            "envMainBin" to (m?.envMainBin ?: ""),
+            "envArgs" to (m?.envArgs ?: emptyList<String>()),
+            "serverFileHint" to (m?.serverFileHint ?: ""),
+            "description" to (m?.description ?: ""),
+            "buildDate" to (m?.buildDate ?: ""),
+            "isGeneric" to r.isGeneric,
         )
     }
 
@@ -1320,7 +1330,15 @@ class MainActivity : FlutterActivity() {
         val pid = serverManager.pid
         var serverMemMb: Long? = null
         if (pid > 0 && serverManager.isRunning) {
-            serverMemMb = readProcessRssKb(pid)?.let { it / 1024 }
+            // proot 模式下顶层进程是 proot 本身（RSS 仅几 MB），实际服务端
+            // （java/php/node…）作为其子进程运行。需递归累加整个进程树的 RSS
+            // 才能得到真实的服务端内存占用。
+            val rssKb = if (serverManager.isProotLaunch) {
+                readProcessTreeRssKb(pid)
+            } else {
+                readProcessRssKb(pid) ?: 0L
+            }
+            if (rssKb > 0) serverMemMb = rssKb / 1024
         }
 
         val map = HashMap<String, Any?>()
@@ -1467,6 +1485,66 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * 累加 proot 容器内所有进程的 RSS（KB）——包括 proot 自身及其跟踪的所有 tracee。
+     *
+     * proot 基于 ptrace 跟踪模式：proot 是 tracer，容器内所有进程是 tracee。
+     * 每个被跟踪进程的 /proc/<pid>/status 中都包含 `TracerPid: <proot_pid>`。
+     *
+     * 之所以扫描 /proc 下各 PID 的 status 文件，而非递归遍历
+     * /proc/<pid>/task/<pid>/children：后者依赖内核配置 CONFIG_PROC_CHILDREN，
+     * 很多 Android 内核未启用，导致只能读到 proot 自身的几 MB，找不到实际工作
+     * 负载进程（java/php/node…）。TracerPid 方案只需单次扫描全部 /proc 项，
+     * O(n) 且不依赖内核配置。
+     */
+    private fun readProcessTreeRssKb(rootPid: Int): Long {
+        var totalKb = 0L
+        // 累加 proot 自身 RSS（TracerPid 为 0，不会被下面的扫描命中）
+        totalKb += readProcessRssKb(rootPid) ?: 0L
+
+        // 扫描 /proc/*/status，找 TracerPid == rootPid 的进程
+        val procDir = File("/proc")
+        val pidDirs = procDir.listFiles { f ->
+            f.isDirectory && f.name.all { it.isDigit() } && f.name.isNotEmpty()
+        } ?: return totalKb
+
+        for (dir in pidDirs) {
+            val pid = dir.name.toIntOrNull() ?: continue
+            if (pid == rootPid) continue // 已单独累加
+            try {
+                var tracerPid = -1  // -1 = 未读取
+                var vmRssKb = 0L
+                BufferedReader(
+                    InputStreamReader(FileInputStream(File(dir, "status")))
+                ).use { reader ->
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        when {
+                            line!!.startsWith("TracerPid:") -> {
+                                tracerPid = line.substringAfter(":").trim()
+                                    .toIntOrNull() ?: 0
+                                // TracerPid 在 status 文件中位于 VmRSS 之前；
+                                // 若不是我们的 proot，无需继续读 VmRSS。
+                                if (tracerPid != rootPid) break
+                            }
+                            line.startsWith("VmRSS:") -> {
+                                vmRssKb = line.substringAfter(":").trim()
+                                    .split(" ")[0].toLongOrNull() ?: 0L
+                                break
+                            }
+                        }
+                    }
+                }
+                if (tracerPid == rootPid) {
+                    totalKb += vmRssKb
+                }
+            } catch (_: Exception) {
+                // 进程可能已退出，忽略
+            }
+        }
+        return totalKb
     }
 
     // ──────────────────────────────────────────────────────

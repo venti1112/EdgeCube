@@ -76,7 +76,8 @@ class ShellController extends ChangeNotifier {
     if (_running) {
       await _service.forceStop();
       // 等待退出事件把状态翻回未运行，避免 start 因仍在运行而被忽略。
-      for (var i = 0; i < 20 && _running; i++) {
+      // 交互式 shell 需 SIGKILL 才能终止，PTY 读取线程清理状态需一定时间。
+      for (var i = 0; i < 40 && _running; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
     }

@@ -172,11 +172,6 @@ const Map<String, ServerTypeEntry> _serverTypeEntries = {
     titleKey: 'instance.allayTitle',
     subtitleKey: 'instance.allaySubtitle',
   ),
-  'dragonfly': ServerTypeEntry(
-    imageAssetPath: 'assets/images/dragonfly_logo.png',
-    titleKey: 'instance.dragonflyTitle',
-    subtitleKey: 'instance.dragonflySubtitle',
-  ),
 };
 
 class ServerTypeTileList extends StatelessWidget {

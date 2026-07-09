@@ -99,7 +99,20 @@ class ShellProcessManager private constructor(private val appContext: Context) {
      */
     @Synchronized
     fun start(cwd: String?, shellId: String? = null) {
-        if (isRunning) return
+        // 若上一个 shell 进程仍残留（交互式 shell 会忽略 SIGTERM，导致状态未清理），
+        // 先 SIGKILL 强杀并等待 PTY 读取线程完成清理，再启动新 shell。
+        if (isRunning) {
+            val stalePid = processId
+            if (stalePid > 0) {
+                try { Os.kill(stalePid, OsConstants.SIGKILL) } catch (_: Exception) {}
+            }
+            // 等待 PTY 读取线程检测到退出并清理 running 状态（最多 2 秒）
+            for (i in 0 until 40) {
+                if (!isRunning) break
+                try { Thread.sleep(50) } catch (_: Exception) {}
+            }
+        }
+        if (isRunning) return  // 清理超时，放弃启动
 
         val isProot = shellId != null && shellId.startsWith("proot:")
         val cmd: String
@@ -248,12 +261,12 @@ class ShellProcessManager private constructor(private val appContext: Context) {
         sendCommand("exit")
     }
 
-    /** 强制结束 shell 进程（SIGTERM）。 */
+    /** 强制结束 shell 进程（SIGKILL）。交互式 shell 会忽略 SIGTERM，故直接用 SIGKILL。 */
     fun forceStop() {
         val p = processId
         if (p <= 0) return
         try {
-            Os.kill(p, OsConstants.SIGTERM)
+            Os.kill(p, OsConstants.SIGKILL)
         } catch (_: Exception) {
         }
     }

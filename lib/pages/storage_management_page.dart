@@ -11,6 +11,8 @@ import '../i18n/locale_scope.dart';
 import '../i18n/translations.dart';
 import '../instance/instance_store.dart';
 import '../mods/icon_cache.dart';
+import '../server/proot_service.dart';
+import '../server/runtime_service.dart';
 
 /// 存储空间管理页：展示设备总空间与本程序各部分的占用。
 ///
@@ -68,7 +70,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
     _cachePath = cacheDir.path;
     _instancesPath = instancesDir.path;
     _runtimePath = runtimeDir.path;
-    _appDataPath = docsDir.path;
+    _appDataPath = configDir.path;
 
     // 获取设备总空间（使用外部存储根目录或应用目录）
     String? statPath;
@@ -92,21 +94,41 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
     if (!mounted) return;
     setState(() => _loading = false);
 
-    // 并行计算各部分大小（在 isolate 中执行避免卡 UI）
-    final futures = await Future.wait([
-      compute(_calcDirSize, cacheDir.path),
-      compute(_calcDirSize, instancesDir.path),
-      compute(_calcDirSize, runtimeDir.path),
-      // 程序数据 = config 目录（排除 instances 和 runtime，它们已单独计算）
-      compute(_calcDirSize, configDir.path),
+    // 并行获取 proot rootfs 列表（不含大小，大小在 Dart 端实时计算）
+    final prootList = await const ProotService()
+        .listRootfs()
+        .catchError((_) => <ProotRootfsInfo>[]);
+
+    // 所有 proot rootfs 在同一个 isolate 中顺序遍历，避免多个 isolate 并发
+    // 遍历数万文件时内存不足被系统回收（此前只有第一个 rootfs 能算出大小）。
+    final prootIdToPath = {
+      for (final r in prootList) r.id: r.dir,
+    };
+
+    // 并行：四个普通目录各开一个 isolate + proot 全部在单个 isolate 中算
+    final results = await Future.wait<List<int>>([
+      Future.wait([
+        compute(_calcDirSize, cacheDir.path),
+        compute(_calcDirSize, instancesDir.path),
+        compute(_calcDirSize, runtimeDir.path),
+        compute(_calcDirSize, configDir.path),
+      ]),
+      prootIdToPath.isNotEmpty
+          ? compute(_calcRootfsSizes, prootIdToPath)
+              .then((m) => m.values.toList())
+          : Future.value(<int>[]),
     ]);
+
+    final dirSizes = results[0];
+    final prootSizes = results[1];
+    final prootSize = prootSizes.fold<int>(0, (a, b) => a + b);
 
     if (!mounted) return;
     setState(() {
-      _cacheSize = futures[0];
-      _instancesSize = futures[1];
-      _runtimeSize = futures[2];
-      _appDataSize = futures[3];
+      _cacheSize = dirSizes[0];
+      _instancesSize = dirSizes[1];
+      _runtimeSize = dirSizes[2] + prootSize; // 原生 + proot
+      _appDataSize = dirSizes[3];
       _calculating = false;
     });
   }
@@ -212,6 +234,11 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
                     label: tr.get('storage.runtime'),
                     size: _runtimeSize,
                     path: _runtimePath,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const RuntimeDetailPage(),
+                      ),
+                    ),
                   ),
                   _buildSectionItem(
                     theme,
@@ -393,9 +420,10 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
     required String path,
     String? actionText,
     VoidCallback? onAction,
+    VoidCallback? onTap,
     bool actionInProgress = false,
   }) {
-    return Card(
+    final card = Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -436,10 +464,23 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : TextButton(onPressed: onAction, child: Text(actionText)),
+            if (onTap != null && actionText == null)
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
           ],
         ),
       ),
     );
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: card,
+      );
+    }
+    return card;
   }
 
   Widget _buildDeviceInfo(ThemeData theme, Translations tr) {
@@ -512,24 +553,305 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
   }
 }
 
+/// 运行环境详情页：分别列出每个原生运行时与 proot 容器的大小。
+///
+/// 进入时异步计算各项大小（在 isolate 中执行），避免阻塞列表构建。
+class RuntimeDetailPage extends StatefulWidget {
+  const RuntimeDetailPage({super.key});
+
+  @override
+  State<RuntimeDetailPage> createState() => _RuntimeDetailPageState();
+}
+
+class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
+  final _runtimeService = const RuntimeService();
+  final _prootService = const ProotService();
+
+  List<RuntimeInfo> _nativeRuntimes = [];
+  List<ProotRootfsInfo> _prootRootfs = [];
+
+  /// 每个原生运行时 id → 字节大小；计算中或失败时不包含该 key。
+  final Map<String, int> _nativeSizes = {};
+  /// 每个 proot rootfs id → 字节大小。
+  final Map<String, int> _prootSizes = {};
+
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final runtimes = await _runtimeService.installedRuntimes();
+      final prootList = await _prootService
+          .listRootfs()
+          .catchError((_) => <ProotRootfsInfo>[]);
+      if (!mounted) return;
+      setState(() {
+        _nativeRuntimes = runtimes;
+        _prootRootfs = prootList;
+        _loading = false;
+      });
+      // 异步计算每个原生运行时目录大小（各开一个 isolate）
+      for (final rt in runtimes) {
+        _computeNativeSize(rt.id);
+      }
+      // 所有 proot rootfs 在同一个 isolate 中顺序计算，避免并发 isolate 遍历
+      // 数万文件时内存不足被系统回收（此前只有第一个 rootfs 能算出大小）。
+      _computeAllProotSizes(prootList);
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _computeNativeSize(String id) async {
+    try {
+      final supportDir = await getApplicationSupportDirectory();
+      final dir = Directory(p.join(supportDir.path, 'runtimes', id));
+      if (!await dir.exists()) return;
+      final size = await compute(_calcDirSize, dir.path);
+      if (!mounted) return;
+      setState(() => _nativeSizes[id] = size);
+    } catch (_) {
+      // 忽略单项失败
+    }
+  }
+
+  Future<void> _computeAllProotSizes(List<ProotRootfsInfo> list) async {
+    if (list.isEmpty) return;
+    try {
+      final idToPath = {for (final r in list) r.id: r.dir};
+      final sizes = await compute(_calcRootfsSizes, idToPath);
+      if (!mounted) return;
+      setState(() => _prootSizes.addAll(sizes));
+    } catch (_) {
+      // 忽略——页面保持「计算中」状态
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tr = LocaleScope.of(context).translations;
+
+    final nativeTotal = _nativeSizes.values.fold(0, (a, b) => a + b);
+    final prootTotal = _prootSizes.values.fold(0, (a, b) => a + b);
+    final grandTotal = nativeTotal + prootTotal;
+
+    return Scaffold(
+      appBar: AppBar(title: Text(tr.get('storage.runtimeDetail'))),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // 总计卡片
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                tr.get('storage.runtime'),
+                                style: theme.textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _formatSize(grandTotal),
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  color: theme.colorScheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // —— 原生运行时区 ——
+                _buildSubHeader(theme, tr.get('storage.runtimeNative'), nativeTotal),
+                if (_nativeRuntimes.isEmpty)
+                  _buildEmptyHint(theme, tr.get('storage.noRuntime'))
+                else
+                  for (final rt in _nativeRuntimes)
+                    _buildSizeItem(
+                      theme,
+                      icon: _iconForType(rt.type),
+                      title: rt.name,
+                      subtitle: '${_typeLabel(rt.type)} · ${rt.displayVersion}',
+                      size: _nativeSizes[rt.id],
+                    ),
+                const SizedBox(height: 16),
+                // —— proot 容器区 ——
+                _buildSubHeader(theme, tr.get('storage.runtimeProot'), prootTotal),
+                if (_prootRootfs.isEmpty)
+                  _buildEmptyHint(theme, tr.get('storage.noRuntime'))
+                else
+                  for (final r in _prootRootfs)
+                    _buildSizeItem(
+                      theme,
+                      icon: Icons.terminal,
+                      title: r.envName.isNotEmpty
+                          ? '${r.envName} (${r.id})'
+                          : r.id,
+                      subtitle: r.isGeneric
+                          ? 'generic · 纯容器'
+                          : '${r.envType}: ${r.envMainBin}'
+                              '${r.envVersionName.isNotEmpty ? ' (${r.envVersionName})' : ''}',
+                      size: _prootSizes[r.id],
+                    ),
+                const SizedBox(height: 16),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildSubHeader(ThemeData theme, String title, int total) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      child: Row(
+        children: [
+          Text(title, style: theme.textTheme.titleSmall),
+          const Spacer(),
+          Text(
+            _formatSize(total),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSizeItem(
+    ThemeData theme, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required int? size,
+  }) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 28, color: theme.colorScheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: theme.textTheme.bodyLarge),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              size == null
+                  ? LocaleScope.of(context).translations.get('storage.calculating')
+                  : _formatSize(size),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyHint(ThemeData theme, String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: Text(
+          text,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  IconData _iconForType(String type) => switch (type) {
+        'jre' => Icons.coffee,
+        'php' => Icons.code,
+        'frpc' => Icons.network_check,
+        _ => Icons.memory,
+      };
+
+  String _typeLabel(String type) => switch (type) {
+        'jre' => 'Java',
+        'php' => 'PHP',
+        'frpc' => 'FRP',
+        _ => type,
+      };
+}
+
 // ── 辅助函数 ──────────────────────────────────────────────────
 
 /// 在 isolate 中递归计算目录大小（字节）。
+///
+/// 用手动栈式遍历而非 `listSync(recursive: true)`：后者任一子目录抛异常就会
+/// 中断整个迭代并丢失已累加的大小；前者对每个子目录单独 catch，即使部分目录
+/// 无权限/损坏也能返回其余部分的累计大小。
 @pragma('vm:entry-point')
 int _calcDirSize(String path) {
-  final dir = Directory(path);
-  if (!dir.existsSync()) return 0;
+  final root = Directory(path);
+  if (!root.existsSync()) return 0;
   int size = 0;
-  try {
-    for (final entity in dir.listSync(recursive: true, followLinks: false)) {
-      if (entity is File) {
-        try {
-          size += entity.lengthSync();
-        } catch (_) {}
+  final stack = <Directory>[root];
+  while (stack.isNotEmpty) {
+    final dir = stack.removeLast();
+    try {
+      for (final entity in dir.listSync(followLinks: false)) {
+        if (entity is File) {
+          try {
+            size += entity.lengthSync();
+          } catch (_) {}
+        } else if (entity is Directory) {
+          stack.add(entity);
+        }
       }
+    } catch (_) {
+      // 跳过无法读取的目录，继续处理其余目录
     }
-  } catch (_) {}
+  }
   return size;
+}
+
+/// 在单个 isolate 中一次性计算多个 proot rootfs 的大小。
+///
+/// 避免为每个 rootfs 各开一个 isolate：rootfs 含数万文件，多个 isolate 并发
+/// 遍历会瞬时占用大量内存，后续 isolate 可能被系统回收导致返回 0。
+/// 入参为 {rootfsId: 绝对路径}，返回 {rootfsId: 字节大小}。
+@pragma('vm:entry-point')
+Map<String, int> _calcRootfsSizes(Map<String, String> idToPath) {
+  final result = <String, int>{};
+  for (final entry in idToPath.entries) {
+    result[entry.key] = _calcDirSize(entry.value);
+  }
+  return result;
 }
 
 /// 删除目录下所有内容（保留目录本身）。

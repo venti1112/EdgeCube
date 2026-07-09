@@ -101,6 +101,9 @@ class FileBrowser extends StatefulWidget {
   /// 退出多选模式（供返回键处理使用）。
   static void exitSelection() => _FileBrowserState._active?._clearSelection();
 
+  /// 检查当前目录的实际文件列表与已显示的是否一致，不一样则刷新（保留滚动位置）。
+  static void checkAndRefresh() => _FileBrowserState._active?._checkAndRefresh();
+
   @override
   State<FileBrowser> createState() => _FileBrowserState();
 }
@@ -159,6 +162,28 @@ class _FileBrowserState extends State<FileBrowser> {
       _entries = entries;
       _loading = false;
     });
+  }
+
+  /// 检查当前目录实际文件列表与已显示的是否一致，不一样则静默刷新（保留滚动位置）。
+  Future<void> _checkAndRefresh() async {
+    final fresh = await _service.list(_current);
+    if (!mounted) return;
+    if (_entriesSame(fresh, _entries)) return;
+    setState(() {
+      _entries = fresh;
+      _loading = false;
+    });
+  }
+
+  /// 两个文件列表的内容是否完全相同（按路径与类型比较）。
+  bool _entriesSame(List<FileEntry> a, List<FileEntry> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].path != b[i].path || a[i].isDirectory != b[i].isDirectory) {
+        return false;
+      }
+    }
+    return true;
   }
 
   void _showError(Object error) {

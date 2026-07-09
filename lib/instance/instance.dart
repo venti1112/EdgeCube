@@ -1,7 +1,6 @@
 /// 运行环境标识：Java 版（JVM 跑 .jar）与 PHP 版（PocketMine 跑 .phar）。
 const String kRuntimeJava = 'java';
 const String kRuntimePhp = 'php';
-const String kRuntimeDragonfly = 'dragonfly';
 const String kRuntimeProot = 'proot';
 
 /// 实例索引项：仅包含选择列表所需的 [id] 与 [name]。
@@ -33,6 +32,9 @@ class InstanceSummary {
 /// [customJvmArgs] 为用户自定义的 JVM 参数（以空白符/换行分隔，原样附加在内置参数之后，仅 Java 版）；
 /// [compatMode] 兼容模式：开启后「准备中」完成、服务端进程起来后直接视为「运行中」，
 /// 跳过「启动中」阶段（适配不输出 Done 标志的非标准服务端）。
+/// [prootStartupCommand] 仅用于 proot 纯容器（generic）rootfs：用户须填写完整启动命令
+/// （含主程序路径与所有参数，如 `/usr/bin/python3 /mnt/server/main.py`）。
+/// 带元数据的 rootfs（java/php/node/python）不需要此字段，启动方式由清单声明。
 class Instance {
   const Instance({
     required this.id,
@@ -43,6 +45,7 @@ class Instance {
     this.selectedJar,
     this.customJvmArgs,
     this.compatMode = false,
+    this.prootStartupCommand,
   });
 
   final String id;
@@ -53,6 +56,11 @@ class Instance {
   final String? selectedJar;
   final String? customJvmArgs;
   final bool compatMode;
+
+  /// proot 纯容器（generic rootfs）的完整启动命令。
+  /// 仅当 runtime=proot 且所选 rootfs 无元数据（或 envType=generic）时使用。
+  /// 带元数据的 rootfs 不使用此字段。
+  final String? prootStartupCommand;
 
   /// 是否为 PHP（PocketMine）运行环境。
   bool get isPhp => runtime == kRuntimePhp;
@@ -65,10 +73,12 @@ class Instance {
     String? selectedJar,
     String? customJvmArgs,
     bool? compatMode,
+    String? prootStartupCommand,
     bool clearMaxMemory = false,
     bool clearJavaVersion = false,
     bool clearSelectedJar = false,
     bool clearCustomJvmArgs = false,
+    bool clearProotStartupCommand = false,
   }) => Instance(
     id: id,
     name: name ?? this.name,
@@ -80,6 +90,9 @@ class Instance {
         ? null
         : (customJvmArgs ?? this.customJvmArgs),
     compatMode: compatMode ?? this.compatMode,
+    prootStartupCommand: clearProotStartupCommand
+        ? null
+        : (prootStartupCommand ?? this.prootStartupCommand),
   );
 
   Map<String, dynamic> toJson() => {
@@ -91,6 +104,7 @@ class Instance {
     if (selectedJar != null) 'selectedJar': selectedJar,
     if (customJvmArgs != null) 'customJvmArgs': customJvmArgs,
     if (compatMode) 'compatMode': true,
+    if (prootStartupCommand != null) 'prootStartupCommand': prootStartupCommand,
   };
 
   factory Instance.fromJson(Map<String, dynamic> json) => Instance(
@@ -102,5 +116,6 @@ class Instance {
     selectedJar: json['selectedJar'] as String?,
     customJvmArgs: json['customJvmArgs'] as String?,
     compatMode: json['compatMode'] as bool? ?? false,
+    prootStartupCommand: json['prootStartupCommand'] as String?,
   );
 }

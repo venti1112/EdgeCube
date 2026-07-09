@@ -6,25 +6,21 @@ class NameEntryStep extends StatelessWidget {
   const NameEntryStep({
     super.key,
     required this.controller,
-    required this.showDragonflyTile,
     required this.showBungeeCordTile,
     required this.onGoToServerType,
     required this.onStartImport,
     required this.onStartArchive,
     required this.onStartModpack,
-    required this.onCreateDragonfly,
     required this.onCreateBungeeCord,
     required this.onCreateEmpty,
   });
 
   final TextEditingController controller;
-  final bool showDragonflyTile;
   final bool showBungeeCordTile;
   final VoidCallback onGoToServerType;
   final VoidCallback onStartImport;
   final VoidCallback onStartArchive;
   final VoidCallback onStartModpack;
-  final VoidCallback onCreateDragonfly;
   final VoidCallback onCreateBungeeCord;
   final VoidCallback onCreateEmpty;
 
@@ -70,14 +66,7 @@ class NameEntryStep extends StatelessWidget {
           onTap: onStartModpack,
         ),
         const SizedBox(height: 12),
-        if (showDragonflyTile)
-          ServerTypeTile(
-            icon: Icons.auto_awesome_outlined,
-            title: context.tr('instance.dragonflyCreateTitle'),
-            subtitle: context.tr('instance.dragonflyCreateSubtitle'),
-            onTap: onCreateDragonfly,
-          )
-        else if (showBungeeCordTile)
+        if (showBungeeCordTile)
           ServerTypeTile(
             icon: Icons.account_tree_outlined,
             title: context.tr('instance.bungeecordTitle'),

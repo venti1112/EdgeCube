@@ -22,10 +22,15 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
   bool _useMirror = false;
   bool _loaded = false;
 
+  final _dnsController = TextEditingController();
+  String _dnsOriginal = '';
+  bool _dnsLoaded = false;
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadDns();
   }
 
   Future<void> _load() async {
@@ -40,6 +45,54 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
   Future<void> _onToggle(bool value) async {
     setState(() => _useMirror = value);
     await NetworkStore.saveUseMirror(value);
+  }
+
+  Future<void> _loadDns() async {
+    final v = await NetworkStore.loadCustomDns();
+    if (!mounted) return;
+    setState(() {
+      _dnsController.text = v;
+      _dnsOriginal = v;
+      _dnsLoaded = true;
+    });
+  }
+
+  /// 校验 DNS 字符串：逗号分隔的 IP 地址，至少一个有效项。
+  bool _validateDns(String text) {
+    final parts = text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty);
+    final ips = parts.toList();
+    if (ips.isEmpty) return false;
+    final ipv4 = RegExp(r'^(\d{1,3}\.){3}\d{1,3}$');
+    final ipv6 = RegExp(r'^[0-9a-fA-F:]+$');
+    for (final ip in ips) {
+      if (!ipv4.hasMatch(ip) && !ipv6.hasMatch(ip)) return false;
+    }
+    return true;
+  }
+
+  Future<void> _saveDns() async {
+    final text = _dnsController.text.trim();
+    if (!_validateDns(text)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('network.dnsInvalid'))),
+      );
+      return;
+    }
+    await NetworkStore.saveCustomDns(text);
+    setState(() => _dnsOriginal = text);
+  }
+
+  Future<void> _resetDns() async {
+    const defaults = '8.8.8.8,1.1.1.1';
+    _dnsController.text = defaults;
+    await NetworkStore.saveCustomDns(defaults);
+    setState(() => _dnsOriginal = defaults);
+  }
+
+  @override
+  void dispose() {
+    _dnsController.dispose();
+    super.dispose();
   }
 
   @override
@@ -58,6 +111,59 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
             value: _useMirror,
             onChanged: _loaded ? _onToggle : null,
           ),
+          const Divider(),
+          _sectionHeader(theme, context.tr('network.dns')),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              context.tr('network.dnsDesc'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _dnsController,
+                    decoration: InputDecoration(
+                      labelText: context.tr('network.dns'),
+                      hintText: context.tr('network.dnsHint'),
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.dns_outlined),
+                    ),
+                    enabled: _dnsLoaded,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonal(
+                  onPressed: (_dnsLoaded &&
+                          _dnsController.text.trim() != _dnsOriginal)
+                      ? _saveDns
+                      : null,
+                  child: Text(context.tr('common.save')),
+                ),
+              ],
+            ),
+          ),
+          if (_dnsLoaded &&
+              _dnsController.text.trim() != '8.8.8.8,1.1.1.1')
+            Padding(
+              padding: const EdgeInsets.only(left: 16, top: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _resetDns,
+                  icon: const Icon(Icons.restore, size: 18),
+                  label: Text(context.tr('network.dnsReset')),
+                ),
+              ),
+            ),
           const Divider(),
           _sectionHeader(theme, context.tr('network.aboutMirror')),
           ListTile(

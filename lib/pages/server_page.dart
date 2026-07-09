@@ -60,31 +60,35 @@ class ServerPage extends StatelessWidget {
   }
 }
 
-/// 启动所需的上下文：实例工作目录、可作为服务端的文件列表（.jar / .phar）、
+/// 启动所需的上下文：实例工作目录、可作为服务端的文件列表（.jar / .phar / 全部）、
 /// 当前架构可用的 JRE 版本与 PHP 运行时，以及运行时 id→名称映射。
 class _LaunchContext {
   const _LaunchContext({
     required this.workingDir,
     required this.jars,
     required this.phars,
+    required this.allFiles,
     required this.versions,
     required this.phpRuntimes,
-    required this.dragonflyRuntimes,
-    required this.prootRootfs,
+    required this.prootRootfsInfos,
     required this.runtimeNames,
   });
 
   final String workingDir;
   final List<String> jars;
   final List<String> phars;
+  /// 实例目录下所有文件（含无扩展名的 x86_64 二进制），用于 box64 等环境。
+  final List<String> allFiles;
   final List<String> versions;
   final List<String> phpRuntimes;
-  final List<String> dragonflyRuntimes;
 
-  /// 已导入的 proot rootfs id 列表（每个 id 对应一个含原版 Java 的 Linux 根文件系统）。
-  final List<String> prootRootfs;
+  /// 已导入的 proot rootfs 信息列表（每个含元数据清单，可能为 generic 纯容器）。
+  final List<ProotRootfsInfo> prootRootfsInfos;
 
   final Map<String, String> runtimeNames;
+
+  /// 便捷：rootfs id 列表。
+  List<String> get prootRootfs => prootRootfsInfos.map((r) => r.id).toList();
 }
 
 /// 选中实例的服务端控制面板：状态、启动配置与启动/停止操作。
@@ -111,6 +115,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     with RouteAware {
   late final TextEditingController _memController;
   late final TextEditingController _jvmArgsController;
+  late final TextEditingController _prootStartupCommandController;
   String _runtime = kRuntimeJava;
   String _version = 'jre21';
   String? _selectedJar;
@@ -121,7 +126,6 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
   String _prootRootfsId = '';
 
   bool get _isPhp => _runtime == kRuntimePhp;
-  bool get _isDragonfly => _runtime == kRuntimeDragonfly;
   bool get _isProot => _runtime == kRuntimeProot;
 
   @override
@@ -132,6 +136,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     );
     _jvmArgsController = TextEditingController(
       text: widget.instance.customJvmArgs ?? '',
+    );
+    _prootStartupCommandController = TextEditingController(
+      text: widget.instance.prootStartupCommand ?? '',
     );
     _runtime = widget.instance.runtime;
     // proot 运行时把所选 rootfs id 存入 javaVersion 字段（proot 不用 EdgeCube JRE，
@@ -270,6 +277,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     appRouteObserver.unsubscribe(this);
     _memController.dispose();
     _jvmArgsController.dispose();
+    _prootStartupCommandController.dispose();
     super.dispose();
   }
 
@@ -277,6 +285,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
   void _persistConfig() {
     final controller = InstanceScope.of(context);
     final argsText = _jvmArgsController.text.trim();
+    final prootCmd = _prootStartupCommandController.text.trim();
     controller.updateConfig(
       widget.instance.id,
       runtime: _runtime,
@@ -289,7 +298,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       selectedJar: _selectedJar,
       customJvmArgs: argsText.isEmpty ? null : argsText,
       compatMode: _compatMode,
+      prootStartupCommand: _isProot ? prootCmd : null,
       clearCustomJvmArgs: argsText.isEmpty,
+      clearProotStartupCommand: !_isProot || prootCmd.isEmpty,
     );
   }
 
@@ -301,7 +312,13 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       if (!mounted) return;
       setState(() {
         // 优先保留已持久化的服务端文件与版本，若无效则回退到扫描结果。
-        final files = _isPhp ? ctx.phars : ctx.jars;
+        // proot 模式下根据 rootfs envType 决定 .jar / .phar / 全部文件。
+        final envType = _isProot ? _selectedRootfsEnvType(ctx) : '';
+        final showPhars = _isPhp || envType == 'php';
+        final showAllFiles = envType == 'box64';
+        final files = showPhars
+            ? ctx.phars
+            : (showAllFiles ? ctx.allFiles : ctx.jars);
         if (_selectedJar == null || !files.contains(_selectedJar)) {
           _selectedJar = files.isNotEmpty ? files.first : null;
         }
@@ -323,15 +340,18 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     final dir = await instances.directoryFor(instance);
     final jars = <String>[];
     final phars = <String>[];
+    final allFiles = <String>[];
     if (await dir.exists()) {
       await for (final entry in dir.list(followLinks: false)) {
         if (entry is! File) continue;
-        final lower = entry.path.toLowerCase();
+        final name = p.basename(entry.path);
+        final lower = name.toLowerCase();
         if (lower.endsWith('.jar')) {
-          jars.add(p.basename(entry.path));
+          jars.add(name);
         } else if (lower.endsWith('.phar')) {
-          phars.add(p.basename(entry.path));
+          phars.add(name);
         }
+        allFiles.add(name);
       }
     }
     jars.sort((a, b) {
@@ -355,32 +375,29 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       return r != 0 ? r : a.compareTo(b);
     });
     phars.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    allFiles.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     final versions = await server.availableJreIds();
     final phpRuntimes = await server.availablePhpIds();
     final runtimeService = const RuntimeService();
     final runtimes = await runtimeService.installedRuntimes();
-    // proot rootfs 列表（每个含原版 Java，可作为服务端运行环境）
+    // proot rootfs 列表（每个含元数据清单，可能为 generic 纯容器）
     final prootRootfsList = await const ProotService().listRootfs();
     final runtimeNames = <String, String>{
       for (final rt in runtimes) rt.id: rt.name,
       // 内置 PHP CLI（随 APK 打包）的友好名称；.ecpkg 安装的 PHP 会被同 id 覆盖。
       'php-cli-8.2': 'PHP 8.2 (内置)',
-      // proot rootfs 的友好名称：直接用 id
-      for (final r in prootRootfsList) r.id: 'proot: ${r.id}',
+      // proot rootfs 的友好名称：优先用清单 envName，否则用 id
+      for (final r in prootRootfsList)
+        r.id: 'proot: ${r.envName.isNotEmpty ? r.envName : r.id}',
     };
-    final dragonflyRuntimes = runtimes
-        .where((rt) => rt.type == 'dragonfly')
-        .map((rt) => rt.id)
-        .toList();
-    final prootRootfs = prootRootfsList.map((r) => r.id).toList();
     return _LaunchContext(
       workingDir: dir.path,
       jars: jars,
       phars: phars,
+      allFiles: allFiles,
       versions: versions,
       phpRuntimes: phpRuntimes,
-      dragonflyRuntimes: dragonflyRuntimes,
-      prootRootfs: prootRootfs,
+      prootRootfsInfos: prootRootfsList,
       runtimeNames: runtimeNames,
     );
   }
@@ -467,37 +484,6 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
   void _start(ServerController server, _LaunchContext ctx) async {
     final file = _selectedJar;
 
-    // Dragonfly：用 Dragonfly 运行时执行 config.yml。
-    if (_isDragonfly) {
-      final runtimes = await const RuntimeService().installedRuntimes();
-      final dragonflyRuntimes = runtimes
-          .where((rt) => rt.type == 'dragonfly')
-          .toList();
-      if (dragonflyRuntimes.isEmpty) {
-        _showRuntimeRequiredDialog(isJava: false);
-        return;
-      }
-      final configFile = File(p.join(ctx.workingDir, 'config.yml'));
-      if (!await configFile.exists()) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('server.noConfigFound'))),
-        );
-        return;
-      }
-      server.start(
-        instanceId: widget.instance.id,
-        instanceName: widget.instance.name,
-        workingDir: ctx.workingDir,
-        runtimeId: dragonflyRuntimes.first.id,
-        runtime: kRuntimeDragonfly,
-        jvmArgs: const [],
-        programArgs: [configFile.path],
-        compatMode: _compatMode,
-      );
-      return;
-    }
-
     // PHP（PocketMine）：用 PHP 运行时执行选中的 .phar。
     if (_isPhp) {
       if (ctx.phpRuntimes.isEmpty) {
@@ -523,11 +509,15 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       return;
     }
 
-    // —— proot 分支：在用户导入的 Linux rootfs 内运行原版 Java ——
+    // —— proot 分支：在用户导入的 Linux rootfs 内运行服务端 ——
     // 绕过 Android JRE 兼容性问题。proot 不需要 EdgeCube 自带的 JRE，
     // 故此分支放在 JRE 版本检查之前。
+    // 根据 rootfs 元数据决定启动方式：
+    //  - 带元数据（java/php/node/python）：按清单 envMainBin + envArgs 启动，
+    //    programArgs 为服务端文件 + nogui（java）或服务端文件（其他）。
+    //  - 纯容器（generic）：用户须提供完整启动命令，作为 programArgs 传入。
     if (_isProot) {
-      if (ctx.prootRootfs.isEmpty) {
+      if (ctx.prootRootfsInfos.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('未导入任何 proot rootfs，请先在「管理 → 运行环境」导入 rootfs.tar.zst')),
         );
@@ -535,29 +525,62 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       }
       final rootfsId = _prootRootfsId.isNotEmpty
           ? _prootRootfsId
-          : ctx.prootRootfs.first;
-      if (file == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('server.noJarFound'))),
-        );
-        return;
-      }
+          : ctx.prootRootfsInfos.first.id;
+      // 查找所选 rootfs 的元数据信息
+      final rootfsInfo = ctx.prootRootfsInfos.firstWhere(
+        (r) => r.id == rootfsId,
+        orElse: () => ctx.prootRootfsInfos.first,
+      );
       final mem = int.tryParse(_memController.text.trim());
       final jvmArgs = <String>[
         if (mem != null && mem > 0) '-Xmx${mem}M',
         ..._parseCustomJvmArgs(widget.instance.customJvmArgs),
       ];
-      if (!await _ensureEula(ctx.workingDir)) return;
-      server.start(
-        instanceId: widget.instance.id,
-        instanceName: widget.instance.name,
-        workingDir: ctx.workingDir,
-        runtimeId: rootfsId,
-        runtime: kRuntimeProot,
-        jvmArgs: jvmArgs,
-        programArgs: ['-jar', file, 'nogui'],
-        compatMode: _compatMode,
-      );
+      if (rootfsInfo.isGeneric) {
+        // 纯容器：用户必须提供完整启动命令
+        final command = _prootStartupCommandController.text.trim();
+        if (command.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('纯容器环境必须填写启动命令，请在实例配置中设置')),
+          );
+          return;
+        }
+        if (!await _ensureEula(ctx.workingDir)) return;
+        server.start(
+          instanceId: widget.instance.id,
+          instanceName: widget.instance.name,
+          workingDir: ctx.workingDir,
+          runtimeId: rootfsId,
+          runtime: kRuntimeProot,
+          jvmArgs: const [],
+          programArgs: [command],
+          compatMode: _compatMode,
+        );
+      } else {
+        // 带元数据的 rootfs：按清单声明的 envMainBin 启动。
+        // Java 与 PHP 复用 _selectedJar（.jar / .phar），其余环境同样复用
+        // _selectedJar 作为入口文件名（用户可在文件页导入任意类型文件）。
+        if (file == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(context.tr('server.noJarFound'))),
+          );
+          return;
+        }
+        if (!await _ensureEula(ctx.workingDir)) return;
+        // Java 用 -jar file nogui；其他环境（php/node/python/box64）直接传文件名。
+        final isJavaEnv = rootfsInfo.envType == 'java';
+        server.start(
+          instanceId: widget.instance.id,
+          instanceName: widget.instance.name,
+          workingDir: ctx.workingDir,
+          runtimeId: rootfsId,
+          runtime: kRuntimeProot,
+          // -Xmx 等仅对 JVM 有意义，非 Java 环境不传 jvmArgs。
+          jvmArgs: isJavaEnv ? jvmArgs : const [],
+          programArgs: isJavaEnv ? ['-jar', file, 'nogui'] : [file],
+          compatMode: _compatMode,
+        );
+      }
       return;
     }
 
@@ -597,11 +620,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
   /// 未安装对应运行时，提示用户前往「运行环境」页导入。
   Future<void> _showRuntimeRequiredDialog({required bool isJava}) async {
     final tr = LocaleScope.of(context).translations;
-    final contentKey = _isDragonfly
-        ? 'server.runtimeRequiredContentDragonfly'
-        : isJava
-            ? 'server.runtimeRequiredContentJava'
-            : 'server.runtimeRequiredContentPhp';
+    final contentKey = isJava
+        ? 'server.runtimeRequiredContentJava'
+        : 'server.runtimeRequiredContentPhp';
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -757,6 +778,18 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (ctx2, setDialogState) {
+            // 预计算当前所选 proot rootfs 的属性，供下方各字段条件渲染使用。
+            final effectiveRootfsId = ctx.prootRootfs.contains(_prootRootfsId)
+                ? _prootRootfsId
+                : (ctx.prootRootfs.isNotEmpty ? ctx.prootRootfs.first : '');
+            final selectedRootfsInfo = ctx.prootRootfsInfos
+                .where((r) => r.id == effectiveRootfsId)
+                .firstOrNull;
+            final isGenericRootfs = _isProot &&
+                (selectedRootfsInfo?.isGeneric ?? false);
+            final isProotJavaEnv = _isProot &&
+                !isGenericRootfs &&
+                selectedRootfsInfo?.envType == 'java';
             return AlertDialog(
               title: Text(context.tr('server.instanceConfig')),
               content: SingleChildScrollView(
@@ -773,7 +806,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                     ),
                     const SizedBox(height: 16),
                     // 运行环境：Java（JVM 跑 .jar）/ PHP（PocketMine 跑 .phar）/
-                    // Dragonfly（Go 引擎）/ proot（rootfs 内运行原版 Java）。
+                    // proot（rootfs 内运行带元数据的环境或纯容器）。
                     DropdownButtonFormField<String>(
                       isExpanded: true,
                       initialValue: _runtime,
@@ -792,15 +825,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                           child: Text(context.tr('server.runtimePhp')),
                         ),
                         DropdownMenuItem(
-                          value: kRuntimeDragonfly,
-                          child: Text(context.tr('server.runtimeDragonfly')),
+                          value: kRuntimeProot,
+                          child: const Text('proot（Linux 容器）'),
                         ),
-                        // proot 选项仅在有已导入的 rootfs 时显示
-                        if (ctx.prootRootfs.isNotEmpty)
-                          DropdownMenuItem(
-                            value: kRuntimeProot,
-                            child: const Text('proot（原版 Java）'),
-                          ),
                       ],
                       selectedItemBuilder: (context) => [
                         DropdownMenuItem<String>(
@@ -818,20 +845,12 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                           ),
                         ),
                         DropdownMenuItem<String>(
-                          value: kRuntimeDragonfly,
-                          child: Text(
-                            context.tr('server.runtimeDragonfly'),
+                          value: kRuntimeProot,
+                          child: const Text(
+                            'proot（Linux 容器）',
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (ctx.prootRootfs.isNotEmpty)
-                          DropdownMenuItem<String>(
-                            value: kRuntimeProot,
-                            child: const Text(
-                              'proot（原版 Java）',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
                       ],
                       onChanged: (v) {
                         if (v == null || v == _runtime) return;
@@ -842,12 +861,16 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                             _selectedJar = ctx.phars.isNotEmpty
                                 ? ctx.phars.first
                                 : null;
-                          } else if (_isDragonfly) {
-                            _selectedJar = null;
                           } else if (_isProot) {
-                            // proot 跑 .jar，与 Java 一样需要选 jar 文件
-                            _selectedJar = ctx.jars.isNotEmpty
-                                ? ctx.jars.first
+                            // proot：默认选第一个 rootfs，服务端文件按其 envType
+                            // 决定（_serverFileField 会自动回退到正确文件列表）。
+                            // box64 环境显示全部文件，其余显示 .jar。
+                            final envType = _selectedRootfsEnvType(ctx);
+                            final fileList = envType == 'box64'
+                                ? ctx.allFiles
+                                : ctx.jars;
+                            _selectedJar = fileList.isNotEmpty
+                                ? fileList.first
                                 : null;
                             // 默认选第一个 rootfs
                             if (_prootRootfsId.isEmpty &&
@@ -870,7 +893,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                     ),
                     const SizedBox(height: 16),
                     if (_isProot) ...[
-                      // proot rootfs 选择器：选择在哪个 Linux rootfs 内运行 Java。
+                      // proot rootfs 选择器：选择在哪个 Linux rootfs 内运行服务端。
                       DropdownButtonFormField<String>(
                         isExpanded: true,
                         initialValue: ctx.prootRootfs.contains(_prootRootfsId)
@@ -905,18 +928,39 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                         },
                       ),
                       const SizedBox(height: 16),
-                      TextField(
-                        controller: _memController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: context.tr('server.maxMemoryLabel'),
-                          suffixText: 'MB',
-                          border: const OutlineInputBorder(),
-                          isDense: true,
+                      if (isGenericRootfs)
+                        // 纯容器：用户须填写完整的启动命令（含主程序路径与参数）。
+                        TextField(
+                          controller: _prootStartupCommandController,
+                          maxLines: 4,
+                          minLines: 2,
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: '启动命令（容器内执行）',
+                            hintText: '/usr/bin/python3 /mnt/server/main.py',
+                            helperText: '无元数据的纯容器环境，请填写完整启动命令',
+                            alignLabelWithHint: true,
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        )
+                      else if (isProotJavaEnv)
+                        // Java 元数据 rootfs：内存限制对 JVM 有意义。
+                        TextField(
+                          controller: _memController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: context.tr('server.maxMemoryLabel'),
+                            suffixText: 'MB',
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                          ),
                         ),
-                      ),
                       const SizedBox(height: 16),
-                    ] else if (!_isPhp && !_isDragonfly) ...[
+                    ] else if (!_isPhp) ...[
                       DropdownButtonFormField<String>(
                         isExpanded: true,
                         initialValue: ctx.versions.contains(_version)
@@ -960,22 +1004,6 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                         ),
                       ),
                       const SizedBox(height: 16),
-                    ] else if (_isDragonfly) ...[
-                      // Dragonfly 运行时版本。
-                      InputDecorator(
-                        decoration: InputDecoration(
-                          labelText: context.tr('server.runtimeVersionLabel'),
-                          border: const OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        child: Text(
-                          ctx.dragonflyRuntimes.isNotEmpty
-                              ? (ctx.runtimeNames[ctx.dragonflyRuntimes.first] ??
-                                    ctx.dragonflyRuntimes.first)
-                              : context.tr('server.noRuntimeAvailable'),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
                     ] else ...[
                       // PHP 运行时版本（只读；当前仅 PHP 8.2，且仅 aarch64 提供）。
                       InputDecorator(
@@ -993,12 +1021,13 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
                       ),
                       const SizedBox(height: 16),
                     ],
-                    if (_isDragonfly)
-                      _serverConfigField(dialogContext, ctx)
-                    else
+                    if (!isGenericRootfs)
                       _serverFileField(dialogContext, ctx),
                     const SizedBox(height: 16),
-                    if (!_isPhp && !_isDragonfly) ...[
+                    // JVM 参数仅对 Java 环境有意义（含 proot Java 元数据 rootfs）；
+                    // 纯容器、PHP、Node、Python 等均不显示。
+                    if (!_isPhp && !isGenericRootfs &&
+                        (!_isProot || isProotJavaEnv)) ...[
                       TextField(
                         controller: _jvmArgsController,
                         maxLines: 4,
@@ -1073,29 +1102,24 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     nameController.dispose();
   }
 
-  Widget _serverConfigField(BuildContext context, _LaunchContext ctx) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Icon(Icons.description_outlined, size: 20, color: theme.colorScheme.primary),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            context.tr('server.serverConfigLabel'),
-            style: theme.textTheme.bodySmall,
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _serverFileField(BuildContext context, _LaunchContext ctx) {
     final theme = Theme.of(context);
-    final files = _isPhp ? ctx.phars : ctx.jars;
-    final ext = _isPhp ? '.phar' : '.jar';
-    final label = _isPhp
+    // proot 模式下根据 rootfs 元数据的 envType 决定显示的文件列表：
+    //  - php：显示 .phar
+    //  - box64：显示全部文件（x86_64 二进制可能无扩展名）
+    //  - java/node/python：显示 .jar
+    final envType = _isProot ? _selectedRootfsEnvType(ctx) : '';
+    final showPhars = _isPhp || envType == 'php';
+    final showAllFiles = envType == 'box64';
+    final files = showPhars
+        ? ctx.phars
+        : (showAllFiles ? ctx.allFiles : ctx.jars);
+    final ext = showPhars ? '.phar' : (showAllFiles ? '' : '.jar');
+    final label = showPhars
         ? context.tr('server.serverPharLabel')
-        : context.tr('server.serverJarLabel');
+        : (showAllFiles
+            ? context.tr('server.serverFileLabel')
+            : context.tr('server.serverJarLabel'));
     if (files.isEmpty) {
       return Row(
         children: [
@@ -1136,6 +1160,17 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
         _selectedJar = v;
       },
     );
+  }
+
+  /// 返回当前所选 proot rootfs 的 envType（如 'java'/'php'/'generic'）。
+  /// 未选中 rootfs 或无元数据时返回 'generic'。
+  String _selectedRootfsEnvType(_LaunchContext ctx) {
+    final id = _prootRootfsId.isNotEmpty
+        ? _prootRootfsId
+        : (ctx.prootRootfs.isNotEmpty ? ctx.prootRootfs.first : '');
+    if (id.isEmpty) return 'generic';
+    final info = ctx.prootRootfsInfos.where((r) => r.id == id).firstOrNull;
+    return info?.envType.isNotEmpty == true ? info!.envType : 'generic';
   }
 
   Widget _actions(

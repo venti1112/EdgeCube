@@ -160,10 +160,13 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   // —— 步骤导航 ——
 
-  /// 校验名称：非空且不重名。重复时弹出提示对话框。
+  /// 校验名称：非空且不重名。空或重复时弹出提示对话框。
   Future<bool> _validateName() async {
     final name = _nameController.text.trim();
-    if (name.isEmpty) return false;
+    if (name.isEmpty) {
+      await _showNameEmptyDialog();
+      return false;
+    }
     if (_instanceController.instances.any((i) => i.name == name)) {
       await _showDuplicateDialog(name);
       return false;
@@ -288,15 +291,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
           });
         });
       }
-      return;
-    }
-    if (type == 'dragonfly') {
-      setState(() {
-        _step = _WizardStep.nameEntry;
-        _loadingVersions = false;
-        _versionError = null;
-        _versions = [];
-      });
       return;
     }
     if (type == 'bungeecord') {
@@ -465,38 +459,6 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     final name = _nameController.text.trim();
     try {
       final instance = await _instanceController.createInstance(name);
-      _instanceId = instance.id;
-      _completed = true;
-      _finishWizard();
-    } on DuplicateInstanceNameException {
-      if (!mounted) return;
-      _showDuplicateDialog(name);
-    }
-  }
-
-  Future<void> _createDragonflyInstance() async {
-    if (!await _validateName()) return;
-    final name = _nameController.text.trim();
-    try {
-      final instance = await _instanceController.createInstance(name);
-      await _instanceController.updateConfig(
-        instance.id,
-        runtime: kRuntimeDragonfly,
-      );
-      final dir = await _instanceController.directoryForId(instance.id);
-      final configYml = [
-        'network:',
-        '  address: ":19132"',
-        'server:',
-        '  name: "$name"',
-        '  authenabled: true',
-        'world:',
-        '  folder: "world"',
-        'players:',
-        '  folder: "players"',
-        '',
-      ].join('\n');
-      await File(p.join(dir.path, 'config.yml')).writeAsString(configYml);
       _instanceId = instance.id;
       _completed = true;
       _finishWizard();
@@ -1507,6 +1469,22 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     );
   }
 
+  Future<void> _showNameEmptyDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.tr('instance.noticeTitle')),
+        content: Text(context.tr('instance.nameEmpty')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(context.tr('common.ok')),
+          ),
+        ],
+      ),
+    );
+  }
+
   // —— UI 构建 ——
 
   @override
@@ -1589,13 +1567,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   Widget _buildNameEntry(ThemeData theme) {
     return NameEntryStep(
       controller: _nameController,
-      showDragonflyTile: _serverType == 'dragonfly',
       showBungeeCordTile: _serverType == 'bungeecord',
       onGoToServerType: _goToServerType,
       onStartImport: _startImport,
       onStartArchive: _startImportArchive,
       onStartModpack: _startModpackImport,
-      onCreateDragonfly: _createDragonflyInstance,
       onCreateBungeeCord: _createAndDownloadBungeeCord,
       onCreateEmpty: _createEmptyInstance,
     );
@@ -1624,7 +1600,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   Widget _buildBedrockServerTypeSelect(ThemeData theme) {
     return ServerTypeTileList(
-      types: const ['pocketmine', 'powernukkitx', 'allay', 'dragonfly'],
+      types: const ['pocketmine', 'powernukkitx', 'allay'],
       onSelect: _selectServerType,
     );
   }

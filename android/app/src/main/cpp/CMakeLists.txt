@@ -41,19 +41,6 @@ target_compile_options(frpcloader PRIVATE -fPIE)
 target_link_options(frpcloader PRIVATE -fPIE -pie)
 target_link_libraries(frpcloader dl log)
 
-# ─── libdragonflyloader.so ─── Dragonfly 启动器（dlopen 数据目录里的 libdragonfly.so）
-# 与 libfrpcloader.so 同构：Go c-shared 自包含库，运行期无额外 .so 依赖。
-add_executable(dragonflyloader dragonflyloader.c)
-
-set_target_properties(dragonflyloader PROPERTIES
-        PREFIX "lib"
-        SUFFIX ".so"
-        OUTPUT_NAME "dragonflyloader")
-
-target_compile_options(dragonflyloader PRIVATE -fPIE)
-target_link_options(dragonflyloader PRIVATE -fPIE -pie)
-target_link_libraries(dragonflyloader dl log)
-
 # ─── libecpty.so ─── 伪终端（PTY）子进程启动器（普通 JNI 共享库）
 # 与上面几个「伪装成 .so 的可执行文件」不同，这是真正的 JNI 共享库，
 # 由 Kotlin 侧 System.loadLibrary("ecpty") 加载，提供 fork+/dev/ptmx 创建

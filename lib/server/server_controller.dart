@@ -402,15 +402,6 @@ class ServerController extends ChangeNotifier {
         final allay = AllayProperties.parse(await allayFile.readAsString());
         return allay.getPort();
       }
-      final dragonflyFile = File(p.join(dir, 'config.yml'));
-      if (await dragonflyFile.exists()) {
-        final content = await dragonflyFile.readAsString();
-        final portMatch = RegExp(r'^\s*address:\s*":(\d+)"', multiLine: true)
-            .firstMatch(content);
-        if (portMatch != null) {
-          return int.tryParse(portMatch.group(1)!);
-        }
-      }
       return 25565;
     } catch (_) {
       return 25565;
@@ -444,16 +435,6 @@ class ServerController extends ChangeNotifier {
       if (await allayFile.exists()) {
         final allay = AllayProperties.parse(await allayFile.readAsString());
         return allay.getBool('network-settings.xbox-auth') ?? true;
-      }
-      final dragonflyFile = File(p.join(dir, 'config.yml'));
-      if (await dragonflyFile.exists()) {
-        final content = await dragonflyFile.readAsString();
-        final authMatch = RegExp(r'^\s*auth-enabled:\s*(true|false)\s*$',
-                multiLine: true)
-            .firstMatch(content);
-        if (authMatch != null) {
-          return authMatch.group(1) == 'true';
-        }
       }
       return true;
     } catch (_) {
@@ -502,18 +483,6 @@ class ServerController extends ChangeNotifier {
         allay['network-settings.xbox-auth'] = value.toString();
         await allayFile.writeAsString(allay.toString());
         return true;
-      }
-      final dragonflyFile = File(p.join(dir, 'config.yml'));
-      if (await dragonflyFile.exists()) {
-        var content = await dragonflyFile.readAsString();
-        final updated = content.replaceAllMapped(
-          RegExp(r'^(\s*auth-enabled:\s*)(true|false)\s*$', multiLine: true),
-          (m) => '${m.group(1)}$value',
-        );
-        if (updated != content) {
-          await dragonflyFile.writeAsString(updated);
-          return true;
-        }
       }
       return false;
     } catch (_) {

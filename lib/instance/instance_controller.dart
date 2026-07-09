@@ -225,7 +225,8 @@ class InstanceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 更新指定实例的启动配置（运行环境、内存、Java 版本、服务端 jar/phar、自定义 JVM 参数、兼容模式）。
+  /// 更新指定实例的启动配置（运行环境、内存、Java 版本、服务端 jar/phar、自定义 JVM 参数、
+  /// 兼容模式、proot 纯容器启动命令）。
   Future<void> updateConfig(
     String id, {
     String? runtime,
@@ -234,7 +235,9 @@ class InstanceController extends ChangeNotifier {
     String? selectedJar,
     String? customJvmArgs,
     bool? compatMode,
+    String? prootStartupCommand,
     bool clearCustomJvmArgs = false,
+    bool clearProotStartupCommand = false,
   }) async {
     final config = await _configFor(id);
     if (config == null) return;
@@ -245,7 +248,9 @@ class InstanceController extends ChangeNotifier {
       selectedJar: selectedJar,
       customJvmArgs: customJvmArgs,
       compatMode: compatMode,
+      prootStartupCommand: prootStartupCommand,
       clearCustomJvmArgs: clearCustomJvmArgs,
+      clearProotStartupCommand: clearProotStartupCommand,
     );
     await _store.saveConfig(updated);
     if (id == _selectedId) _selected = updated;
