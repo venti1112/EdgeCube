@@ -9,7 +9,7 @@ import '../i18n/locale_scope.dart';
 /// 用 [Listener] 手动追踪指针，而非 [GestureDetector] / ScaleGestureRecognizer——后者在
 /// 单指时也会贪婪地参与手势竞技场，抢走 xterm 的点击/长按选择与内层滚动；[Listener] 只
 /// 监听原始指针事件、不参与竞技场，因此不破坏终端原有交互。仅当屏幕上恰好有两个手指时，
-/// 按双指间距的相对变化缩放字号；缩放过程中在终端中央短暂显示当前字号，模仿正式终端软件。
+/// 按双指间距的相对变化缩放字号；缩放过程中在终端中央短暂显示当前字号
 class ZoomableTerminal extends StatefulWidget {
   const ZoomableTerminal({
     super.key,
@@ -25,7 +25,7 @@ class ZoomableTerminal extends StatefulWidget {
   /// 当前字号（由父级 State 持有，缩放时通过 [onFontSizeChanged] 回写）。
   final double fontSize;
 
-  /// 捏合过程中实时回调新字号（已 clamp 到合法范围）。
+  /// 捏合过程中实时回调新字号。
   final ValueChanged<double> onFontSizeChanged;
 
   /// 一次捏合结束（手指减少到少于两指）时回调，供父级持久化最终字号。
@@ -184,7 +184,6 @@ class TerminalZoomButton extends StatelessWidget {
 
   void _change(double delta) {
     // 先朝缩放方向把当前字号取整，再步进，使「放大/缩小」总落到整数字号
-    // （捏合可能产生小数字号，按钮在此基础上规整为整数步进）。
     final base = delta > 0 ? fontSize.floorToDouble() : fontSize.ceilToDouble();
     final v = (base + delta).clamp(kMinTerminalFontSize, kMaxTerminalFontSize);
     if (v != fontSize) onChanged(v);

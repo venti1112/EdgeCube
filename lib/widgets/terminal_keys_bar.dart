@@ -1,19 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 
-/// 终端扩展按键栏：两排补齐软键盘缺失的终端控制键。
-///
-/// 抽象自控制台页与 Shell 终端页共用的按键栏布局。通过 [TerminalKeysController]
-/// 回调接口与具体控制器解耦，[ServerController] 与 [ShellController] 均符合该接口，
-/// 无需包装即可直接传入。
-///
-/// CTRL / ALT 是粘滞修饰键（点亮后对下一次输入生效一次）；其余为瞬时键，
-/// 点击后立即发送对应字节到 PTY。
+/// 终端扩展按键栏
 class TerminalKeysBar extends StatelessWidget {
   const TerminalKeysBar(this.controller, {super.key});
 
-  /// 按键行为回调集。两个控制器的 `sendKey` / `sendText` / `toggleCtrl` /
-  /// `toggleAlt` / `ctrlDown` / `altDown` 签名一致，故可直接作为此接口实现。
   final TerminalKeysController controller;
 
   @override
@@ -99,10 +90,6 @@ class TerminalKeysBar extends StatelessWidget {
   );
 }
 
-/// [TerminalKeysBar] 所需的按键行为回调集。
-///
-/// [ServerController] 与 [ShellController] 的对应方法签名一致，隐式实现了本接口，
-/// 故无需包装即可直接作为 [TerminalKeysBar.controller] 传入。
 abstract class TerminalKeysController {
   bool get ctrlDown;
   bool get altDown;

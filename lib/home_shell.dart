@@ -110,16 +110,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   Future<void> _runStartupTasks() async {
-    // 开源免费声明必须最先弹出：在用户协议、权限申请等所有流程之前。
-    // 未确认则退出应用，不再继续后续任何流程。
+    // 开源免费声明
     final noticed = await _ensureOpenSourceNoticeAcknowledged();
     if (!noticed || !mounted) return;
-    // 用户协议必须紧随其后：在权限申请、首次启动弹窗之前。
-    // 未同意则退出应用，不再继续后续任何流程。
+    // 用户协议
     final agreed = await _ensureUserAgreementAccepted();
     if (!agreed || !mounted) return;
-    // 用户同意协议后，触发系统启动权限申请（通知、本地网络），等待对话框关闭。
-    // 确保系统权限对话框不会与用户协议弹窗叠加，也不会在协议之前出现。
+    // 权限申请
     await _requestStartupPermissions();
     if (!mounted) return;
     final storageReady = await _ensureStoragePermissionGuard();

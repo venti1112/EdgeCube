@@ -549,7 +549,12 @@ object ProotEnvironment {
         // 调用方传入的程序参数（如 server.jar nogui）
         argv.addAll(programArgs)
 
-        val env = baseHostEnv(context)
+        val env = baseHostEnv(context).toMutableMap()
+        // buildGenericCommand 和 buildShellCommand 均已覆盖 PATH，
+        // buildServerCommand 同样需要容器内 PATH，否则 JVM 内 JLine
+        // 尝试执行 "sh" 时会在宿主 PATH 中查找，而宿主路径在容器内不可见。
+        env["PATH"] = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        env["HOME"] = "/root"
         return ProotCommand(prootBin, argv, env, work.absolutePath)
     }
 

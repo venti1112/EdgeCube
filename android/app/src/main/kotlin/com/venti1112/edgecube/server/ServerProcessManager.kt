@@ -330,8 +330,8 @@ recursionguard.enabled=0"""
             if (dnsServers.isNotEmpty()) {
                 argv.add("-Dsun.net.spi.nameserver.nameservers=${dnsServers.joinToString(",")}")
             }
-            argv.addAll(jvmArgs)
-            argv.addAll(programArgs)
+            argv.addAll(expandArgfiles(jvmArgs, workingDir))
+            argv.addAll(expandArgfiles(programArgs, workingDir))
 
             env["LD_PRELOAD"] = tagfixLib
             env["JAVA_HOME"] = runtimeDir.absolutePath
@@ -601,6 +601,79 @@ recursionguard.enabled=0"""
         map["instanceName"] = name
         if (exitCode != null) map["exitCode"] = exitCode
         return map
+    }
+
+    /**
+     * 展开 JVM @argfile 引用。
+     *
+     * 标准 Java 启动器（bin/java）的 main() 会在调用 JLI_Launch 之前展开 @argfile
+     * 参数。EdgeCube 通过 liblaunch.so 直接调用 JLI_Launch，绕过了该展开步骤，
+     * 导致 JVM 将 @路径 当作主类名处理而报 ClassNotFoundException。
+     *
+     * 该函数在构建 argv 前读取 @argfile 的内容，将每一行（跳过 # 注释与空行）
+     * 展开为独立的 JVM 参数。argfile 中的嵌套 @ 引用（如 @user_jvm_args.txt）
+     * 也递归展开。
+     *
+     * @param args  原始参数列表（可能含 @argfile 引用）
+     * @param workDir  工作目录（argfile 相对路径的基准）
+     */
+    private fun expandArgfiles(args: List<String>, workDir: String): List<String> {
+        val result = mutableListOf<String>()
+        val seen = mutableSetOf<String>()  // 防循环引用
+        for (arg in args) {
+            if (arg.startsWith("@")) {
+                val file = File(workDir, arg.substring(1))
+                if (file.isFile) {
+                    expandArgfile(file, workDir, result, seen)
+                } else {
+                    result.add(arg)
+                }
+            } else {
+                result.add(arg)
+            }
+        }
+        return result
+    }
+
+    /**
+     * 递归展开单个 argfile。
+     *
+     * 每行可包含多个以空白符分隔的参数（JVM @argfile 规范允许在一行中放置
+     * 多个参数）。跳过 # 开头的注释行与空行。嵌套 @ 引用按 JVM 规范以 CWD
+     * 为基准解析路径。
+     */
+    private fun expandArgfile(
+        file: File,
+        workDir: String,
+        result: MutableList<String>,
+        seen: MutableSet<String>,
+    ) {
+        val canonical = file.canonicalPath
+        if (!seen.add(canonical)) return  // 已展开过，防循环
+        try {
+            val tokens = mutableListOf<String>()
+            for (rawLine in file.readLines()) {
+                val trimmed = rawLine.trim()
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue
+                // JVM argfile 允许一行内多个空白分隔的参数，逐 token 展开
+                tokens.addAll(trimmed.split(Regex("\\s+")))
+            }
+            for (token in tokens) {
+                if (token.startsWith("@")) {
+                    val nestedPath = token.substring(1)
+                    val nestedFile = File(nestedPath).let {
+                        if (it.isAbsolute) it else File(workDir, nestedPath)
+                    }
+                    if (nestedFile.isFile) {
+                        expandArgfile(nestedFile, workDir, result, seen)
+                    }
+                } else {
+                    result.add(token)
+                }
+            }
+        } catch (_: Exception) {
+            // 文件不可读时直接跳过
+        }
     }
 
     /**
