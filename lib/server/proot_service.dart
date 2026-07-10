@@ -144,4 +144,10 @@ class ProotService {
     await _method.invokeMethod('deleteRootfs', {'id': id});
     refreshSignal.value++;
   }
+
+  /// 更新所有已安装 proot rootfs 的 /etc/resolv.conf 为当前自定义 DNS 配置。
+  /// 用户在「网络设置」页保存 DNS 后立即调用，无需重启实例即可生效。
+  Future<void> updateProotDns() async {
+    await _method.invokeMethod('updateProotDns');
+  }
 }

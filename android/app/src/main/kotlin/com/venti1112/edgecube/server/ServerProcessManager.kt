@@ -328,7 +328,7 @@ recursionguard.enabled=0"""
             // 失败或使用系统 DNS。通过该属性显式注入用户配置的 DNS 服务器列表。
             val dnsServers = ProotEnvironment.loadCustomDnsServers(appContext)
             if (dnsServers.isNotEmpty()) {
-                argv.add("-Dsun.net.spi.nameserver.nameservers=${dnsServers.joinToString(",")}")
+                argv.add("-Dsun.net.spi.nameservice.nameservers=${dnsServers.joinToString(",")}")
             }
             argv.addAll(expandArgfiles(jvmArgs, workingDir))
             argv.addAll(expandArgfiles(programArgs, workingDir))

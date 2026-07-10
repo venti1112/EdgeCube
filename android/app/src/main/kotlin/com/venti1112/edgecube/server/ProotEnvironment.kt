@@ -718,6 +718,7 @@ object ProotEnvironment {
      *
      * 策略：优先使用用户在「网络设置」中配置的自定义 DNS（默认 8.8.8.8,1.1.1.1），
      * 从 `<filesDir>/config/network.json` 的 `customDns` 字段读取。
+     * 始终覆盖写入，确保 rootfs 自带的 DNS 配置被替换。
      */
     private fun ensureResolvConf(context: Context, rootfsDir: File) {
         val resolvConf = File(rootfsDir, "etc/resolv.conf")
@@ -725,11 +726,18 @@ object ProotEnvironment {
         val content = buildString {
             dnsServers.forEach { appendLine("nameserver $it") }
         }
-        // 仅在内容变化时写入，避免每次启动都触发文件修改
-        val existing = if (resolvConf.exists()) resolvConf.readText() else ""
-        if (existing != content) {
-            resolvConf.parentFile?.mkdirs()
-            resolvConf.writeText(content)
+        resolvConf.parentFile?.mkdirs()
+        resolvConf.writeText(content)
+    }
+
+    /**
+     * 更新所有已安装 rootfs 的 /etc/resolv.conf。
+     * 用户在「网络设置」中更改 DNS 后立即调用，使所有已导入的 rootfs 即时生效。
+     */
+    fun updateAllRootfsDns(context: Context) {
+        val rootfsList = installedRootfs(context)
+        for (rootfs in rootfsList) {
+            ensureResolvConf(context, rootfs.dir)
         }
     }
 

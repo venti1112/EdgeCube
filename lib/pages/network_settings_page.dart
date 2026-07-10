@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/network_store.dart';
 import '../i18n/locale_scope.dart';
 import '../net/msl_mirror.dart';
+import '../server/proot_service.dart';
 
 /// 网络设置页面：控制是否使用镜像源（MSL 开服器）下载服务端。
 ///
@@ -79,6 +80,10 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
       return;
     }
     await NetworkStore.saveCustomDns(text);
+    // 立即同步到所有 proot rootfs 的 /etc/resolv.conf
+    try {
+      await const ProotService().updateProotDns();
+    } catch (_) {}
     setState(() => _dnsOriginal = text);
   }
 
@@ -86,6 +91,10 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
     const defaults = '8.8.8.8,1.1.1.1';
     _dnsController.text = defaults;
     await NetworkStore.saveCustomDns(defaults);
+    // 立即同步到所有 proot rootfs 的 /etc/resolv.conf
+    try {
+      await const ProotService().updateProotDns();
+    } catch (_) {}
     setState(() => _dnsOriginal = defaults);
   }
 

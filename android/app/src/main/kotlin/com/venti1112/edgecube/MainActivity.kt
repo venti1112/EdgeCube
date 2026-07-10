@@ -1090,6 +1090,21 @@ class MainActivity : FlutterActivity() {
                     result.success(prootSo.exists())
                 }
 
+                // 更新所有已安装 proot rootfs 的 /etc/resolv.conf。
+                // 用户在「网络设置」中更改 DNS 后立即调用，无需重启实例。
+                "updateProotDns" -> {
+                    thread {
+                        try {
+                            ProotEnvironment.updateAllRootfsDns(applicationContext)
+                            runOnUiThread { result.success(null) }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                result.error("DNS_UPDATE_FAILED", e.message, null)
+                            }
+                        }
+                    }
+                }
+
                 else -> result.notImplemented()
             }
         }
