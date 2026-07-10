@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 
+import '../net/download_engine.dart';
 import 'modrinth_service.dart';
 
 /// 整合包格式。
@@ -166,14 +167,14 @@ class ModpackService {
 
       await Directory(p.dirname(targetPath)).create(recursive: true);
 
-      final url = file.downloads.isEmpty ? null : file.downloads.first;
-      if (url == null) {
+      if (file.downloads.isEmpty) {
         onProgress?.call(i + 1, total, p.basename(targetPath));
         continue;
       }
 
-      await ModrinthService.downloadFile(
-        url,
+      // 多源顺序回退（消费整个 downloads 列表，替代原来只用 first）。
+      await DownloadEngine.instance.downloadToFileMultiSource(
+        file.downloads,
         targetPath,
         isCancelled: isCancelled,
       );

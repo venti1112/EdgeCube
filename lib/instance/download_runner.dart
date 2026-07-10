@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
 import '../config/network_store.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
+import '../net/download_engine.dart';
+import '../net/download_exceptions.dart';
 import '../net/msl_mirror.dart';
 import '../server/server_service.dart';
 import 'download_info.dart';
@@ -171,86 +171,57 @@ class DownloadRunner {
     String jarName = 'server.jar',
     String? selectedVersion,
     String? selectedMcVersion,
-    void Function(double progress)? onProgress,
+    void Function(DownloadProgress progress)? onProgress,
   }) async {
-    final client = HttpClient();
+    final dir = await controller.directoryForId(instanceId);
+    final jarPath = p.join(dir.path, jarName);
+
+    // 下载并由引擎校验哈希（优先 sha1，其次 sha256）；分片并行 + 断点续传。
     try {
-      final request = await client.getUrl(Uri.parse(info.url));
-      final response = await request.close();
+      await DownloadEngine.instance.downloadToFile(
+        info.url,
+        jarPath,
+        sha1: info.sha1,
+        sha256: info.sha256,
+        onProgress: onProgress,
+      );
+    } on DownloadHashMismatch {
+      throw const HashMismatchException();
+    } on DownloadHttpError catch (e) {
+      throw DownloadHttpException(e.statusCode);
+    }
 
-      if (response.statusCode != 200) {
-        throw DownloadHttpException(response.statusCode);
-      }
-
-      final dir = await controller.directoryForId(instanceId);
-      final file = File(p.join(dir.path, jarName));
-
-      final contentLength = response.contentLength;
-      int received = 0;
-
-      // 流式下载并记录所有字节用于哈希校验。
-      final sink = file.openWrite();
-      final allBytes = BytesBuilder(copy: false);
-      await for (final chunk in response) {
-        received += chunk.length;
-        allBytes.add(chunk);
-        if (contentLength > 0) {
-          onProgress?.call(received / contentLength);
-        }
-        sink.add(chunk);
-      }
-      await sink.close();
-
-      // 校验哈希。
-      if (!verifyHash(allBytes.toBytes(), info)) {
-        await file.delete();
-        throw const HashMismatchException();
-      }
-
-      // 按服务端类型写入运行环境与 Java 版本。
-      if (serverType == 'pocketmine') {
-        // PocketMine-MP 使用 PHP 运行环境，无需 Java 版本。
-        await controller.updateConfig(
-          instanceId,
-          selectedJar: jarName,
-          runtime: kRuntimePhp,
-        );
-        return;
-      }
-
-      final String javaVer;
-      if (serverType == 'powernukkitx') {
-        javaVer = await resolveJavaVersion('1.20.5');
-      } else if (serverType == 'allay') {
-        // Allay 需要 Java 21 及以上。
-        javaVer = await resolveJavaVersion('1.21');
-      } else {
-        final mcVersion = serverType == 'fabric'
-            ? (selectedMcVersion ?? '')
-            : (serverType == 'velocity' ? '1.21' : (selectedVersion ?? ''));
-        javaVer = await resolveJavaVersion(mcVersion);
-      }
+    // 按服务端类型写入运行环境与 Java 版本。
+    if (serverType == 'pocketmine') {
+      // PocketMine-MP 使用 PHP 运行环境，无需 Java 版本。
       await controller.updateConfig(
         instanceId,
         selectedJar: jarName,
-        javaVersion: javaVer,
+        runtime: kRuntimePhp,
       );
-    } finally {
-      client.close();
+      return;
     }
+
+    final String javaVer;
+    if (serverType == 'powernukkitx') {
+      javaVer = await resolveJavaVersion('1.20.5');
+    } else if (serverType == 'allay') {
+      // Allay 需要 Java 21 及以上。
+      javaVer = await resolveJavaVersion('1.21');
+    } else {
+      final mcVersion = serverType == 'fabric'
+          ? (selectedMcVersion ?? '')
+          : (serverType == 'velocity' ? '1.21' : (selectedVersion ?? ''));
+      javaVer = await resolveJavaVersion(mcVersion);
+    }
+    await controller.updateConfig(
+      instanceId,
+      selectedJar: jarName,
+      javaVersion: javaVer,
+    );
   }
 
-  // —— 校验与 Java 版本推断 ——
-
-  /// 根据下载信息校验文件哈希（Vanilla 用 SHA-1，Paper 用 SHA-256）。
-  static bool verifyHash(Uint8List bytes, DownloadInfo info) {
-    if (info.sha1 != null) {
-      return sha1.convert(bytes).toString() == info.sha1;
-    } else if (info.sha256 != null) {
-      return sha256.convert(bytes).toString() == info.sha256;
-    }
-    return true; // 无校验信息时视为通过。
-  }
+  // —— Java 版本推断 ——
 
   /// 根据 MC 版本号推断所需的 Java 版本（已移除 jre8）。
   ///

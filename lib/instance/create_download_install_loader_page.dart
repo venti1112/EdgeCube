@@ -8,6 +8,8 @@ import 'package:path/path.dart' as p;
 import '../config/network_store.dart';
 import '../i18n/locale_scope.dart';
 import '../instance/instance_controller.dart';
+import '../net/download_engine.dart';
+import '../net/download_exceptions.dart';
 import '../net/msl_mirror.dart';
 import '../server/server_service.dart';
 import 'download_info.dart';
@@ -52,7 +54,7 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
   /// 而非「进度是否为 null」来判断，避免下载 100% 后卡在下载页无法进入安装页。
   _LoaderPhase _phase = _LoaderPhase.downloading;
 
-  double? _downloadProgress;
+  DownloadProgress? _downloadProgress;
   String? _downloadError;
   bool _installing = false;
   final List<String> _installLogs = [];
@@ -122,43 +124,29 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
         ? 'forge-installer.jar'
         : 'neoforge-installer.jar';
 
-    final client = HttpClient();
     try {
-      final request = await client.getUrl(Uri.parse(info.url));
-      final response = await request.close();
-
-      if (response.statusCode != 200) {
-        if (!mounted) return;
-        setState(
-          () => _downloadError = context.tr('instance.downloadFailedHttp', {
-            'status': '${response.statusCode}',
-          }),
-        );
-        return;
-      }
-
       final dir = await widget.instanceController.directoryForId(
         widget.instanceId,
       );
-      final file = File(p.join(dir.path, installerJar));
+      final jarPath = p.join(dir.path, installerJar);
 
-      final contentLength = response.contentLength;
-      int received = 0;
-
-      final sink = file.openWrite();
-      await for (final chunk in response) {
-        received += chunk.length;
-        if (contentLength > 0 && mounted) {
-          setState(
-            () => _downloadProgress = received / contentLength,
-          );
-        }
-        sink.add(chunk);
-      }
-      await sink.close();
+      await DownloadEngine.instance.downloadToFile(
+        info.url,
+        jarPath,
+        onProgress: (prog) {
+          if (mounted) setState(() => _downloadProgress = prog);
+        },
+      );
 
       if (!mounted) return;
-      await _runInstaller(file.path);
+      await _runInstaller(jarPath);
+    } on DownloadHttpError catch (e) {
+      if (!mounted) return;
+      setState(
+        () => _downloadError = context.tr('instance.downloadFailedHttp', {
+          'status': '${e.statusCode}',
+        }),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(
@@ -166,8 +154,6 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
           'error': '$e',
         }),
       );
-    } finally {
-      client.close();
     }
   }
 

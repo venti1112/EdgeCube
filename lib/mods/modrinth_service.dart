@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../net/download_engine.dart';
+
 /// Modrinth 搜索结果项。
 class ModrinthSearchHit {
   const ModrinthSearchHit({
@@ -449,41 +451,22 @@ class ModrinthService {
   /// 下载文件到指定路径，[onProgress] 回调 (received, total)。
   ///
   /// [isCancelled] 返回 true 时中断下载并删除不完整的文件。
+  ///
+  /// 底层委托全局 [DownloadEngine]（downloadx 分片并行下载 + 断点续传 +
+  /// 全局 UA），签名保持不变以便上层（下载队列、整合包批量下载等）无需改动。
   static Future<void> downloadFile(
     String url,
     String destPath, {
     void Function(int received, int? total)? onProgress,
     bool Function()? isCancelled,
   }) async {
-    final request = http.Request('GET', Uri.parse(url));
-    final client = http.Client();
-    final response = await client.send(request);
-    if (response.statusCode != 200) {
-      client.close();
-      throw Exception('HTTP ${response.statusCode}');
-    }
-    final total = response.contentLength;
-    var received = 0;
-    final sink = File(destPath).openWrite();
-    var cancelled = false;
-    try {
-      await for (final chunk in response.stream) {
-        if (isCancelled?.call() == true) {
-          cancelled = true;
-          break;
-        }
-        received += chunk.length;
-        sink.add(chunk);
-        onProgress?.call(received, total);
-      }
-    } finally {
-      await sink.close();
-      client.close();
-      if (cancelled) {
-        try {
-          await File(destPath).delete();
-        } catch (_) {}
-      }
-    }
+    await DownloadEngine.instance.downloadToFile(
+      url,
+      destPath,
+      isCancelled: isCancelled,
+      onProgress: onProgress == null
+          ? null
+          : (p) => onProgress(p.receivedBytes, p.totalBytes),
+    );
   }
 }

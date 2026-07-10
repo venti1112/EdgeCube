@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
+import '../net/download_format.dart';
 import '../server/ecpkg_handler.dart';
 import '../server/proot_service.dart';
 import '../server/runtime_service.dart';
@@ -664,11 +665,13 @@ class _RuntimePageState extends State<RuntimePage> {
     try {
       downloadedPath = await RuntimeUpdateService.downloadPackage(
         pkg,
-        onProgress: (received, total) {
+        onProgress: (progress) {
           progressNotifier.value = _DownloadProgress(
             stage: _DownloadStage.downloading,
-            received: received,
-            total: total ?? pkg.size,
+            received: progress.receivedBytes,
+            total: progress.totalBytes ?? pkg.size,
+            speedBytesPerSec: progress.speedBytesPerSec,
+            etaMs: progress.etaMs,
           );
         },
         isCancelled: () => cancelled,
@@ -1020,12 +1023,16 @@ class _DownloadProgress {
     required this.stage,
     required this.received,
     required this.total,
+    this.speedBytesPerSec = 0,
+    this.etaMs,
     this.error,
   });
 
   final _DownloadStage stage;
   final int received;
   final int? total;
+  final double speedBytesPerSec;
+  final int? etaMs;
   final String? error;
 
   /// 0–100，未知时为 null。
@@ -1060,6 +1067,14 @@ class _UpdateProgressDialog extends StatelessWidget {
       return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
     }
     return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
+  }
+
+  /// 速度 + 剩余时间行，如 `5.3 MB/s · ~16s`；速度<=0 时返回空串。
+  String _speedEta(_DownloadProgress progress) {
+    final speed = formatSpeed(progress.speedBytesPerSec);
+    if (speed.isEmpty) return '';
+    final eta = formatEta(progress.etaMs);
+    return eta.isEmpty ? speed : '$speed · $eta';
   }
 
   @override
@@ -1105,19 +1120,49 @@ class _UpdateProgressDialog extends StatelessWidget {
               children: [
                 if (stage == _DownloadStage.downloading ||
                     stage == _DownloadStage.installing) ...[
-                  LinearProgressIndicator(
-                    value: progress.percent != null
-                        ? progress.percent! / 100.0
-                        : null,
-                  ),
+                  progress.percent != null
+                      ? TweenAnimationBuilder<double>(
+                          tween: Tween(
+                            begin: progress.percent! / 100.0,
+                            end: progress.percent! / 100.0,
+                          ),
+                          duration: const Duration(milliseconds: 500),
+                          curve: Curves.linear,
+                          builder: (context, value, _) =>
+                              LinearProgressIndicator(value: value),
+                        )
+                      : const LinearProgressIndicator(),
                   const SizedBox(height: 12),
-                  if (stage == _DownloadStage.downloading)
-                    Text(
-                      progress.percent != null
-                          ? '${progress.percent}% · ${_formatBytes(progress.received)} / ${progress.total != null ? _formatBytes(progress.total!) : '?'}'
-                          : _formatBytes(progress.received),
-                      style: Theme.of(ctx).textTheme.bodySmall,
+                  if (stage == _DownloadStage.downloading) ...[
+                    TweenAnimationBuilder<double>(
+                      tween: Tween(
+                        begin: progress.received.toDouble(),
+                        end: progress.received.toDouble(),
+                      ),
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.linear,
+                      builder: (context, received, _) {
+                        if (progress.percent != null) {
+                          final pct = (received / progress.total! * 100).toStringAsFixed(1);
+                          return Text(
+                            '$pct% · ${_formatBytes(received.round())} / ${progress.total != null ? _formatBytes(progress.total!) : '?'}',
+                            style: Theme.of(ctx).textTheme.bodySmall,
+                          );
+                        }
+                        return Text(
+                          _formatBytes(received.round()),
+                          style: Theme.of(ctx).textTheme.bodySmall,
+                        );
+                      },
                     ),
+                    if (progress.speedBytesPerSec > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _speedEta(progress),
+                        style: Theme.of(ctx).textTheme.bodySmall,
+                      ),
+                    ],
+                  ],
                 ],
                 if (message != null) ...[
                   const SizedBox(height: 8),

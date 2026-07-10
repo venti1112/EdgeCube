@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../ecpkg/ecpkg_catalog_service.dart';
 import '../i18n/locale_scope.dart';
+import '../net/download_engine.dart';
+import '../net/download_format.dart';
 import '../server/runtime_service.dart';
 import '../server/runtime_update_service.dart';
 
@@ -340,7 +342,7 @@ class _DownloadOnlyDialog extends StatefulWidget {
 class _DownloadOnlyDialogState extends State<_DownloadOnlyDialog> {
   bool _done = false;
   String? _error;
-  double? _progress;
+  DownloadProgress? _progress;
   String _stage = '';
 
   @override
@@ -363,10 +365,8 @@ class _DownloadOnlyDialogState extends State<_DownloadOnlyDialog> {
           size: widget.size,
           arch: widget.arch,
         ),
-        onProgress: (received, total) {
-          if (total != null && total > 0) {
-            setState(() => _progress = received / total);
-          }
+        onProgress: (progress) {
+          setState(() => _progress = progress);
         },
       );
       if (!mounted) return;
@@ -424,12 +424,46 @@ class _DownloadOnlyDialogState extends State<_DownloadOnlyDialog> {
           ],
           if (_progress != null && _stage.isNotEmpty) ...[
             const SizedBox(height: 12),
-            LinearProgressIndicator(value: _progress),
-            const SizedBox(height: 8),
-            Text(
-              '${(_progress! * 100).toStringAsFixed(0)}% · $_stage',
-              style: theme.textTheme.bodySmall,
+            _progress!.hasTotal
+                ? TweenAnimationBuilder<double>(
+                    tween: Tween(begin: _progress!.fraction, end: _progress!.fraction),
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.linear,
+                    builder: (context, value, _) =>
+                        LinearProgressIndicator(value: value),
+                  )
+                : const LinearProgressIndicator(),
+            TweenAnimationBuilder<double>(
+              tween: Tween(
+                begin: _progress!.receivedBytes.toDouble(),
+                end: _progress!.receivedBytes.toDouble(),
+              ),
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.linear,
+              builder: (context, bytes, _) {
+                if (_progress!.hasTotal) {
+                  final frac = bytes / _progress!.totalBytes!;
+                  final pct = (frac * 100).toStringAsFixed(1);
+                  return Text(
+                    '$pct% · ${formatBytes(bytes.round())} / ${formatBytes(_progress!.totalBytes!)}',
+                    style: theme.textTheme.bodySmall,
+                  );
+                }
+                return Text(
+                  formatBytes(bytes.round()),
+                  style: theme.textTheme.bodySmall,
+                );
+              },
             ),
+            if (_progress!.speedBytesPerSec > 0) ...[
+              const SizedBox(height: 2),
+              Text(
+                _speedLine(_progress!),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+            ],
           ],
           if (_stage.isNotEmpty && _progress == null) ...[
             const SizedBox(height: 12),
@@ -459,6 +493,13 @@ class _DownloadOnlyDialogState extends State<_DownloadOnlyDialog> {
       ],
     );
   }
+
+  String _speedLine(DownloadProgress p) {
+    final speed = formatSpeed(p.speedBytesPerSec);
+    if (speed.isEmpty) return '';
+    final eta = formatEta(p.etaMs);
+    return eta.isEmpty ? speed : '$speed · $eta';
+  }
 }
 
 // ── 安装对话框（下载+安装进度）───────────────────────────────────────
@@ -484,7 +525,7 @@ class _InstallDialogState extends State<_InstallDialog> {
   static const _service = RuntimeService();
   bool _done = false;
   String? _error;
-  double? _progress;
+  DownloadProgress? _progress;
   String _stage = '';
 
   @override
@@ -509,10 +550,8 @@ class _InstallDialogState extends State<_InstallDialog> {
 
       final path = await RuntimeUpdateService.downloadPackage(
         dlPkg,
-        onProgress: (received, total) {
-          if (total != null && total > 0) {
-            setState(() => _progress = received / total);
-          }
+        onProgress: (progress) {
+          setState(() => _progress = progress);
         },
       );
       if (!mounted) return;
@@ -558,12 +597,46 @@ class _InstallDialogState extends State<_InstallDialog> {
           Text('${widget.pkgName} ${widget.pkgVersion}'),
           if (_progress != null && _stage.isNotEmpty) ...[
             const SizedBox(height: 12),
-            LinearProgressIndicator(value: _progress),
-            const SizedBox(height: 8),
-            Text(
-              '${(_progress! * 100).toStringAsFixed(0)}% · $_stage',
-              style: theme.textTheme.bodySmall,
+            _progress!.hasTotal
+                ? TweenAnimationBuilder<double>(
+                    tween: Tween(begin: _progress!.fraction, end: _progress!.fraction),
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.linear,
+                    builder: (context, value, _) =>
+                        LinearProgressIndicator(value: value),
+                  )
+                : const LinearProgressIndicator(),
+            TweenAnimationBuilder<double>(
+              tween: Tween(
+                begin: _progress!.receivedBytes.toDouble(),
+                end: _progress!.receivedBytes.toDouble(),
+              ),
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.linear,
+              builder: (context, bytes, _) {
+                if (_progress!.hasTotal) {
+                  final frac = bytes / _progress!.totalBytes!;
+                  final pct = (frac * 100).toStringAsFixed(1);
+                  return Text(
+                    '$pct% · ${formatBytes(bytes.round())} / ${formatBytes(_progress!.totalBytes!)}',
+                    style: theme.textTheme.bodySmall,
+                  );
+                }
+                return Text(
+                  formatBytes(bytes.round()),
+                  style: theme.textTheme.bodySmall,
+                );
+              },
             ),
+            if (_progress!.speedBytesPerSec > 0) ...[
+              const SizedBox(height: 2),
+              Text(
+                _speedLine(_progress!),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+            ],
           ],
           if (_stage.isNotEmpty && _progress == null) ...[
             const SizedBox(height: 12),
@@ -592,6 +665,13 @@ class _InstallDialogState extends State<_InstallDialog> {
           ),
       ],
     );
+  }
+
+  String _speedLine(DownloadProgress p) {
+    final speed = formatSpeed(p.speedBytesPerSec);
+    if (speed.isEmpty) return '';
+    final eta = formatEta(p.etaMs);
+    return eta.isEmpty ? speed : '$speed · $eta';
   }
 }
 

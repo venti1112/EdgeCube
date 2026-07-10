@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../i18n/locale_scope.dart';
+import '../net/download_engine.dart';
+import '../net/download_format.dart';
 
 class DownloadingStep extends StatelessWidget {
   const DownloadingStep({
@@ -10,7 +12,7 @@ class DownloadingStep extends StatelessWidget {
     required this.onCancel,
   });
 
-  final double? progress;
+  final DownloadProgress? progress;
   final String? error;
   final VoidCallback onRetry;
   final VoidCallback onCancel;
@@ -27,7 +29,15 @@ class DownloadingStep extends StatelessWidget {
               SizedBox(
                 width: 48,
                 height: 48,
-                child: CircularProgressIndicator(value: progress),
+                child: (progress != null && progress!.hasTotal)
+                    ? TweenAnimationBuilder<double>(
+                        tween: Tween(begin: progress!.fraction, end: progress!.fraction),
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.linear,
+                        builder: (context, value, _) =>
+                            CircularProgressIndicator(value: value),
+                      )
+                    : const CircularProgressIndicator(),
               ),
               const SizedBox(height: 16),
               Text(
@@ -38,10 +48,37 @@ class DownloadingStep extends StatelessWidget {
               ),
               if (progress != null) ...[
                 const SizedBox(height: 8),
-                Text(
-                  '${(progress! * 100).toStringAsFixed(1)}%',
-                  style: Theme.of(context).textTheme.bodyLarge,
+                TweenAnimationBuilder<double>(
+                  tween: Tween(
+                    begin: progress!.receivedBytes.toDouble(),
+                    end: progress!.receivedBytes.toDouble(),
+                  ),
+                  duration: const Duration(milliseconds: 500),
+                  curve: Curves.linear,
+                  builder: (context, bytes, _) {
+                    if (progress!.hasTotal) {
+                      final frac = bytes / progress!.totalBytes!;
+                      final pct = (frac * 100).toStringAsFixed(1);
+                      return Text(
+                        '$pct% · ${formatBytes(bytes.round())} / ${formatBytes(progress!.totalBytes!)}',
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      );
+                    }
+                    return Text(
+                      formatBytes(bytes.round()),
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    );
+                  },
                 ),
+                if (progress!.speedBytesPerSec > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _speedLine(progress!),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
               ],
             ] else ...[
               Icon(
@@ -75,6 +112,12 @@ class DownloadingStep extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _speedLine(DownloadProgress p) {
+    final speed = formatSpeed(p.speedBytesPerSec);
+    final eta = formatEta(p.etaMs);
+    return eta.isEmpty ? speed : '$speed · $eta';
   }
 }
 
@@ -268,7 +311,13 @@ class ExtractingArchiveStep extends StatelessWidget {
               ],
             ] else if (extracting) ...[
               if (progress != null)
-                CircularProgressIndicator(value: progress)
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: progress, end: progress),
+                  duration: const Duration(milliseconds: 500),
+                  curve: Curves.linear,
+                  builder: (context, value, _) =>
+                      CircularProgressIndicator(value: value),
+                )
               else
                 const CircularProgressIndicator(),
               const SizedBox(height: 16),
@@ -276,7 +325,13 @@ class ExtractingArchiveStep extends StatelessWidget {
               if (progress != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: Text('${(progress! * 100).toStringAsFixed(1)}%'),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: progress, end: progress),
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.linear,
+                    builder: (context, value, _) =>
+                        Text('${(value * 100).toStringAsFixed(1)}%'),
+                  ),
                 ),
             ],
           ],

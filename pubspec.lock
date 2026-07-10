@@ -105,6 +105,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.9"
+  downloadx:
+    dependency: "direct main"
+    description:
+      name: downloadx
+      sha256: "18d21408184244349365c249a6ba136a24bc592d5dedb68afe1e3a39902a36ac"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.0"
   dynamic_color:
     dependency: "direct main"
     description:

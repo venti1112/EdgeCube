@@ -5,6 +5,8 @@ import 'package:path/path.dart' as p;
 
 import '../files/archive_service.dart';
 import '../i18n/locale_scope.dart';
+import '../net/download_engine.dart';
+import '../net/download_exceptions.dart';
 import 'download_info.dart';
 import 'download_info_service.dart';
 import 'download_runner.dart';
@@ -45,7 +47,7 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
   String? _instanceId;
   bool _completed = false;
 
-  double? _downloadProgress;
+  DownloadProgress? _downloadProgress;
   String? _downloadError;
 
   // Survivalcraft 解压阶段状态。
@@ -176,8 +178,8 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
         jarName: jarName,
         selectedVersion: _session.selectedVersion,
         selectedMcVersion: _session.selectedMcVersion,
-        onProgress: (v) {
-          if (mounted) setState(() => _downloadProgress = v);
+        onProgress: (prog) {
+          if (mounted) setState(() => _downloadProgress = prog);
         },
       );
       _completed = true;
@@ -209,38 +211,28 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
     }
 
     // 下载压缩包到临时文件。
-    final client = HttpClient();
     File? tempFile;
     try {
-      final request = await client.getUrl(Uri.parse(info.url));
-      final response = await request.close();
-      if (response.statusCode != 200) {
-        if (!mounted) return;
-        _setDownloadError(context.tr('instance.downloadFailedHttp',
-            {'status': '${response.statusCode}'}));
-        return;
-      }
       final tempDir = await Directory.systemTemp.createTemp('scnet_');
       final tempPath = p.join(tempDir.path, _scArchiveFileName(info.url));
       tempFile = File(tempPath);
 
-      final contentLength = response.contentLength;
-      int received = 0;
-      final sink = tempFile.openWrite();
-      await for (final chunk in response) {
-        received += chunk.length;
-        sink.add(chunk);
-        if (contentLength > 0 && mounted) {
-          setState(() => _downloadProgress = received / contentLength);
-        }
-      }
-      await sink.close();
+      await DownloadEngine.instance.downloadToFile(
+        info.url,
+        tempPath,
+        onProgress: (prog) {
+          if (mounted) setState(() => _downloadProgress = prog);
+        },
+      );
+    } on DownloadHttpError catch (e) {
+      if (!mounted) return;
+      _setDownloadError(context.tr('instance.downloadFailedHttp',
+          {'status': '${e.statusCode}'}));
+      return;
     } catch (e) {
       if (!mounted) return;
       _setDownloadError(context.tr('instance.downloadFailed', {'error': '$e'}));
       return;
-    } finally {
-      client.close();
     }
 
     final archive = tempFile;

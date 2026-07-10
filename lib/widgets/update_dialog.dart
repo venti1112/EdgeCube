@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../i18n/locale_scope.dart';
+import '../net/download_engine.dart';
+import '../net/download_exceptions.dart';
+import '../net/download_format.dart';
 import '../online/update_service.dart';
 
 enum _DialogState { pending, downloading, verifyingSha256, verifyingSignature, ready, error }
@@ -21,7 +24,7 @@ class UpdateDialog extends StatefulWidget {
 class _UpdateDialogState extends State<UpdateDialog> {
   int _selectedLinkIndex = 0;
   _DialogState _state = _DialogState.pending;
-  double? _progress;
+  DownloadProgress? _progress;
   String? _error;
   String? _downloadedPath;
 
@@ -59,40 +62,28 @@ class _UpdateDialogState extends State<UpdateDialog> {
     });
 
     try {
-      final apkPath = await UpdateService.downloadApk(
+      // 选中的直链优先，其余直链作为多源回退；sha256 校验由引擎内联完成，
+      // 失败会自动切到下一个源，全部失败才抛 DownloadHashMismatch。
+      final urls = <String>[
         link.url,
-        onProgress: (received, total) {
-          if (total != null && total > 0) {
-            setState(() => _progress = received / total);
-          }
+        ..._info.directLinks
+            .map((l) => l.url)
+            .where((u) => u.isNotEmpty && u != link.url),
+      ];
+      final apkPath = await UpdateService.downloadApkMultiSource(
+        urls,
+        sha256: _info.sha256,
+        onProgress: (progress) {
+          setState(() => _progress = progress);
         },
       );
       if (!mounted) return;
 
+      // 引擎已通过 sha256 校验，接着做原生签名校验。
       setState(() {
         _downloadedPath = apkPath;
-        _state = _DialogState.verifyingSha256;
+        _state = _DialogState.verifyingSignature;
       });
-
-      final sha256Ok = await UpdateService.verifySha256(apkPath, _info.sha256);
-      if (!mounted) return;
-
-      if (!sha256Ok) {
-        final nextDirect = _info.directLinks
-            .where((l) => l.url != link.url)
-            .toList();
-        if (nextDirect.isNotEmpty) {
-          _retryWithNextLink(nextDirect.first.url);
-          return;
-        }
-        setState(() {
-          _state = _DialogState.error;
-          _error = context.tr('update.sha256Mismatch');
-        });
-        return;
-      }
-
-      setState(() => _state = _DialogState.verifyingSignature);
       final sigOk = await UpdateService.verifyApkSignature(apkPath);
       if (!mounted) return;
 
@@ -105,60 +96,12 @@ class _UpdateDialogState extends State<UpdateDialog> {
       }
 
       setState(() => _state = _DialogState.ready);
-    } catch (e) {
+    } on DownloadHashMismatch {
       if (!mounted) return;
       setState(() {
         _state = _DialogState.error;
-        _error = context.tr('update.downloadFailed', {'error': '$e'});
+        _error = context.tr('update.sha256Mismatch');
       });
-    }
-  }
-
-  Future<void> _retryWithNextLink(String nextUrl) async {
-    setState(() {
-      _state = _DialogState.downloading;
-      _progress = null;
-    });
-    try {
-      final apkPath = await UpdateService.downloadApk(
-        nextUrl,
-        onProgress: (received, total) {
-          if (total != null && total > 0) {
-            setState(() => _progress = received / total);
-          }
-        },
-      );
-      if (!mounted) return;
-
-      setState(() {
-        _downloadedPath = apkPath;
-        _state = _DialogState.verifyingSha256;
-      });
-
-      final sha256Ok = await UpdateService.verifySha256(apkPath, _info.sha256);
-      if (!mounted) return;
-
-      if (!sha256Ok) {
-        setState(() {
-          _state = _DialogState.error;
-          _error = context.tr('update.sha256Mismatch');
-        });
-        return;
-      }
-
-      setState(() => _state = _DialogState.verifyingSignature);
-      final sigOk = await UpdateService.verifyApkSignature(apkPath);
-      if (!mounted) return;
-
-      if (!sigOk) {
-        setState(() {
-          _state = _DialogState.error;
-          _error = context.tr('update.signatureMismatch');
-        });
-        return;
-      }
-
-      setState(() => _state = _DialogState.ready);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -180,6 +123,13 @@ class _UpdateDialogState extends State<UpdateDialog> {
         _error = context.tr('update.downloadFailed', {'error': '$e'});
       });
     }
+  }
+
+  /// 速度 + 剩余时间，如 `5.3 MB/s · ~16s`；剩余时间未知时只显示速度。
+  String _speedLine(DownloadProgress p) {
+    final speed = formatSpeed(p.speedBytesPerSec);
+    final eta = formatEta(p.etaMs);
+    return eta.isEmpty ? speed : '$speed · $eta';
   }
 
   @override
@@ -247,16 +197,52 @@ class _UpdateDialogState extends State<UpdateDialog> {
             ],
             if (_state == _DialogState.downloading) ...[
               const SizedBox(height: 12),
-              LinearProgressIndicator(value: _progress),
+              _progress != null && _progress!.hasTotal
+                  ? TweenAnimationBuilder<double>(
+                      tween: Tween(begin: _progress!.fraction, end: _progress!.fraction),
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.linear,
+                      builder: (context, value, _) =>
+                          LinearProgressIndicator(value: value),
+                    )
+                  : const LinearProgressIndicator(),
               const SizedBox(height: 8),
-              Text(
-                _progress != null
-                    ? context.tr('update.downloadingProgress', {
-                        'progress': (_progress! * 100).toStringAsFixed(0),
-                      })
-                    : context.tr('update.downloading'),
-                style: theme.textTheme.bodySmall,
-              ),
+              _progress != null
+                  ? TweenAnimationBuilder<double>(
+                      tween: Tween(
+                        begin: _progress!.receivedBytes.toDouble(),
+                        end: _progress!.receivedBytes.toDouble(),
+                      ),
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.linear,
+                      builder: (context, bytes, _) {
+                        if (_progress!.hasTotal) {
+                          final frac = bytes / _progress!.totalBytes!;
+                          final pct = (frac * 100).toStringAsFixed(1);
+                          return Text(
+                            '$pct% · ${formatBytes(bytes.round())} / ${formatBytes(_progress!.totalBytes!)}',
+                            style: theme.textTheme.bodySmall,
+                          );
+                        }
+                        return Text(
+                          formatBytes(bytes.round()),
+                          style: theme.textTheme.bodySmall,
+                        );
+                      },
+                    )
+                  : Text(
+                      context.tr('update.downloading'),
+                      style: theme.textTheme.bodySmall,
+                    ),
+              if (_progress != null && _progress!.speedBytesPerSec > 0) ...[
+                const SizedBox(height: 2),
+                Text(
+                  _speedLine(_progress!),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ],
             if (_state == _DialogState.verifyingSha256) ...[
               const SizedBox(height: 12),

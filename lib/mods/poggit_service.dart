@@ -1,7 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:http/http.dart' as http;
+
+import '../net/download_engine.dart';
 
 /// Poggit 插件分类。
 class PoggitCategory {
@@ -290,55 +291,22 @@ class PoggitService {
 
   /// 下载插件 .phar 文件到指定路径。
   ///
-  /// 复用 [ModrinthService.downloadFile] 的流式下载逻辑。
+  /// 下载 Poggit 插件文件到指定路径。
+  ///
+  /// 底层委托全局 [DownloadEngine]（downloadx 分片并行下载，UA 由引擎全局注入）。
   static Future<void> downloadFile(
     String url,
     String destPath, {
     void Function(int received, int? total)? onProgress,
     bool Function()? isCancelled,
   }) async {
-    // 委托给 modrinth_service 中的通用下载方法
-    // 该方法是纯 HTTP 流式下载，与 Modrinth 无耦合
-    await _downloadFile(url, destPath, onProgress, isCancelled);
-  }
-
-  /// 通用 HTTP 流式下载（从 modrinth_service.dart 复制逻辑以避免耦合）。
-  static Future<void> _downloadFile(
-    String url,
-    String destPath,
-    void Function(int, int?)? onProgress,
-    bool Function()? isCancelled,
-  ) async {
-    final request = http.Request('GET', Uri.parse(url));
-    request.headers['User-Agent'] = _userAgent;
-    final client = http.Client();
-    try {
-      final response = await client.send(request);
-      if (response.statusCode != 200) {
-        throw Exception('HTTP ${response.statusCode}');
-      }
-      final total = response.contentLength;
-      final file = await File(destPath).create(recursive: true);
-      final sink = file.openWrite();
-      var received = 0;
-      try {
-        await for (final chunk in response.stream) {
-          if (isCancelled != null && isCancelled()) {
-            await sink.close();
-            try {
-              await File(destPath).delete();
-            } catch (_) {}
-            throw Exception('cancelled');
-          }
-          sink.add(chunk);
-          received += chunk.length;
-          if (onProgress != null) onProgress(received, total);
-        }
-      } finally {
-        await sink.close();
-      }
-    } finally {
-      client.close();
-    }
+    await DownloadEngine.instance.downloadToFile(
+      url,
+      destPath,
+      isCancelled: isCancelled,
+      onProgress: onProgress == null
+          ? null
+          : (p) => onProgress(p.receivedBytes, p.totalBytes),
+    );
   }
 }

@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-import 'modrinth_service.dart';
+import '../net/download_engine.dart';
 
 /// 下载任务状态。
 enum DownloadTaskStatus { pending, downloading, completed, failed, cancelled }
@@ -41,6 +41,8 @@ class DownloadTask {
 
   DownloadTaskStatus status = DownloadTaskStatus.pending;
   double progress = 0; // 0~1，-1 表示未知大小
+  double speedBytesPerSec = 0; // 当前下载速度（字节/秒），供进度 UI 展示
+  int? etaMs; // 预计剩余毫秒，供进度 UI 展示
   String? error;
 }
 
@@ -195,15 +197,13 @@ class DownloadQueue extends ChangeNotifier {
       final downloadPath = isUpdate ? '${task.destPath}.dltmp' : task.destPath;
 
       try {
-        await ModrinthService.downloadFile(
+        await DownloadEngine.instance.downloadToFile(
           task.url,
           downloadPath,
-          onProgress: (received, total) {
-            if (total != null && total > 0) {
-              task.progress = received / total;
-            } else {
-              task.progress = -1;
-            }
+          onProgress: (p) {
+            task.progress = p.fraction;
+            task.speedBytesPerSec = p.speedBytesPerSec;
+            task.etaMs = p.etaMs;
             notifyListeners();
           },
           isCancelled: () => _cancelledIds.contains(task.id),

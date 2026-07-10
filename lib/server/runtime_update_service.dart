@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../net/download_engine.dart';
+import '../net/download_exceptions.dart';
 import 'runtime_service.dart';
 
 /// `updateUrl` 响应中的单个下载包条目。
@@ -17,6 +18,7 @@ class RuntimeUpdatePackage {
   const RuntimeUpdatePackage({
     required this.key,
     required this.url,
+    this.urls = const [],
     required this.sha256,
     this.size,
     required this.arch,
@@ -25,7 +27,12 @@ class RuntimeUpdatePackage {
   /// 在 `packages` 对象中的 key：`multi` / `aarch64` / `arm` / `x86_64`。
   final String key;
 
+  /// 首选下载直链（即 [urls] 的第一个，向后兼容单源调用）。
   final String url;
+
+  /// 所有可用的直链下载源，供多源顺序回退使用。
+  final List<String> urls;
+
   final String sha256;
   final int? size;
 
@@ -33,19 +40,22 @@ class RuntimeUpdatePackage {
   final List<String> arch;
 
   factory RuntimeUpdatePackage.fromJson(String key, Map<String, dynamic> json) {
-    // 从 urls 数组中选取第一个 direct 类型，回退到第一个。
-    final urls = (json['urls'] as List? ?? []).cast<Map<String, dynamic>>();
-    String url = '';
-    if (urls.isNotEmpty) {
-      final direct = urls.firstWhere(
-        (u) => u['type'] != 'web',
-        orElse: () => urls.first,
-      );
-      url = direct['url'] as String? ?? '';
-    }
+    // 收集所有非 web（direct）类型直链供多源回退；url 取第一个。
+    final entries = (json['urls'] as List? ?? []).cast<Map<String, dynamic>>();
+    final directUrls = entries
+        .where((u) => u['type'] != 'web')
+        .map((u) => u['url'] as String? ?? '')
+        .where((u) => u.isNotEmpty)
+        .toList();
+    final fallback =
+        entries.isNotEmpty ? (entries.first['url'] as String? ?? '') : '';
+    final sources = directUrls.isNotEmpty
+        ? directUrls
+        : (fallback.isNotEmpty ? [fallback] : const <String>[]);
     return RuntimeUpdatePackage(
       key: key,
-      url: url,
+      url: sources.isNotEmpty ? sources.first : '',
+      urls: sources,
       sha256: json['sha256'] as String,
       size: json['size'] as int?,
       arch: (json['arch'] as List? ?? []).map((e) => e as String).toList(),
@@ -178,61 +188,37 @@ class RuntimeUpdateService {
 
   /// 下载指定包到临时目录并校验 SHA-256。
   ///
-  /// - [onProgress] 回调 (receivedBytes, totalBytes)，totalBytes 未知时为 null
+  /// - [onProgress] 回调携带 [DownloadProgress]（速度/剩余时间/已下载/总大小）
   /// - [isCancelled] 返回 true 时中断下载并清理不完整文件
   ///
   /// 校验失败抛出异常。成功返回下载文件路径。
   static Future<String> downloadPackage(
     RuntimeUpdatePackage pkg, {
-    void Function(int received, int? total)? onProgress,
+    void Function(DownloadProgress progress)? onProgress,
     bool Function()? isCancelled,
   }) async {
     final cacheDir = await getTemporaryDirectory();
     final fileName = _extractFileName(pkg.url, pkg.key);
     final destPath = p.join(cacheDir.path, fileName);
 
-    final request = http.Request('GET', Uri.parse(pkg.url));
-    final client = http.Client();
-    final response = await client.send(request);
-    if (response.statusCode != 200) {
-      client.close();
-      throw HttpException('HTTP ${response.statusCode}');
-    }
-
-    final total = pkg.size ?? response.contentLength;
-    var received = 0;
-    final sink = File(destPath).openWrite();
-    var cancelled = false;
+    // 多源顺序回退 + 引擎内 sha256 校验（分片并行 + 断点续传）。
+    final sources = pkg.urls.isNotEmpty ? pkg.urls : [pkg.url];
     try {
-      await for (final chunk in response.stream) {
-        if (isCancelled?.call() == true) {
-          cancelled = true;
-          break;
-        }
-        received += chunk.length;
-        sink.add(chunk);
-        onProgress?.call(received, total);
-      }
-    } finally {
-      await sink.flush();
-      await sink.close();
-      client.close();
-      if (cancelled) {
-        try {
-          await File(destPath).delete();
-        } catch (_) {}
-        throw const CancellationException();
-      }
-    }
-
-    // SHA-256 校验
-    final fileBytes = await File(destPath).readAsBytes();
-    final actualHash = sha256.convert(fileBytes).toString();
-    if (actualHash.toLowerCase() != pkg.sha256.toLowerCase()) {
-      try {
-        await File(destPath).delete();
-      } catch (_) {}
-      throw HashMismatchException(expected: pkg.sha256, actual: actualHash);
+      await DownloadEngine.instance.downloadToFileMultiSource(
+        sources,
+        destPath,
+        sha256: pkg.sha256,
+        expectedSize: pkg.size,
+        isCancelled: isCancelled,
+        onProgress: onProgress,
+      );
+    } on DownloadCancelled {
+      throw const CancellationException();
+    } on DownloadHashMismatch catch (e) {
+      throw HashMismatchException(
+        expected: e.expected ?? pkg.sha256,
+        actual: e.actual,
+      );
     }
 
     return destPath;

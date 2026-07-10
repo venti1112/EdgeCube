@@ -29,6 +29,7 @@ import 'shell/shell_scope.dart';
 import 'ssh/ssh_controller.dart';
 import 'ssh/ssh_scope.dart';
 
+import 'net/download_engine.dart';
 import 'theme/theme_scope.dart';
 import 'theme/theme_store.dart';
 import 'theme/precipitation_effect_mode.dart';
@@ -59,6 +60,8 @@ Future<void> main() async {
   final onlineService = OnlineService();
   await onlineService.init();
   CloudHeaders.init(deviceIdProvider: () => onlineService.deviceId);
+  // 预热全局下载引擎（懒初始化，fire-and-forget 不阻塞启动）。
+  DownloadEngine.instance.ensureInitialized();
   // 账号系统：载入上次会话并尝试用 refresh_token 静默续期。
   // 依赖 onlineService 读取设备 ID（登录时附带，可为空）。
   final accountController = AccountController(onlineService: onlineService);

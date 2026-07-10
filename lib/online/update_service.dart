@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 
 import '../config/network_store.dart';
-import '../i18n/i18n_service.dart';
+import '../net/download_engine.dart';
 import 'cloud_headers.dart';
 import 'online_service.dart';
 
@@ -147,38 +147,31 @@ class UpdateService {
     return best;
   }
 
+  /// 下载 APK（单源），委托全局下载引擎（分片并行 + 断点续传）。
   static Future<String> downloadApk(
     String url, {
-    void Function(int received, int? total)? onProgress,
+    void Function(DownloadProgress progress)? onProgress,
   }) async {
-    final request = http.Request('GET', Uri.parse(url));
-    final response = await http.Client().send(request);
+    return downloadApkMultiSource([url], onProgress: onProgress);
+  }
 
-    if (response.statusCode != 200) {
-      throw Exception(
-        tr('updateService.downloadFailedHttp', {
-          'status': '${response.statusCode}',
-        }),
-      );
-    }
-
-    final total = response.contentLength;
+  /// 下载 APK，按顺序在多个直链间回退；可选 [sha256] 由引擎内校验。
+  /// 返回下载到临时目录的文件路径。
+  static Future<String> downloadApkMultiSource(
+    List<String> urls, {
+    void Function(DownloadProgress progress)? onProgress,
+    String? sha256,
+  }) async {
+    final first = urls.firstWhere((u) => u.isNotEmpty, orElse: () => '');
     final cacheDir = await getTemporaryDirectory();
-    final fileName = _extractFileName(url);
+    final fileName = _extractFileName(first);
     final filePath = p.join(cacheDir.path, fileName);
-    final sink = File(filePath).openWrite();
-
-    try {
-      int received = 0;
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        received += chunk.length;
-        onProgress?.call(received, total);
-      }
-    } finally {
-      await sink.flush();
-      await sink.close();
-    }
+    await DownloadEngine.instance.downloadToFileMultiSource(
+      urls,
+      filePath,
+      sha256: sha256,
+      onProgress: onProgress,
+    );
     return filePath;
   }
 

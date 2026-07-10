@@ -7,6 +7,7 @@ import '../i18n/locale_scope.dart';
 import '../mods/download_queue.dart';
 import '../mods/icon_cache.dart';
 import '../mods/modrinth_service.dart';
+import '../net/download_format.dart';
 
 /// 模组/插件下载页：搜索 Modrinth 并下载到指定目录。
 ///
@@ -1281,6 +1282,14 @@ String _formatDownloads(int count) {
   return '${(count / 1000000).toStringAsFixed(1)}M';
 }
 
+/// 正在下载任务的「速度 · ~剩余时间」文本，如 `5.3 MB/s · ~16s`。
+/// 剩余时间未知时仅显示速度。调用方需保证速度 > 0（否则速度段为空）。
+String _formatRateEta(DownloadTask task) {
+  final speed = formatSpeed(task.speedBytesPerSec);
+  final eta = formatEta(task.etaMs);
+  return eta.isEmpty ? speed : '$speed · $eta';
+}
+
 // ── 下载队列横幅 ──────────────────────────────────────────────
 
 /// 下载队列状态横幅。监听全局 [DownloadQueue]，有任务时显示。
@@ -1340,10 +1349,15 @@ class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
                   SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(
-                      value: current.progress >= 0 ? current.progress : null,
-                      strokeWidth: 2,
-                    ),
+                    child: current.progress >= 0
+                        ? TweenAnimationBuilder<double>(
+                            tween: Tween(begin: current.progress, end: current.progress),
+                            duration: const Duration(milliseconds: 500),
+                            curve: Curves.linear,
+                            builder: (context, value, _) =>
+                                CircularProgressIndicator(value: value, strokeWidth: 2),
+                          )
+                        : const CircularProgressIndicator(strokeWidth: 2),
                   )
                 else
                   Icon(
@@ -1360,7 +1374,8 @@ class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
                       if (current != null)
                         Text(
                           '${current.projectTitle} · '
-                          '${current.progress >= 0 ? '${(current.progress * 100).toInt()}%' : '...'}',
+                          '${current.progress >= 0 ? '${(current.progress * 100).toInt()}%' : '...'}'
+                          '${current.speedBytesPerSec > 0 ? ' · ${formatSpeed(current.speedBytesPerSec)}' : ''}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodyMedium?.copyWith(
@@ -1569,9 +1584,15 @@ class _QueueTile extends StatelessWidget {
           if (task.status == DownloadTaskStatus.downloading)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: LinearProgressIndicator(
-                value: task.progress >= 0 ? task.progress : null,
-              ),
+              child: task.progress >= 0
+                  ? TweenAnimationBuilder<double>(
+                      tween: Tween(begin: task.progress, end: task.progress),
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.linear,
+                      builder: (context, value, _) =>
+                          LinearProgressIndicator(value: value),
+                    )
+                  : const LinearProgressIndicator(),
             )
           else if (task.status == DownloadTaskStatus.failed &&
               task.error != null)
@@ -1581,6 +1602,20 @@ class _QueueTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.error,
+              ),
+            ),
+          if (task.status == DownloadTaskStatus.downloading &&
+              task.progress >= 0 &&
+              task.speedBytesPerSec > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                _formatRateEta(task),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
         ],
