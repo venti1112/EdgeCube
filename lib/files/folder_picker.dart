@@ -77,6 +77,7 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
   }
 
   void _goUp() {
+    if (_atRoot) return;
     _current = Directory(p.dirname(_current.path));
     _load();
   }
@@ -96,79 +97,87 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return AlertDialog(
-      title: Text(widget.title),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_upward),
-                  tooltip: context.tr('folderPicker.upOneLevel'),
-                  onPressed: _atRoot ? null : _goUp,
-                ),
-                Expanded(
-                  child: Text(
-                    _relativeLabel(context),
-                    style: theme.textTheme.bodyMedium,
-                    overflow: TextOverflow.ellipsis,
+    return PopScope(
+      // 未到根目录时拦截系统返回键，改为回到上一级目录；已在根目录才真正关闭对话框。
+      canPop: _atRoot,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _goUp();
+      },
+      child: AlertDialog(
+        title: Text(widget.title),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_upward),
+                    tooltip: context.tr('folderPicker.upOneLevel'),
+                    onPressed: _atRoot ? null : _goUp,
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.create_new_folder_outlined),
-                  tooltip: context.tr('folderPicker.newFolder'),
-                  onPressed: _createFolder,
-                ),
-              ],
-            ),
-            const Divider(height: 1),
-            SizedBox(
-              height: 240,
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _folders.isEmpty
-                  ? Center(
-                      child: Text(
-                        context.tr('folderPicker.noSubfolders'),
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: _folders.length,
-                      itemBuilder: (_, i) {
-                        final folder = _folders[i];
-                        final disabled =
-                            widget.disabledPath != null &&
-                            p.equals(folder.path, widget.disabledPath!);
-                        return ListTile(
-                          leading: const Icon(Icons.folder),
-                          title: Text(folder.name),
-                          enabled: !disabled,
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _enter(folder.path),
-                        );
-                      },
+                  Expanded(
+                    child: Text(
+                      _relativeLabel(context),
+                      style: theme.textTheme.bodyMedium,
+                      overflow: TextOverflow.ellipsis,
                     ),
-            ),
-          ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.create_new_folder_outlined),
+                    tooltip: context.tr('folderPicker.newFolder'),
+                    onPressed: _createFolder,
+                  ),
+                ],
+              ),
+              const Divider(height: 1),
+              SizedBox(
+                height: 240,
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _folders.isEmpty
+                    ? Center(
+                        child: Text(
+                          context.tr('folderPicker.noSubfolders'),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: _folders.length,
+                        itemBuilder: (_, i) {
+                          final folder = _folders[i];
+                          final disabled =
+                              widget.disabledPath != null &&
+                              p.equals(folder.path, widget.disabledPath!);
+                          return ListTile(
+                            leading: const Icon(Icons.folder),
+                            title: Text(folder.name),
+                            enabled: !disabled,
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => _enter(folder.path),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(context.tr('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(_current.path),
+            child: Text(context.tr('folderPicker.moveHere')),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(context.tr('common.cancel')),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(_current.path),
-          child: Text(context.tr('folderPicker.moveHere')),
-        ),
-      ],
     );
   }
 }

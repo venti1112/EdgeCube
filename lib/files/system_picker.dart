@@ -176,48 +176,56 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final pickingDir = widget.mode == SystemPickMode.directory;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          pickingDir
-              ? context.tr('picker.selectTargetFolder')
-              : context.tr('picker.selectFileToImport'),
+    return PopScope(
+      // 未到根目录时拦截系统返回键，改为回到上一级目录；已在根目录才真正退出选择器。
+      canPop: _atRoot,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _goUp();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            pickingDir
+                ? context.tr('picker.selectTargetFolder')
+                : context.tr('picker.selectFileToImport'),
+          ),
+          actions: [
+            if (pickingDir) ...[
+              IconButton(
+                icon: const Icon(Icons.create_new_folder_outlined),
+                tooltip: context.tr('picker.newFolder'),
+                onPressed: _createFolder,
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, right: 8),
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).pop(_current.path),
+                  child: Text(context.tr('picker.selectHere')),
+                ),
+              ),
+            ],
+          ],
         ),
-        actions: [
-          if (pickingDir) ...[
-            IconButton(
-              icon: const Icon(Icons.create_new_folder_outlined),
-              tooltip: context.tr('picker.newFolder'),
-              onPressed: _createFolder,
-            ),
-            Padding(
-              padding: const EdgeInsets.only(left: 4, right: 8),
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).pop(_current.path),
-                child: Text(context.tr('picker.selectHere')),
+        body: Column(
+          children: [
+            ListTile(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_upward),
+                tooltip: context.tr('picker.upOneLevel'),
+                onPressed: _canGoUp ? _goUp : null,
+              ),
+              title: Text(
+                _atRoot ? context.tr('picker.internalStorage') : _current.path,
+                style: theme.textTheme.bodySmall,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
+            const Divider(height: 1),
+            if (_hasFilter) _buildFilterHint(theme),
+            Expanded(child: _buildBody(theme)),
           ],
-        ],
-      ),
-      body: Column(
-        children: [
-          ListTile(
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_upward),
-              tooltip: context.tr('picker.upOneLevel'),
-              onPressed: _canGoUp ? _goUp : null,
-            ),
-            title: Text(
-              _atRoot ? context.tr('picker.internalStorage') : _current.path,
-              style: theme.textTheme.bodySmall,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const Divider(height: 1),
-          if (_hasFilter) _buildFilterHint(theme),
-          Expanded(child: _buildBody(theme)),
-        ],
+        ),
       ),
     );
   }

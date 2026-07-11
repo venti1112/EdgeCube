@@ -17,7 +17,6 @@ import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
 import '../online/error_report_service.dart';
 import '../online/online_service.dart';
-import '../route_observer.dart';
 import '../server/proot_service.dart';
 import '../server/runtime_service.dart';
 import '../server/server_controller.dart';
@@ -112,8 +111,7 @@ class _ServerControlPanel extends StatefulWidget {
   State<_ServerControlPanel> createState() => _ServerControlPanelState();
 }
 
-class _ServerControlPanelState extends State<_ServerControlPanel>
-    with RouteAware {
+class _ServerControlPanelState extends State<_ServerControlPanel> {
   late final TextEditingController _memController;
   late final TextEditingController _jvmArgsController;
   late final TextEditingController _prootStartupCommandController;
@@ -233,15 +231,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
     super.didChangeDependencies();
     // key 绑定实例 id，State 在实例不变期间复用，故只加载一次。
     _ctxFuture ??= _loadContext();
-    // 订阅路由事件，从运行环境页返回时自动刷新可用运行时列表。
-    appRouteObserver.subscribe(this, ModalRoute.of(context)!);
-  }
 
-  @override
-  void didPopNext() {
-    if (mounted) {
-      setState(() => _ctxFuture = _loadContext());
-    }
   }
 
   @override
@@ -285,7 +275,6 @@ class _ServerControlPanelState extends State<_ServerControlPanel>
   void dispose() {
     RuntimeService.refreshSignal.removeListener(_onRuntimesChanged);
     ProotService.refreshSignal.removeListener(_onRuntimesChanged);
-    appRouteObserver.unsubscribe(this);
     _memController.dispose();
     _jvmArgsController.dispose();
     _prootStartupCommandController.dispose();
