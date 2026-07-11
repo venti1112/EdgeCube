@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../account/account_scope.dart';
 import '../config/instance_path_store.dart';
 import '../config/network_store.dart';
+import '../config/runtime_pref_store.dart';
 import '../config/terminal_store.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
@@ -41,6 +42,7 @@ class _SettingsPageState extends State<SettingsPage>
   bool _batteryLoaded = false;
   bool _autoClearLogOnStart = true;
   bool _enableBetaUpdates = true;
+  RuntimePriority _runtimePriority = RuntimePriority.proot;
 
   @override
   void initState() {
@@ -49,6 +51,58 @@ class _SettingsPageState extends State<SettingsPage>
     _refreshBattery();
     _loadAutoClearLogOnStart();
     _loadBetaUpdates();
+    _loadRuntimePriority();
+  }
+
+  Future<void> _loadRuntimePriority() async {
+    final value = await RuntimePrefStore.loadPriority();
+    if (mounted) setState(() => _runtimePriority = value);
+  }
+
+  Future<void> _saveRuntimePriority(RuntimePriority value) async {
+    setState(() => _runtimePriority = value);
+    await RuntimePrefStore.savePriority(value);
+  }
+
+  String _runtimePriorityLabel(BuildContext context, RuntimePriority p) {
+    return p == RuntimePriority.proot
+        ? context.tr('settings.runtimePriority.proot')
+        : context.tr('settings.runtimePriority.native');
+  }
+
+  /// 弹出优先级选择对话框（proot 优先 / 原生优先）。
+  Future<void> _pickRuntimePriority() async {
+    final selected = await showDialog<RuntimePriority>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(ctx.tr('settings.runtimePriority.dialogTitle')),
+        children: [
+          for (final p in RuntimePriority.values)
+            ListTile(
+              leading: Icon(
+                p == _runtimePriority
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                color: p == _runtimePriority
+                    ? Theme.of(ctx).colorScheme.primary
+                    : null,
+              ),
+              title: Text(_runtimePriorityLabel(ctx, p)),
+              onTap: () => Navigator.of(ctx).pop(p),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+            child: Text(
+              ctx.tr('settings.runtimePriority.hint'),
+              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (selected != null) await _saveRuntimePriority(selected);
   }
 
   Future<void> _loadAutoClearLogOnStart() async {
@@ -178,6 +232,19 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
               );
             },
+          ),
+          const Divider(),
+          _sectionHeader(theme, context.tr('settings.section.runtime')),
+          ListTile(
+            leading: const Icon(Icons.memory),
+            title: Text(context.tr('settings.runtimePriority.title')),
+            subtitle: Text(
+              context.tr('settings.runtimePriority.subtitle', {
+                'value': _runtimePriorityLabel(context, _runtimePriority),
+              }),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _pickRuntimePriority,
           ),
           const Divider(),
           _sectionHeader(theme, context.tr('settings.section.online')),

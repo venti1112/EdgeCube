@@ -7,6 +7,7 @@ import '../ftp/ftp_scope.dart';
 import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
 import '../net/network_address.dart';
+import '../widgets/expandable_address_list.dart';
 
 /// FTP 文件管理页：对外开放当前实例目录的 FTP 访问。
 ///
@@ -20,7 +21,7 @@ class FtpPage extends StatefulWidget {
 }
 
 class _FtpPageState extends State<FtpPage> {
-  String? _localIp;
+  List<String>? _localIps;
   String? _localIpv6;
 
   final _port = TextEditingController(text: '2121');
@@ -47,13 +48,13 @@ class _FtpPageState extends State<FtpPage> {
   Future<void> _loadAll() async {
     final ftp = FtpScope.of(context);
     final addrs = await Future.wait([
-      NetworkAddress.detectIPv4(),
+      NetworkAddress.detectAllIPv4(),
       NetworkAddress.detectStableIPv6(),
     ]);
     if (!mounted) return;
     setState(() {
-      _localIp = addrs[0];
-      _localIpv6 = addrs[1];
+      _localIps = addrs[0] as List<String>;
+      _localIpv6 = addrs[1] as String?;
       _port.text = '${ftp.config.port}';
       _username.text = ftp.config.username;
       _password.text = ftp.config.password;
@@ -187,9 +188,16 @@ class _FtpPageState extends State<FtpPage> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
             if (running) ...[
-              if (_localIp != null) _addrRow(theme, 'ftp://$_localIp:$port'),
-              if (ftp.config.ipv6Enabled && _localIpv6 != null)
-                _addrRow(theme, 'ftp://[$_localIpv6]:$port'),
+              ExpandableAddressList(
+                ips: _localIps ?? [],
+                ipv6: ftp.config.ipv6Enabled ? _localIpv6 : null,
+                itemBuilder: (ctx, ip, isPrimary) => [
+                  _addrRow(theme, 'ftp://$ip:$port'),
+                ],
+                ipv6Builder: (ctx, ipv6) => [
+                  _addrRow(theme, 'ftp://[$ipv6]:$port'),
+                ],
+              ),
             ],
           ],
         ),

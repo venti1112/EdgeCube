@@ -6,12 +6,16 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../config/network_store.dart';
+import '../config/runtime_pref_store.dart';
 import '../i18n/locale_scope.dart';
 import '../instance/instance_controller.dart';
 import '../net/download_engine.dart';
 import '../net/download_exceptions.dart';
 import '../net/msl_mirror.dart';
+import '../server/java_env_resolver.dart';
+import '../server/proot_service.dart';
 import '../server/server_service.dart';
+import 'instance.dart';
 import 'download_info.dart';
 import 'forge_launch.dart';
 import 'progress_steps.dart';
@@ -178,14 +182,35 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
     });
 
     try {
-      final javaVer = await _resolveJavaVersion(_mcVersionForJava());
+      final env = await _resolveInstallEnv(_mcVersionForJava());
+      if (env == null) {
+        // 既无原生 JRE，也无可用的 proot Java 容器。
+        await _eventSub?.cancel();
+        _eventSub = null;
+        if (!mounted) return;
+        setState(() {
+          _installing = false;
+          _installError = context.tr('instance.noJavaEnvForInstall');
+        });
+        return;
+      }
+      // 在日志区展示本次使用的运行环境（类型 + 名称）。
+      if (mounted) {
+        setState(() {
+          _installLogs.add(
+            context.tr('instance.installEnvLabel', {'name': env.displayName}),
+          );
+        });
+      }
 
       final exitCode = await _forgeChannel.invokeMethod<int>('runInstaller', {
         'installerJar': installerPath,
         'workingDir': (await widget.instanceController.directoryForId(
           widget.instanceId,
         )).path,
-        'javaVersion': javaVer,
+        // 原生传 javaVersion（JRE 标识）；proot 传 prootRootfsId（rootfs 标识）。
+        if (env.kind == JavaEnvKind.native) 'javaVersion': env.id,
+        if (env.kind == JavaEnvKind.proot) 'prootRootfsId': env.id,
       });
 
       await _eventSub?.cancel();
@@ -219,10 +244,14 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
         return;
       }
 
+      // 用哪种环境装的，就把实例配置写成用同一种环境启动：
+      //  - 原生：runtime=java，javaVersion=JRE 标识。
+      //  - proot：runtime=proot，javaVersion=rootfs 标识（沿用 javaVersion 存 rootfsId 的约定）。
       await widget.instanceController.updateConfig(
         widget.instanceId,
         selectedJar: serverJar,
-        javaVersion: javaVer,
+        runtime: env.kind == JavaEnvKind.proot ? kRuntimeProot : kRuntimeJava,
+        javaVersion: env.id,
       );
 
       try {
@@ -284,12 +313,23 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
     return widget.mcVersion;
   }
 
-  static Future<String> _resolveJavaVersion(String mcVersion) async {
-    final preferred = _javaVersionForMc(mcVersion);
-    final available = await ServerService().availableJreIds();
-    if (available.contains(preferred)) return preferred;
-    if (available.isEmpty) return preferred;
-    return available.first;
+  /// 解析本次安装使用的 Java 环境：按优先级设置在「原生 JRE」与「proot Java 容器」
+  /// 间选择（先试优先项，不可用回退另一种）；两者都没有时返回 null。
+  Future<JavaEnv?> _resolveInstallEnv(String mcVersion) async {
+    final preferredJre = _javaVersionForMc(mcVersion);
+    final results = await Future.wait([
+      ServerService().availableJreIds(),
+      const ProotService().listRootfs().catchError(
+        (_) => <ProotRootfsInfo>[],
+      ),
+      RuntimePrefStore.loadPriority(),
+    ]);
+    return resolveJavaEnv(
+      priority: results[2] as RuntimePriority,
+      nativeJreIds: results[0] as List<String>,
+      rootfsList: results[1] as List<ProotRootfsInfo>,
+      preferredNativeJreId: preferredJre,
+    );
   }
 
   @override

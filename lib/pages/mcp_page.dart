@@ -6,6 +6,7 @@ import '../i18n/locale_scope.dart';
 import '../mcp/mcp_controller.dart';
 import '../mcp/mcp_scope.dart';
 import '../net/network_address.dart';
+import '../widgets/expandable_address_list.dart';
 
 /// MCP 服务页：对外开放一个 Streamable HTTP 的 MCP 服务，
 /// 供外部 AI Agent 获取数据（服务器状态、系统资源、在线玩家、控制台日志等）
@@ -21,7 +22,7 @@ class McpPage extends StatefulWidget {
 }
 
 class _McpPageState extends State<McpPage> {
-  String? _localIp;
+  List<String>? _localIps;
   String? _localIpv6;
 
   final _port = TextEditingController(text: '8765');
@@ -44,13 +45,13 @@ class _McpPageState extends State<McpPage> {
   Future<void> _loadAll() async {
     final mcp = McpScope.of(context);
     final addrs = await Future.wait([
-      NetworkAddress.detectIPv4(),
+      NetworkAddress.detectAllIPv4(),
       NetworkAddress.detectStableIPv6(),
     ]);
     if (!mounted) return;
     setState(() {
-      _localIp = addrs[0];
-      _localIpv6 = addrs[1];
+      _localIps = addrs[0] as List<String>;
+      _localIpv6 = addrs[1] as String?;
       _port.text = '${mcp.config.port}';
       _allowControl = mcp.config.allowControl;
       _allowShell = mcp.config.allowShell;
@@ -214,10 +215,16 @@ class _McpPageState extends State<McpPage> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
             if (running) ...[
-              if (_localIp != null)
-                _addrRow(theme, 'http://$_localIp:$port/mcp'),
-              if (mcp.config.ipv6Enabled && _localIpv6 != null)
-                _addrRow(theme, 'http://[$_localIpv6]:$port/mcp'),
+              ExpandableAddressList(
+                ips: _localIps ?? [],
+                ipv6: mcp.config.ipv6Enabled ? _localIpv6 : null,
+                itemBuilder: (ctx, ip, isPrimary) => [
+                  _addrRow(theme, 'http://$ip:$port/mcp'),
+                ],
+                ipv6Builder: (ctx, ipv6) => [
+                  _addrRow(theme, 'http://[$ipv6]:$port/mcp'),
+                ],
+              ),
             ],
           ],
         ),

@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../config/runtime_pref_store.dart';
 import '../i18n/locale_scope.dart';
+import '../server/java_env_resolver.dart';
+import '../server/proot_service.dart';
+import '../server/server_service.dart';
 import 'create_download_install_loader_page.dart';
 import 'create_download_progress_page.dart';
 import 'download_session.dart';
@@ -97,6 +101,38 @@ class _SelectLoaderVersionPageState extends State<SelectLoaderVersionPage> {
         _ => context.tr('instance.titleSelectFabricLoaderVersion'),
       };
 
+  Future<bool> _checkJavaEnvAvailable() async {
+    final results = await Future.wait([
+      ServerService().availableJreIds(),
+      const ProotService().listRootfs().catchError(
+            (_) => <ProotRootfsInfo>[],
+          ),
+      RuntimePrefStore.loadPriority(),
+    ]);
+    final env = resolveJavaEnv(
+      priority: results[2] as RuntimePriority,
+      nativeJreIds: results[0] as List<String>,
+      rootfsList: results[1] as List<ProotRootfsInfo>,
+      preferredNativeJreId: null,
+    );
+    if (env != null) return true;
+    if (!mounted) return false;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.tr('instance.noJavaEnvTitle')),
+        content: Text(ctx.tr('instance.noJavaEnvForInstall')),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(ctx.tr('common.ok')),
+          ),
+        ],
+      ),
+    );
+    return false;
+  }
+
   Future<void> _onSelect(String loaderVersion) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -125,6 +161,13 @@ class _SelectLoaderVersionPageState extends State<SelectLoaderVersionPage> {
       ),
     );
     if (confirmed != true || !mounted) return;
+
+    // Forge / NeoForge：需要 Java 环境来运行安装器，先检查是否有可用环境
+    // （原生 JRE 或 proot Java 容器），没有则直接提示、不进入下载步骤。
+    if (_stage.loader == 'forge' || _stage.loader == 'neoforge') {
+      final ok = await _checkJavaEnvAvailable();
+      if (!ok || !mounted) return;
+    }
 
     try {
       final instance = await _controller.createInstance(_session.name);

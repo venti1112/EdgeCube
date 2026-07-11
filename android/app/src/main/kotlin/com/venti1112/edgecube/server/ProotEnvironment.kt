@@ -535,13 +535,15 @@ object ProotEnvironment {
                 // dotnet 的 envMainBin 是 /usr/bin/dotnet，programArgs 是 .dll 文件。
             }
         }
-        // 清单声明的固定前缀参数（如 java 的 ["-jar"]）。
-        // 现代 Forge/NeoForge（1.17+）通过 @argfile（libraries/.../unix_args.txt）
-        // 启动，argfile 内部已含主类（BootstrapLauncher），不需要 -jar。
-        // 当 jvmArgs 中存在以 "@" 开头的参数时跳过 envArgs，
-        // 避免 JVM 把 -jar 之后的内容误当成 jar 文件名。
+        // 清单声明的固定前缀参数（如 php/node 等的启动前缀）。
+        // Java 环境**跳过** envArgs：java 的 `-jar` 必须紧邻 jar 文件、位于所有 JVM
+        // 参数（如 -Xmx）之后，而 envArgs 是在 jvmArgs 之前追加的——放在这里会得到
+        // `java -jar -Xmx2G server.jar`，JVM 会把 -Xmx2G 当作 jar 文件名而失败。
+        // Java 的 `-jar` 改由调用方在 programArgs 中于正确位置（jvmArgs 之后、jar 之前）
+        // 提供（见 server_page 的 `['-jar', file, 'nogui']`），与原生启动路径一致。
+        // 现代 Forge/NeoForge（1.17+）走 @argfile，argfile 内已含主类，也不需要 -jar。
         val hasArgfile = jvmArgs.any { it.startsWith("@") }
-        if (!hasArgfile) {
+        if (!hasArgfile && manifest.envType != ENV_JAVA) {
             argv.addAll(manifest.envArgs)
         }
         // 调用方传入的运行时参数（如 -Xmx2G、@libraries/.../unix_args.txt）

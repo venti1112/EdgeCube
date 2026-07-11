@@ -22,7 +22,9 @@ import '../server/runtime_service.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
 import 'runtime_page.dart';
+import '../net/network_address.dart';
 import '../server/system_monitor_scope.dart';
+import '../widgets/expandable_address_list.dart';
 import '../server/system_monitor_service.dart';
 import '../widgets/placeholder_page.dart';
 
@@ -617,41 +619,91 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       return;
     }
 
-    // Java：需要至少一个 JRE 运行时。
+    // Java（原生）：runtime == "java"，用实例配置里选的 JRE 启动。
+    // javaVersion 永远是原生 JRE id（来自实例配置的 JRE 版本下拉框）。
+    // 若所选 JRE 已不可用 → 尝试其他原生 JRE → 还不行则回退到 proot。
     if (ctx.versions.isEmpty) {
-      _showRuntimeRequiredDialog(isJava: true);
+      // 无原生 JRE：尝试回退到任意 proot Java 容器。
+      final javaRootfs = ctx.prootRootfsInfos
+          .where((r) => !r.isGeneric && r.envType == 'java')
+          .toList();
+      if (javaRootfs.isEmpty) {
+        _showRuntimeRequiredDialog(isJava: true);
+        return;
+      }
+      _startProotJava(javaRootfs.first, ctx, file, server);
       return;
     }
+    // 优先用实例保存的 JRE，不可用则取首个原生 JRE。
+    final jreId = ctx.versions.contains(_version) ? _version : ctx.versions.first;
+    await _startNativeJava(jreId, ctx, file, server);
+    return;
+  }
 
-    // Java（默认）：用 EdgeCube 自带 JRE 执行选中的 .jar。
+  /// 用原生 JRE 启动 Java 服务端。
+  Future<void> _startNativeJava(
+    String jreId,
+    _LaunchContext ctx,
+    String? file,
+    ServerController server,
+  ) async {
     if (file == null) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(context.tr('server.noJarFound'))));
       return;
     }
+    if (!await _ensureEula(ctx.workingDir)) return;
     final mem = int.tryParse(_memController.text.trim());
     final jvmArgs = <String>[
       if (mem != null && mem > 0) '-Xmx${mem}M',
-      // 追加用户自定义 JVM 参数（以空白符/换行分隔）。
       ..._parseCustomJvmArgs(widget.instance.customJvmArgs),
     ];
-    // 启动前确保 EULA 已同意，未同意则中止启动
-    if (!await _ensureEula(ctx.workingDir)) return;
+    final isArgfile = ForgeLaunch.isArgfile(file);
     server.start(
       instanceId: widget.instance.id,
       instanceName: widget.instance.name,
       workingDir: ctx.workingDir,
-      runtimeId: _version,
+      runtimeId: jreId,
       runtime: kRuntimeJava,
-      // 现代 Forge/NeoForge（@argfile 哨兵）：@argfile 必须放在 JVM 参数里，
-      // 这样 JVM 才会按参数文件展开；作为 programArgs 传会被识别为 main class。
-      jvmArgs: ForgeLaunch.isArgfile(file)
+      jvmArgs: isArgfile
           ? [...jvmArgs, '@${ForgeLaunch.argfilePath(file)}']
           : jvmArgs,
-      programArgs: ForgeLaunch.isArgfile(file)
-          ? const ['nogui']
-          : ['-jar', file, 'nogui'],
+      programArgs: isArgfile ? const ['nogui'] : ['-jar', file, 'nogui'],
+      compatMode: _compatMode,
+    );
+  }
+
+  /// 用 proot Java 容器启动 Java 服务端（原生 JRE 不可用时的回退）。
+  Future<void> _startProotJava(
+    ProotRootfsInfo rootfs,
+    _LaunchContext ctx,
+    String? file,
+    ServerController server,
+  ) async {
+    if (file == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.tr('server.noJarFound'))));
+      return;
+    }
+    if (!await _ensureEula(ctx.workingDir)) return;
+    final mem = int.tryParse(_memController.text.trim());
+    final jvmArgs = <String>[
+      if (mem != null && mem > 0) '-Xmx${mem}M',
+      ..._parseCustomJvmArgs(widget.instance.customJvmArgs),
+    ];
+    final isArgfile = ForgeLaunch.isArgfile(file);
+    server.start(
+      instanceId: widget.instance.id,
+      instanceName: widget.instance.name,
+      workingDir: ctx.workingDir,
+      runtimeId: rootfs.id,
+      runtime: kRuntimeProot,
+      jvmArgs: isArgfile
+          ? [...jvmArgs, '@${ForgeLaunch.argfilePath(file)}']
+          : jvmArgs,
+      programArgs: isArgfile ? const ['nogui'] : ['-jar', file, 'nogui'],
       compatMode: _compatMode,
     );
   }
@@ -690,6 +742,37 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   static List<String> _parseCustomJvmArgs(String? raw) {
     if (raw == null || raw.trim().isEmpty) return const [];
     return raw.split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+  }
+
+  /// 当前实例将使用/正在使用的运行环境展示名（类型+名称），供状态卡显示。
+  String? _envLabel(_LaunchContext ctx) {
+    if (_isPhp) return ctx.phpRuntimes.isNotEmpty ? 'PHP' : null;
+    if (_isProot) {
+      final rid = ctx.prootRootfs.contains(_prootRootfsId)
+          ? _prootRootfsId
+          : (ctx.prootRootfs.isNotEmpty ? ctx.prootRootfs.first : '');
+      final info = ctx.prootRootfsInfos.where((r) => r.id == rid).firstOrNull;
+      if (info == null) return null;
+      return 'proot · ${info.envName.isNotEmpty ? info.envName : info.id}';
+    }
+    // runtime=java：实例存的是原生 JRE id。
+    if (ctx.versions.contains(_version)) {
+      final name = ctx.runtimeNames[_version];
+      return name != null ? '原生 · $name' : '原生 JRE';
+    }
+    // 实例存的 JRE 已卸载，回退到首个可用的原生 JRE。
+    if (ctx.versions.isNotEmpty) {
+      final name = ctx.runtimeNames[ctx.versions.first];
+      return name != null ? '原生 · $name' : '原生 JRE';
+    }
+    // 无原生 JRE，回退到 proot Java 容器。
+    final javaRootfs = ctx.prootRootfsInfos
+        .where((r) => !r.isGeneric && r.envType == 'java')
+        .firstOrNull;
+    if (javaRootfs != null) {
+      return 'proot · ${javaRootfs.envName.isNotEmpty ? javaRootfs.envName : javaRootfs.id}';
+    }
+    return null;
   }
 
   @override
@@ -737,6 +820,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     int? exitCode,
   ) {
     final theme = Theme.of(context);
+    final envLabel = ctx != null ? _envLabel(ctx) : null;
     final (IconData icon, Color color, String text) = switch (status) {
       ServerStatus.stopped => (
         Icons.stop_circle_outlined,
@@ -789,6 +873,16 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                         : text,
                     style: theme.textTheme.bodyMedium?.copyWith(color: color),
                   ),
+                  // 始终展示当前使用的运行环境类型 + 名称（原生 JRE / proot · 环境名）。
+                  if (envLabel != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      context.tr('server.usingEnv', {'name': envLabel}),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1780,31 +1874,10 @@ class _AnimatedProgressBar extends StatelessWidget {
   }
 }
 
-/// 获取设备局域网 IP 地址（优先 WiFi，其次有线）。
-Future<String?> _getLocalIp() async {
-  try {
-    final interfaces = await NetworkInterface.list(
-      type: InternetAddressType.IPv4,
-    );
-    for (final iface in interfaces) {
-      // 跳过回环接口。
-      if (iface.name == 'lo' || iface.name == 'lo0') continue;
-      for (final addr in iface.addresses) {
-        if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
-          return addr.address;
-        }
-      }
-    }
-  } catch (_) {
-    // 网络权限问题或接口不可用。
-  }
-  return null;
-}
-
 /// 连接信息卡片：显示内网 IP、映射状态、公网 IP。
 ///
-/// 仅在服务器运行时展示连接信息；未运行时显示“服务端未运行”占位提示。
-class _ConnectionCard extends StatelessWidget {
+/// 仅在服务器运行时展示连接信息；未运行时显示"服务端未运行"占位提示。
+class _ConnectionCard extends StatefulWidget {
   const _ConnectionCard({required this.server, required this.running});
 
   final ServerController server;
@@ -1813,15 +1886,33 @@ class _ConnectionCard extends StatelessWidget {
   final bool running;
 
   @override
+  State<_ConnectionCard> createState() => _ConnectionCardState();
+}
+
+class _ConnectionCardState extends State<_ConnectionCard> {
+  List<String>? _localIps;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadIps();
+  }
+
+  Future<void> _loadIps() async {
+    final ips = await NetworkAddress.detectAllIPv4();
+    if (mounted) setState(() => _localIps = ips);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final upnpActive = server.isUpnpActive;
-    final tunnelActive = server.isTunnelActive;
-    final tunnelRunning = server.isTunnelRunning;
-    final tunnelCrashed = server.isTunnelCrashed;
-    final upnpIp = server.upnpExternalIp;
-    final upnpPort = server.upnpMappedPort;
-    final serverPort = server.serverPort;
+    final upnpActive = widget.server.isUpnpActive;
+    final tunnelActive = widget.server.isTunnelActive;
+    final tunnelRunning = widget.server.isTunnelRunning;
+    final tunnelCrashed = widget.server.isTunnelCrashed;
+    final upnpIp = widget.server.upnpExternalIp;
+    final upnpPort = widget.server.upnpMappedPort;
+    final serverPort = widget.server.serverPort;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1844,7 +1935,7 @@ class _ConnectionCard extends StatelessWidget {
             const SizedBox(height: 12),
 
             // 未运行时仅显示占位提示，不展示连接地址与映射状态。
-            if (!running)
+            if (!widget.running)
               Row(
                 children: [
                   Icon(
@@ -1863,19 +1954,29 @@ class _ConnectionCard extends StatelessWidget {
               )
             else ...[
               // 内网连接地址。
-              FutureBuilder<String?>(
-                future: _getLocalIp(),
-                builder: (context, snapshot) {
-                  final localIp = snapshot.data ?? '…';
-                  return _infoRow(
-                    context,
-                    theme,
-                    icon: Icons.lan_outlined,
-                    label: context.tr('server.lanAddress'),
-                    value: '$localIp:${serverPort ?? upnpPort ?? 25565}',
-                    canCopy: snapshot.hasData,
-                  );
-                },
+              ExpandableAddressList(
+                ips: _localIps ?? [],
+                itemBuilder: (ctx, ip, isPrimary) => isPrimary
+                    ? [
+                        _infoRow(ctx, theme,
+                          icon: Icons.lan_outlined,
+                          label: context.tr('server.lanAddress'),
+                          value: '$ip:${serverPort ?? upnpPort ?? 25565}',
+                          canCopy: true,
+                        ),
+                      ]
+                    : [
+                        Padding(
+                          padding: const EdgeInsets.only(left: 32, top: 4),
+                          child: SelectableText(
+                            '$ip:${serverPort ?? upnpPort ?? 25565}',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ),
+                      ],
               ),
 
               // 映射状态指示器。
@@ -1885,8 +1986,8 @@ class _ConnectionCard extends StatelessWidget {
                 runSpacing: 4,
                 children: [
                   // 正版验证（online-mode / xbox-auth）状态，读取完成后显示。
-                  if (server.onlineMode != null)
-                    _authChip(context, theme, online: server.onlineMode!),
+                  if (widget.server.onlineMode != null)
+                    _authChip(context, theme, online: widget.server.onlineMode!),
                   _statusChip(
                     context,
                     theme,
@@ -1947,7 +2048,7 @@ class _ConnectionCard extends StatelessWidget {
                 ),
 
               // UPnP 获取到的 IP 属于保留/私有地址段（CGNAT 等）时给出提示。
-              if (server.upnpIsCgnat)
+              if (widget.server.upnpIsCgnat)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: Card(
@@ -2178,13 +2279,13 @@ class _ConnectionCard extends StatelessWidget {
       ),
     );
     if (toValue == null) return;
-    final ok = await server.setOnlineMode(toValue);
+    final ok = await widget.server.setOnlineMode(toValue);
     if (!ok) {
       messenger.showSnackBar(SnackBar(content: Text(failedMsg)));
       return;
     }
     // 写回成功：服务端运行中则弹「需要重启生效」对话框（复用配置页文案）。
-    if (context.mounted && server.isRunning) {
+    if (context.mounted && widget.server.isRunning) {
       final restartNow = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -2202,7 +2303,7 @@ class _ConnectionCard extends StatelessWidget {
           ],
         ),
       );
-      if (restartNow == true) await server.restart();
+      if (restartNow == true) await widget.server.restart();
     }
   }
 

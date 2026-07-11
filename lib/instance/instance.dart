@@ -126,7 +126,7 @@ class Instance {
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
-    if (runtime != kRuntimeJava) 'runtime': runtime,
+    'runtime': runtime,
     if (maxMemory != null) 'maxMemory': maxMemory,
     if (javaVersion != null) 'javaVersion': javaVersion,
     if (selectedJar != null) 'selectedJar': selectedJar,

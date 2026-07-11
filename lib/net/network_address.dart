@@ -3,32 +3,59 @@ import 'dart:io';
 /// 本机网络地址检测工具，供 FTP / MCP 页面展示对外可访问的地址。
 ///
 /// 同时提供 IPv4 与「稳定」IPv6 检测：
-/// - IPv4 取首个非回环地址（局域网地址）。
+/// - IPv4 检测返回所有非回环地址，Wi-Fi 接口优先，其余按物理接口→虚拟隧道
+///   排序；[detectIPv4] 取最优地址，[detectAllIPv4] 取全量。
 /// - 稳定 IPv6 优先解析 Linux/Android 的 `/proc/net/if_inet6`，按地址标志位
 ///   排除会定期轮换的临时隐私地址（IFA_F_TEMPORARY），从而给出固定可用的全局
 ///   地址；该文件不可读（非 Linux 平台等）时回退到 [NetworkInterface] 启发式。
 class NetworkAddress {
   NetworkAddress._();
 
-  /// 本机首个非回环 IPv4 地址（局域网地址）；无则返回 null。
-  static Future<String?> detectIPv4() async {
+  /// 按接口优先级排序的非回环 IPv4 地址列表。
+  ///
+  /// 排序规则：
+  /// 1. Wi-Fi 接口（wlan*、wlp*）
+  /// 2. 物理接口（eth*、en*、rmnet*、ccmni*）
+  /// 3. 虚拟/隧道接口（其余）
+  static Future<List<String>> detectAllIPv4() async {
     try {
       final interfaces = await NetworkInterface.list(
         type: InternetAddressType.IPv4,
       );
+      // 收集 (优先级, IP) 对。
+      final candidates = <(int, String)>[];
       for (final iface in interfaces) {
-        // 跳过回环接口。
         if (iface.name == 'lo' || iface.name == 'lo0') continue;
+        final name = iface.name.toLowerCase();
+        final priority = _interfacePriority(name);
         for (final addr in iface.addresses) {
           if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
-            return addr.address;
+            candidates.add((priority, addr.address));
           }
         }
       }
+      // 按优先级排序，同优先级保持原顺序。
+      candidates.sort((a, b) => a.$1.compareTo(b.$1));
+      return candidates.map((e) => e.$2).toList();
     } catch (_) {
-      // 网络权限问题或接口不可用。
+      return [];
     }
-    return null;
+  }
+
+  /// 返回优先级最高的 IPv4 地址（Wi-Fi → 物理 → 虚拟），无则 null。
+  static Future<String?> detectIPv4() async {
+    final all = await detectAllIPv4();
+    return all.isNotEmpty ? all.first : null;
+  }
+
+  /// 接口名称 → 优先级（越小越优先）。
+  static int _interfacePriority(String name) {
+    // Wi-Fi
+    if (name.startsWith('wlan') || name.startsWith('wlp')) { return 0; }
+    // 物理有线 / 移动数据
+    if (name.startsWith('eth') || name.startsWith('en') ||
+        name.startsWith('rmnet') || name.startsWith('ccmni')) { return 1; }
+    return 2; // 虚拟、隧道等
   }
 
   /// 本机「稳定」的全局 IPv6 地址（压缩规范格式，不含 %scope）；无则返回 null。

@@ -527,14 +527,23 @@ class MainActivity : FlutterActivity() {
                     val installerJar = call.argument<String>("installerJar")
                     val workingDir = call.argument<String>("workingDir")
                     val javaVersion = call.argument<String>("javaVersion") ?: "jre21"
+                    // 非空时改用 proot 容器（Java rootfs）内的 java 运行安装器，
+                    // 供未安装原生 JRE 的场景使用。
+                    val prootRootfsId = call.argument<String>("prootRootfsId")
                     if (installerJar == null || workingDir == null) {
                         result.error("BAD_ARGS", "缺少 installerJar/workingDir", null)
                     } else {
                         thread {
                             try {
-                                val exitCode = runForgeInstaller(
-                                    installerJar, workingDir, javaVersion, forgeEventSink,
-                                )
+                                val exitCode = if (!prootRootfsId.isNullOrBlank()) {
+                                    runForgeInstallerProot(
+                                        installerJar, workingDir, prootRootfsId, forgeEventSink,
+                                    )
+                                } else {
+                                    runForgeInstaller(
+                                        installerJar, workingDir, javaVersion, forgeEventSink,
+                                    )
+                                }
                                 runOnUiThread { result.success(exitCode) }
                             } catch (e: Exception) {
                                 runOnUiThread { result.error("INSTALL_FAILED", e.message, null) }
@@ -1758,6 +1767,71 @@ class MainActivity : FlutterActivity() {
         }
 
         emitForgeEvent(sink, mainHandler, "[EdgeCube] 开始安装 Forge 服务端…")
+        val p = pb.start()
+
+        var exitCode = -1
+        try {
+            BufferedReader(InputStreamReader(p.inputStream, StandardCharsets.UTF_8)).use { reader ->
+                var line = reader.readLine()
+                while (line != null) {
+                    val clean = forgeAnsiPattern.replace(line, "")
+                    emitForgeEvent(sink, mainHandler, clean)
+                    line = reader.readLine()
+                }
+            }
+            exitCode = p.waitFor()
+        } catch (e: Exception) {
+            emitForgeEvent(sink, mainHandler, "[EdgeCube] 安装器异常：${e.message}")
+        }
+
+        emitForgeEvent(sink, mainHandler, "[EdgeCube] 安装器退出，退出码：$exitCode")
+        return exitCode
+    }
+
+    /**
+     * 在 proot 容器（Java rootfs）内运行 Forge/NeoForge 安装器。
+     *
+     * 用于未安装原生 JRE、但已导入带 Java 环境 rootfs 的场景。复用
+     * [ProotEnvironment.buildGenericCommand] 构造 proot 命令（已配好 bind/DNS/bootstrap），
+     * 在容器内执行 `<envMainBin> -jar <installer> --installServer`。工作目录
+     * [workingDir] 被 bind 到容器内 /mnt/server（即 proot 内 cwd），安装产物落回宿主目录，
+     * 与原生安装路径的产物定位逻辑一致。
+     */
+    private fun runForgeInstallerProot(
+        installerJar: String,
+        workingDir: String,
+        rootfsId: String,
+        sink: EventChannel.EventSink?,
+        mainHandler: Handler = Handler(Looper.getMainLooper()),
+    ): Int {
+        val rootfs = ProotEnvironment.installedRootfs(applicationContext, rootfsId)
+            ?: throw IllegalStateException("proot 容器 $rootfsId 不存在")
+        val manifest = rootfs.manifest
+        val javaBin = manifest?.envMainBin
+        if (manifest == null || manifest.isGeneric ||
+            manifest.envType != ProotEnvironment.ENV_JAVA || javaBin.isNullOrBlank()
+        ) {
+            throw IllegalStateException("所选 proot 容器不是 Java 环境，无法用于安装模组加载器")
+        }
+
+        // proot 内 cwd = /mnt/server = 宿主 workingDir，安装器 jar 用 basename 即可。
+        // 文件名由本应用命名（forge-installer.jar / neoforge-installer.jar），无注入风险，
+        // 仍以单引号包裹防御 sh -c 解析。
+        val installerName = File(installerJar).name
+        val command = "'$javaBin' -jar '$installerName' --installServer"
+        val pc = ProotEnvironment.buildGenericCommand(
+            applicationContext, rootfsId, workingDir, command,
+        )
+
+        val pb = ProcessBuilder(pc.argv)
+        pb.directory(File(pc.cwd))
+        pb.redirectErrorStream(true)
+        val env = pb.environment()
+        env.clear()
+        env.putAll(pc.env)
+
+        val envLabel = manifest.envName.ifEmpty { rootfsId }
+        emitForgeEvent(sink, mainHandler, "[EdgeCube] 在 proot 容器内开始安装（$envLabel）…")
         val p = pb.start()
 
         var exitCode = -1

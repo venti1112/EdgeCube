@@ -9,6 +9,7 @@ import '../net/network_address.dart';
 import '../ssh/ssh_controller.dart';
 import '../ssh/ssh_scope.dart';
 import '../ssh/ssh_service.dart';
+import '../widgets/expandable_address_list.dart';
 
 /// SSH 服务页：对外开放当前实例目录的 SFTP 文件访问与 SSH 远程终端。
 ///
@@ -23,7 +24,7 @@ class SshPage extends StatefulWidget {
 }
 
 class _SshPageState extends State<SshPage> {
-  String? _localIp;
+  List<String>? _localIps;
   String? _localIpv6;
   String? _fingerprint;
 
@@ -50,15 +51,15 @@ class _SshPageState extends State<SshPage> {
   Future<void> _loadAll() async {
     final ssh = SshScope.of(context);
     final results = await Future.wait([
-      NetworkAddress.detectIPv4(),
+      NetworkAddress.detectAllIPv4(),
       NetworkAddress.detectStableIPv6(),
       SshService.hostKeyFingerprint(),
     ]);
     if (!mounted) return;
     setState(() {
-      _localIp = results[0];
-      _localIpv6 = results[1];
-      _fingerprint = results[2];
+      _localIps = results[0] as List<String>;
+      _localIpv6 = results[1] as String?;
+      _fingerprint = results[2] as String?;
       _port.text = '${ssh.config.port}';
       _username.text = ssh.config.username;
       _password.text = ssh.config.password;
@@ -221,18 +222,22 @@ class _SshPageState extends State<SshPage> {
             ),
             if (running) ...[
               const SizedBox(height: 4),
-              if (ssh.config.sftpEnabled) ...[
-                if (_localIp != null)
-                  _addrRow(theme, 'sftp -P $port $user@$_localIp'),
-                if (ssh.config.ipv6Enabled && _localIpv6 != null)
-                  _addrRow(theme, 'sftp -P $port $user@[$_localIpv6]'),
-              ],
-              if (ssh.config.shellEnabled) ...[
-                if (_localIp != null)
-                  _addrRow(theme, 'ssh -p $port $user@$_localIp'),
-                if (ssh.config.ipv6Enabled && _localIpv6 != null)
-                  _addrRow(theme, 'ssh -p $port $user@[$_localIpv6]'),
-              ],
+              ExpandableAddressList(
+                ips: _localIps ?? [],
+                ipv6: ssh.config.ipv6Enabled ? _localIpv6 : null,
+                itemBuilder: (ctx, ip, isPrimary) => [
+                  if (ssh.config.sftpEnabled)
+                    _addrRow(theme, 'sftp -P $port $user@$ip'),
+                  if (ssh.config.shellEnabled)
+                    _addrRow(theme, 'ssh -p $port $user@$ip'),
+                ],
+                ipv6Builder: (ctx, ipv6) => [
+                  if (ssh.config.sftpEnabled)
+                    _addrRow(theme, 'sftp -P $port $user@[$ipv6]'),
+                  if (ssh.config.shellEnabled)
+                    _addrRow(theme, 'ssh -p $port $user@[$ipv6]'),
+                ],
+              ),
             ],
             if (_fingerprint != null) _buildFingerprint(theme),
           ],
