@@ -102,6 +102,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   Future<void> _goToDownloadFlow() async {
     if (!await _validateName()) return;
     if (!mounted) return;
+    FocusScope.of(context).unfocus();
     final session = DownloadSession(
       controller: _instanceController,
       name: _nameController.text.trim(),
@@ -122,6 +123,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   Future<void> _goImportServer() async {
     final id = await _createInstanceForImport();
     if (id == null || !mounted) return;
+    FocusScope.of(context).unfocus();
     final result = await Navigator.of(context).push<CreateInstanceResult>(
       MaterialPageRoute(
         builder: (_) => ImportServerPage(
@@ -138,6 +140,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   Future<void> _goImportArchive() async {
     final id = await _createInstanceForImport();
     if (id == null || !mounted) return;
+    FocusScope.of(context).unfocus();
     final result = await Navigator.of(context).push<CreateInstanceResult>(
       MaterialPageRoute(
         builder: (_) => ImportArchivePage(
@@ -154,6 +157,7 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   Future<void> _goModpack() async {
     final id = await _createInstanceForImport();
     if (id == null || !mounted) return;
+    FocusScope.of(context).unfocus();
     final result = await Navigator.of(context).push<CreateInstanceResult>(
       MaterialPageRoute(
         builder: (_) => ModpackImportPage(
