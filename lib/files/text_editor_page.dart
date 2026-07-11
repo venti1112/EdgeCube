@@ -286,14 +286,27 @@ class _TextEditorPageState extends State<TextEditorPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                context.tr('textEditor.cannotOpenFile', {
-                  'error': _error.toString(),
-                }),
+                // 仅编码错误才提示「可能不是 UTF-8 文本」；其它错误（文件不存在、
+                // 无权限等）用中性文案，避免误导。
+                context.tr(
+                  isEncoding
+                      ? 'textEditor.notUtf8File'
+                      : 'textEditor.cannotOpenFile',
+                  {'error': _error.toString()},
+                ),
                 textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 16),
+              // 高亮「取消」为主操作：任何错误都显示，引导用户放弃打开。
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(context.tr('common.cancel')),
+              ),
+              // 「强制打开」仅在编码错误时提供（用 latin1 强读），且弱化为次要按钮，
+              // 避免用户误以为只能强开而破坏文件。
               if (isEncoding) ...[
-                const SizedBox(height: 16),
-                FilledButton.icon(
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
                   onPressed: _forceOpen,
                   icon: const Icon(Icons.warning_amber),
                   label: Text(context.tr('textEditor.forceOpen')),

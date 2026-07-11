@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import 'file_entry.dart';
+import 'file_search_bar.dart';
 import 'file_service.dart';
 
 /// 弹出一个实例内的文件夹选择对话框，返回所选目标目录的路径；取消返回 null。
@@ -48,10 +49,26 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
   List<FileEntry> _folders = [];
   bool _loading = true;
 
+  /// 搜索状态：搜索模式开关、是否递归、进行中标志、查询输入与结果（仅目录）。
+  bool _searchMode = false;
+  bool _searchRecursive = false;
+  bool _searching = false;
+  final TextEditingController _searchController = TextEditingController();
+  List<FileEntry> _searchResults = [];
+  int _searchToken = 0;
+
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_runSearch);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_runSearch);
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -61,6 +78,54 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
     setState(() {
       _folders = all.where((e) => e.isDirectory).toList();
       _loading = false;
+    });
+  }
+
+  // —— 搜索（文件夹选择器只搜目录）——
+
+  void _enterSearch() {
+    setState(() {
+      _searchMode = true;
+      _searchController.clear();
+      _searchResults = [];
+    });
+  }
+
+  void _exitSearch() {
+    setState(() {
+      _searchMode = false;
+      _searchController.clear();
+      _searchResults = [];
+      _searching = false;
+    });
+  }
+
+  void _toggleSearchRecursive(bool value) {
+    setState(() => _searchRecursive = value);
+    _runSearch();
+  }
+
+  Future<void> _runSearch() async {
+    if (!_searchMode) return;
+    final token = ++_searchToken;
+    if (_searchController.text.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _searching = false;
+      });
+      return;
+    }
+    setState(() => _searching = true);
+    final results = await _service.search(
+      _current,
+      _searchController.text,
+      recursive: _searchRecursive,
+    );
+    if (!mounted || token != _searchToken || !_searchMode) return;
+    setState(() {
+      // 文件夹选择器只关心目录。
+      _searchResults = results.where((e) => e.isDirectory).toList();
+      _searching = false;
     });
   }
 
@@ -94,14 +159,80 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
     }
   }
 
+  /// 单个文件夹列表项。[inSearch] 为 true（搜索结果）时点击进入该目录并退出搜索，
+  /// 副标题显示相对当前目录的路径。
+  Widget _buildFolderTile(
+    FileEntry folder,
+    ThemeData theme, {
+    bool inSearch = false,
+  }) {
+    final disabled =
+        widget.disabledPath != null &&
+        p.equals(folder.path, widget.disabledPath!);
+    final rel = p.relative(folder.path, from: _current.path);
+    return ListTile(
+      leading: Icon(folder.isLink ? Icons.link : Icons.folder),
+      title: Text(folder.name),
+      subtitle: inSearch && rel.contains(p.separator)
+          ? Text(rel, style: theme.textTheme.bodySmall)
+          : null,
+      enabled: !disabled,
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () {
+        if (inSearch) {
+          _exitSearch();
+          _enter(folder.path);
+        } else {
+          _enter(folder.path);
+        }
+      },
+    );
+  }
+
+  /// 搜索结果区（只含目录）。
+  Widget _buildSearchBody(ThemeData theme) {
+    if (_searching) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_searchController.text.trim().isEmpty) {
+      return Center(
+        child: Text(
+          context.tr('fileSearch.prompt'),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    if (_searchResults.isEmpty) {
+      return Center(
+        child: Text(
+          context.tr('fileSearch.noResults'),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      itemCount: _searchResults.length,
+      itemBuilder: (_, i) =>
+          _buildFolderTile(_searchResults[i], theme, inSearch: true),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return PopScope(
-      // 未到根目录时拦截系统返回键，改为回到上一级目录；已在根目录才真正关闭对话框。
-      canPop: _atRoot,
+      // 搜索/未到根目录时拦截系统返回键：先退出搜索，其次回上一级；根目录才关闭。
+      canPop: _atRoot && !_searchMode,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
+        if (_searchMode) {
+          _exitSearch();
+          return;
+        }
         _goUp();
       },
       child: AlertDialog(
@@ -112,31 +243,46 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_upward),
-                    tooltip: context.tr('folderPicker.upOneLevel'),
-                    onPressed: _atRoot ? null : _goUp,
-                  ),
-                  Expanded(
-                    child: Text(
-                      _relativeLabel(context),
-                      style: theme.textTheme.bodyMedium,
-                      overflow: TextOverflow.ellipsis,
+              if (_searchMode)
+                FileSearchBar(
+                  controller: _searchController,
+                  recursive: _searchRecursive,
+                  onRecursiveChanged: _toggleSearchRecursive,
+                  onClose: _exitSearch,
+                )
+              else
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_upward),
+                      tooltip: context.tr('folderPicker.upOneLevel'),
+                      onPressed: _atRoot ? null : _goUp,
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.create_new_folder_outlined),
-                    tooltip: context.tr('folderPicker.newFolder'),
-                    onPressed: _createFolder,
-                  ),
-                ],
-              ),
+                    Expanded(
+                      child: Text(
+                        _relativeLabel(context),
+                        style: theme.textTheme.bodyMedium,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.search),
+                      tooltip: context.tr('fileSearch.search'),
+                      onPressed: _enterSearch,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.create_new_folder_outlined),
+                      tooltip: context.tr('folderPicker.newFolder'),
+                      onPressed: _createFolder,
+                    ),
+                  ],
+                ),
               const Divider(height: 1),
               SizedBox(
                 height: 240,
-                child: _loading
+                child: _searchMode
+                    ? _buildSearchBody(theme)
+                    : _loading
                     ? const Center(child: CircularProgressIndicator())
                     : _folders.isEmpty
                     ? Center(
@@ -149,19 +295,8 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
                       )
                     : ListView.builder(
                         itemCount: _folders.length,
-                        itemBuilder: (_, i) {
-                          final folder = _folders[i];
-                          final disabled =
-                              widget.disabledPath != null &&
-                              p.equals(folder.path, widget.disabledPath!);
-                          return ListTile(
-                            leading: const Icon(Icons.folder),
-                            title: Text(folder.name),
-                            enabled: !disabled,
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => _enter(folder.path),
-                          );
-                        },
+                        itemBuilder: (_, i) =>
+                            _buildFolderTile(_folders[i], theme),
                       ),
               ),
             ],

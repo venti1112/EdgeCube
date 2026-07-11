@@ -11,6 +11,7 @@ import '../server/ecpkg_handler.dart';
 import '../server/proot_service.dart';
 import '../server/runtime_service.dart';
 import '../server/runtime_update_service.dart';
+import 'container_files_page.dart';
 import 'ecpkg_download_page.dart';
 
 /// 「运行环境」管理页：列出已安装运行时，导入/删除/更新 .ecpkg。
@@ -981,9 +982,24 @@ class _RuntimePageState extends State<RuntimePage> {
                                 : null,
                           ),
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => _deleteRootfs(rootfs),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.folder_open_outlined),
+                              tooltip: context.tr('containerFiles.open'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      ContainerFilesPage(rootfs: rootfs),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => _deleteRootfs(rootfs),
+                            ),
+                          ],
                         ),
                       ),
                     ),

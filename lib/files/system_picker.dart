@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import 'file_entry.dart';
+import 'file_search_bar.dart';
 import 'file_service.dart';
 import 'storage_permission.dart';
 
@@ -61,10 +62,26 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
   bool _loading = true;
   String? _error;
 
+  /// 搜索状态：搜索模式开关、是否递归、进行中标志、查询输入与结果。
+  bool _searchMode = false;
+  bool _searchRecursive = false;
+  bool _searching = false;
+  final TextEditingController _searchController = TextEditingController();
+  List<FileEntry> _searchResults = [];
+  int _searchToken = 0;
+
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_runSearch);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_runSearch);
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -102,6 +119,54 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
     if (!_canGoUp) return;
     _current = Directory(p.dirname(_current.path));
     _load();
+  }
+
+  // —— 搜索 ——
+
+  void _enterSearch() {
+    setState(() {
+      _searchMode = true;
+      _searchController.clear();
+      _searchResults = [];
+    });
+  }
+
+  void _exitSearch() {
+    setState(() {
+      _searchMode = false;
+      _searchController.clear();
+      _searchResults = [];
+      _searching = false;
+    });
+  }
+
+  void _toggleSearchRecursive(bool value) {
+    setState(() => _searchRecursive = value);
+    _runSearch();
+  }
+
+  Future<void> _runSearch() async {
+    if (!_searchMode) return;
+    final token = ++_searchToken;
+    if (_searchController.text.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _searching = false;
+      });
+      return;
+    }
+    setState(() => _searching = true);
+    final results = await _service.search(
+      _current,
+      _searchController.text,
+      recursive: _searchRecursive,
+    );
+    if (!mounted || token != _searchToken || !_searchMode) return;
+    setState(() {
+      // 沿用与浏览一致的扩展名过滤：目录恒显示，文件需匹配类型。
+      _searchResults = results.where(_isVisible).toList();
+      _searching = false;
+    });
   }
 
   /// 在当前目录下新建文件夹（仅目录选择模式可用）。
@@ -177,10 +242,14 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
     final theme = Theme.of(context);
     final pickingDir = widget.mode == SystemPickMode.directory;
     return PopScope(
-      // 未到根目录时拦截系统返回键，改为回到上一级目录；已在根目录才真正退出选择器。
-      canPop: _atRoot,
+      // 搜索/未到根目录时拦截系统返回键：先退出搜索，其次回上一级；根目录才退出。
+      canPop: _atRoot && !_searchMode,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
+        if (_searchMode) {
+          _exitSearch();
+          return;
+        }
         _goUp();
       },
       child: Scaffold(
@@ -191,6 +260,11 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
                 : context.tr('picker.selectFileToImport'),
           ),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.search),
+              tooltip: context.tr('fileSearch.search'),
+              onPressed: _enterSearch,
+            ),
             if (pickingDir) ...[
               IconButton(
                 icon: const Icon(Icons.create_new_folder_outlined),
@@ -207,26 +281,110 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
             ],
           ],
         ),
-        body: Column(
-          children: [
-            ListTile(
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_upward),
-                tooltip: context.tr('picker.upOneLevel'),
-                onPressed: _canGoUp ? _goUp : null,
+        body: _searchMode
+            ? Column(
+                children: [
+                  FileSearchBar(
+                    controller: _searchController,
+                    recursive: _searchRecursive,
+                    onRecursiveChanged: _toggleSearchRecursive,
+                    onClose: _exitSearch,
+                  ),
+                  const Divider(height: 1),
+                  if (_hasFilter) _buildFilterHint(theme),
+                  Expanded(child: _buildSearchBody(theme)),
+                ],
+              )
+            : Column(
+                children: [
+                  ListTile(
+                    leading: IconButton(
+                      icon: const Icon(Icons.arrow_upward),
+                      tooltip: context.tr('picker.upOneLevel'),
+                      onPressed: _canGoUp ? _goUp : null,
+                    ),
+                    title: Text(
+                      _atRoot
+                          ? context.tr('picker.internalStorage')
+                          : _current.path,
+                      style: theme.textTheme.bodySmall,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  if (_hasFilter) _buildFilterHint(theme),
+                  Expanded(child: _buildBody(theme)),
+                ],
               ),
-              title: Text(
-                _atRoot ? context.tr('picker.internalStorage') : _current.path,
-                style: theme.textTheme.bodySmall,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const Divider(height: 1),
-            if (_hasFilter) _buildFilterHint(theme),
-            Expanded(child: _buildBody(theme)),
-          ],
-        ),
       ),
+    );
+  }
+
+  /// 搜索结果区，复用条目点击逻辑（目录进入、文件选择）。
+  Widget _buildSearchBody(ThemeData theme) {
+    if (_searching) return const Center(child: CircularProgressIndicator());
+    if (_searchController.text.trim().isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            context.tr('fileSearch.prompt'),
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+    if (_searchResults.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            context.tr('fileSearch.noResults'),
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      itemCount: _searchResults.length,
+      itemBuilder: (_, i) => _buildEntryTile(_searchResults[i], inSearch: true),
+    );
+  }
+
+  /// 单个条目列表项。[inSearch] 为 true 时点击目录会进入该目录并退出搜索，
+  /// 副标题显示相对当前目录的路径。
+  Widget _buildEntryTile(FileEntry entry, {bool inSearch = false}) {
+    final theme = Theme.of(context);
+    final selectableFile =
+        widget.mode == SystemPickMode.file && entry.isFile;
+    final rel = p.relative(entry.path, from: _current.path);
+    return ListTile(
+      leading: Icon(
+        entry.isLink
+            ? Icons.link
+            : entry.isDirectory
+            ? Icons.folder
+            : Icons.insert_drive_file_outlined,
+      ),
+      title: Text(entry.name),
+      subtitle: inSearch && rel.contains(p.separator)
+          ? Text(rel, style: theme.textTheme.bodySmall)
+          : null,
+      trailing: entry.isDirectory ? const Icon(Icons.chevron_right) : null,
+      onTap: entry.isDirectory
+          ? () {
+              if (inSearch) _exitSearch();
+              _enter(entry);
+            }
+          : selectableFile
+          ? () => Navigator.of(context).pop(entry.path)
+          : null,
     );
   }
 
@@ -263,23 +421,7 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
     }
     return ListView.builder(
       itemCount: visible.length,
-      itemBuilder: (_, i) {
-        final entry = visible[i];
-        final selectableFile =
-            widget.mode == SystemPickMode.file && entry.isFile;
-        return ListTile(
-          leading: Icon(
-            entry.isDirectory ? Icons.folder : Icons.insert_drive_file_outlined,
-          ),
-          title: Text(entry.name),
-          trailing: entry.isDirectory ? const Icon(Icons.chevron_right) : null,
-          onTap: entry.isDirectory
-              ? () => _enter(entry)
-              : selectableFile
-              ? () => Navigator.of(context).pop(entry.path)
-              : null,
-        );
-      },
+      itemBuilder: (_, i) => _buildEntryTile(visible[i]),
     );
   }
 }

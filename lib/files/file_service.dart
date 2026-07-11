@@ -46,6 +46,51 @@ class FileService {
     return entries;
   }
 
+  /// 在 [dir] 下按名称搜索文件/目录，返回匹配条目（目录在前、各自按名称排序）。
+  ///
+  /// [query] 为大小写不敏感的子串匹配；去除首尾空白后为空时返回空列表。
+  /// [recursive] 为 false（默认）时仅搜索 [dir] 直接子项；为 true 时递归搜索所有
+  /// 后代，此时条目名可能重复（位于不同子目录），故按完整路径排序、目录优先。
+  /// 无权限或已消失的子目录会被静默跳过，不中断整体搜索。
+  Future<List<FileEntry>> search(
+    Directory dir,
+    String query, {
+    bool recursive = false,
+  }) async {
+    final needle = query.trim().toLowerCase();
+    if (needle.isEmpty) return [];
+    if (!await dir.exists()) return [];
+    final matches = <FileEntry>[];
+
+    Future<void> walk(Directory current) async {
+      final List<FileSystemEntity> children;
+      try {
+        children = await current.list(followLinks: false).toList();
+      } on FileSystemException {
+        // 无权限或目录在枚举中消失：跳过该子树。
+        return;
+      }
+      for (final entity in children) {
+        final name = p.basename(entity.path);
+        if (name.toLowerCase().contains(needle)) {
+          matches.add(entryFromEntity(entity, name));
+        }
+        if (recursive && entity is Directory) {
+          await walk(entity);
+        }
+      }
+    }
+
+    await walk(dir);
+    matches.sort((a, b) {
+      if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
+      final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      if (byName != 0) return byName;
+      return a.path.toLowerCase().compareTo(b.path.toLowerCase());
+    });
+    return matches;
+  }
+
   /// 在 [parent] 下新建子目录，返回创建的目录。
   Future<Directory> createDirectory(Directory parent, String name) async {
     final trimmed = name.trim();
@@ -68,10 +113,15 @@ class FileService {
     return target;
   }
 
-  /// 删除文件或目录（目录递归删除）。
+  /// 删除文件、目录或符号链接（目录递归删除）。
+  ///
+  /// 对符号链接**只删除链接本身**，绝不跟随删除其目标——否则删除一个指向目录的
+  /// 链接会连带清空目标目录的内容，造成数据丢失。
   Future<void> delete(String path) async {
-    final type = FileSystemEntity.typeSync(path);
-    if (type == FileSystemEntityType.directory) {
+    final type = FileSystemEntity.typeSync(path, followLinks: false);
+    if (type == FileSystemEntityType.link) {
+      await Link(path).delete();
+    } else if (type == FileSystemEntityType.directory) {
       await Directory(path).delete(recursive: true);
     } else if (type != FileSystemEntityType.notFound) {
       await File(path).delete();
@@ -79,6 +129,8 @@ class FileService {
   }
 
   /// 同目录内重命名；目标名已存在时抛 [FileConflictException]。
+  ///
+  /// 对符号链接重命名的是链接本身，不影响其目标。
   Future<void> rename(String path, String newName) async {
     final trimmed = newName.trim();
     final parent = p.dirname(path);
@@ -87,8 +139,10 @@ class FileService {
     if (await _exists(target)) {
       throw FileConflictException(trimmed);
     }
-    final type = FileSystemEntity.typeSync(path);
-    if (type == FileSystemEntityType.directory) {
+    final type = FileSystemEntity.typeSync(path, followLinks: false);
+    if (type == FileSystemEntityType.link) {
+      await Link(path).rename(target);
+    } else if (type == FileSystemEntityType.directory) {
       await Directory(path).rename(target);
     } else {
       await File(path).rename(target);
@@ -113,15 +167,17 @@ class FileService {
     if (await _exists(target)) {
       throw FileConflictException(p.basename(sourcePath));
     }
-    final type = FileSystemEntity.typeSync(sourcePath);
+    final type = FileSystemEntity.typeSync(sourcePath, followLinks: false);
     try {
-      if (type == FileSystemEntityType.directory) {
+      if (type == FileSystemEntityType.link) {
+        await Link(sourcePath).rename(target);
+      } else if (type == FileSystemEntityType.directory) {
         await Directory(sourcePath).rename(target);
       } else {
         await File(sourcePath).rename(target);
       }
     } on FileSystemException {
-      // 跨文件系统 rename 会失败，退化为「复制后删除」。
+      // 跨文件系统 rename 会失败，退化为「复制后删除」（链接会被重建而非跟随）。
       await _copyEntity(sourcePath, target);
       await delete(sourcePath);
     }
@@ -196,11 +252,16 @@ class FileService {
 
   // —— 内部工具 ——
 
+  /// 目标路径是否已存在同名条目。
+  ///
+  /// 以 `followLinks: false` 判定，使**断链**（指向不存在目标的符号链接）也被视为
+  /// 已存在，避免命名冲突检测漏判。
   Future<bool> _exists(String path) async =>
-      FileSystemEntity.typeSync(path) != FileSystemEntityType.notFound;
+      FileSystemEntity.typeSync(path, followLinks: false) !=
+      FileSystemEntityType.notFound;
 
   String _zipNameFor(String sourcePath) {
-    final type = FileSystemEntity.typeSync(sourcePath);
+    final type = FileSystemEntity.typeSync(sourcePath, followLinks: false);
     final name = p.basename(sourcePath);
     final base = type == FileSystemEntityType.directory
         ? name
@@ -209,8 +270,10 @@ class FileService {
   }
 
   /// 防止把目录移动/复制到它自身或其子目录中。
+  ///
+  /// 符号链接（以 `followLinks: false` 判定）不视为目录子树，可自由移动。
   void _guardNotIntoSelf(String sourcePath, String destDirPath) {
-    if (FileSystemEntity.typeSync(sourcePath) !=
+    if (FileSystemEntity.typeSync(sourcePath, followLinks: false) !=
         FileSystemEntityType.directory) {
       return;
     }
@@ -234,10 +297,16 @@ class FileService {
     }
   }
 
-  /// 递归复制文件或目录到精确的 [targetPath]。
+  /// 递归复制文件、目录或符号链接到精确的 [targetPath]。
+  ///
+  /// 符号链接会被**重建**为指向相同目标的新链接，而非跟随复制其目标内容；
+  /// 这样可避免复制指向目录的链接时拷贝巨大子树，或陷入自引用链接的死循环。
   Future<void> _copyEntity(String sourcePath, String targetPath) async {
-    final type = FileSystemEntity.typeSync(sourcePath);
-    if (type == FileSystemEntityType.directory) {
+    final type = FileSystemEntity.typeSync(sourcePath, followLinks: false);
+    if (type == FileSystemEntityType.link) {
+      final linkTarget = await Link(sourcePath).target();
+      await Link(targetPath).create(linkTarget);
+    } else if (type == FileSystemEntityType.directory) {
       await Directory(targetPath).create(recursive: true);
       await for (final child in Directory(
         sourcePath,

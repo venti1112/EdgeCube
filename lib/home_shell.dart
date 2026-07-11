@@ -393,6 +393,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         }
         // 在文件页面：先退出多选，其次返回上级目录
         if (_selectedIndex == 3) {
+          if (FileBrowser.isSearching) {
+            FileBrowser.exitSearch();
+            return;
+          }
           if (FileBrowser.isSelecting) {
             FileBrowser.exitSelection();
             return;

@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
 import 'file_entry.dart';
+import 'file_search_bar.dart';
 import 'file_service.dart';
 import 'folder_picker.dart';
 import 'storage_permission.dart';
@@ -101,6 +102,13 @@ class FileBrowser extends StatefulWidget {
   /// 退出多选模式（供返回键处理使用）。
   static void exitSelection() => _FileBrowserState._active?._clearSelection();
 
+  /// 当前文件浏览器是否处于搜索模式（供返回键处理使用）。
+  static bool get isSearching =>
+      _FileBrowserState._active?._searchMode ?? false;
+
+  /// 退出搜索模式（供返回键处理使用）。
+  static void exitSearch() => _FileBrowserState._active?._exitSearch();
+
   /// 检查当前目录的实际文件列表与已显示的是否一致，不一样则刷新（保留滚动位置）。
   static void checkAndRefresh() => _FileBrowserState._active?._checkAndRefresh();
 
@@ -114,6 +122,11 @@ class _FileBrowserState extends State<FileBrowser> {
   /// 当前活跃的 FileBrowser 实例引用，供 HomeShell 处理系统返回键时查询。
   static _FileBrowserState? _active;
 
+  /// 本实例被 push 到导航栈时，暂存被覆盖的上一个 [_active]，
+  /// 以便 dispose 时精确恢复——否则被 push 的容器文件浏览器关闭后，
+  /// 常驻文件页（IndexedStack 内）的返回键处理会失效。
+  _FileBrowserState? _previousActive;
+
   late Directory _current = widget.rootDir;
   List<FileEntry> _entries = [];
   bool _loading = true;
@@ -123,17 +136,30 @@ class _FileBrowserState extends State<FileBrowser> {
   bool _selectionMode = false;
   final Set<String> _selectedPaths = {};
 
+  /// 搜索模式开关、查询输入、是否递归子目录、搜索结果与进行中标志。
+  /// 搜索限定在当前目录 [_current] 下；[_searchRecursive] 默认 false（不含子目录）。
+  bool _searchMode = false;
+  bool _searchRecursive = false;
+  bool _searching = false;
+  final TextEditingController _searchController = TextEditingController();
+  List<FileEntry> _searchResults = [];
+
   @override
   void initState() {
     super.initState();
+    _previousActive = _active;
     _active = this;
+    _searchController.addListener(_onSearchChanged);
     _load();
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
-    if (_active == this) _active = null;
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    // 仅当自己仍是活跃实例时才让位，恢复被自己覆盖的上一个（若存在）。
+    if (_active == this) _active = _previousActive;
     super.dispose();
   }
 
@@ -232,6 +258,66 @@ class _FileBrowserState extends State<FileBrowser> {
     if (_atRoot) return;
     _current = Directory(p.dirname(_current.path));
     _load();
+  }
+
+  // —— 搜索 ——
+
+  /// 进入搜索模式：退出多选，清空上次查询与结果。
+  void _enterSearch() {
+    setState(() {
+      _selectionMode = false;
+      _selectedPaths.clear();
+      _searchMode = true;
+      _searchController.clear();
+      _searchResults = [];
+    });
+  }
+
+  /// 退出搜索模式，回到普通浏览。
+  void _exitSearch() {
+    setState(() {
+      _searchMode = false;
+      _searchController.clear();
+      _searchResults = [];
+      _searching = false;
+    });
+  }
+
+  /// 切换「包含子目录」并按当前查询重新搜索。
+  void _toggleSearchRecursive(bool value) {
+    setState(() => _searchRecursive = value);
+    _runSearch();
+  }
+
+  /// 查询文本变化时触发搜索。
+  void _onSearchChanged() => _runSearch();
+
+  /// 依据当前查询与递归开关执行搜索，写入 [_searchResults]。
+  ///
+  /// 用请求令牌规避竞态：递归搜索可能较慢，只有最后一次请求的结果被采用。
+  int _searchToken = 0;
+  Future<void> _runSearch() async {
+    if (!_searchMode) return;
+    final query = _searchController.text;
+    final token = ++_searchToken;
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _searching = false;
+      });
+      return;
+    }
+    setState(() => _searching = true);
+    final results = await _service.search(
+      _current,
+      query,
+      recursive: _searchRecursive,
+    );
+    if (!mounted || token != _searchToken || !_searchMode) return;
+    setState(() {
+      _searchResults = results;
+      _searching = false;
+    });
   }
 
   Future<void> _importFile() async {
@@ -789,6 +875,7 @@ class _FileBrowserState extends State<FileBrowser> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    if (_searchMode) return _buildSearchView(theme);
     return Column(
       children: [
         _selectionMode
@@ -799,6 +886,7 @@ class _FileBrowserState extends State<FileBrowser> {
                     ? context.tr('fileBrowser.rootDir')
                     : p.relative(_current.path, from: widget.rootDir.path),
                 onUp: _goUp,
+                onSearch: _enterSearch,
                 onImport: _importFile,
                 onImportFolder: _importFolder,
                 onNewFolder: _createFolder,
@@ -835,99 +923,143 @@ class _FileBrowserState extends State<FileBrowser> {
                           controller: _scrollController,
                           physics: const AlwaysScrollableScrollPhysics(),
                           itemCount: _entries.length,
-                          itemBuilder: (_, i) {
-                            final entry = _entries[i];
-                            final selected = _selectedPaths.contains(
-                              entry.path,
-                            );
-                            return ListTile(
-                              selected: _selectionMode && selected,
-                              leading: _selectionMode
-                                  ? Checkbox(
-                                      value: selected,
-                                      onChanged: (_) => _toggleSelected(entry),
-                                    )
-                                  : Icon(
-                                      entry.isDirectory
-                                          ? Icons.folder
-                                          : Icons.insert_drive_file_outlined,
-                                    ),
-                              title: Text(entry.name),
-                              subtitle: Text(_subtitle(entry)),
-                              onTap: _selectionMode
-                                  ? () => _toggleSelected(entry)
-                                  : entry.isDirectory
-                                  ? () => _enter(entry)
-                                  : _isEditableText(entry)
-                                  ? () => _openEditor(entry)
-                                  : null,
-                              onLongPress: _selectionMode
-                                  ? null
-                                  : () => _enterSelection(entry),
-                              trailing: _selectionMode
-                                  ? null
-                                  : PopupMenuButton<_FileAction>(
-                                      onSelected: (a) => _onAction(a, entry),
-                                      itemBuilder: (_) => [
-                                        if (!entry.isDirectory)
-                                          PopupMenuItem(
-                                            value: _FileAction.edit,
-                                            child: Text(
-                                              context.tr('common.edit'),
-                                            ),
-                                          ),
-                                        PopupMenuItem(
-                                          value: _FileAction.rename,
-                                          child: Text(
-                                            context.tr('common.rename'),
-                                          ),
-                                        ),
-                                        PopupMenuItem(
-                                          value: _FileAction.move,
-                                          child: Text(
-                                            context.tr('fileBrowser.move'),
-                                          ),
-                                        ),
-                                        PopupMenuItem(
-                                          value: _FileAction.copy,
-                                          child: Text(
-                                            context.tr('common.copy'),
-                                          ),
-                                        ),
-                                        PopupMenuItem(
-                                          value: _FileAction.compress,
-                                          child: Text(
-                                            context.tr('fileBrowser.compress'),
-                                          ),
-                                        ),
-                                        if (_isArchive(entry))
-                                          PopupMenuItem(
-                                            value: _FileAction.extract,
-                                            child: Text(
-                                              context.tr('fileBrowser.extract'),
-                                            ),
-                                          ),
-                                        PopupMenuItem(
-                                          value: _FileAction.export,
-                                          child: Text(
-                                            context.tr('fileBrowser.export'),
-                                          ),
-                                        ),
-                                        PopupMenuItem(
-                                          value: _FileAction.delete,
-                                          child: Text(
-                                            context.tr('common.delete'),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                            );
-                          },
+                          itemBuilder: (_, i) => _buildEntryTile(_entries[i]),
                         ),
                 ),
         ),
       ],
     );
+  }
+
+  /// 单个文件/目录列表项。[inSearch] 为 true 时用于搜索结果：
+  /// 无多选/长按选择，点击目录会跳转到该目录（退出搜索），副标题显示相对路径。
+  Widget _buildEntryTile(FileEntry entry, {bool inSearch = false}) {
+    final selected = _selectedPaths.contains(entry.path);
+    return ListTile(
+      selected: _selectionMode && selected,
+      leading: _selectionMode
+          ? Checkbox(
+              value: selected,
+              onChanged: (_) => _toggleSelected(entry),
+            )
+          : Icon(_iconFor(entry)),
+      title: Text(entry.name),
+      subtitle: Text(inSearch ? _searchSubtitle(entry) : _subtitle(entry)),
+      onTap: _selectionMode
+          ? () => _toggleSelected(entry)
+          : entry.isDirectory
+          ? () => inSearch ? _openFromSearch(entry) : _enter(entry)
+          : _isEditableText(entry)
+          ? () => _openEditor(entry)
+          : null,
+      onLongPress: _selectionMode || inSearch
+          ? null
+          : () => _enterSelection(entry),
+      trailing: _selectionMode
+          ? null
+          : PopupMenuButton<_FileAction>(
+              onSelected: (a) => _onAction(a, entry),
+              itemBuilder: (_) => [
+                if (!entry.isDirectory)
+                  PopupMenuItem(
+                    value: _FileAction.edit,
+                    child: Text(context.tr('common.edit')),
+                  ),
+                PopupMenuItem(
+                  value: _FileAction.rename,
+                  child: Text(context.tr('common.rename')),
+                ),
+                PopupMenuItem(
+                  value: _FileAction.move,
+                  child: Text(context.tr('fileBrowser.move')),
+                ),
+                PopupMenuItem(
+                  value: _FileAction.copy,
+                  child: Text(context.tr('common.copy')),
+                ),
+                PopupMenuItem(
+                  value: _FileAction.compress,
+                  child: Text(context.tr('fileBrowser.compress')),
+                ),
+                if (_isArchive(entry))
+                  PopupMenuItem(
+                    value: _FileAction.extract,
+                    child: Text(context.tr('fileBrowser.extract')),
+                  ),
+                PopupMenuItem(
+                  value: _FileAction.export,
+                  child: Text(context.tr('fileBrowser.export')),
+                ),
+                PopupMenuItem(
+                  value: _FileAction.delete,
+                  child: Text(context.tr('common.delete')),
+                ),
+              ],
+            ),
+    );
+  }
+
+  /// 搜索模式视图：顶部搜索栏 + 结果列表。
+  Widget _buildSearchView(ThemeData theme) {
+    return Column(
+      children: [
+        FileSearchBar(
+          controller: _searchController,
+          recursive: _searchRecursive,
+          onRecursiveChanged: _toggleSearchRecursive,
+          onClose: _exitSearch,
+        ),
+        const Divider(height: 1),
+        Expanded(child: _buildSearchBody(theme)),
+      ],
+    );
+  }
+
+  Widget _buildSearchBody(ThemeData theme) {
+    if (_searching) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_searchController.text.trim().isEmpty) {
+      return Center(
+        child: Text(
+          context.tr('fileSearch.prompt'),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    if (_searchResults.isEmpty) {
+      return Center(
+        child: Text(
+          context.tr('fileSearch.noResults'),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      itemCount: _searchResults.length,
+      itemBuilder: (_, i) =>
+          _buildEntryTile(_searchResults[i], inSearch: true),
+    );
+  }
+
+  /// 从搜索结果点击目录：跳转到该目录并退出搜索。
+  void _openFromSearch(FileEntry entry) {
+    if (!entry.isDirectory) return;
+    _current = Directory(entry.path);
+    _exitSearch();
+    _load();
+  }
+
+  /// 搜索结果条目的副标题：显示相对当前目录的路径（递归搜索时便于定位）。
+  String _searchSubtitle(FileEntry entry) {
+    final rel = p.relative(entry.path, from: _current.path);
+    // 直接子项（rel 无分隔符）回退到普通副标题，避免与文件名重复。
+    if (!rel.contains(p.separator)) return _subtitle(entry);
+    return rel;
   }
 
   /// 多选模式下的顶部操作栏：退出、计数、全选、删除、更多（移动/复制/导出）。
@@ -993,8 +1125,22 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   String _subtitle(FileEntry entry) {
+    if (entry.isLink) {
+      final target = entry.linkTarget;
+      return (target == null || target.isEmpty)
+          ? context.tr('fileBrowser.symlink')
+          : context.tr('fileBrowser.symlinkTo', {'target': target});
+    }
     if (entry.isDirectory) return context.tr('fileBrowser.folder');
     return _formatSize(entry.size);
+  }
+
+  /// 条目图标：符号链接优先显示链接标识，其次目录/文件。
+  IconData _iconFor(FileEntry entry) {
+    if (entry.isLink) return Icons.link;
+    return entry.isDirectory
+        ? Icons.folder
+        : Icons.insert_drive_file_outlined;
   }
 }
 
@@ -1015,6 +1161,7 @@ class _Toolbar extends StatelessWidget {
     required this.atRoot,
     required this.relativePath,
     required this.onUp,
+    required this.onSearch,
     required this.onImport,
     required this.onImportFolder,
     required this.onNewFolder,
@@ -1024,6 +1171,7 @@ class _Toolbar extends StatelessWidget {
   final bool atRoot;
   final String relativePath;
   final VoidCallback onUp;
+  final VoidCallback onSearch;
   final VoidCallback onImport;
   final VoidCallback onImportFolder;
   final VoidCallback onNewFolder;
@@ -1046,6 +1194,11 @@ class _Toolbar extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: context.tr('fileSearch.search'),
+            onPressed: onSearch,
           ),
           IconButton(
             icon: const Icon(Icons.note_add_outlined),
