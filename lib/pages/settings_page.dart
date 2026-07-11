@@ -5,9 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
-import '../account/account_scope.dart';
 import '../config/instance_path_store.dart';
-import '../config/network_store.dart';
 import '../config/runtime_pref_store.dart';
 import '../config/terminal_store.dart';
 import '../files/storage_permission.dart';
@@ -16,21 +14,16 @@ import '../i18n/locale_scope.dart';
 import '../instance/instance_migration.dart';
 import '../instance/instance_scope.dart';
 import '../instance/instance_store.dart';
-import '../online/online_service.dart';
 import '../server/power_service.dart';
 import '../theme/theme_scope.dart';
 import 'about_page.dart';
-import 'account_page.dart';
 import 'appearance_settings_page.dart';
 import 'language_settings_page.dart';
 import 'network_settings_page.dart';
-import 'online_services_page.dart';
 import 'storage_management_page.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, required this.onlineService});
-
-  final OnlineService onlineService;
+  const SettingsPage({super.key});
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -41,7 +34,6 @@ class _SettingsPageState extends State<SettingsPage>
   bool _ignoringBattery = true;
   bool _batteryLoaded = false;
   bool _autoClearLogOnStart = true;
-  bool _enableBetaUpdates = true;
   RuntimePriority _runtimePriority = RuntimePriority.proot;
 
   @override
@@ -50,7 +42,6 @@ class _SettingsPageState extends State<SettingsPage>
     WidgetsBinding.instance.addObserver(this);
     _refreshBattery();
     _loadAutoClearLogOnStart();
-    _loadBetaUpdates();
     _loadRuntimePriority();
   }
 
@@ -113,16 +104,6 @@ class _SettingsPageState extends State<SettingsPage>
   Future<void> _saveAutoClearLogOnStart(bool value) async {
     setState(() => _autoClearLogOnStart = value);
     await TerminalStore.saveAutoClearLogOnStart(value);
-  }
-
-  Future<void> _loadBetaUpdates() async {
-    final value = await NetworkStore.loadBetaUpdates();
-    if (mounted) setState(() => _enableBetaUpdates = value);
-  }
-
-  Future<void> _saveBetaUpdates(bool value) async {
-    setState(() => _enableBetaUpdates = value);
-    await NetworkStore.saveBetaUpdates(value);
   }
 
   @override
@@ -247,56 +228,6 @@ class _SettingsPageState extends State<SettingsPage>
             onTap: _pickRuntimePriority,
           ),
           const Divider(),
-          _sectionHeader(theme, context.tr('settings.section.online')),
-          ListenableBuilder(
-            listenable: AccountScope.of(context),
-            builder: (context, _) {
-              final account = AccountScope.of(context);
-              final user = account.user;
-              final String subtitle;
-              if (!account.available) {
-                // 在线服务未启用：账号功能不可用。
-                subtitle = context.tr('settings.account.needOnline');
-              } else if (user != null) {
-                subtitle = '${user.displayName} · ${user.email}';
-              } else {
-                subtitle = context.tr('settings.account.loggedOut');
-              }
-              return ListTile(
-                leading: const Icon(Icons.account_circle_outlined),
-                title: Text(context.tr('settings.account.title')),
-                subtitle: Text(subtitle),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AccountPage()),
-                  );
-                },
-              );
-            },
-          ),
-          ListenableBuilder(
-            listenable: widget.onlineService,
-            builder: (context, _) => ListTile(
-              leading: const Icon(Icons.cloud_outlined),
-              title: Text(context.tr('settings.online.title')),
-              subtitle: Text(
-                widget.onlineService.enabled
-                    ? context.tr('settings.online.enabled')
-                    : context.tr('settings.online.disabled'),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        OnlineServicesPage(onlineService: widget.onlineService),
-                  ),
-                );
-              },
-            ),
-          ),
-          const Divider(),
           _sectionHeader(theme, context.tr('settings.section.network')),
           ListTile(
             leading: const Icon(Icons.lan_outlined),
@@ -311,14 +242,6 @@ class _SettingsPageState extends State<SettingsPage>
           ),
           const Divider(),
           _sectionHeader(theme, context.tr('settings.section.other')),
-          SwitchListTile(
-            secondary: const Icon(Icons.science_outlined),
-            title: Text(context.tr('settings.enableBetaUpdates')),
-            subtitle: Text(context.tr('settings.enableBetaUpdatesDesc')),
-            value: _enableBetaUpdates,
-            onChanged: _saveBetaUpdates,
-          ),
-          const Divider(),
           ListTile(
             leading: const Icon(Icons.group_outlined),
             title: Text(context.tr('settings.community.title')),

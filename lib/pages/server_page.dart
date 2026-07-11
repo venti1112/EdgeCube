@@ -15,8 +15,6 @@ import '../instance/forge_launch.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
-import '../online/error_report_service.dart';
-import '../online/online_service.dart';
 import '../server/proot_service.dart';
 import '../server/runtime_service.dart';
 import '../server/server_controller.dart';
@@ -29,9 +27,7 @@ import '../server/system_monitor_service.dart';
 import '../widgets/placeholder_page.dart';
 
 class ServerPage extends StatelessWidget {
-  const ServerPage({super.key, required this.onlineService});
-
-  final OnlineService onlineService;
+  const ServerPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +52,6 @@ class ServerPage extends StatelessWidget {
               key: ValueKey(selected.id),
               instance: selected,
               filesRevision: controller.filesRevision,
-              onlineService: onlineService,
             ),
     );
   }
@@ -99,15 +94,12 @@ class _ServerControlPanel extends StatefulWidget {
     super.key,
     required this.instance,
     required this.filesRevision,
-    required this.onlineService,
   });
 
   final Instance instance;
 
   /// 实例目录文件修订号，变化时触发重新扫描 jar。
   final int filesRevision;
-
-  final OnlineService onlineService;
 
   @override
   State<_ServerControlPanel> createState() => _ServerControlPanelState();
@@ -177,8 +169,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) =>
-          _CrashDialog(crash: crash, onlineService: widget.onlineService),
+      builder: (ctx) => _CrashDialog(crash: crash),
     );
   }
 
@@ -188,8 +179,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) =>
-          _CrashDialog(crash: crash, onlineService: widget.onlineService),
+      builder: (ctx) => _CrashDialog(crash: crash),
     );
   }
 
@@ -2324,12 +2314,11 @@ class _ConnectionCardState extends State<_ConnectionCard> {
 
 /// 服务端意外退出时展示的崩溃报告对话框。
 ///
-/// 提供导出日志（通过系统分享）和上传日志（在线服务启用时）功能。
+/// 提供导出日志（通过系统分享）功能。
 class _CrashDialog extends StatefulWidget {
-  const _CrashDialog({required this.crash, required this.onlineService});
+  const _CrashDialog({required this.crash});
 
   final CrashData crash;
-  final OnlineService onlineService;
 
   @override
   State<_CrashDialog> createState() => _CrashDialogState();
@@ -2337,9 +2326,6 @@ class _CrashDialog extends StatefulWidget {
 
 class _CrashDialogState extends State<_CrashDialog> {
   bool _exporting = false;
-  bool _uploading = false;
-  bool _uploadOk = false;
-  String? _uploadResult;
 
   /// 设备信息 + 系统信息头部，在 init 时异步获取。
   String _deviceHeader = '正在获取设备信息…';
@@ -2460,46 +2446,14 @@ class _CrashDialogState extends State<_CrashDialog> {
       ? 'tunnel.crashLogShareText'
       : 'server.crashLogShareText';
 
-  /// 上传日志到 EdgeCube 服务器。
-  Future<void> _uploadLog() async {
-    if (_uploading) return;
-    final deviceId = widget.onlineService.deviceId;
-    if (deviceId == null) {
-      setState(() {
-        _uploadResult = context.tr('server.deviceIdUnavailable');
-        _uploadOk = false;
-      });
-      return;
-    }
-    setState(() {
-      _uploading = true;
-      _uploadResult = null;
-      _uploadOk = false;
-    });
-    final result = await ErrorReportService.upload(
-      logContent: await _buildFullLog(),
-      deviceId: deviceId,
-    );
-    if (!mounted) return;
-    setState(() {
-      _uploading = false;
-      _uploadOk = result.success;
-      _uploadResult = result.message;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final onlineEnabled =
-        widget.onlineService.enabled && widget.onlineService.deviceId != null;
     final isTunnel = widget.crash.kind == 'tunnel';
     final titleKey = isTunnel ? 'tunnel.crashTitle' : 'server.crashTitle';
-    final messageKey = onlineEnabled
-        ? (isTunnel ? 'tunnel.crashMessageOnline' : 'server.crashMessageOnline')
-        : (isTunnel
-              ? 'tunnel.crashMessageOffline'
-              : 'server.crashMessageOffline');
+    final messageKey = isTunnel
+        ? 'tunnel.crashMessageOffline'
+        : 'server.crashMessageOffline';
 
     return AlertDialog(
       title: Row(
@@ -2559,16 +2513,6 @@ class _CrashDialogState extends State<_CrashDialog> {
               ),
             ),
           ],
-          if (_uploadResult != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _uploadResult!,
-              style: TextStyle(
-                color: _uploadOk ? Colors.green : theme.colorScheme.error,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
         ],
       ),
       actions: [
@@ -2587,18 +2531,6 @@ class _CrashDialogState extends State<_CrashDialog> {
               : const Icon(Icons.download),
           label: Text(context.tr('server.exportLog')),
         ),
-        if (onlineEnabled)
-          FilledButton.icon(
-            onPressed: _uploading ? null : _uploadLog,
-            icon: _uploading
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.cloud_upload),
-            label: Text(context.tr('server.uploadLog')),
-          ),
       ],
     );
   }

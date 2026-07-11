@@ -22,10 +22,8 @@ dependencies:
   package_info_plus: ^10.2.0
   url_launcher: ^6.3.2
   http: ^1.6.0
-  http_parser: ^4.1.2
   downloadx: ^0.3.0
   share_plus: ^13.2.0
-  android_cn_oaid: ^0.0.2
   xterm: ^4.0.0
   mcp_dart: ^2.2.2
   image: ^4.8.0

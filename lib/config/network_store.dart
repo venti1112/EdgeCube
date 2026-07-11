@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../online/online_service.dart';
 import 'config_store.dart';
 
 /// 网络映射配置（UPnP 开关、FRP 隧道开关）的本地持久化。
@@ -9,6 +10,7 @@ import 'config_store.dart';
 /// 全部存于 `config/network.json`。FRP 配置通过直接编辑 `config/frpc.toml`
 /// 文件完成，不再提供表单界面。
 ///
+/// 更新检查地址与运行环境下载地址也在此管理（从原「在线服务」迁移）。
 class NetworkStore {
   NetworkStore._();
 
@@ -201,5 +203,65 @@ remotePort = 25566
     final configMap = await ConfigStore.readConfig(_fileName);
     configMap[_customDnsKey] = dns;
     await ConfigStore.writeConfig(_fileName, configMap);
+  }
+
+  // ── 更新检查地址 ─────────────────────────────────────────────
+
+  static const String _updateCheckUrlsKey = 'updateCheckUrls';
+
+  /// 读取自定义更新检查地址列表；未配置时返回空列表（使用默认值）。
+  static Future<List<String>> loadUpdateCheckUrls() async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    final list = configMap[_updateCheckUrlsKey] as List?;
+    if (list == null || list.isEmpty) return [];
+    return list.whereType<String>().where((u) => u.isNotEmpty).toList();
+  }
+
+  /// 设置更新检查地址列表；设为空列表则恢复默认。
+  static Future<void> saveUpdateCheckUrls(List<String> urls) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    final filtered = urls.where((u) => u.isNotEmpty).toList();
+    if (filtered.isEmpty) {
+      configMap.remove(_updateCheckUrlsKey);
+    } else {
+      configMap[_updateCheckUrlsKey] = filtered;
+    }
+    await ConfigStore.writeConfig(_fileName, configMap);
+  }
+
+  /// 获取更新检查地址列表（含默认值回退）。
+  static Future<List<String>> getUpdateCheckUrls() async {
+    final custom = await loadUpdateCheckUrls();
+    return custom.isNotEmpty ? custom : OnlineService.defaultUpdateCheckUrls;
+  }
+
+  // ── 运行环境下载地址 ──────────────────────────────────────────
+
+  static const String _ecpkgCatalogUrlsKey = 'ecpkgCatalogUrls';
+
+  /// 读取自定义运行环境下载地址列表；未配置时返回空列表（使用默认值）。
+  static Future<List<String>> loadEcpkgCatalogUrls() async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    final list = configMap[_ecpkgCatalogUrlsKey] as List?;
+    if (list == null || list.isEmpty) return [];
+    return list.whereType<String>().where((u) => u.isNotEmpty).toList();
+  }
+
+  /// 设置运行环境下载地址列表；设为空列表则恢复默认。
+  static Future<void> saveEcpkgCatalogUrls(List<String> urls) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    final filtered = urls.where((u) => u.isNotEmpty).toList();
+    if (filtered.isEmpty) {
+      configMap.remove(_ecpkgCatalogUrlsKey);
+    } else {
+      configMap[_ecpkgCatalogUrlsKey] = filtered;
+    }
+    await ConfigStore.writeConfig(_fileName, configMap);
+  }
+
+  /// 获取运行环境下载地址列表（含默认值回退）。
+  static Future<List<String>> getEcpkgCatalogUrls() async {
+    final custom = await loadEcpkgCatalogUrls();
+    return custom.isNotEmpty ? custom : OnlineService.defaultEcpkgCatalogUrls;
   }
 }

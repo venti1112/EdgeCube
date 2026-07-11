@@ -94,7 +94,7 @@ class UpdateService {
 
   static Future<UpdateCheckResult?> checkForUpdates() async {
     try {
-      final urls = OnlineService.instance.updateCheckUrls;
+      final urls = await NetworkStore.getUpdateCheckUrls();
       final info = await PackageInfo.fromPlatform();
       final headers = await CloudHeaders.base();
       headers['X-App-Version'] = info.version;

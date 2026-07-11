@@ -11,7 +11,6 @@ import 'config/user_agreement_store.dart';
 import 'files/file_browser.dart';
 import 'files/storage_permission.dart';
 import 'i18n/locale_scope.dart';
-import 'online/online_service.dart';
 import 'online/update_service.dart';
 import 'pages/console_page.dart';
 import 'pages/files_page.dart';
@@ -26,9 +25,7 @@ import 'widgets/user_agreement_dialog.dart';
 
 /// 应用主壳：底部导航栏 + 页面切换。
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key, required this.onlineService});
-
-  final OnlineService onlineService;
+  const HomeShell({super.key});
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -45,11 +42,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tabPages = [
-      ServerPage(onlineService: widget.onlineService),
+      const ServerPage(),
       const ConsolePage(),
       const ManagePage(),
       const FilesPage(),
-      SettingsPage(onlineService: widget.onlineService),
+      const SettingsPage(),
     ];
     EcpkgHandler.onOpenEcpkg = _handleOpenEcpkg;
     EcpkgHandler.onError = _handleEcpkgError;
@@ -261,40 +258,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     );
   }
 
-  /// 首次启动依次询问：在线服务、镜像源、QQ 群（各自只询问一次）。
+  /// 首次启动依次询问：镜像源、QQ 群（各自只询问一次）。
   Future<void> _showFirstLaunchDialog() async {
-    await _maybeAskOnlineService();
     await _maybeAskMirror();
     await _maybeAskJoinQqGroup();
-  }
-
-  /// 询问是否启用在线服务（仅首次）。
-  Future<void> _maybeAskOnlineService() async {
-    if (widget.onlineService.asked) return;
-    if (!mounted) return;
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('firstLaunch.online.title')),
-        content: Text(ctx.tr('firstLaunch.online.content')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.disagree')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('common.agree')),
-          ),
-        ],
-      ),
-    );
-
-    await widget.onlineService.markAsked();
-    if (result == true) {
-      await widget.onlineService.setEnabled(true);
-    }
   }
 
   /// 询问是否启用镜像源下载服务端（仅首次）。

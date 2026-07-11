@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../config/network_store.dart';
 import '../online/cloud_headers.dart';
 import '../online/online_service.dart';
 
@@ -223,7 +224,7 @@ class EcpkgCatalogService {
   /// 每个 packages URL 指向的 metadata JSON 为顶层对象（无 `{code,data}` 包裹），
   /// 同时包含元数据与 `packages` 下载条目映射。
   static Future<EcpkgCatalog> fetchCatalog() async {
-    final urls = OnlineService.instance.ecpkgCatalogUrls;
+    final urls = await NetworkStore.getEcpkgCatalogUrls();
     final headers = await CloudHeaders.base();
 
     // 1. 拉取 list.json（顶层数组），取第一个有效响应。

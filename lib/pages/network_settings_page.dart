@@ -4,14 +4,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/network_store.dart';
 import '../i18n/locale_scope.dart';
 import '../net/msl_mirror.dart';
+import '../online/online_service.dart';
 import '../server/proot_service.dart';
 
-/// 网络设置页面：控制是否使用镜像源（MSL 开服器）下载服务端。
+/// 网络设置页面：镜像源、自定义 DNS、更新检查与运行环境下载地址。
 ///
-/// 开启后，新建实例下载服务端时优先通过 MSL 镜像源加速；镜像不可用时
-/// 自动回退官方源。
-///
-/// 在线服务相关配置（后端地址、更新检查、运行环境下载）在「在线服务」页面中。
+/// 开启镜像源后，新建实例下载服务端时优先通过 MSL 镜像源加速；
+/// 镜像不可用时自动回退官方源。
 class NetworkSettingsPage extends StatefulWidget {
   const NetworkSettingsPage({super.key});
 
@@ -27,11 +26,25 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
   String _dnsOriginal = '';
   bool _dnsLoaded = false;
 
+  bool _enableBetaUpdates = true;
+  bool _betaLoaded = false;
+
+  String _updateCheckUrl = '';
+  bool _updateCheckLoaded = false;
+  bool _updateCheckIsCustom = false;
+
+  String _ecpkgCatalogUrl = '';
+  bool _ecpkgCatalogLoaded = false;
+  bool _ecpkgCatalogIsCustom = false;
+
   @override
   void initState() {
     super.initState();
     _load();
     _loadDns();
+    _loadBetaUpdates();
+    _loadUpdateCheckUrl();
+    _loadEcpkgCatalogUrl();
   }
 
   Future<void> _load() async {
@@ -96,6 +109,120 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
       await const ProotService().updateProotDns();
     } catch (_) {}
     setState(() => _dnsOriginal = defaults);
+  }
+
+  // ── 测试版更新 ──
+
+  Future<void> _loadBetaUpdates() async {
+    final value = await NetworkStore.loadBetaUpdates();
+    if (!mounted) return;
+    setState(() {
+      _enableBetaUpdates = value;
+      _betaLoaded = true;
+    });
+  }
+
+  Future<void> _saveBetaUpdates(bool value) async {
+    setState(() => _enableBetaUpdates = value);
+    await NetworkStore.saveBetaUpdates(value);
+  }
+
+  // ── 更新检查地址 ──
+
+  Future<void> _loadUpdateCheckUrl() async {
+    final urls = await NetworkStore.loadUpdateCheckUrls();
+    if (!mounted) return;
+    setState(() {
+      _updateCheckIsCustom = urls.isNotEmpty;
+      _updateCheckUrl = urls.isNotEmpty
+          ? urls.first
+          : OnlineService.defaultUpdateCheckUrls.first;
+      _updateCheckLoaded = true;
+    });
+  }
+
+  Future<void> _saveUpdateCheckUrl(String? url) async {
+    if (url != null && url.isNotEmpty) {
+      await NetworkStore.saveUpdateCheckUrls([url]);
+    } else {
+      await NetworkStore.saveUpdateCheckUrls([]);
+    }
+    await _loadUpdateCheckUrl();
+  }
+
+  // ── 运行环境下载地址 ──
+
+  Future<void> _loadEcpkgCatalogUrl() async {
+    final urls = await NetworkStore.loadEcpkgCatalogUrls();
+    if (!mounted) return;
+    setState(() {
+      _ecpkgCatalogIsCustom = urls.isNotEmpty;
+      _ecpkgCatalogUrl = urls.isNotEmpty
+          ? urls.first
+          : OnlineService.defaultEcpkgCatalogUrls.first;
+      _ecpkgCatalogLoaded = true;
+    });
+  }
+
+  Future<void> _saveEcpkgCatalogUrl(String? url) async {
+    if (url != null && url.isNotEmpty) {
+      await NetworkStore.saveEcpkgCatalogUrls([url]);
+    } else {
+      await NetworkStore.saveEcpkgCatalogUrls([]);
+    }
+    await _loadEcpkgCatalogUrl();
+  }
+
+  // ── URL 编辑对话框 ──
+
+  Future<void> _editUrl({
+    required String title,
+    required String hint,
+    required String currentValue,
+    required Future<void> Function(String value) onSave,
+  }) async {
+    final controller = TextEditingController(text: currentValue);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              context.tr('network.urlEditHint'),
+              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(ctx).colorScheme.error,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                labelText: hint,
+              ),
+              maxLines: 2,
+              minLines: 1,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(context.tr('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: Text(context.tr('common.save')),
+          ),
+        ],
+      ),
+    );
+    if (result != null && result != currentValue) {
+      await onSave(result);
+    }
   }
 
   @override
@@ -173,6 +300,77 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
                 ),
               ),
             ),
+          const Divider(),
+          _sectionHeader(theme, context.tr('network.updateSection')),
+          SwitchListTile(
+            secondary: const Icon(Icons.science_outlined),
+            title: Text(context.tr('settings.enableBetaUpdates')),
+            subtitle: Text(context.tr('settings.enableBetaUpdatesDesc')),
+            value: _enableBetaUpdates,
+            onChanged: _betaLoaded ? _saveBetaUpdates : null,
+          ),
+          ListTile(
+            leading: const Icon(Icons.system_update_outlined),
+            title: Text(context.tr('network.updateCheckUrl')),
+            subtitle: Text(
+              _updateCheckLoaded
+                  ? (_updateCheckIsCustom
+                      ? _updateCheckUrl
+                      : context.tr('network.useDefaultUrl'))
+                  : context.tr('common.loading'),
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_updateCheckIsCustom)
+                  IconButton(
+                    icon: const Icon(Icons.clear, size: 18),
+                    onPressed: () => _saveUpdateCheckUrl(null),
+                  ),
+                const Icon(Icons.edit_outlined, size: 18),
+              ],
+            ),
+            onTap: _updateCheckLoaded
+                ? () => _editUrl(
+                      title: context.tr('network.updateCheckUrl'),
+                      hint: 'URL',
+                      currentValue: _updateCheckUrl,
+                      onSave: (v) => _saveUpdateCheckUrl(v),
+                    )
+                : null,
+          ),
+          ListTile(
+            leading: const Icon(Icons.download_outlined),
+            title: Text(context.tr('network.ecpkgCatalogUrl')),
+            subtitle: Text(
+              _ecpkgCatalogLoaded
+                  ? (_ecpkgCatalogIsCustom
+                      ? _ecpkgCatalogUrl
+                      : context.tr('network.useDefaultUrl'))
+                  : context.tr('common.loading'),
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_ecpkgCatalogIsCustom)
+                  IconButton(
+                    icon: const Icon(Icons.clear, size: 18),
+                    onPressed: () => _saveEcpkgCatalogUrl(null),
+                  ),
+                const Icon(Icons.edit_outlined, size: 18),
+              ],
+            ),
+            onTap: _ecpkgCatalogLoaded
+                ? () => _editUrl(
+                      title: context.tr('network.ecpkgCatalogUrl'),
+                      hint: 'URL',
+                      currentValue: _ecpkgCatalogUrl,
+                      onSave: (v) => _saveEcpkgCatalogUrl(v),
+                    )
+                : null,
+          ),
           const Divider(),
           _sectionHeader(theme, context.tr('network.aboutMirror')),
           ListTile(
