@@ -384,10 +384,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     final runtimeNames = <String, String>{
       for (final rt in runtimes) rt.id: rt.name,
       // 内置 PHP CLI（随 APK 打包）的友好名称；.ecpkg 安装的 PHP 会被同 id 覆盖。
-      'php-cli-8.2': 'PHP 8.2 (内置)',
-      // proot rootfs 的友好名称：优先用清单 envName，否则用 id
+      'php-cli-8.2': context.tr('server.phpBuiltin'),
       for (final r in prootRootfsList)
-        r.id: 'proot: ${r.envName.isNotEmpty ? r.envName : r.id}',
+        r.id: '${context.tr('server.envLabelProot', {'name': r.envName.isNotEmpty ? r.envName : r.id})}',
     };
     return _LaunchContext(
       workingDir: dir.path,
@@ -426,17 +425,16 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('Minecraft EULA'),
+        title: Text(ctx.tr('server.eula.title')),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('启动 Minecraft 服务端前需要同意 Minecraft 最终用户许可协议（EULA）。'),
+              Text(ctx.tr('server.eula.content')),
               const SizedBox(height: 12),
               InkWell(
                 onTap: () {
-                  // 在外部浏览器打开 EULA 链接
                   launchUrl(
                     Uri.parse('https://aka.ms/MinecraftEULA'),
                     mode: LaunchMode.externalApplication,
@@ -451,21 +449,18 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                 ),
               ),
               const SizedBox(height: 12),
-              const Text(
-                '点击下方「同意」将向 eula.txt 写入 eula=true，'
-                '表示你已阅读并同意该协议。',
-              ),
+              Text(ctx.tr('server.eula.agreementNote')),
             ],
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('不同意'),
+            child: Text(ctx.tr('common.disagree')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('同意'),
+            child: Text(ctx.tr('common.agree')),
           ),
         ],
       ),
@@ -518,7 +513,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     if (_isProot) {
       if (ctx.prootRootfsInfos.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('未导入任何 proot rootfs，请先在「管理 → 运行环境」导入 rootfs.tar.zst')),
+          SnackBar(content: Text(context.tr('server.noProotRootfs'))),
         );
         return;
       }
@@ -558,7 +553,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         final command = _prootStartupCommandController.text.trim();
         if (command.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('纯容器环境必须填写启动命令，请在实例配置中设置')),
+            SnackBar(content: Text(context.tr('server.genericContainerCommandRequired'))),
           );
           return;
         }
@@ -743,24 +738,28 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           : (ctx.prootRootfs.isNotEmpty ? ctx.prootRootfs.first : '');
       final info = ctx.prootRootfsInfos.where((r) => r.id == rid).firstOrNull;
       if (info == null) return null;
-      return 'proot · ${info.envName.isNotEmpty ? info.envName : info.id}';
+      return context.tr('server.envLabelProot', {'name': info.envName.isNotEmpty ? info.envName : info.id});
     }
     // runtime=java：实例存的是原生 JRE id。
     if (ctx.versions.contains(_version)) {
       final name = ctx.runtimeNames[_version];
-      return name != null ? '原生 · $name' : '原生 JRE';
+      return name != null
+          ? context.tr('server.envLabelNative', {'name': name})
+          : context.tr('server.envLabelNativeJre');
     }
     // 实例存的 JRE 已卸载，回退到首个可用的原生 JRE。
     if (ctx.versions.isNotEmpty) {
       final name = ctx.runtimeNames[ctx.versions.first];
-      return name != null ? '原生 · $name' : '原生 JRE';
+      return name != null
+          ? context.tr('server.envLabelNative', {'name': name})
+          : context.tr('server.envLabelNativeJre');
     }
     // 无原生 JRE，回退到 proot Java 容器。
     final javaRootfs = ctx.prootRootfsInfos
         .where((r) => !r.isGeneric && r.envType == 'java')
         .firstOrNull;
     if (javaRootfs != null) {
-      return 'proot · ${javaRootfs.envName.isNotEmpty ? javaRootfs.envName : javaRootfs.id}';
+      return context.tr('server.envLabelProot', {'name': javaRootfs.envName.isNotEmpty ? javaRootfs.envName : javaRootfs.id});
     }
     return null;
   }
@@ -949,7 +948,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                         ),
                         DropdownMenuItem(
                           value: kRuntimeProot,
-                          child: const Text('proot（Linux 容器）'),
+                          child: Text(context.tr('server.runtimeProotLabel')),
                         ),
                       ],
                       selectedItemBuilder: (context) => [
@@ -969,8 +968,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                         ),
                         DropdownMenuItem<String>(
                           value: kRuntimeProot,
-                          child: const Text(
-                            'proot（Linux 容器）',
+                          child: Text(
+                            context.tr('server.runtimeProotLabel'),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -1063,9 +1062,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                             fontSize: 12,
                           ),
                           decoration: InputDecoration(
-                            labelText: '启动命令（容器内执行）',
+                            labelText: context.tr('server.prootStartupCommandLabel'),
                             hintText: '/usr/bin/python3 /mnt/server/main.py',
-                            helperText: '无元数据的纯容器环境，请填写完整启动命令',
+                            helperText: context.tr('server.genericContainerHelperText'),
                             alignLabelWithHint: true,
                             border: const OutlineInputBorder(),
                             isDense: true,
@@ -2328,7 +2327,7 @@ class _CrashDialogState extends State<_CrashDialog> {
   bool _exporting = false;
 
   /// 设备信息 + 系统信息头部，在 init 时异步获取。
-  String _deviceHeader = '正在获取设备信息…';
+  String _deviceHeader = '';
 
   @override
   void initState() {
@@ -2344,50 +2343,51 @@ class _CrashDialogState extends State<_CrashDialog> {
       final deviceInfo = await monitorService.getDeviceInfo();
       final sysInfo = await monitorService.getSystemInfo();
       final lines = <String>[
-        '=== 设备信息 ===',
-        'EdgeCube 版本: $appVersion',
-        'SoC 型号: ${deviceInfo.socModel}',
-        '内存总量: ${sysInfo.totalMemMb} MB',
-        '内存已用: ${sysInfo.usedMemMb} MB',
+        context.tr('server.crashDeviceInfoHeader'),
+        context.tr('server.crashAppVersion', {'version': appVersion}),
+        context.tr('server.crashSocModel', {'model': deviceInfo.socModel}),
+        context.tr('server.crashTotalMem', {'mem': '${sysInfo.totalMemMb}'}),
+        context.tr('server.crashUsedMem', {'mem': '${sysInfo.usedMemMb}'}),
       ];
-      // 服务端崩溃才输出运行环境信息；FRP 隧道崩溃无此概念。
       if (widget.crash.kind == 'server') {
         final envType = widget.crash.envType == 'php' ? 'PHP' : 'Java';
         final envDisplay = (widget.crash.runtimeName != null &&
                 widget.crash.runtimeName!.isNotEmpty)
             ? widget.crash.runtimeName!
             : _versionLabel(widget.crash.envRuntimeId);
-        lines.add('环境类型: $envType');
-        lines.add('运行环境: $envDisplay');
+        lines.add(context.tr('server.crashEnvType', {'type': envType}));
+        lines.add(context.tr('server.crashEnvDisplay', {'env': envDisplay}));
         if (widget.crash.runtimeVersion != null &&
             widget.crash.runtimeVersion!.isNotEmpty) {
-          lines.add('环境版本: ${widget.crash.runtimeVersion}');
+          lines.add(context.tr('server.crashEnvVersion', {'version': widget.crash.runtimeVersion!}));
         }
       } else {
-        lines.add('崩溃来源: FRP 隧道 (frpc)');
+        lines.add(context.tr('server.crashSourceTunnel'));
       }
       lines
-        ..add('设备架构: ${deviceInfo.architecture}')
-        ..add('设备制造商: ${deviceInfo.manufacturer}')
-        ..add('设备型号: ${deviceInfo.model}')
-        ..add('安卓版本: ${deviceInfo.androidVersion}')
-        ..add('安全补丁: ${deviceInfo.securityPatch}')
-        ..add('退出码: ${widget.crash.exitCode}')
+        ..add(context.tr('server.crashDeviceArch', {'arch': deviceInfo.architecture}))
+        ..add(context.tr('server.crashDeviceManufacturer', {'mfr': deviceInfo.manufacturer}))
+        ..add(context.tr('server.crashDeviceModel', {'model': deviceInfo.model}))
+        ..add(context.tr('server.crashAndroidVersion', {'version': deviceInfo.androidVersion}))
+        ..add(context.tr('server.crashSecurityPatch', {'patch': deviceInfo.securityPatch}))
+        ..add(context.tr('server.crashExitCode', {'code': '${widget.crash.exitCode}'}))
         ..addAll(['================', '']);
       if (mounted) setState(() => _deviceHeader = lines.join('\n'));
     } catch (_) {
-      if (mounted) setState(() => _deviceHeader = '(设备信息获取失败)\n\n');
+      if (mounted) setState(() => _deviceHeader = context.tr('server.crashDeviceInfoFailed'));
     }
   }
 
-  static String _versionLabel(String version) {
+  String _versionLabel(String version) {
     const labels = {
-      'jre17': 'JRE 17',
-      'jre21': 'JRE 21',
-      'jre25': 'JRE 25',
-      'php8.2': 'PHP 8.2',
+      'jre17': 'server.versionJre17',
+      'jre21': 'server.versionJre21',
+      'jre25': 'server.versionJre25',
+      'php8.2': 'server.versionPhp82',
     };
-    return labels[version] ?? version;
+    final key = labels[version];
+    if (key != null) return context.tr(key);
+    return version;
   }
 
   /// 拼接完整日志内容（设备信息 + 控制台输出）。

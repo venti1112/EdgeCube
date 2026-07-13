@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../i18n/i18n_service.dart';
 import '../net/download_engine.dart';
 import '../net/download_exceptions.dart';
 import 'runtime_service.dart';
@@ -135,7 +136,7 @@ class RuntimeUpdateService {
   /// - 网络/解析失败抛出异常
   static Future<RuntimeUpdateInfo> checkForUpdates(RuntimeInfo runtime) async {
     if (!runtime.canCheckUpdate) {
-      throw StateError('该运行时未声明 updateUrl，无法检查更新');
+      throw StateError(tr('runtimeUpdate.noUpdateUrl'));
     }
     final response = await http
         .get(Uri.parse(runtime.updateUrl))
@@ -146,7 +147,8 @@ class RuntimeUpdateService {
     final json = jsonDecode(response.body) as Map<String, dynamic>;
     final info = RuntimeUpdateInfo.fromJson(json);
     if (info.id != runtime.id) {
-      throw StateError('更新响应的 id（${info.id}）与已安装运行时 id（${runtime.id}）不一致');
+      throw StateError(tr('runtimeUpdate.idMismatch',
+          {'infoId': info.id, 'runtimeId': runtime.id}));
     }
     return info;
   }
@@ -241,7 +243,7 @@ class RuntimeUpdateService {
 class CancellationException implements Exception {
   const CancellationException();
   @override
-  String toString() => '下载已取消';
+  String toString() => tr('runtimeUpdate.cancelled');
 }
 
 /// SHA-256 校验失败时抛出。
@@ -250,5 +252,6 @@ class HashMismatchException implements Exception {
   final String expected;
   final String actual;
   @override
-  String toString() => 'SHA-256 校验失败：期望 $expected，实际 $actual';
+  String toString() =>
+      tr('runtimeUpdate.hashMismatch', {'expected': expected, 'actual': actual});
 }

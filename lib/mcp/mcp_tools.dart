@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:mcp_dart/mcp_dart.dart';
 import 'package:path/path.dart' as p;
 
+import '../i18n/i18n_service.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../server/server_controller.dart';
@@ -82,7 +83,7 @@ void _registerReadTools(
 
   mcp.registerTool(
     'get_server_status',
-    description: '获取服务端进程的运行状态、运行中的实例与在线玩家概况。',
+    description: tr('mcp.tool.getServerStatus'),
     annotations: readOnly,
     callback: (args, extra) async => _ok({
       'status': server.status.name,
@@ -98,9 +99,7 @@ void _registerReadTools(
 
   mcp.registerTool(
     'get_system_info',
-    description:
-        '获取设备的内存（MB）与 CPU 使用率，以及服务端子进程内存。'
-        'cpuUsage 为 -1 表示尚未采样到。',
+    description: tr('mcp.tool.getSystemInfo'),
     annotations: readOnly,
     callback: (args, extra) async {
       final info = monitor.info;
@@ -117,7 +116,7 @@ void _registerReadTools(
 
   mcp.registerTool(
     'get_device_info',
-    description: '获取设备硬件信息：SoC、CPU 架构、制造商、型号、安卓版本与安全补丁。',
+    description: tr('mcp.tool.getDeviceInfo'),
     annotations: readOnly,
     callback: (args, extra) async {
       final deviceInfo = await SystemMonitorService().getDeviceInfo();
@@ -134,7 +133,7 @@ void _registerReadTools(
 
   mcp.registerTool(
     'list_instances',
-    description: '列出全部服务器实例，并标注哪个被选中、哪个正在运行。',
+    description: tr('mcp.tool.listInstances'),
     annotations: readOnly,
     callback: (args, extra) async {
       final selectedId = instances.selected?.id;
@@ -154,7 +153,7 @@ void _registerReadTools(
 
   mcp.registerTool(
     'get_selected_instance',
-    description: '获取当前选中实例的详细配置（运行环境、内存、Java 版本、服务端文件、兼容模式）。',
+    description: tr('mcp.tool.getSelectedInstance'),
     annotations: readOnly,
     callback: (args, extra) async {
       final sel = instances.selected;
@@ -175,11 +174,11 @@ void _registerReadTools(
 
   mcp.registerTool(
     'get_console_log',
-    description: '获取服务端控制台日志的末尾若干行（已去除 ANSI 转义）。',
+    description: tr('mcp.tool.getConsoleLog'),
     inputSchema: JsonSchema.object(
       properties: {
         'lines': JsonSchema.integer(
-          description: '返回末尾多少行，默认 100，范围 1–1000。',
+          description: tr('mcp.tool.getConsoleLog.lines'),
           defaultValue: 100,
         ),
       },
@@ -200,7 +199,7 @@ void _registerReadTools(
 
   mcp.registerTool(
     'list_online_players',
-    description: '列出当前在线玩家（从服务端日志解析）。',
+    description: tr('mcp.tool.listOnlinePlayers'),
     annotations: readOnly,
     callback: (args, extra) async => _ok({
       'count': server.onlinePlayers.length,
@@ -220,28 +219,25 @@ void _registerControlTools(
 }) {
   mcp.registerTool(
     'start_server',
-    description:
-        '启动当前选中实例的服务端。自动扫描实例目录下的 .jar/.phar、'
-        '按实例配置组装启动参数。Java 版需要 eula.txt 中 eula=true，'
-        '若未设置将返回错误，需先在应用内同意 EULA。',
+    description: tr('mcp.tool.startServer'),
     annotations: const ToolAnnotations(destructiveHint: false),
     callback: (args, extra) async {
       if (server.status != ServerStatus.stopped) {
-        return _err('服务端已在运行或忙碌中（当前状态：${server.status.name}）');
+        return _err(tr('mcp.err.serverBusy', {'status': server.status.name}));
       }
       final instance = instances.selected;
-      if (instance == null) return _err('没有选中的实例，无法启动');
+      if (instance == null) return _err(tr('mcp.err.noSelectedInstance'));
       return _startInstance(server, instances, instance);
     },
   );
 
   mcp.registerTool(
     'stop_server',
-    description: '优雅停止服务端（向其发送 stop 命令）。',
+    description: tr('mcp.tool.stopServer'),
     annotations: const ToolAnnotations(idempotentHint: true),
     callback: (args, extra) async {
       if (!server.isRunning) {
-        return _err('服务端未在运行（当前状态：${server.status.name}）');
+        return _err(tr('mcp.err.serverNotRunning', {'status': server.status.name}));
       }
       await server.stop();
       return _ok({'stopping': true, 'status': server.status.name});
@@ -250,11 +246,11 @@ void _registerControlTools(
 
   mcp.registerTool(
     'force_stop_server',
-    description: '强制结束服务端进程（可能丢失数据，仅在优雅停止无效时使用）。',
+    description: tr('mcp.tool.forceStopServer'),
     annotations: const ToolAnnotations(idempotentHint: true),
     callback: (args, extra) async {
       if (server.status == ServerStatus.stopped) {
-        return _err('服务端未在运行');
+        return _err(tr('mcp.err.serverNotRunningShort'));
       }
       await server.forceStop();
       return _ok({'forceStopping': true});
@@ -263,13 +259,10 @@ void _registerControlTools(
 
   mcp.registerTool(
     'send_command',
-    description:
-        '向正在运行的服务端发送一行控制台命令。'
-        '示例：list、say <消息>、op <玩家>、deop <玩家>、'
-        'whitelist add <玩家>、ban <玩家>、kick <玩家>、time set day。',
+    description: tr('mcp.tool.sendCommand'),
     inputSchema: JsonSchema.object(
       properties: {
-        'command': JsonSchema.string(description: '要发送的控制台命令（不含前导斜杠）。'),
+        'command': JsonSchema.string(description: tr('mcp.tool.sendCommand.command')),
       },
       required: ['command'],
     ),
@@ -279,11 +272,11 @@ void _registerControlTools(
     ),
     callback: (args, extra) async {
       final command = (args['command'] as String?)?.trim() ?? '';
-      if (command.isEmpty) return _err('command 不能为空');
+      if (command.isEmpty) return _err(tr('mcp.err.commandEmpty'));
       if (server.status != ServerStatus.starting &&
           server.status != ServerStatus.running &&
           server.status != ServerStatus.stopping) {
-        return _err('服务端未在运行，无法发送命令（当前状态：${server.status.name}）');
+        return _err(tr('mcp.err.cannotSendCommand', {'status': server.status.name}));
       }
       await server.sendCommand(command);
       return _ok({'sent': command});
@@ -292,9 +285,9 @@ void _registerControlTools(
 
   mcp.registerTool(
     'select_instance',
-    description: '切换当前选中的实例（见 list_instances 的 id）。不影响已在运行的服务端。',
+    description: tr('mcp.tool.selectInstance'),
     inputSchema: JsonSchema.object(
-      properties: {'instanceId': JsonSchema.string(description: '目标实例的 id。')},
+      properties: {'instanceId': JsonSchema.string(description: tr('mcp.tool.selectInstance.instanceId'))},
       required: ['instanceId'],
     ),
     annotations: const ToolAnnotations(
@@ -303,9 +296,9 @@ void _registerControlTools(
     ),
     callback: (args, extra) async {
       final id = (args['instanceId'] as String?)?.trim() ?? '';
-      if (id.isEmpty) return _err('instanceId 不能为空');
+      if (id.isEmpty) return _err(tr('mcp.err.instanceIdEmpty'));
       if (!instances.instances.any((s) => s.id == id)) {
-        return _err('实例不存在：$id');
+        return _err(tr('mcp.err.instanceNotFound', {'id': id}));
       }
       await instances.select(id);
       return _ok({'selected': id, 'name': instances.selected?.name});
@@ -324,21 +317,18 @@ void _registerShellTools(
 }) {
   mcp.registerTool(
     'run_shell',
-    description:
-        '在设备上执行一条 shell 命令（<shell> -c），返回退出码与合并的 stdout/stderr。'
-        '缺省在会话当前目录执行（见 shell_cd/shell_pwd），也可用 cwd 参数覆盖。'
-        '注意：单纯的 cd 不跨调用持久，切换目录请用 shell_cd，或在命令内用 "cd x && ..."。',
+    description: tr('mcp.tool.runShell'),
     inputSchema: JsonSchema.object(
       properties: {
-        'command': JsonSchema.string(description: '要执行的 shell 命令。'),
-        'cwd': JsonSchema.string(description: '可选：本次执行的工作目录（绝对路径）。'),
+        'command': JsonSchema.string(description: tr('mcp.tool.runShell.command')),
+        'cwd': JsonSchema.string(description: tr('mcp.tool.runShell.cwd')),
       },
       required: ['command'],
     ),
     annotations: const ToolAnnotations(openWorldHint: false),
     callback: (args, extra) async {
       final command = (args['command'] as String?)?.trim() ?? '';
-      if (command.isEmpty) return _err('command 不能为空');
+      if (command.isEmpty) return _err(tr('mcp.err.commandEmpty'));
       final cwdArg = (args['cwd'] as String?)?.trim();
       final result = await shell.runCommand(
         command,
@@ -355,15 +345,15 @@ void _registerShellTools(
 
   mcp.registerTool(
     'shell_cd',
-    description: '切换 MCP shell 会话的当前工作目录（持久，影响后续 run_shell）。支持相对路径。',
+    description: tr('mcp.tool.shellCd'),
     inputSchema: JsonSchema.object(
-      properties: {'path': JsonSchema.string(description: '目标目录（绝对或相对当前目录）。')},
+      properties: {'path': JsonSchema.string(description: tr('mcp.tool.shellCd.path'))},
       required: ['path'],
     ),
     annotations: const ToolAnnotations(openWorldHint: false),
     callback: (args, extra) async {
       final path = (args['path'] as String?)?.trim() ?? '';
-      if (path.isEmpty) return _err('path 不能为空');
+      if (path.isEmpty) return _err(tr('mcp.err.pathEmpty'));
       // 用 `cd && pwd` 校验目录可进入并解析为绝对路径。
       final result = await shell.runCommand(
         'cd "$path" && pwd',
@@ -371,7 +361,7 @@ void _registerShellTools(
       );
       final exitCode = result['exitCode'] as int? ?? -1;
       final output = (result['output'] as String? ?? '').trim();
-      if (exitCode != 0 || output.isEmpty) return _err('无法进入目录：$path');
+      if (exitCode != 0 || output.isEmpty) return _err(tr('mcp.err.cannotEnterDirectory', {'path': path}));
       session.cwd = output;
       return _ok({'cwd': session.cwd});
     },
@@ -379,7 +369,7 @@ void _registerShellTools(
 
   mcp.registerTool(
     'shell_pwd',
-    description: '返回 MCP shell 会话的当前工作目录。',
+    description: tr('mcp.tool.shellPwd'),
     annotations: const ToolAnnotations(
       readOnlyHint: true,
       openWorldHint: false,
@@ -395,7 +385,7 @@ void _registerShellTools(
 
   mcp.registerTool(
     'which_shell',
-    description: '返回当前可用的 shell 列表（按优先级，第一个为生效的）。',
+    description: tr('mcp.tool.whichShell'),
     annotations: const ToolAnnotations(
       readOnlyHint: true,
       openWorldHint: false,
@@ -437,10 +427,10 @@ Future<CallToolResult> _startInstance(
   // PHP（PocketMine）：用 PHP 运行时执行选中的 .phar。
   if (instance.isPhp) {
     final phpRuntimes = await server.availablePhpIds();
-    if (phpRuntimes.isEmpty) return _err('当前设备架构不支持 PHP 运行环境');
+    if (phpRuntimes.isEmpty) return _err(tr('mcp.err.phpArchUnsupported'));
     final phar = _pickFile(instance.selectedJar, phars);
     if (phar == null) {
-      return _err('未在实例目录找到 .phar，请先放入 PocketMine 的 phar 文件');
+      return _err(tr('mcp.err.pharNotFound'));
     }
     await server.start(
       instanceId: instance.id,
@@ -463,11 +453,11 @@ Future<CallToolResult> _startInstance(
   // Java：用 JRE 执行选中的 .jar。
   final jar = _pickFile(instance.selectedJar, jars);
   if (jar == null) {
-    return _err('未在实例目录找到 .jar，请先放入服务端 jar 文件');
+    return _err(tr('mcp.err.jarNotFound'));
   }
   final versions = await server.availableJreIds();
   if (versions.isEmpty) {
-    return _err('未安装任何 Java 运行环境，请先在「管理 → 运行环境」导入 JRE');
+    return _err(tr('mcp.err.noJavaRuntime'));
   }
   var runtimeId = instance.javaVersion ?? 'jre21';
   if (!versions.contains(runtimeId)) {
@@ -479,10 +469,7 @@ Future<CallToolResult> _startInstance(
     ..._parseCustomJvmArgs(instance.customJvmArgs),
   ];
   if (!await _ensureEula(dir.path)) {
-    return _err(
-      'Minecraft EULA 尚未同意，请先在应用内启动一次该实例并同意 EULA，'
-      '或手动在实例目录的 eula.txt 中设置 eula=true',
-    );
+    return _err(tr('mcp.err.eulaNotAgreed'));
   }
   await server.start(
     instanceId: instance.id,

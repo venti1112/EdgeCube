@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 
+import '../i18n/i18n_service.dart';
 import '../net/download_engine.dart';
 import 'modrinth_service.dart';
 
@@ -81,7 +82,7 @@ class ModpackService {
     final archive = ZipDecoder().decodeBytes(bytes);
     final manifestEntry = _findManifestEntry(archive);
     if (manifestEntry == null) {
-      throw const FormatException('未找到 modrinth.index.json');
+      throw FormatException(tr('modpack.manifestNotFound'));
     }
 
     final String manifestStr;
@@ -91,14 +92,14 @@ class ModpackService {
         allowMalformed: true,
       );
     } catch (e) {
-      throw FormatException('解析 modrinth.index.json 失败：$e');
+      throw FormatException(tr('modpack.parseManifestFailed', {'error': '$e'}));
     }
 
     final Map<String, dynamic> data;
     try {
       data = jsonDecode(manifestStr) as Map<String, dynamic>;
     } catch (e) {
-      throw FormatException('modrinth.index.json 不是合法 JSON：$e');
+      throw FormatException(tr('modpack.invalidManifestJson', {'error': '$e'}));
     }
 
     // 依赖。
@@ -186,9 +187,11 @@ class ModpackService {
           try {
             await targetFile.delete();
           } catch (_) {}
-          throw Exception(
-            '哈希校验失败：${p.basename(targetPath)}（期望 ${file.sha1}，实际 $actual）',
-          );
+          throw Exception(tr('modpack.hashMismatch', {
+            'fileName': p.basename(targetPath),
+            'expected': file.sha1!,
+            'actual': actual,
+          }));
         }
       }
 
@@ -260,11 +263,11 @@ class ModpackService {
     if (p.isAbsolute(normalized) ||
         normalized.startsWith('..') ||
         normalized.contains(':')) {
-      throw InvalidPathException('整合包包含非法路径：$normalized');
+      throw InvalidPathException(tr('modpack.invalidPath', {'path': normalized}));
     }
     final resolved = p.normalize(p.join(destDir.path, normalized));
     if (!p.isWithin(destDir.path, resolved)) {
-      throw const InvalidPathException('整合包路径逃逸出实例目录');
+      throw InvalidPathException(tr('modpack.pathEscape'));
     }
     return normalized;
   }

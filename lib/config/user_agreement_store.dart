@@ -12,7 +12,7 @@ class UserAgreementStore {
   static const String _versionKey = 'version';
 
   /// 当前用户协议版本号。修改协议正文后递增此值以触发用户重新同意。
-  static const int currentVersion = 1;
+  static const int currentVersion = 2;
 
   /// 加载持久化的同意状态：
   /// - 返回 `null` 表示从未同意；

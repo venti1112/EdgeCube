@@ -60,262 +60,262 @@ class _Section {
 // ---------------------------------------------------------------------------
 
 const _languageOptions = {
-  'chs': '简体中文',
-  'cht': '繁體中文',
-  'eng': 'English',
-  'jpn': '日本語',
-  'kor': '한국어',
-  'deu': 'Deutsch',
-  'fra': 'Français',
-  'rus': 'Русский',
-  'spa': 'Español',
+  'chs': 'pnx.language.simplifiedChinese',
+  'cht': 'pnx.language.traditionalChinese',
+  'eng': 'pnx.language.english',
+  'jpn': 'pnx.language.japanese',
+  'kor': 'pnx.language.korean',
+  'deu': 'pnx.language.german',
+  'fra': 'pnx.language.french',
+  'rus': 'pnx.language.russian',
+  'spa': 'pnx.language.spanish',
 };
 
 const _gamemodeOptions = {
-  '0': 'survival',
-  '1': 'creative',
-  '2': 'adventure',
-  '3': 'spectator',
+  '0': 'pnx.gamemode.survival',
+  '1': 'pnx.gamemode.creative',
+  '2': 'pnx.gamemode.adventure',
+  '3': 'pnx.gamemode.spectator',
 };
 
 const _difficultyOptions = {
-  '0': 'peaceful',
-  '1': 'easy',
-  '2': 'normal',
-  '3': 'hard',
+  '0': 'pnx.difficulty.peaceful',
+  '1': 'pnx.difficulty.easy',
+  '2': 'pnx.difficulty.normal',
+  '3': 'pnx.difficulty.hard',
 };
 
 final _sections = <_Section>[
-  _Section('基础设置', Icons.settings_outlined, [
+  _Section('pnx.section.basic', Icons.settings_outlined, [
     _PropDef(
       path: 'settings.motd',
-      label: '服务器描述 (MOTD)',
-      subtitle: '在服务器列表中显示的描述文字',
+      label: 'pnx.label.motd',
+      subtitle: 'pnx.subtitle.motd',
       kind: _PropKind.text,
     ),
     _PropDef(
       path: 'settings.sub-motd',
-      label: '副描述 (Sub-MOTD)',
+      label: 'pnx.label.subMotd',
       kind: _PropKind.text,
     ),
     _PropDef(
       path: 'settings.port',
-      label: '服务器端口',
+      label: 'pnx.label.port',
       kind: _PropKind.number,
       min: 1,
       max: 65535,
     ),
     _PropDef(
       path: 'settings.ip',
-      label: '绑定 IP',
-      subtitle: '留空表示绑定所有接口',
+      label: 'pnx.label.ip',
+      subtitle: 'pnx.subtitle.ip',
       kind: _PropKind.text,
     ),
     _PropDef(
       path: 'settings.maxPlayers',
-      label: '最大玩家数',
+      label: 'pnx.label.maxPlayers',
       kind: _PropKind.number,
       min: 1,
       max: 10000,
     ),
     _PropDef(
       path: 'settings.language',
-      label: '语言',
+      label: 'pnx.label.language',
       kind: _PropKind.dropdown,
       options: _languageOptions,
     ),
     _PropDef(
       path: 'settings.defaultLevelName',
-      label: '默认世界名称',
+      label: 'pnx.label.defaultLevelName',
       kind: _PropKind.text,
     ),
     _PropDef(
       path: 'settings.allowList',
-      label: '启用白名单',
+      label: 'pnx.label.allowList',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'settings.xboxAuth',
-      label: 'Xbox 认证',
-      subtitle: '验证玩家的 Xbox 账号',
+      label: 'pnx.label.xboxAuth',
+      subtitle: 'pnx.subtitle.xboxAuth',
       kind: _PropKind.toggle,
     ),
-    _PropDef(path: 'settings.autoSave', label: '自动保存', kind: _PropKind.toggle),
+    _PropDef(path: 'settings.autoSave', label: 'pnx.label.autoSave', kind: _PropKind.toggle),
     _PropDef(
       path: 'settings.autosaveDelay',
-      label: '自动保存周期 (tick)',
+      label: 'pnx.label.autosaveDelay',
       kind: _PropKind.number,
       min: 0,
     ),
   ]),
-  _Section('游戏玩法', Icons.sports_esports_outlined, [
+  _Section('pnx.section.gameplay', Icons.sports_esports_outlined, [
     _PropDef(
       path: 'gameplay-settings.gamemode',
-      label: '默认游戏模式',
+      label: 'pnx.label.gamemode',
       kind: _PropKind.dropdown,
       options: _gamemodeOptions,
     ),
     _PropDef(
       path: 'gameplay-settings.difficulty',
-      label: '难度',
+      label: 'pnx.label.difficulty',
       kind: _PropKind.dropdown,
       options: _difficultyOptions,
     ),
     _PropDef(
       path: 'gameplay-settings.hardcore',
-      label: '极限模式',
+      label: 'pnx.label.hardcore',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'gameplay-settings.pvp',
-      label: '启用 PvP',
+      label: 'pnx.label.pvp',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'gameplay-settings.achievements',
-      label: '启用成就',
+      label: 'pnx.label.achievements',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'gameplay-settings.enableRedstone',
-      label: '启用红石',
+      label: 'pnx.label.enableRedstone',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'gameplay-settings.tickRedstone',
-      label: '红石更新',
+      label: 'pnx.label.tickRedstone',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'gameplay-settings.enableCommandBlocks',
-      label: '启用命令方块',
+      label: 'pnx.label.enableCommandBlocks',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'gameplay-settings.allowNether',
-      label: '允许下界',
+      label: 'pnx.label.allowNether',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'gameplay-settings.allowTheEnd',
-      label: '允许末地',
+      label: 'pnx.label.allowTheEnd',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'gameplay-settings.forceGamemode',
-      label: '强制游戏模式',
-      subtitle: '玩家每次加入时重置为默认游戏模式',
+      label: 'pnx.label.forceGamemode',
+      subtitle: 'pnx.subtitle.forceGamemode',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'gameplay-settings.spawnProtection',
-      label: '出生点保护范围',
+      label: 'pnx.label.spawnProtection',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'gameplay-settings.viewDistance',
-      label: '视距',
+      label: 'pnx.label.viewDistance',
       kind: _PropKind.number,
       min: 2,
       max: 64,
     ),
     _PropDef(
       path: 'gameplay-settings.enableMobAi',
-      label: '启用生物 AI',
+      label: 'pnx.label.enableMobAi',
       kind: _PropKind.toggle,
     ),
   ]),
-  _Section('玩家设置', Icons.person_outlined, [
+  _Section('pnx.section.player', Icons.person_outlined, [
     _PropDef(
       path: 'player-settings.savePlayerData',
-      label: '保存玩家数据',
+      label: 'pnx.label.savePlayerData',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'player-settings.checkMovement',
-      label: '检测移动',
-      subtitle: '反作弊：检查玩家移动是否合法',
+      label: 'pnx.label.checkMovement',
+      subtitle: 'pnx.subtitle.checkMovement',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'player-settings.spawnRadius',
-      label: '出生半径',
+      label: 'pnx.label.spawnRadius',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'player-settings.skinChangeCooldown',
-      label: '换肤冷却 (秒)',
+      label: 'pnx.label.skinChangeCooldown',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'player-settings.forceSkinTrusted',
-      label: '强制信任皮肤',
-      subtitle: '允许玩家自由使用第三方皮肤',
+      label: 'pnx.label.forceSkinTrusted',
+      subtitle: 'pnx.subtitle.forceSkinTrusted',
       kind: _PropKind.toggle,
     ),
   ]),
-  _Section('网络设置', Icons.wifi_outlined, [
+  _Section('pnx.section.network', Icons.wifi_outlined, [
     _PropDef(
       path: 'network-settings.compressionLevel',
-      label: '压缩等级',
+      label: 'pnx.label.compressionLevel',
       kind: _PropKind.number,
       min: 0,
       max: 9,
     ),
     _PropDef(
       path: 'network-settings.enableQuery',
-      label: '启用 Query',
+      label: 'pnx.label.enableQuery',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'network-settings.networkEncryption',
-      label: '网络加密',
+      label: 'pnx.label.networkEncryption',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'network-settings.packetLimit',
-      label: '每秒最大包数',
+      label: 'pnx.label.packetLimit',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'network-settings.compressionBufferSize',
-      label: '压缩缓冲区大小',
+      label: 'pnx.label.compressionBufferSize',
       kind: _PropKind.number,
       min: 0,
     ),
   ]),
-  _Section('区块设置', Icons.grid_on_outlined, [
+  _Section('pnx.section.chunk', Icons.grid_on_outlined, [
     _PropDef(
       path: 'chunk-settings.spawnLimit',
-      label: '每区块生物上限',
+      label: 'pnx.label.spawnLimit',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'chunk-settings.perTickSend',
-      label: '每 tick 发送区块数',
+      label: 'pnx.label.perTickSend',
       kind: _PropKind.number,
       min: 1,
     ),
     _PropDef(
       path: 'chunk-settings.chunksPerTicks',
-      label: '每 tick 处理区块数',
+      label: 'pnx.label.chunksPerTicks',
       kind: _PropKind.number,
       min: 1,
     ),
     _PropDef(
       path: 'chunk-settings.tickRadius',
-      label: 'tick 区块半径',
+      label: 'pnx.label.tickRadius',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'chunk-settings.lightUpdates',
-      label: '光照更新',
+      label: 'pnx.label.lightUpdates',
       kind: _PropKind.toggle,
     ),
   ]),
@@ -561,7 +561,7 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      section.title,
+                      context.tr(section.title),
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: Theme.of(context).colorScheme.primary,
                       ),
@@ -593,8 +593,8 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
   Widget _buildToggle(_PropDef prop) {
     final value = _getValue(prop.path) == 'true';
     return SwitchListTile(
-      title: Text(prop.label),
-      subtitle: prop.subtitle != null ? Text(prop.subtitle!) : null,
+      title: Text(context.tr(prop.label)),
+      subtitle: prop.subtitle != null ? Text(context.tr(prop.subtitle!)) : null,
       value: value,
       onChanged: (v) => _setValue(prop.path, v.toString()),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -610,8 +610,8 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
         keyboardType: TextInputType.number,
         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^-?\d*'))],
         decoration: InputDecoration(
-          labelText: prop.label,
-          helperText: prop.subtitle,
+          labelText: context.tr(prop.label),
+          helperText: prop.subtitle != null ? context.tr(prop.subtitle!) : null,
           border: const OutlineInputBorder(),
           isDense: true,
           suffixIcon: _isDirtyKey(prop.path)
@@ -634,8 +634,8 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
       child: TextField(
         controller: controller,
         decoration: InputDecoration(
-          labelText: prop.label,
-          helperText: prop.subtitle,
+          labelText: context.tr(prop.label),
+          helperText: prop.subtitle != null ? context.tr(prop.subtitle!) : null,
           border: const OutlineInputBorder(),
           isDense: true,
           suffixIcon: _isDirtyKey(prop.path)
@@ -656,7 +656,7 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
     final currentValue = _getValue(prop.path);
     final items = <DropdownMenuItem<String>>[
       for (final entry in options.entries)
-        DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+        DropdownMenuItem(value: entry.key, child: Text(context.tr(entry.value))),
       if (!options.containsKey(currentValue) && currentValue.isNotEmpty)
         DropdownMenuItem(value: currentValue, child: Text(currentValue)),
     ];
@@ -669,8 +669,8 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
           if (v != null) _setValue(prop.path, v);
         },
         decoration: InputDecoration(
-          labelText: prop.label,
-          helperText: prop.subtitle,
+          labelText: context.tr(prop.label),
+          helperText: prop.subtitle != null ? context.tr(prop.subtitle!) : null,
           border: const OutlineInputBorder(),
           isDense: true,
           suffixIcon: _isDirtyKey(prop.path)

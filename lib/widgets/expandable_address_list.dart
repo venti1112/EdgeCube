@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/locale_scope.dart';
+
 /// 可展开/收起的 IP 地址列表组件。
 ///
 /// 自动展示优先级最高的 IPv4 地址（Wi-Fi → 物理 → 虚拟），
@@ -21,11 +23,11 @@ class ExpandableAddressList extends StatefulWidget {
   final List<Widget> Function(BuildContext context, String ipv6)?
       ipv6Builder;
 
-  /// 展开按钮文案（默认「所有地址」）。
-  final String expandLabel;
+  /// 展开按钮文案（默认使用 i18n）。
+  final String? expandLabel;
 
-  /// 收起按钮文案（默认「收起」）。
-  final String collapseLabel;
+  /// 收起按钮文案（默认使用 i18n）。
+  final String? collapseLabel;
 
   const ExpandableAddressList({
     super.key,
@@ -33,8 +35,8 @@ class ExpandableAddressList extends StatefulWidget {
     this.ipv6,
     required this.itemBuilder,
     this.ipv6Builder,
-    this.expandLabel = '所有地址',
-    this.collapseLabel = '收起',
+    this.expandLabel,
+    this.collapseLabel,
   });
 
   @override
@@ -51,6 +53,10 @@ class _ExpandableAddressListState extends State<ExpandableAddressList> {
     final theme = Theme.of(context);
     final primary = widget.ips.first;
     final extras = widget.ips.skip(1).toList();
+    final expandLabel =
+        widget.expandLabel ?? context.tr('expandableAddressList.expandLabel');
+    final collapseLabel =
+        widget.collapseLabel ?? context.tr('expandableAddressList.collapseLabel');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -76,7 +82,7 @@ class _ExpandableAddressListState extends State<ExpandableAddressList> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      _expanded ? widget.collapseLabel : widget.expandLabel,
+                      _expanded ? collapseLabel : expandLabel,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.primary,
                       ),

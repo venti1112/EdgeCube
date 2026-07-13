@@ -158,7 +158,20 @@ class _AboutPageState extends State<AboutPage> {
             ),
           ),
 
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
+
+          // ── 官网 ──
+          _sectionHeader(theme, context.tr('about.website')),
+          ListTile(
+            leading: const Icon(Icons.language),
+            title: const Text('EdgeCube'),
+            subtitle: const Text('edgecubemc.com'),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () => launchUrl(
+              Uri.parse('https://edgecubemc.com/'),
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
 
           // ── GitHub ──
           _sectionHeader(theme, context.tr('about.openSourceRepo')),
@@ -235,13 +248,27 @@ class _AboutPageState extends State<AboutPage> {
           Center(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                context.tr('about.copyright'),
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: cs.onSurfaceVariant,
-                  height: 1.6,
-                ),
+              child: Column(
+                children: [
+                  Text(
+                    context.tr('about.disclaimer'),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      height: 1.6,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    context.tr('about.copyright'),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      height: 1.6,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

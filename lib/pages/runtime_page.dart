@@ -255,11 +255,8 @@ class _RuntimePageState extends State<RuntimePage> {
     if (!_prootAvailable) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'proot 原生库未打包。请从 tiny_container releases 下载 jniLibs.zip '
-            '解压到 android/app/src/main/jniLibs/arm64-v8a/ 后重新构建。',
-          ),
+        SnackBar(
+          content: Text(context.tr('runtime.proot.notAvailable')),
         ),
       );
       return;
@@ -301,8 +298,8 @@ class _RuntimePageState extends State<RuntimePage> {
     // 始终弹出名称输入框，默认为去掉压缩包扩展名的文件名
     final defaultName = _rootfsNameFromPath(path);
     final id = await _promptForRootfsId(
-      title: '导入 rootfs',
-      message: '请输入 rootfs 名称：',
+      title: context.tr('runtime.proot.importRootfsTitle'),
+      message: context.tr('runtime.proot.importRootfsMessage'),
       defaultName: defaultName,
     );
     if (id == null || id.isEmpty) return; // 用户取消
@@ -330,7 +327,7 @@ class _RuntimePageState extends State<RuntimePage> {
       if (!mounted) return;
       await _load();
       messenger.showSnackBar(
-        const SnackBar(content: Text('rootfs 导入成功')),
+        SnackBar(content: Text(context.tr('runtime.proot.importRootfsSuccess'))),
       );
     } on PlatformException catch (e) {
       if (!mounted) return;
@@ -338,8 +335,8 @@ class _RuntimePageState extends State<RuntimePage> {
         // 同名 rootfs 已存在，让用户输入新 id 或取消；默认填入刚试过的名称
         // 方便用户在其基础上修改（如加后缀）。
         final newId = await _promptForRootfsId(
-          title: 'rootfs 已存在',
-          message: '${e.message ?? 'ROOTFS_EXISTS'}\n请输入新的 rootfs 名称：',
+          title: context.tr('runtime.proot.rootfsExistsTitle'),
+          message: context.tr('runtime.proot.rootfsExistsMessage', {'error': e.message ?? 'ROOTFS_EXISTS'}),
           defaultName: id,
         );
         if (newId != null && newId.isNotEmpty && mounted) {
@@ -348,12 +345,12 @@ class _RuntimePageState extends State<RuntimePage> {
         return;
       }
       messenger.showSnackBar(
-        SnackBar(content: Text('rootfs 导入失败：${e.message}')),
+        SnackBar(content: Text(context.tr('runtime.proot.importRootfsFailed', {'error': e.message ?? ''}))),
       );
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('rootfs 导入失败：$e')),
+        SnackBar(content: Text(context.tr('runtime.proot.importRootfsFailed', {'error': '$e'}))),
       );
     } finally {
       if (mounted) setState(() => _importingRootfs = false);
@@ -388,10 +385,10 @@ class _RuntimePageState extends State<RuntimePage> {
             const SizedBox(height: 8),
             TextField(
               controller: controller,
-              decoration: const InputDecoration(
-                hintText: '如 debian-12-jdk21',
-                helperText: '仅允许字母、数字、. _ -',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                hintText: ctx.tr('runtime.proot.rootfsNameHint'),
+                helperText: ctx.tr('runtime.proot.rootfsNameHelper'),
+                border: const OutlineInputBorder(),
               ),
               autofocus: true,
               inputFormatters: [
@@ -423,22 +420,22 @@ class _RuntimePageState extends State<RuntimePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text('取消'),
+            child: Text(ctx.tr('common.cancel')),
           ),
           FilledButton(
             onPressed: () {
               final name = controller.text.trim();
               if (name.isEmpty) {
-                errorNotifier.value = '名称不能为空';
+                errorNotifier.value = ctx.tr('runtime.proot.nameEmpty');
                 return;
               }
               if (name.startsWith('.')) {
-                errorNotifier.value = '名称不能以 . 开头';
+                errorNotifier.value = ctx.tr('runtime.proot.nameStartsWithDot');
                 return;
               }
               Navigator.of(ctx).pop(name);
             },
-            child: const Text('确定'),
+            child: Text(ctx.tr('common.ok')),
           ),
         ],
       ),
@@ -451,19 +448,19 @@ class _RuntimePageState extends State<RuntimePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除 rootfs'),
-        content: Text('确认删除 rootfs「${info.id}」？此操作不可撤销。'),
+        title: Text(context.tr('runtime.proot.deleteRootfsTitle')),
+        content: Text(context.tr('runtime.proot.deleteRootfsContent', {'id': info.id})),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr('common.cancel')),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: theme.colorScheme.error,
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('删除'),
+            child: Text(context.tr('common.delete')),
           ),
         ],
       ),
@@ -477,7 +474,7 @@ class _RuntimePageState extends State<RuntimePage> {
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('删除 rootfs 失败：$e')),
+        SnackBar(content: Text(context.tr('runtime.proot.deleteRootfsFailed', {'error': '$e'}))),
       );
     }
   }
@@ -818,13 +815,13 @@ class _RuntimePageState extends State<RuntimePage> {
                       const Icon(Icons.extension_outlined, size: 18),
                       const SizedBox(width: 8),
                       Text(
-                        '原生运行时',
+                        context.tr('runtime.nativeRuntimeSection'),
                         style: theme.textTheme.titleSmall,
                       ),
                       const Spacer(),
                       if (_runtimes.isNotEmpty)
                         Text(
-                          '${_runtimes.length} 个',
+                          context.tr('runtime.count', {'count': '${_runtimes.length}'}),
                           style: theme.textTheme.bodySmall,
                         ),
                     ],
@@ -911,9 +908,9 @@ class _RuntimePageState extends State<RuntimePage> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.add),
-                    title: Text(_importing ? '导入中…' : '导入 .ecpkg'),
+                    title: Text(_importing ? context.tr('runtime.importing') : context.tr('runtime.import')),
                     subtitle: Text(
-                      '从 .ecpkg 文件导入 Java / PHP / FRP 运行时',
+                      context.tr('runtime.importDescription'),
                       style: theme.textTheme.bodySmall,
                     ),
                     onTap: _importing ? null : _import,
@@ -929,13 +926,13 @@ class _RuntimePageState extends State<RuntimePage> {
                         const Icon(Icons.dns_outlined, size: 18),
                         const SizedBox(width: 8),
                         Text(
-                          'proot 容器 rootfs',
+                          context.tr('runtime.proot.rootfsSection'),
                           style: theme.textTheme.titleSmall,
                         ),
                         const Spacer(),
                         if (_prootRootfs.isNotEmpty)
                           Text(
-                            '${_prootRootfs.length} 个',
+                            context.tr('runtime.count', {'count': '${_prootRootfs.length}'}),
                             style: theme.textTheme.bodySmall,
                           ),
                       ],
@@ -953,8 +950,7 @@ class _RuntimePageState extends State<RuntimePage> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                'proot 原生库未打包。请从 tiny_container releases '
-                                '下载 jniLibs.zip 解压到 jniLibs/arm64-v8a/ 后重新构建。',
+                                context.tr('runtime.proot.notAvailableShort'),
                                 style: theme.textTheme.bodySmall,
                               ),
                             ),
@@ -973,8 +969,8 @@ class _RuntimePageState extends State<RuntimePage> {
                         ),
                         subtitle: Text(
                           rootfs.isGeneric
-                              ? '纯容器（无元数据，需手动填写启动命令）'
-                              : '${rootfs.envType}: ${rootfs.envMainBin}'
+                              ? context.tr('runtime.proot.genericContainer')
+                              : '${context.tr('runtime.proot.rootfsSubtitle', {'type': rootfs.envType, 'bin': rootfs.envMainBin})}'
                                   '${rootfs.envVersionName.isNotEmpty ? ' (${rootfs.envVersionName})' : ''}',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: rootfs.isGeneric
@@ -1014,10 +1010,10 @@ class _RuntimePageState extends State<RuntimePage> {
                               )
                             : const Icon(Icons.add),
                         title: Text(
-                          _importingRootfs ? '导入中…' : '导入 rootfs.tar.zst',
+                          _importingRootfs ? context.tr('runtime.importing') : context.tr('runtime.proot.importRootfs'),
                         ),
                         subtitle: Text(
-                          '从 rootfs.tar.zst 导入 Linux 根文件系统（带元数据或纯容器）',
+                          context.tr('runtime.proot.importRootfsDescription'),
                           style: theme.textTheme.bodySmall,
                         ),
                         onTap: _importingRootfs ? null : _importRootfs,

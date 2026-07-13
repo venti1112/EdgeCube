@@ -19,6 +19,7 @@ import '../config/terminal_store.dart';
 import '../tunnel/tunnel_service.dart';
 import 'runtime_service.dart';
 import '../widgets/terminal_keys_bar.dart';
+import '../i18n/i18n_service.dart';
 
 /// 匹配 Minecraft 服务端日志中玩家加入/离开的正则（兼容英文与中文输出）。
 ///
@@ -91,8 +92,8 @@ class CrashData {
   /// 建议操作（来自规则文件的 suggest；无匹配规则或该规则未给建议时为 null）。
   final String? errorSuggest;
 
-  /// 从服务端日志尾部扫描常见崩溃原因，返回 (简要原因, 详细错误)。
-  static (String? reason, String? detail) parseError(List<String> logLines) {
+  /// 从服务端日志尾部扫描常见崩溃原因，返回 (i18n key, 详细错误)。
+  static (String? key, String? detail) parseError(List<String> logLines) {
     const maxScan = 80;
     final scan = logLines.length > maxScan
         ? logLines.sublist(logLines.length - maxScan)
@@ -102,61 +103,53 @@ class CrashData {
       final trimmed = scan[i].trim();
       if (trimmed.isEmpty) continue;
 
-      // UnsupportedClassVersionError：Java 版本不兼容
       if (trimmed.contains('UnsupportedClassVersionError')) {
         final msg = _after(trimmed, 'UnsupportedClassVersionError:');
-        return ('Java 版本不兼容：服务端需要更高版本的 Java', msg);
+        return ('server.error.javaVersionIncompatible', msg);
       }
 
-      // OutOfMemoryError：内存不足
       if (trimmed.contains('OutOfMemoryError')) {
         final msg = _after(trimmed, 'OutOfMemoryError:');
-        return ('Java 堆内存不足', msg);
+        return ('server.error.outOfMemory', msg);
       }
 
-      // Unable to access jarfile
       if (trimmed.contains('Unable to access jarfile')) {
         final jar = _after(trimmed, 'Unable to access jarfile');
-        return ('找不到服务端文件', 'Unable to access jarfile $jar');
+        return ('server.error.jarNotFound', 'Unable to access jarfile $jar');
       }
 
-      // Could not find or load main class
       if (trimmed.contains('Could not find or load main class')) {
         final cls = _after(trimmed, 'Could not find or load main class');
-        return ('找不到主类', 'Could not find or load main class $cls');
+        return ('server.error.mainClassNotFound', 'Could not find or load main class $cls');
       }
 
-      // LinkageError（通常包裹更具体的错误如 UnsupportedClassVersionError）
       if (trimmed.contains('LinkageError')) {
         if (i + 1 < scan.length) {
           final next = scan[i + 1].trim();
           if (next.contains('UnsupportedClassVersionError')) {
             final detail = _after(next, 'UnsupportedClassVersionError:');
-            return ('Java 版本不兼容：服务端需要更高版本的 Java', detail);
+            return ('server.error.javaVersionIncompatible', detail);
           }
         }
         final msg = _after(trimmed, 'LinkageError');
-        return ('Java 类加载错误', msg);
+        return ('server.error.linkageError', msg);
       }
 
-      // Could not create the Java Virtual Machine
       if (trimmed.contains('Could not create the Java Virtual Machine')) {
-        return ('无法创建 Java 虚拟机', trimmed);
+        return ('server.error.cannotCreateJvm', trimmed);
       }
 
-      // PHP 致命错误
       if (trimmed.contains('PHP Fatal error:')) {
         final msg = _after(trimmed, 'PHP Fatal error:');
-        return ('PHP 致命错误', msg);
+        return ('server.error.phpFatalError', msg);
       }
     }
 
-    // 兜底：任何 Error:/Exception in thread 开头行
     for (int i = scan.length - 1; i >= 0; i--) {
       final trimmed = scan[i].trim();
       if (trimmed.startsWith('Error:') ||
           trimmed.startsWith('Exception in thread')) {
-        return ('服务端启动错误', trimmed);
+        return ('server.error.serverStartError', trimmed);
       }
     }
 
@@ -570,7 +563,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     _userForceStopping = false;
     _pnxWizardStep = 0;
     _status = ServerStatus.preparing;
-    _notice('[EdgeCube] 启动 $instanceName …');
+    _notice(tr('server.notice.starting', {'name': instanceName}));
     notifyListeners();
     try {
       await _service.start(
@@ -600,7 +593,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
         notifyListeners();
       }
     } catch (e) {
-      _notice('[EdgeCube] 启动失败：$e');
+      _notice(tr('server.notice.startFailed', {'error': '$e'}));
       _status = ServerStatus.stopped;
       _instanceId = null;
       _instanceName = null;
@@ -615,7 +608,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     if (_status != ServerStatus.running) return;
     _userStopping = true;
     _status = ServerStatus.stopping;
-    _notice('[EdgeCube] 正在停止（已发送 stop 命令）…');
+    _notice(tr('server.notice.stopping'));
     notifyListeners();
     await _service.stop();
   }
@@ -624,7 +617,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   Future<void> forceStop() async {
     if (_status == ServerStatus.stopped) return;
     _userForceStopping = true;
-    _notice('[EdgeCube] 强制结束进程…');
+    _notice(tr('server.notice.forceStopping'));
     await _service.forceStop();
   }
 
@@ -641,7 +634,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     }
     if (_status != ServerStatus.running) return; // 忙碌中不处理
     _pendingRestart = true;
-    _notice('[EdgeCube] 正在重启服务端…');
+    _notice(tr('server.notice.restarting'));
     await stop();
   }
 
@@ -1064,7 +1057,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
           if (!_restartingTunnel) _stopTunnel();
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
           if (exitCode != null) {
-            _notice('[EdgeCube] 服务端已退出（退出码 $exitCode）');
+            _notice(tr('server.notice.exited', {'code': '$exitCode'}));
             // 崩溃检测：退出码不为 0 且非用户主动停止/强制停止。
             if (exitCode != 0 && !_userStopping && !_userForceStopping) {
               _handleCrash(exitCode);
@@ -1262,7 +1255,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
           )
           .then((port) async {
         if (port != null) {
-          _notice('[EdgeCube] 路由器端口映射成功：$port');
+          _notice(tr('server.notice.upnpMapped', {'port': '$port'}));
           _upnpExternalIp = await _upnp.getExternalIp();
           _upnpIsCgnat = _upnpExternalIp != null && _isPrivateIp(_upnpExternalIp!);
           _upnpSucceeded = true;
@@ -1316,7 +1309,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
         // 检查 frpc 运行时是否已安装。
         final runtimes = await const RuntimeService().installedFrpcRuntimes();
         if (runtimes.isEmpty) {
-          _notice('[EdgeCube] FRP 隧道未找到 frpc 运行时，跳过启动（请前往「运行环境」导入 frpc）');
+          _notice(tr('server.notice.tunnelNoRuntime'));
           return;
         }
         _startTunnelWithConfig(runtimeId: runtimeId);
@@ -1344,13 +1337,13 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     try {
       final file = await NetworkStore.customFrpcFile();
       if (!await file.exists()) {
-        _notice('[EdgeCube] 未找到 frpc.toml，跳过启动（请先在网络映射页编辑配置文件）');
+        _notice(tr('server.notice.tunnelNoConfig'));
         _tunnelActive = false;
         return;
       }
       final raw = await file.readAsString();
       if (raw.trim().isEmpty) {
-        _notice('[EdgeCube] frpc.toml 为空，跳过启动');
+        _notice(tr('server.notice.tunnelConfigEmpty'));
         _tunnelActive = false;
         return;
       }
@@ -1361,10 +1354,10 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
         runtimeId: runtimeId,
       );
       _activeFrpcConfig = null;
-      _notice('[EdgeCube] FRP 隧道正在启动…（frpc.toml）');
+      _notice(tr('server.notice.tunnelStarting'));
       notifyListeners();
     } catch (e) {
-      _notice('[EdgeCube] FRP 隧道启动失败：$e');
+      _notice(tr('server.notice.tunnelStartFailed', {'error': '$e'}));
       _tunnelActive = false;
     }
   }
@@ -1406,7 +1399,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
       _tunnelRunning = true;
       _userStoppingTunnel = false; // 已成功连接，清除可能残留的停止标记
       _tunnelCrashed = false; // 连接成功，清除可能的异常退出标记
-      _notice('[EdgeCube] FRP 隧道已连接到服务器');
+      _notice(tr('server.notice.tunnelConnected'));
       notifyListeners();
       return;
     }
@@ -1427,7 +1420,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     }
     if (code != 0) {
       _tunnelCrashed = true; // 标记异常退出，UI 显示"出错"
-      _notice('[EdgeCube] FRP 隧道异常退出（退出码 $code），请检查配置或网络');
+      _notice(tr('server.notice.tunnelExitedAbnormal', {'code': '$code'}));
       notifyListeners();
       // 触发崩溃报告弹窗（与服务端崩溃同款），附上 frpc 日志快照供导出/上传。
       final callback = onTunnelCrashExit;
@@ -1443,7 +1436,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
         );
       }
     } else {
-      _notice('[EdgeCube] FRP 隧道已退出');
+      _notice(tr('server.notice.tunnelExited'));
       notifyListeners();
     }
   }
@@ -1558,7 +1551,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     } catch (_) {}
     if (errorReason == null) {
       final (reason, detail) = CrashData.parseError(scanLines);
-      errorReason = reason;
+      errorReason = _trErrorReason(reason);
       errorDetail = detail;
     }
     callback(
@@ -1575,6 +1568,11 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
         logFilePath: _logFile?.path,
       ),
     );
+  }
+
+  String? _trErrorReason(String? key) {
+    if (key == null) return null;
+    return tr(key);
   }
 
   @override

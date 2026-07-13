@@ -60,33 +60,33 @@ class _Section {
 // ---------------------------------------------------------------------------
 
 const _gamemodeOptions = {
-  'SURVIVAL': '生存',
-  'CREATIVE': '创造',
-  'ADVENTURE': '冒险',
-  'SPECTATOR': '旁观',
+  'SURVIVAL': 'allay.gamemode.survival',
+  'CREATIVE': 'allay.gamemode.creative',
+  'ADVENTURE': 'allay.gamemode.adventure',
+  'SPECTATOR': 'allay.gamemode.spectator',
 };
 
 const _difficultyOptions = {
-  'PEACEFUL': '和平',
-  'EASY': '简单',
-  'NORMAL': '普通',
-  'HARD': '困难',
+  'PEACEFUL': 'allay.difficulty.peaceful',
+  'EASY': 'allay.difficulty.easy',
+  'NORMAL': 'allay.difficulty.normal',
+  'HARD': 'allay.difficulty.hard',
 };
 
 const _permissionOptions = {
-  'VISITOR': '访客',
-  'MEMBER': '成员',
-  'OPERATOR': '管理员',
+  'VISITOR': 'allay.permission.visitor',
+  'MEMBER': 'allay.permission.member',
+  'OPERATOR': 'allay.permission.operator',
 };
 
 const _compressionOptions = {
-  'ZLIB': 'ZLIB（高压缩比）',
-  'SNAPPY': 'SNAPPY（高性能）',
+  'ZLIB': 'allay.compression.zlib',
+  'SNAPPY': 'allay.compression.snappy',
 };
 
 const _chunkSendingStrategyOptions = {
-  'ASYNC': '异步',
-  'SYNC': '同步',
+  'ASYNC': 'allay.chunkSending.async',
+  'SYNC': 'allay.chunkSending.sync',
 };
 
 const _languageOptions = {
@@ -106,357 +106,357 @@ const _languageOptions = {
 // ---------------------------------------------------------------------------
 
 final _sections = <_Section>[
-  _Section('基础设置', Icons.settings_outlined, [
+  _Section('allay.section.basicSettings', Icons.settings_outlined, [
     _PropDef(
       path: 'generic-settings.motd',
-      label: '服务器描述 (MOTD)',
-      subtitle: '在服务器列表中显示的描述文字',
+      label: 'allay.genericSettings.motd',
+      subtitle: 'allay.genericSettings.motdSubtitle',
       kind: _PropKind.text,
     ),
     _PropDef(
       path: 'generic-settings.sub-motd',
-      label: '副描述 (Sub-MOTD)',
-      subtitle: '通常仅在局域网界面可见',
+      label: 'allay.genericSettings.subMotd',
+      subtitle: 'allay.genericSettings.subMotdSubtitle',
       kind: _PropKind.text,
     ),
     _PropDef(
       path: 'generic-settings.max-player-count',
-      label: '最大玩家数',
+      label: 'allay.genericSettings.maxPlayerCount',
       kind: _PropKind.number,
       min: 1,
       max: 10000,
     ),
     _PropDef(
       path: 'generic-settings.default-game-mode',
-      label: '默认游戏模式',
-      subtitle: '创建世界时的默认游戏模式',
+      label: 'allay.genericSettings.defaultGameMode',
+      subtitle: 'allay.genericSettings.defaultGameModeSubtitle',
       kind: _PropKind.dropdown,
       options: _gamemodeOptions,
     ),
     _PropDef(
       path: 'generic-settings.default-difficulty',
-      label: '默认难度',
-      subtitle: '创建世界时的默认难度',
+      label: 'allay.genericSettings.defaultDifficulty',
+      subtitle: 'allay.genericSettings.defaultDifficultySubtitle',
       kind: _PropKind.dropdown,
       options: _difficultyOptions,
     ),
     _PropDef(
       path: 'generic-settings.default-permission',
-      label: '默认权限',
+      label: 'allay.genericSettings.defaultPermission',
       kind: _PropKind.dropdown,
       options: _permissionOptions,
     ),
     _PropDef(
       path: 'generic-settings.language',
-      label: '控制台语言',
+      label: 'allay.genericSettings.language',
       kind: _PropKind.dropdown,
       options: _languageOptions,
     ),
     _PropDef(
       path: 'generic-settings.debug',
-      label: '调试模式',
-      subtitle: '启用后控制台会输出更详细的信息',
+      label: 'allay.genericSettings.debug',
+      subtitle: 'allay.genericSettings.debugSubtitle',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'generic-settings.enable-whitelist',
-      label: '启用白名单',
+      label: 'allay.genericSettings.enableWhitelist',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'generic-settings.enable-gui',
-      label: '启用 GUI',
+      label: 'allay.genericSettings.enableGui',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'generic-settings.max-compute-thread-count',
-      label: '计算线程池上限',
-      subtitle: '≤0 时与可用处理器数量相同',
+      label: 'allay.genericSettings.maxComputeThreadCount',
+      subtitle: 'allay.genericSettings.maxComputeThreadCountSubtitle',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'generic-settings.force-enable-sentry',
-      label: '强制启用 Sentry',
-      subtitle: '错误跟踪与性能监控',
+      label: 'allay.genericSettings.forceEnableSentry',
+      subtitle: 'allay.genericSettings.forceEnableSentrySubtitle',
       kind: _PropKind.toggle,
     ),
   ]),
-  _Section('网络设置', Icons.wifi_outlined, [
+  _Section('allay.section.networkSettings', Icons.wifi_outlined, [
     _PropDef(
       path: 'network-settings.ip',
-      label: '绑定 IPv4 地址',
+      label: 'allay.networkSettings.ip',
       kind: _PropKind.text,
     ),
     _PropDef(
       path: 'network-settings.port',
-      label: 'IPv4 端口',
+      label: 'allay.networkSettings.port',
       kind: _PropKind.number,
       min: 1,
       max: 65535,
     ),
     _PropDef(
       path: 'network-settings.enablev6',
-      label: '启用 IPv6',
+      label: 'allay.networkSettings.enablev6',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'network-settings.ipv6',
-      label: '绑定 IPv6 地址',
+      label: 'allay.networkSettings.ipv6',
       kind: _PropKind.text,
     ),
     _PropDef(
       path: 'network-settings.portv6',
-      label: 'IPv6 端口',
+      label: 'allay.networkSettings.portv6',
       kind: _PropKind.number,
       min: 1,
       max: 65535,
     ),
     _PropDef(
       path: 'network-settings.xbox-auth',
-      label: 'Xbox 认证',
-      subtitle: '验证玩家的 Xbox 账号',
+      label: 'allay.networkSettings.xboxAuth',
+      subtitle: 'allay.networkSettings.xboxAuthSubtitle',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'network-settings.enable-network-encryption',
-      label: '网络加密',
-      subtitle: '出于安全原因强烈建议开启',
+      label: 'allay.networkSettings.enableNetworkEncryption',
+      subtitle: 'allay.networkSettings.enableNetworkEncryptionSubtitle',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'network-settings.compression-algorithm',
-      label: '压缩算法',
+      label: 'allay.networkSettings.compressionAlgorithm',
       kind: _PropKind.dropdown,
       options: _compressionOptions,
     ),
     _PropDef(
       path: 'network-settings.network-thread-number',
-      label: '网络线程数',
-      subtitle: '0 时由服务端自动决定',
+      label: 'allay.networkSettings.networkThreadNumber',
+      subtitle: 'allay.networkSettings.networkThreadNumberSubtitle',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'network-settings.raknet-packet-limit',
-      label: 'RakNet 包速率限制',
-      subtitle: '每个地址每 RakNet tick (10ms) 最大数据报数',
+      label: 'allay.networkSettings.raknetPacketLimit',
+      subtitle: 'allay.networkSettings.raknetPacketLimitSubtitle',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'network-settings.raknet-max-mtu',
-      label: 'RakNet 最大 MTU',
+      label: 'allay.networkSettings.raknetMaxMtu',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'network-settings.max-login-time',
-      label: '登录阶段最大时长 (gt)',
-      subtitle: '≤0 时禁用',
+      label: 'allay.networkSettings.maxLoginTime',
+      subtitle: 'allay.networkSettings.maxLoginTimeSubtitle',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'network-settings.enable-encoding-protection',
-      label: '编码保护',
-      subtitle: '防止客户端发送大量垃圾数据',
+      label: 'allay.networkSettings.enableEncodingProtection',
+      subtitle: 'allay.networkSettings.enableEncodingProtectionSubtitle',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'network-settings.netease-client-support',
-      label: '网易客户端支持',
+      label: 'allay.networkSettings.neteaseClientSupport',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'network-settings.only-allow-netease-client',
-      label: '仅允许网易客户端',
+      label: 'allay.networkSettings.onlyAllowNeteaseClient',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'network-settings.enable-client-chunk-cache',
-      label: '客户端区块缓存',
-      subtitle: '需关闭编码保护方可生效',
+      label: 'allay.networkSettings.enableClientChunkCache',
+      subtitle: 'allay.networkSettings.enableClientChunkCacheSubtitle',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'network-settings.max-chunk-cache-blobs',
-      label: '最大区块缓存块数',
+      label: 'allay.networkSettings.maxChunkCacheBlobs',
       kind: _PropKind.number,
       min: 0,
     ),
   ]),
-  _Section('世界设置', Icons.public_outlined, [
+  _Section('allay.section.worldSettings', Icons.public_outlined, [
     _PropDef(
       path: 'world-settings.tick-radius',
-      label: 'Tick 半径',
-      subtitle: '区块加载器周围进行 tick 的区块半径',
+      label: 'allay.worldSettings.tickRadius',
+      subtitle: 'allay.worldSettings.tickRadiusSubtitle',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'world-settings.view-distance',
-      label: '视距',
-      subtitle: '区块加载器周围加载并发送的区块半径',
+      label: 'allay.worldSettings.viewDistance',
+      subtitle: 'allay.worldSettings.viewDistanceSubtitle',
       kind: _PropKind.number,
       min: 2,
       max: 64,
     ),
     _PropDef(
       path: 'world-settings.chunk-max-send-count-per-tick',
-      label: '每 tick 最大发送区块数',
+      label: 'allay.worldSettings.chunkMaxSendCountPerTick',
       kind: _PropKind.number,
       min: 1,
     ),
     _PropDef(
       path: 'world-settings.use-sub-chunk-sending-system',
-      label: '子区块发送系统',
+      label: 'allay.worldSettings.useSubChunkSendingSystem',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'world-settings.chunk-sending-strategy',
-      label: '区块发送策略',
+      label: 'allay.worldSettings.chunkSendingStrategy',
       kind: _PropKind.dropdown,
       options: _chunkSendingStrategyOptions,
     ),
     _PropDef(
       path: 'world-settings.fully-join-chunk-threshold',
-      label: '完全加入区块阈值',
-      subtitle: '玩家加入时需发送的最小区块数',
+      label: 'allay.worldSettings.fullyJoinChunkThreshold',
+      subtitle: 'allay.worldSettings.fullyJoinChunkThresholdSubtitle',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'world-settings.remove-unused-full-chunk-cycle',
-      label: '移除无用完整区块周期 (gt)',
+      label: 'allay.worldSettings.removeUnusedFullChunkCycle',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'world-settings.remove-unused-proto-chunk-cycle',
-      label: '移除原型区块周期 (gt)',
+      label: 'allay.worldSettings.removeUnusedProtoChunkCycle',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'world-settings.load-spawn-point-chunks',
-      label: '加载出生点区块',
-      subtitle: '会增加内存占用但减少加入耗时',
+      label: 'allay.worldSettings.loadSpawnPointChunks',
+      subtitle: 'allay.worldSettings.loadSpawnPointChunksSubtitle',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'world-settings.spawn-point-chunk-radius',
-      label: '出生点区块半径',
+      label: 'allay.worldSettings.spawnPointChunkRadius',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'world-settings.tick-dimension-in-parallel',
-      label: '维度并行 Tick',
-      subtitle: '同一世界的维度并行 tick',
+      label: 'allay.worldSettings.tickDimensionInParallel',
+      subtitle: 'allay.worldSettings.tickDimensionInParallelSubtitle',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'world-settings.max-light-update-count',
-      label: '最大光照更新数',
+      label: 'allay.worldSettings.maxLightUpdateCount',
       kind: _PropKind.number,
       min: 0,
     ),
   ]),
-  _Section('实体设置', Icons.pets_outlined, [
+  _Section('allay.section.entitySettings', Icons.pets_outlined, [
     _PropDef(
       path: 'entity-settings.physics-engine-settings.motion-threshold',
-      label: '运动阈值',
-      subtitle: '低于该值时运动归零',
+      label: 'allay.entitySettings.motionThreshold',
+      subtitle: 'allay.entitySettings.motionThresholdSubtitle',
       kind: _PropKind.text,
     ),
     _PropDef(
       path: 'entity-settings.physics-engine-settings.block-collision-motion',
-      label: '方块碰撞运动量',
-      subtitle: '实体物品卡在方块中时的移动速度',
+      label: 'allay.entitySettings.blockCollisionMotion',
+      subtitle: 'allay.entitySettings.blockCollisionMotionSubtitle',
       kind: _PropKind.text,
     ),
   ]),
-  _Section('存储设置', Icons.save_outlined, [
+  _Section('allay.section.storageSettings', Icons.save_outlined, [
     _PropDef(
       path: 'storage-settings.save-player-data',
-      label: '保存玩家数据',
+      label: 'allay.storageSettings.savePlayerData',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'storage-settings.player-data-auto-save-cycle',
-      label: '玩家数据自动保存周期 (gt)',
+      label: 'allay.storageSettings.playerDataAutoSaveCycle',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'storage-settings.chunk-auto-save-cycle',
-      label: '区块自动保存周期 (gt)',
+      label: 'allay.storageSettings.chunkAutoSaveCycle',
       kind: _PropKind.number,
       min: 0,
     ),
     _PropDef(
       path: 'storage-settings.entity-auto-save-cycle',
-      label: '实体自动保存周期 (gt)',
+      label: 'allay.storageSettings.entityAutoSaveCycle',
       kind: _PropKind.number,
       min: 0,
     ),
   ]),
-  _Section('资源包设置', Icons.inventory_2_outlined, [
+  _Section('allay.section.resourcePackSettings', Icons.inventory_2_outlined, [
     _PropDef(
       path: 'resource-pack-settings.auto-encrypt-packs',
-      label: '自动加密资源包',
-      subtitle: '启用后会禁用 Vibrant Visuals',
+      label: 'allay.resourcePackSettings.autoEncryptPacks',
+      subtitle: 'allay.resourcePackSettings.autoEncryptPacksSubtitle',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'resource-pack-settings.max-chunk-size',
-      label: '资源包分块大小上限 (KB)',
+      label: 'allay.resourcePackSettings.maxChunkSize',
       kind: _PropKind.number,
       min: 1,
     ),
     _PropDef(
       path: 'resource-pack-settings.force-resource-packs',
-      label: '强制资源包',
-      subtitle: '玩家必须接受资源包才能进入',
+      label: 'allay.resourcePackSettings.forceResourcePacks',
+      subtitle: 'allay.resourcePackSettings.forceResourcePacksSubtitle',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'resource-pack-settings.allow-client-resource-packs',
-      label: '允许客户端资源包',
+      label: 'allay.resourcePackSettings.allowClientResourcePacks',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'resource-pack-settings.trust-all-skins',
-      label: '信任所有皮肤',
+      label: 'allay.resourcePackSettings.trustAllSkins',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'resource-pack-settings.disable-vibrant-visuals',
-      label: '禁用 Vibrant Visuals',
+      label: 'allay.resourcePackSettings.disableVibrantVisuals',
       kind: _PropKind.toggle,
     ),
   ]),
-  _Section('bStats 设置', Icons.analytics_outlined, [
+  _Section('allay.section.bStatsSettings', Icons.analytics_outlined, [
     _PropDef(
       path: 'bstats-settings.enable',
-      label: '启用 bStats',
-      subtitle: '匿名统计，建议保持开启',
+      label: 'allay.bStatsSettings.enable',
+      subtitle: 'allay.bStatsSettings.enableSubtitle',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'bstats-settings.log-failed-requests',
-      label: '记录失败请求',
+      label: 'allay.bStatsSettings.logFailedRequests',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'bstats-settings.log-sent-data',
-      label: '记录发送数据',
+      label: 'allay.bStatsSettings.logSentData',
       kind: _PropKind.toggle,
     ),
     _PropDef(
       path: 'bstats-settings.log-response-status-text',
-      label: '记录响应状态文本',
+      label: 'allay.bStatsSettings.logResponseStatusText',
       kind: _PropKind.toggle,
     ),
   ]),
@@ -702,7 +702,7 @@ class _AllayPropertiesPageState extends State<AllayPropertiesPage> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      section.title,
+                      context.tr(section.title),
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: Theme.of(context).colorScheme.primary,
                       ),
@@ -734,8 +734,8 @@ class _AllayPropertiesPageState extends State<AllayPropertiesPage> {
   Widget _buildToggle(_PropDef prop) {
     final value = _getValue(prop.path) == 'true';
     return SwitchListTile(
-      title: Text(prop.label),
-      subtitle: prop.subtitle != null ? Text(prop.subtitle!) : null,
+      title: Text(context.tr(prop.label)),
+      subtitle: prop.subtitle != null ? Text(context.tr(prop.subtitle!)) : null,
       value: value,
       onChanged: (v) => _setValue(prop.path, v.toString()),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -751,8 +751,8 @@ class _AllayPropertiesPageState extends State<AllayPropertiesPage> {
         keyboardType: TextInputType.number,
         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^-?\d*'))],
         decoration: InputDecoration(
-          labelText: prop.label,
-          helperText: prop.subtitle,
+          labelText: context.tr(prop.label),
+          helperText: prop.subtitle != null ? context.tr(prop.subtitle!) : null,
           border: const OutlineInputBorder(),
           isDense: true,
           suffixIcon: _isDirtyKey(prop.path)
@@ -775,8 +775,8 @@ class _AllayPropertiesPageState extends State<AllayPropertiesPage> {
       child: TextField(
         controller: controller,
         decoration: InputDecoration(
-          labelText: prop.label,
-          helperText: prop.subtitle,
+          labelText: context.tr(prop.label),
+          helperText: prop.subtitle != null ? context.tr(prop.subtitle!) : null,
           border: const OutlineInputBorder(),
           isDense: true,
           suffixIcon: _isDirtyKey(prop.path)
@@ -797,7 +797,7 @@ class _AllayPropertiesPageState extends State<AllayPropertiesPage> {
     final currentValue = _getValue(prop.path);
     final items = <DropdownMenuItem<String>>[
       for (final entry in options.entries)
-        DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+        DropdownMenuItem(value: entry.key, child: Text(context.tr(entry.value))),
       if (!options.containsKey(currentValue) && currentValue.isNotEmpty)
         DropdownMenuItem(value: currentValue, child: Text(currentValue)),
     ];
@@ -810,8 +810,8 @@ class _AllayPropertiesPageState extends State<AllayPropertiesPage> {
           if (v != null) _setValue(prop.path, v);
         },
         decoration: InputDecoration(
-          labelText: prop.label,
-          helperText: prop.subtitle,
+          labelText: context.tr(prop.label),
+          helperText: prop.subtitle != null ? context.tr(prop.subtitle!) : null,
           border: const OutlineInputBorder(),
           isDense: true,
           suffixIcon: _isDirtyKey(prop.path)

@@ -8,11 +8,11 @@ class OnlineService {
   OnlineService._();
 
   static const List<String> defaultUpdateCheckUrls = [
-    'https://edgecube-files.ventichat.com/app/updates.json',
+    'https://edgecubemc.com/app/updates.json',
   ];
 
   static const List<String> defaultEcpkgCatalogUrls = [
-    'https://edgecube-files.ventichat.com/ecpkg/list.json',
+    'https://edgecubemc.com/app/ecpkg/list.json',
   ];
 
   /// 并行请求多个 URL，返回第一个有效结果。

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../config/network_store.dart';
+import '../i18n/i18n_service.dart';
 import '../online/cloud_headers.dart';
 import '../online/online_service.dart';
 
@@ -240,7 +241,7 @@ class EcpkgCatalogService {
         }
         final body = jsonDecode(response.body);
         if (body is! List) {
-          throw Exception('list.json 应为顶层数组');
+          throw Exception(tr('ecpkg.expectTopLevelArray'));
         }
         return body;
       },

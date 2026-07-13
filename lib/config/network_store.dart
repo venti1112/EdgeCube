@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../i18n/i18n_service.dart';
 import '../online/online_service.dart';
 import 'config_store.dart';
 
@@ -45,9 +46,7 @@ class NetworkStore {
   }
 
   static String _defaultTemplate() {
-    return '''# frpc 配置文件
-# 请根据你的 frps 服务器信息修改以下内容
-serverAddr = "frp.example.com"
+    return '''${tr('network.frpcTemplateHeader')}serverAddr = "frp.example.com"
 serverPort = 7000
 # auth.token = "your_token"
 

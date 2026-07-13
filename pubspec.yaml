@@ -2,7 +2,7 @@ name: edgecube
 description: "Run Minecraft server on Android"
 publish_to: 'none'
 
-version: 1.0.0-beta19+19
+version: 1.0.0-beta20+20
 
 environment:
   sdk: ^3.12.1

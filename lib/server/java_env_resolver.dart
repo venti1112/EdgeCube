@@ -1,4 +1,5 @@
 import '../config/runtime_pref_store.dart';
+import '../i18n/i18n_service.dart';
 import 'proot_service.dart';
 
 /// 解析出的 Java 环境类型。
@@ -70,7 +71,7 @@ JavaEnv? resolveJavaEnv({
     return JavaEnv(
       kind: JavaEnvKind.native,
       id: id,
-      displayName: '原生 JRE ${_jreShortName(id)}',
+      displayName: tr('javaEnv.nativeJre', {'shortName': _jreShortName(id)}),
     );
   }
 
@@ -84,7 +85,7 @@ JavaEnv? resolveJavaEnv({
     return JavaEnv(
       kind: JavaEnvKind.proot,
       id: rootfs.id,
-      displayName: 'proot · $label',
+      displayName: tr('javaEnv.prootLabel', {'label': label}),
     );
   }
 
