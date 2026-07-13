@@ -44,3 +44,4 @@ flutter:
     - assets/images/
     - assets/i18n/
     - assets/markdown/
+    - assets/rules/

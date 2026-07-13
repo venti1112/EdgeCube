@@ -11,6 +11,7 @@ import 'package:xterm/xterm.dart';
 import 'allay_properties.dart';
 import 'pnx_properties.dart';
 import 'server_properties.dart';
+import 'server_error_analyzer.dart';
 import 'server_service.dart';
 import 'upnp_service.dart';
 import '../config/network_store.dart';
@@ -53,6 +54,7 @@ class CrashData {
     this.kind = 'server',
     this.errorReason,
     this.errorDetail,
+    this.errorSuggest,
     this.runtimeName,
     this.runtimeVersion,
     this.logFilePath,
@@ -85,6 +87,9 @@ class CrashData {
 
   /// 原始错误详情（如完整的 UnsupportedClassVersionError 信息）。
   final String? errorDetail;
+
+  /// 建议操作（来自规则文件的 suggest；无匹配规则或该规则未给建议时为 null）。
+  final String? errorSuggest;
 
   /// 从服务端日志尾部扫描常见崩溃原因，返回 (简要原因, 详细错误)。
   static (String? reason, String? detail) parseError(List<String> logLines) {
@@ -246,6 +251,10 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
 
   /// 解析当前是否启用了 FRP 隧道。由外层（main）注入，读取配置文件。
   Future<bool> Function()? tunnelEnabledResolver;
+
+  /// 解析当前生效的 locale 代码（如 `zh_CN`）。由外层（main）注入。
+  /// 崩溃分析据此从规则文件选取对应语言的错误信息与建议。
+  String Function()? localeResolver;
 
   /// 当前运行实例的兼容模式标志。[start] 时由调用方传入并缓存，供状态事件
   /// 同步判定；回放路径下若与缓存实例不符，则经 [compatModeResolver] 异步补正。
@@ -1533,7 +1542,25 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
         }
       } catch (_) {}
     }
-    final (errorReason, errorDetail) = CrashData.parseError(scanLines);
+    // 优先用规则文件分析（可扩展、带建议与多语言）；未命中时回退旧的启发式扫描。
+    String? errorReason;
+    String? errorDetail;
+    String? errorSuggest;
+    try {
+      await ServerErrorAnalyzer.instance.ensureLoaded();
+      final analysis = ServerErrorAnalyzer.instance.analyzeLines(scanLines);
+      if (analysis != null) {
+        final code = localeResolver?.call() ?? 'zh_CN';
+        errorReason = analysis.messageFor(code);
+        errorSuggest = analysis.suggestFor(code);
+        errorDetail = analysis.detail;
+      }
+    } catch (_) {}
+    if (errorReason == null) {
+      final (reason, detail) = CrashData.parseError(scanLines);
+      errorReason = reason;
+      errorDetail = detail;
+    }
     callback(
       CrashData(
         exitCode: exitCode,
@@ -1542,6 +1569,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
         envRuntimeId: _runtimeId,
         errorReason: errorReason,
         errorDetail: errorDetail,
+        errorSuggest: errorSuggest,
         runtimeName: _runtimeName.isEmpty ? null : _runtimeName,
         runtimeVersion: _runtimeVersion.isEmpty ? null : _runtimeVersion,
         logFilePath: _logFile?.path,

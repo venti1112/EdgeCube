@@ -34,6 +34,11 @@ class LocaleController extends ChangeNotifier {
   /// 是否跟随系统语言。
   bool get isFollowingSystem => _selectedCode == LocaleStore.systemCode;
 
+  /// 当前实际生效的 locale 代码（解析「跟随系统」后的结果，如 `zh_CN` / `en_US`）。
+  ///
+  /// 供非 widget 代码（如服务端崩溃分析）按当前语言取规则文案时使用。
+  String get activeLocaleCode => _resolvedCode;
+
   /// 从选择标识符中提取实际 locale 代码。
   String _localeCodeOf(String sel) {
     if (sel == LocaleStore.systemCode) return sel;

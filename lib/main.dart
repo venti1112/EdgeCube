@@ -64,6 +64,8 @@ Future<void> main() async {
   serverController.upnpProtocolResolver = NetworkStore.loadUpnpProtocol;
   // FRP 隧道开关：读取 config/network.json 中的持久化配置。
   serverController.tunnelEnabledResolver = NetworkStore.loadTunnelEnabled;
+  // 崩溃分析按当前语言取规则文案：注入当前生效的 locale 代码。
+  serverController.localeResolver = () => localeController.activeLocaleCode;
   final systemMonitorController = SystemMonitorController();
   final ftpController = FtpController();
   await ftpController.init();

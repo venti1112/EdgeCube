@@ -2509,6 +2509,24 @@ class _CrashDialogState extends State<_CrashDialog> {
                       ),
                     ),
                   ],
+                  if (widget.crash.errorSuggest != null &&
+                      widget.crash.errorSuggest!.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      context.tr('server.crashSuggest'),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onErrorContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.crash.errorSuggest!,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

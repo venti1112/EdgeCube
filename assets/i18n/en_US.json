@@ -325,6 +325,7 @@
   "server.crashLogShareText": "EdgeCube Server Crash Log",
   "server.crashMessageOffline": "The server process exited unexpectedly (exit code {code}). You can export the log for troubleshooting.",
   "server.crashReason": "Error Cause",
+  "server.crashSuggest": "Suggested Action",
   "server.crashTitle": "Server Crashed Unexpectedly",
   "server.deleteInstance": "Delete Instance",
   "server.deviceMemory": "Device Memory",

@@ -1,0 +1,166 @@
+[
+  {
+    "match": "Failed to bind to port (\\d+)",
+    "message": {
+      "zh_CN": "服务器端口 $1 被占用",
+      "en_US": "Server port $1 is already in use"
+    },
+    "suggest": {
+      "zh_CN": "请检查端口 $1 是否被其它软件占用，或在服务端配置中更换端口",
+      "en_US": "Check whether port $1 is used by other software, or change the port in the server config"
+    }
+  },
+  {
+    "match": "java\\.lang\\.UnsupportedClassVersionError.*(?:major\\.minor version|class file version) (\\d+)\\.0",
+    "map": {
+      "52": "Java 8",
+      "53": "Java 9",
+      "54": "Java 10",
+      "55": "Java 11",
+      "56": "Java 12",
+      "57": "Java 13",
+      "58": "Java 14",
+      "59": "Java 15",
+      "60": "Java 16",
+      "61": "Java 17",
+      "62": "Java 18",
+      "63": "Java 19",
+      "64": "Java 20",
+      "65": "Java 21",
+      "66": "Java 22",
+      "67": "Java 23",
+      "68": "Java 24",
+      "69": "Java 25"
+    },
+    "message": {
+      "zh_CN": "Java 版本不兼容：Class 版本号 $1，对应 ($map_1)，请切换至正确的 JDK",
+      "en_US": "Java version incompatible: Class version $1 ($map_1), please use correct JDK"
+    },
+    "suggest": {
+      "zh_CN": "请更换为 Java ($map_1) 或更新版本",
+      "en_US": "Please upgrade to Java ($map_1) or a newer version (e.g., Java 21 for latest servers)."
+    }
+  },
+  {
+    "match": "\\*+\\s*FAILED TO BIND TO PORT",
+    "message": {
+      "zh_CN": "服务器端口被占用，无法绑定",
+      "en_US": "Failed to bind to the server port"
+    },
+    "suggest": {
+      "zh_CN": "该端口可能已被其它程序或另一个服务端占用，请更换端口或关闭占用它的程序",
+      "en_US": "The port may be occupied by another program or server instance. Change the port or stop the occupying program."
+    }
+  },
+  {
+    "match": "java\\.net\\.BindException",
+    "message": {
+      "zh_CN": "网络地址绑定失败（端口可能已被占用）",
+      "en_US": "Failed to bind network address (port may already be in use)"
+    },
+    "suggest": {
+      "zh_CN": "请确认端口未被占用，且应用已获得网络权限",
+      "en_US": "Ensure the port is free and the app has been granted network permission"
+    }
+  },
+  {
+    "match": "java\\.lang\\.OutOfMemoryError",
+    "message": {
+      "zh_CN": "Java 运行内存不足（OutOfMemoryError）",
+      "en_US": "Java ran out of memory (OutOfMemoryError)"
+    },
+    "suggest": {
+      "zh_CN": "请在启动参数中增大最大内存（-Xmx），或减少加载的模组 / 插件数量",
+      "en_US": "Increase the maximum heap size (-Xmx) in the JVM arguments, or reduce the number of mods / plugins"
+    }
+  },
+  {
+    "match": "Could not create the Java Virtual Machine",
+    "message": {
+      "zh_CN": "无法创建 Java 虚拟机",
+      "en_US": "Could not create the Java Virtual Machine"
+    },
+    "suggest": {
+      "zh_CN": "JVM 启动参数可能有误，请检查最大内存（-Xmx）是否超过设备可用内存",
+      "en_US": "The JVM arguments may be invalid. Check whether the max memory (-Xmx) exceeds the available device RAM."
+    }
+  },
+  {
+    "match": "Unable to access jarfile (.*)",
+    "message": {
+      "zh_CN": "无法访问服务端核心文件：$1",
+      "en_US": "Cannot access server jar file: $1"
+    },
+    "suggest": {
+      "zh_CN": "请确认服务端核心文件存在且路径正确，未被移动或删除",
+      "en_US": "Make sure the server jar exists at the correct path and has not been moved or deleted"
+    }
+  },
+  {
+    "match": "Could not find or load main class (.*)",
+    "message": {
+      "zh_CN": "找不到或无法加载主类：$1",
+      "en_US": "Could not find or load main class: $1"
+    },
+    "suggest": {
+      "zh_CN": "服务端核心可能损坏或不完整，建议重新下载服务端",
+      "en_US": "The server jar may be corrupted or incomplete. Re-downloading the server is recommended."
+    }
+  },
+  {
+    "match": "no main manifest attribute",
+    "message": {
+      "zh_CN": "该 JAR 不是可执行的服务端核心（缺少主清单属性）",
+      "en_US": "This JAR is not an executable server (no main manifest attribute)"
+    },
+    "suggest": {
+      "zh_CN": "请确认选择的是正确的服务端核心文件，而非普通的库文件",
+      "en_US": "Make sure you selected the correct server jar, not a plain library file"
+    }
+  },
+  {
+    "match": "agree to the (?:EULA|Minecraft End User License Agreement)",
+    "message": {
+      "zh_CN": "需要先同意 Minecraft EULA 才能启动服务器",
+      "en_US": "You must agree to the Minecraft EULA before starting the server"
+    },
+    "suggest": {
+      "zh_CN": "请将实例目录下 eula.txt 中的 eula 改为 true（即同意最终用户许可协议）",
+      "en_US": "Set eula=true in eula.txt inside the instance directory (accept the End User License Agreement)"
+    }
+  },
+  {
+    "match": "PHP Fatal error:\\s*(.*)",
+    "message": {
+      "zh_CN": "PHP 致命错误：$1",
+      "en_US": "PHP fatal error: $1"
+    },
+    "suggest": {
+      "zh_CN": "请检查 PocketMine 版本与插件的兼容性，或查看完整日志定位问题",
+      "en_US": "Check PocketMine version and plugin compatibility, or inspect the full log to locate the issue"
+    }
+  },
+  {
+    "match": "java\\.net\\.UnknownHostException:?\\s*(.*)",
+    "message": {
+      "zh_CN": "无法解析主机地址：$1（网络异常）",
+      "en_US": "Cannot resolve host: $1 (network error)"
+    },
+    "suggest": {
+      "zh_CN": "请检查设备网络连接，部分服务端首次启动需要联网下载依赖",
+      "en_US": "Check the device network connection. Some servers need internet access to download dependencies on first run."
+    }
+  },
+  {
+    "match": "Error: Invalid or corrupt jarfile (.*\\.jar)",
+    "severity": "critical",
+    "message": {
+        "zh_CN": "服务端核心文件（$1）无效或损坏",
+        "en_US": "Server core file ($1) is invalid or corrupted"
+    },
+    "suggest": {
+        "zh_CN": "重新下载服务端核心文件",
+        "en_US": "Re-download the server jar file"
+    }
+}
+]

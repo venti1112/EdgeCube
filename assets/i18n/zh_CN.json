@@ -325,6 +325,7 @@
   "server.crashLogShareText": "EdgeCube 服务端崩溃日志",
   "server.crashMessageOffline": "服务端进程已意外退出（退出码 {code}）。您可以导出日志用于排查。",
   "server.crashReason": "错误原因",
+  "server.crashSuggest": "建议操作",
   "server.crashTitle": "服务端意外退出",
   "server.deleteInstance": "删除实例",
   "server.deviceMemory": "设备内存",
