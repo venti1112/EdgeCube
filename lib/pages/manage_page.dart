@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
+import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
 import 'allay_properties_page.dart';
 import 'instance_export_page.dart';
@@ -134,15 +135,29 @@ enum _ServerConfigKind { pnx, allay, vanilla }
 
 class _ServerConfigTileState extends State<_ServerConfigTile> {
   _ServerConfigKind? _kind; // null = loading
+  InstanceController? _ctrl;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final ctrl = InstanceScope.of(context);
+    if (ctrl != _ctrl) {
+      _ctrl?.removeListener(_detect);
+      _ctrl = ctrl;
+      _ctrl?.addListener(_detect);
+    }
     _detect();
   }
 
+  @override
+  void dispose() {
+    _ctrl?.removeListener(_detect);
+    super.dispose();
+  }
+
   Future<void> _detect() async {
-    final ctrl = InstanceScope.of(context);
+    final ctrl = _ctrl;
+    if (ctrl == null) return;
     final instance = ctrl.selected;
     if (instance == null) {
       if (mounted) setState(() => _kind = _ServerConfigKind.vanilla);
