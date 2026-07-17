@@ -294,6 +294,7 @@ class _RuntimePageState extends State<RuntimePage> {
       allowedExtensions: const ['.tar.zst', '.tar.xz', '.tar.gz', '.tgz'],
     );
     if (path == null) return;
+    if (!mounted) return;
 
     // 始终弹出名称输入框，默认为去掉压缩包扩展名的文件名
     final defaultName = _rootfsNameFromPath(path);
@@ -326,6 +327,7 @@ class _RuntimePageState extends State<RuntimePage> {
       await _prootService.importRootfs(path, id: id);
       if (!mounted) return;
       await _load();
+      if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(content: Text(context.tr('runtime.proot.importRootfsSuccess'))),
       );

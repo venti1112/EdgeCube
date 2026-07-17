@@ -19,6 +19,9 @@ import 'pages/runtime_page.dart';
 import 'pages/server_page.dart';
 import 'pages/settings_page.dart';
 import 'server/ecpkg_handler.dart';
+import 'server/power_service.dart';
+import 'server/server_controller.dart';
+import 'server/server_scope.dart';
 import 'widgets/update_dialog.dart';
 import 'widgets/open_source_notice_dialog.dart';
 import 'widgets/user_agreement_dialog.dart';
@@ -420,13 +423,27 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final now = DateTime.now();
     if (_lastBackPress != null &&
         now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
-      await SystemNavigator.pop();
+      final server = ServerScope.of(context);
+      if (server.status != ServerStatus.stopped) {
+        // 服务端运行中：仅把任务移到后台（等效 Home 键）。Activity 与
+        // Flutter 引擎保持存活，回前台后 UPnP/DDNS 映射信息等页面状态不丢失。
+        await PowerService.moveTaskToBack();
+      } else {
+        // 服务端未运行：彻底退出并杀死进程，不留后台残留。
+        await PowerService.exitApp();
+        // 非 Android 平台的兜底退出路径。
+        if (!Platform.isAndroid) await SystemNavigator.pop();
+      }
     } else {
       _lastBackPress = now;
       if (!mounted) return;
+      final server = ServerScope.of(context);
+      final toastKey = server.status != ServerStatus.stopped
+          ? 'home.backgroundToast'
+          : 'home.exitToast';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(context.tr('home.exitToast')),
+          content: Text(context.tr(toastKey)),
           duration: const Duration(seconds: 2),
         ),
       );

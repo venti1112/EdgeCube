@@ -2,6 +2,7 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'config/ddns_store.dart';
 import 'config/network_store.dart';
 import 'config/version_store.dart';
 import 'server/runtime_migration.dart';
@@ -64,6 +65,8 @@ Future<void> main() async {
   serverController.upnpProtocolResolver = NetworkStore.loadUpnpProtocol;
   // FRP 隧道开关：读取 config/network.json 中的持久化配置。
   serverController.tunnelEnabledResolver = NetworkStore.loadTunnelEnabled;
+  // DDNS 动态域名解析：读取 config/ddns.json 中的持久化配置。
+  serverController.ddnsConfigResolver = DdnsStore.load;
   // 崩溃分析按当前语言取规则文案：注入当前生效的 locale 代码。
   serverController.localeResolver = () => localeController.activeLocaleCode;
   final systemMonitorController = SystemMonitorController();

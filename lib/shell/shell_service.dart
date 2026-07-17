@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 ///
 /// - [id] 传给 `start(shellId: ...)` 指定要启动哪个 shell：
 ///   - "system_sh"：系统自带的 /system/bin/sh
-///   - "proot:<rootfsId>"：进入指定 rootfs 的 proot 容器交互 shell
+///   - `"proot:<rootfsId>"`：进入指定 rootfs 的 proot 容器交互 shell
 /// - [label] 为展示名（如 "system sh"、"proot: debian-12-jdk21"）
 /// - [type] 为 "system" 或 "proot"，便于 UI 分组渲染
 class ShellOption {
@@ -59,7 +59,7 @@ class ShellService {
   ///
   /// [shellId] 决定启动哪种 shell：
   ///  - null/"system_sh"：系统 sh（默认）
-  ///  - "proot:<rootfsId>"：进入指定 rootfs 的 proot 容器
+  ///  - `"proot:<rootfsId>"`：进入指定 rootfs 的 proot 容器
   Future<void> start({String? cwd, String? shellId}) =>
       _method.invokeMethod('start', {'cwd': cwd, 'shellId': shellId});
 

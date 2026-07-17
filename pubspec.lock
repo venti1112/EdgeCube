@@ -25,6 +25,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.13.1"
+  battery_optimization_helper:
+    dependency: "direct main"
+    description:
+      name: battery_optimization_helper
+      sha256: "4defadec8fd40911d35e9d4add6302e5101a1a2c833ab1fb62973c7657b32e5e"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.0"
   boolean_selector:
     dependency: transitive
     description:

@@ -14,10 +14,10 @@ import '../i18n/locale_scope.dart';
 import '../instance/data_folder_migration.dart';
 import '../instance/instance_scope.dart';
 import '../instance/instance_store.dart';
-import '../server/power_service.dart';
 import '../theme/theme_scope.dart';
 import 'about_page.dart';
 import 'appearance_settings_page.dart';
+import 'keep_alive_settings_page.dart';
 import 'language_settings_page.dart';
 import 'network_settings_page.dart';
 import 'storage_management_page.dart';
@@ -29,18 +29,13 @@ class SettingsPage extends StatefulWidget {
   State<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends State<SettingsPage>
-    with WidgetsBindingObserver {
-  bool _ignoringBattery = true;
-  bool _batteryLoaded = false;
+class _SettingsPageState extends State<SettingsPage> {
   bool _autoClearLogOnStart = true;
   JavaEnvPriority _javaEnvPriority = JavaEnvPriority.proot;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _refreshBattery();
     _loadAutoClearLogOnStart();
     _loadJavaEnvPriority();
   }
@@ -106,33 +101,6 @@ class _SettingsPageState extends State<SettingsPage>
     await TerminalStore.saveAutoClearLogOnStart(value);
   }
 
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // 从系统电池设置页返回前台时刷新状态。
-    if (state == AppLifecycleState.resumed) _refreshBattery();
-  }
-
-  Future<void> _refreshBattery() async {
-    final ignoring = await PowerService.isIgnoringBatteryOptimizations();
-    if (!mounted) return;
-    setState(() {
-      _ignoringBattery = ignoring;
-      _batteryLoaded = true;
-    });
-  }
-
-  Future<void> _requestIgnoreBattery() async {
-    await PowerService.requestIgnoreBatteryOptimizations();
-    // 请求后立即刷新一次；返回前台时还会再刷新。
-    await _refreshBattery();
-  }
-
   String _themeModeLabel(BuildContext context, ThemeMode mode) {
     switch (mode) {
       case ThemeMode.system:
@@ -196,7 +164,19 @@ class _SettingsPageState extends State<SettingsPage>
           if (Platform.isAndroid) ...[
             const Divider(),
             _sectionHeader(theme, context.tr('settings.section.keepAlive')),
-            _buildBatteryTile(context, theme),
+            ListTile(
+              leading: const Icon(Icons.battery_saver),
+              title: Text(context.tr('settings.keepAlive.title')),
+              subtitle: Text(context.tr('settings.keepAlive.subtitle')),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const KeepAliveSettingsPage(),
+                  ),
+                );
+              },
+            ),
           ],
           const Divider(),
           _sectionHeader(theme, context.tr('settings.section.storage')),
@@ -277,35 +257,6 @@ class _SettingsPageState extends State<SettingsPage>
           color: theme.colorScheme.primary,
         ),
       ),
-    );
-  }
-
-  Widget _buildBatteryTile(BuildContext context, ThemeData theme) {
-    final String subtitle;
-    final Widget? trailing;
-    if (!_batteryLoaded) {
-      subtitle = context.tr('settings.battery.checking');
-      trailing = null;
-    } else if (_ignoringBattery) {
-      subtitle = context.tr('settings.battery.whitelisted');
-      trailing = const Icon(Icons.check_circle, color: Colors.green);
-    } else {
-      subtitle = context.tr('settings.battery.notWhitelisted');
-      trailing = FilledButton.tonal(
-        onPressed: _requestIgnoreBattery,
-        child: Text(context.tr('common.goToSettings')),
-      );
-    }
-
-    return ListTile(
-      leading: const Icon(Icons.battery_saver),
-      title: Text(context.tr('settings.battery.title')),
-      subtitle: Text(subtitle),
-      trailing: trailing,
-      // 已在白名单中时无需再申请；点击整行等同于点击「去设置」。
-      onTap: (!_batteryLoaded || _ignoringBattery)
-          ? null
-          : _requestIgnoreBattery,
     );
   }
 }

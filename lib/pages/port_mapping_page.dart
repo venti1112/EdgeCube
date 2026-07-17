@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../config/ddns_store.dart';
 import '../config/network_store.dart';
 import '../files/text_editor_page.dart';
 import '../i18n/locale_scope.dart';
@@ -32,6 +33,16 @@ class _PortMappingPageState extends State<PortMappingPage> {
   final _upnpExternalPort = TextEditingController();
   String _upnpProtocol = 'tcp';
 
+  // —— DDNS 配置 ——
+  DdnsConfig _ddnsConfig = const DdnsConfig();
+  final _ddnsDomain = TextEditingController();
+  final _ddnsHost = TextEditingController();
+  final _ddnsTokenId = TextEditingController();
+  final _ddnsToken = TextEditingController();
+  final _ddnsCustomUrl = TextEditingController();
+  final _ddnsInterval = TextEditingController();
+  bool _ddnsUpdating = false;
+
   // —— frpc 运行时 ——
   List<RuntimeInfo> _frpcRuntimes = [];
   String? _selectedFrpcRuntimeId;
@@ -60,6 +71,12 @@ class _PortMappingPageState extends State<PortMappingPage> {
     _sub?.cancel();
     _logScroll.dispose();
     _upnpExternalPort.dispose();
+    _ddnsDomain.dispose();
+    _ddnsHost.dispose();
+    _ddnsTokenId.dispose();
+    _ddnsToken.dispose();
+    _ddnsCustomUrl.dispose();
+    _ddnsInterval.dispose();
     super.dispose();
   }
 
@@ -72,12 +89,20 @@ class _PortMappingPageState extends State<PortMappingPage> {
     final tunnel = await NetworkStore.loadTunnelEnabled();
     final runtimeId = await NetworkStore.loadFrpcRuntimeId();
     final runtimes = await const RuntimeService().installedFrpcRuntimes();
+    final ddns = await DdnsStore.load();
     if (!mounted) return;
     setState(() {
       _upnpEnabled = upnp;
       _upnpExternalPort.text = extPort?.toString() ?? '';
       _upnpProtocol = protocol;
       _tunnelEnabled = tunnel;
+      _ddnsConfig = ddns;
+      _ddnsDomain.text = ddns.domain;
+      _ddnsHost.text = ddns.host;
+      _ddnsTokenId.text = ddns.tokenId;
+      _ddnsToken.text = ddns.token;
+      _ddnsCustomUrl.text = ddns.customUrl;
+      _ddnsInterval.text = ddns.intervalMinutes.toString();
       _frpcRuntimes = runtimes;
       if (runtimes.isNotEmpty) {
         final valid = runtimes.any((r) => r.id == runtimeId);
@@ -112,6 +137,79 @@ class _PortMappingPageState extends State<PortMappingPage> {
     final port = text.isEmpty ? null : int.tryParse(text);
     await NetworkStore.saveUpnpExternalPort(port);
     await NetworkStore.saveUpnpProtocol(_upnpProtocol);
+  }
+
+  // —— DDNS 保存 + 即时生效 ——
+
+  /// 从表单收集当前 DDNS 配置（enabled 沿用现值，除非显式传入）。
+  DdnsConfig _collectDdnsConfig({bool? enabled}) {
+    final interval = int.tryParse(_ddnsInterval.text.trim());
+    return _ddnsConfig.copyWith(
+      enabled: enabled,
+      domain: _ddnsDomain.text.trim(),
+      host: _ddnsHost.text.trim(),
+      tokenId: _ddnsTokenId.text.trim(),
+      token: _ddnsToken.text.trim(),
+      customUrl: _ddnsCustomUrl.text.trim(),
+      intervalMinutes: (interval == null || interval < 1) ? 10 : interval,
+    );
+  }
+
+  Future<void> _setDdns(bool value) async {
+    final config = _collectDdnsConfig(enabled: value);
+    await DdnsStore.save(config);
+    if (!mounted) return;
+    setState(() => _ddnsConfig = config);
+    final server = ServerScope.of(context);
+    if (value) {
+      server.enableDdnsNow();
+    } else {
+      server.disableDdnsNow();
+    }
+  }
+
+  Future<void> _saveDdnsSettings() async {
+    final config = _collectDdnsConfig();
+    await DdnsStore.save(config);
+    if (!mounted) return;
+    setState(() => _ddnsConfig = config);
+    // 运行中则重启 DDNS 周期任务以应用新配置。
+    ServerScope.of(context).applyDdnsConfig();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(context.tr('portMapping.saved')),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// 保存配置后立即强制推送一次解析记录，用于验证凭据与域名配置。
+  Future<void> _updateDdnsNow() async {
+    final config = _collectDdnsConfig();
+    await DdnsStore.save(config);
+    if (!mounted) return;
+    setState(() {
+      _ddnsConfig = config;
+      _ddnsUpdating = true;
+    });
+    final messenger = ScaffoldMessenger.of(context);
+    final trans = LocaleScope.of(context).translations;
+    try {
+      final result = await ServerScope.of(context).updateDdnsOnce();
+      if (!mounted) return;
+      final text = result.success
+          ? trans.get('portMapping.ddnsUpdateSuccess', {
+              'ip': [result.ipv4, result.ipv6].whereType<String>().join(' / '),
+            })
+          : trans.get('portMapping.ddnsUpdateFailed', {
+              'error': result.error ?? '',
+            });
+      messenger.showSnackBar(
+        SnackBar(content: Text(text), duration: const Duration(seconds: 3)),
+      );
+    } finally {
+      if (mounted) setState(() => _ddnsUpdating = false);
+    }
   }
 
   Future<void> _setTunnel(bool value) async {
@@ -223,13 +321,15 @@ class _PortMappingPageState extends State<PortMappingPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _buildUpnpCard(theme),
-            const SizedBox(height: 16),
             _buildFrpcCard(theme),
             if (_tunnelEnabled) ...[
               const SizedBox(height: 16),
               _buildLogSection(theme),
             ],
+            const SizedBox(height: 16),
+            _buildUpnpCard(theme),
+            const SizedBox(height: 16),
+            _buildDdnsCard(theme),
           ],
         ),
       ),
@@ -319,6 +419,274 @@ class _PortMappingPageState extends State<PortMappingPage> {
           ],
         ),
       ),
+    );
+  }
+
+  // —— DDNS 卡片 ——
+
+  Widget _buildDdnsCard(ThemeData theme) {
+    final provider = _ddnsConfig.provider;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.dns_outlined,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    context.tr('portMapping.ddnsCardTitle'),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SwitchListTile(
+              title: Text(context.tr('portMapping.enableDdns')),
+              subtitle: Text(context.tr('portMapping.enableDdnsSubtitle')),
+              value: _ddnsConfig.enabled,
+              onChanged: _setDdns,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            if (_ddnsConfig.enabled) ...[
+              // 服务商选择。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: _ddnsProviderDropdown(),
+              ),
+              // 域名与主机记录。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: provider == DdnsProvider.duckdns
+                    ? _field(
+                        _ddnsDomain,
+                        context.tr('portMapping.ddnsDuckdnsDomain'),
+                        hint: 'mysub',
+                      )
+                    : Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: _field(
+                              _ddnsHost,
+                              context.tr('portMapping.ddnsHost'),
+                              hint: 'mc',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 3,
+                            child: _field(
+                              _ddnsDomain,
+                              context.tr('portMapping.ddnsDomain'),
+                              hint: 'example.com',
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+              // 凭据字段（依服务商变化）。
+              if (provider == DdnsProvider.dnspod ||
+                  provider == DdnsProvider.aliyun)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: _field(
+                    _ddnsTokenId,
+                    provider == DdnsProvider.dnspod
+                        ? context.tr('portMapping.ddnsTokenId')
+                        : context.tr('portMapping.ddnsAccessKeyId'),
+                  ),
+                ),
+              if (provider != DdnsProvider.custom)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: _field(
+                    _ddnsToken,
+                    switch (provider) {
+                      DdnsProvider.cloudflare =>
+                        context.tr('portMapping.ddnsApiToken'),
+                      DdnsProvider.duckdns =>
+                        context.tr('portMapping.ddnsToken'),
+                      DdnsProvider.dnspod =>
+                        context.tr('portMapping.ddnsToken'),
+                      _ => context.tr('portMapping.ddnsAccessKeySecret'),
+                    },
+                    obscure: true,
+                  ),
+                ),
+              if (provider == DdnsProvider.custom)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: _field(
+                    _ddnsCustomUrl,
+                    context.tr('portMapping.ddnsCustomUrl'),
+                    hint: 'https://…?domain={domain}&ip={ipv4}',
+                  ),
+                ),
+              // 记录类型与检查间隔。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: CheckboxListTile(
+                        title: const Text('IPv4 (A)'),
+                        value: _ddnsConfig.ipv4Enabled,
+                        onChanged: (v) => setState(() {
+                          _ddnsConfig =
+                              _ddnsConfig.copyWith(ipv4Enabled: v ?? true);
+                        }),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                    ),
+                    Expanded(
+                      child: CheckboxListTile(
+                        title: const Text('IPv6 (AAAA)'),
+                        value: _ddnsConfig.ipv6Enabled,
+                        onChanged: (v) => setState(() {
+                          _ddnsConfig =
+                              _ddnsConfig.copyWith(ipv6Enabled: v ?? false);
+                        }),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: _field(
+                  _ddnsInterval,
+                  context.tr('portMapping.ddnsInterval'),
+                  hint: '10',
+                  number: true,
+                ),
+              ),
+              // 停服时清理远端解析（自定义 URL 无删除接口，不提供该选项）。
+              if (provider != DdnsProvider.custom)
+                SwitchListTile(
+                  title: Text(context.tr('portMapping.ddnsDeleteOnStop')),
+                  subtitle:
+                      Text(context.tr('portMapping.ddnsDeleteOnStopSubtitle')),
+                  value: _ddnsConfig.deleteOnStop,
+                  onChanged: (v) => setState(() {
+                    _ddnsConfig = _ddnsConfig.copyWith(deleteOnStop: v);
+                  }),
+                  dense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+              // 保存 + 立即更新。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: _saveDdnsSettings,
+                        icon: const Icon(Icons.save, size: 18),
+                        label: Text(context.tr('portMapping.saveDdnsConfig')),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: _ddnsUpdating ? null : _updateDdnsNow,
+                        icon: _ddnsUpdating
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.sync, size: 18),
+                        label: Text(context.tr('portMapping.ddnsUpdateNow')),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // 与 UPnP 配合的说明。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Card(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  margin: EdgeInsets.zero,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 18,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            context.tr('portMapping.ddnsUpnpHint'),
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _ddnsProviderDropdown() {
+    return DropdownButtonFormField<DdnsProvider>(
+      initialValue: _ddnsConfig.provider,
+      decoration: InputDecoration(
+        labelText: context.tr('portMapping.ddnsProvider'),
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      items: [
+        const DropdownMenuItem(
+          value: DdnsProvider.cloudflare,
+          child: Text('Cloudflare'),
+        ),
+        const DropdownMenuItem(
+          value: DdnsProvider.duckdns,
+          child: Text('DuckDNS'),
+        ),
+        DropdownMenuItem(
+          value: DdnsProvider.dnspod,
+          child: Text(context.tr('portMapping.ddnsProviderDnspod')),
+        ),
+        DropdownMenuItem(
+          value: DdnsProvider.aliyun,
+          child: Text(context.tr('portMapping.ddnsProviderAliyun')),
+        ),
+        DropdownMenuItem(
+          value: DdnsProvider.custom,
+          child: Text(context.tr('portMapping.ddnsProviderCustom')),
+        ),
+      ],
+      onChanged: (v) => setState(() {
+        _ddnsConfig = _ddnsConfig.copyWith(provider: v ?? DdnsProvider.cloudflare);
+      }),
     );
   }
 

@@ -16,6 +16,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- 申请加入电池优化白名单（忽略电池优化），降低后台/锁屏时服务端被系统回收的概率。 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 保活增强：锁屏后保持 CPU 运转（WakeLock）与 Wi-Fi 不休眠（WifiLock）。 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- 保活增强：服务器运行状态悬浮窗（需用户在系统设置中手动授予）。 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Android 13+ 显示前台通知需此运行时权限。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 安装 APK 更新包所需权限。 -->

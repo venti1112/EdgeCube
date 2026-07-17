@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/network_store.dart';
+import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
 import '../instance/create_instance_page.dart';
 import '../instance/forge_launch.dart';
@@ -326,6 +327,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     ServerController server,
     Instance instance,
   ) async {
+    // 首个异步间隙前取好翻译表，避免跨 async gap 使用 BuildContext。
+    final trans = LocaleScope.of(context).translations;
     final dir = await instances.directoryFor(instance);
     final jars = <String>[];
     final phars = <String>[];
@@ -381,9 +384,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     final runtimeNames = <String, String>{
       for (final rt in runtimes) rt.id: rt.name,
       // 内置 PHP CLI（随 APK 打包）的友好名称；.ecpkg 安装的 PHP 会被同 id 覆盖。
-      'php-cli-8.2': context.tr('server.phpBuiltin'),
+      'php-cli-8.2': trans.get('server.phpBuiltin'),
       for (final r in prootRootfsList)
-        r.id: '${context.tr('server.envLabelProot', {'name': r.envName.isNotEmpty ? r.envName : r.id})}',
+        r.id: trans.get('server.envLabelProot', {'name': r.envName.isNotEmpty ? r.envName : r.id}),
     };
     return _LaunchContext(
       workingDir: dir.path,
@@ -1946,6 +1949,10 @@ class _ConnectionCardState extends State<_ConnectionCard> {
     final upnpIp = widget.server.upnpExternalIp;
     final upnpPort = widget.server.upnpMappedPort;
     final serverPort = widget.server.serverPort;
+    final ddnsActive = widget.server.isDdnsActive;
+    final ddnsSucceeded = widget.server.isDdnsSucceeded;
+    final ddnsError = widget.server.ddnsError;
+    final ddnsDomain = widget.server.ddnsDomain;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -2038,11 +2045,22 @@ class _ConnectionCardState extends State<_ConnectionCard> {
                     success: tunnelRunning,
                     error: tunnelCrashed,
                   ),
+                  // DDNS 芯片仅在启用时显示（多数用户不配置域名，不常驻占位）。
+                  if (ddnsActive)
+                    _statusChip(
+                      context,
+                      theme,
+                      icon: Icons.dns_outlined,
+                      label: 'DDNS',
+                      active: ddnsActive,
+                      success: ddnsSucceeded,
+                      error: ddnsError != null,
+                    ),
                 ],
               ),
 
               // 未启用任何端口映射时，明确提示当前地址仅限局域网访问。
-              if (!upnpActive && !tunnelActive)
+              if (!upnpActive && !tunnelActive && !ddnsActive)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: Row(
@@ -2076,6 +2094,21 @@ class _ConnectionCardState extends State<_ConnectionCard> {
                     icon: Icons.public,
                     label: context.tr('server.upnpPublic'),
                     value: '$upnpIp:$upnpPort',
+                    canCopy: true,
+                  ),
+                ),
+
+              // DDNS 域名地址（解析成功时显示）。端口优先取 UPnP 映射的
+              // 外网端口（与 UPnP 配合使用时二者才是同一个可达入口）。
+              if (ddnsActive && ddnsSucceeded && ddnsDomain != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: _infoRow(
+                    context,
+                    theme,
+                    icon: Icons.dns_outlined,
+                    label: context.tr('server.ddnsAddress'),
+                    value: '$ddnsDomain:${upnpPort ?? serverPort ?? 25565}',
                     canCopy: true,
                   ),
                 ),
@@ -2380,6 +2413,9 @@ class _CrashDialogState extends State<_CrashDialog> {
   }
 
   Future<void> _loadDeviceHeader() async {
+    // 用顶层 tr()（I18nService.current）而非 context.tr：本方法在 initState
+    // 调用（不允许 dependOnInheritedWidgetOfExactType），且首个 await 后再用
+    // BuildContext 会跨 async gap。头部为一次性生成的导出文本，无需随语言重建。
     try {
       final info = await PackageInfo.fromPlatform();
       final appVersion = '${info.version}+${info.buildNumber}';
@@ -2387,11 +2423,11 @@ class _CrashDialogState extends State<_CrashDialog> {
       final deviceInfo = await monitorService.getDeviceInfo();
       final sysInfo = await monitorService.getSystemInfo();
       final lines = <String>[
-        context.tr('server.crashDeviceInfoHeader'),
-        context.tr('server.crashAppVersion', {'version': appVersion}),
-        context.tr('server.crashSocModel', {'model': deviceInfo.socModel}),
-        context.tr('server.crashTotalMem', {'mem': '${sysInfo.totalMemMb}'}),
-        context.tr('server.crashUsedMem', {'mem': '${sysInfo.usedMemMb}'}),
+        tr('server.crashDeviceInfoHeader'),
+        tr('server.crashAppVersion', {'version': appVersion}),
+        tr('server.crashSocModel', {'model': deviceInfo.socModel}),
+        tr('server.crashTotalMem', {'mem': '${sysInfo.totalMemMb}'}),
+        tr('server.crashUsedMem', {'mem': '${sysInfo.usedMemMb}'}),
       ];
       if (widget.crash.kind == 'server') {
         final envType = switch (widget.crash.envType) {
@@ -2403,26 +2439,28 @@ class _CrashDialogState extends State<_CrashDialog> {
                 widget.crash.runtimeName!.isNotEmpty)
             ? widget.crash.runtimeName!
             : _versionLabel(widget.crash.envRuntimeId);
-        lines.add(context.tr('server.crashEnvType', {'type': envType}));
-        lines.add(context.tr('server.crashEnvDisplay', {'env': envDisplay}));
+        lines.add(tr('server.crashEnvType', {'type': envType}));
+        lines.add(tr('server.crashEnvDisplay', {'env': envDisplay}));
         if (widget.crash.runtimeVersion != null &&
             widget.crash.runtimeVersion!.isNotEmpty) {
-          lines.add(context.tr('server.crashEnvVersion', {'version': widget.crash.runtimeVersion!}));
+          lines.add(tr('server.crashEnvVersion', {'version': widget.crash.runtimeVersion!}));
         }
       } else {
-        lines.add(context.tr('server.crashSourceTunnel'));
+        lines.add(tr('server.crashSourceTunnel'));
       }
       lines
-        ..add(context.tr('server.crashDeviceArch', {'arch': deviceInfo.architecture}))
-        ..add(context.tr('server.crashDeviceManufacturer', {'mfr': deviceInfo.manufacturer}))
-        ..add(context.tr('server.crashDeviceModel', {'model': deviceInfo.model}))
-        ..add(context.tr('server.crashAndroidVersion', {'version': deviceInfo.androidVersion}))
-        ..add(context.tr('server.crashSecurityPatch', {'patch': deviceInfo.securityPatch}))
-        ..add(context.tr('server.crashExitCode', {'code': '${widget.crash.exitCode}'}))
+        ..add(tr('server.crashDeviceArch', {'arch': deviceInfo.architecture}))
+        ..add(tr('server.crashDeviceManufacturer', {'mfr': deviceInfo.manufacturer}))
+        ..add(tr('server.crashDeviceModel', {'model': deviceInfo.model}))
+        ..add(tr('server.crashAndroidVersion', {'version': deviceInfo.androidVersion}))
+        ..add(tr('server.crashSecurityPatch', {'patch': deviceInfo.securityPatch}))
+        ..add(tr('server.crashExitCode', {'code': '${widget.crash.exitCode}'}))
         ..addAll(['================', '']);
       if (mounted) setState(() => _deviceHeader = lines.join('\n'));
     } catch (_) {
-      if (mounted) setState(() => _deviceHeader = context.tr('server.crashDeviceInfoFailed'));
+      if (mounted) {
+        setState(() => _deviceHeader = tr('server.crashDeviceInfoFailed'));
+      }
     }
   }
 
@@ -2434,7 +2472,7 @@ class _CrashDialogState extends State<_CrashDialog> {
       'php8.2': 'server.versionPhp82',
     };
     final key = labels[version];
-    if (key != null) return context.tr(key);
+    if (key != null) return tr(key);
     return version;
   }
 

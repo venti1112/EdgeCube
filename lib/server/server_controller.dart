@@ -9,11 +9,13 @@ import 'package:port_forwarder/port_forwarder.dart';
 import 'package:xterm/xterm.dart';
 
 import 'allay_properties.dart';
+import 'ddns_service.dart';
 import 'pnx_properties.dart';
 import 'server_properties.dart';
 import 'server_error_analyzer.dart';
 import 'server_service.dart';
 import 'upnp_service.dart';
+import '../config/ddns_store.dart';
 import '../config/network_store.dart';
 import '../config/terminal_store.dart';
 import '../tunnel/tunnel_service.dart';
@@ -173,9 +175,11 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     ServerService? service,
     UpnpService? upnp,
     TunnelService? tunnel,
+    DdnsService? ddns,
   }) : _service = service ?? ServerService(),
        _upnp = upnp ?? UpnpService(),
-       _tunnel = tunnel ?? TunnelService() {
+       _tunnel = tunnel ?? TunnelService(),
+       _ddns = ddns ?? DdnsService() {
     _sub = _service.events().listen(_onEvent);
     _tunnelSub = _tunnel.events().listen(_onTunnelEvent);
     terminal.onOutput = _onTerminalOutput;
@@ -185,6 +189,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   final ServerService _service;
   final UpnpService _upnp;
   final TunnelService _tunnel;
+  final DdnsService _ddns;
   late final StreamSubscription<ServerEvent> _sub;
   late final StreamSubscription<TunnelEvent> _tunnelSub;
 
@@ -244,6 +249,10 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
 
   /// 解析当前是否启用了 FRP 隧道。由外层（main）注入，读取配置文件。
   Future<bool> Function()? tunnelEnabledResolver;
+
+  /// 解析 DDNS 完整配置（是否启用、服务商、凭据等）。由外层（main）注入，
+  /// 读取配置文件。
+  Future<DdnsConfig> Function()? ddnsConfigResolver;
 
   /// 解析当前生效的 locale 代码（如 `zh_CN`）。由外层（main）注入。
   /// 崩溃分析据此从规则文件选取对应语言的错误信息与建议。
@@ -316,6 +325,21 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   bool _tunnelActive = false;
   bool _restartingTunnel = false;
 
+  // —— DDNS 动态域名解析状态 ——
+  // _ddnsActive: DDNS 随服务器启动而激活（含首个更新周期尚未完成的阶段）。
+  // _ddnsSucceeded: 最近一次更新是否成功（用于 UI 芯片绿色/橙色区分）。
+  // _ddnsError: 最近一次更新的失败原因（成功时为 null）。
+  // _ddnsTimer: 周期检查公网 IP 变化的定时器。
+  // _ddnsUpdating: 上一轮更新仍在进行中，跳过本轮（防止慢网络下任务堆叠）。
+  // _ddnsEpoch: 启停代次标记；停止后递增使仍在途的异步更新结果作废。
+  bool _ddnsActive = false;
+  bool _ddnsSucceeded = false;
+  String? _ddnsError;
+  String? _ddnsDomain;
+  Timer? _ddnsTimer;
+  bool _ddnsUpdating = false;
+  int _ddnsEpoch = 0;
+
   // —— FRP 隧道进程状态追踪 ——
   // _tunnelRunning: frpc 进程是否真正进入 STATUS_RUNNING（看到 "login to server
   //   success" 日志）；用于区分"进程已拉起但未连接成功"与"已成功连接到 frps"。
@@ -375,6 +399,18 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   String? get upnpExternalIp => _upnpExternalIp;
   int? get upnpMappedPort => _upnp.mappedPort;
   FrpcConfig? get activeFrpcConfig => _activeFrpcConfig;
+
+  // —— DDNS 状态公共接口 ——
+  bool get isDdnsActive => _ddnsActive;
+
+  /// 最近一次 DDNS 更新是否成功（域名解析已指向当前公网 IP）。
+  bool get isDdnsSucceeded => _ddnsSucceeded;
+
+  /// 最近一次 DDNS 更新的失败原因；成功或尚未更新时为 null。
+  String? get ddnsError => _ddnsError;
+
+  /// DDNS 解析的完整域名（如 `mc.example.com`），激活后可用。
+  String? get ddnsDomain => _ddnsDomain;
 
   /// 服务端实际监听端口（启动时从配置文件读取并缓存）。
   int? get serverPort => _serverPort;
@@ -591,6 +627,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
           _cacheServerInfo();
           _triggerUpnp();
           _triggerTunnel();
+          _triggerDdns();
         }
         notifyListeners();
       }
@@ -1052,6 +1089,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
             _cacheServerInfo();
             if (!_upnpActive) _triggerUpnp();
             if (!_tunnelActive) _triggerTunnel();
+            if (!_ddnsActive) _triggerDdns();
           }
         } else {
           _status = ServerStatus.stopped;
@@ -1061,6 +1099,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
           _onlineMode = null;
           if (_upnpActive) _stopUpnp();
           if (!_restartingTunnel) _stopTunnel();
+          if (_ddnsActive) _stopDdns(maybeDeleteRecords: true);
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
           if (exitCode != null) {
             _notice(tr('server.notice.exited', {'code': '$exitCode'}));
@@ -1191,6 +1230,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
       _status = ServerStatus.running;
       if (!_upnpActive) _triggerUpnp();
       if (!_tunnelActive) _triggerTunnel();
+      if (!_ddnsActive) _triggerDdns();
     }
     notifyListeners();
   }
@@ -1302,6 +1342,113 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     _upnpIsCgnat = false;
     _upnp.closePort().then((_) {
       // 静默处理，不影响主流程。
+    });
+  }
+
+  /// 触发 DDNS 动态域名解析（服务端进入运行态时调用）。
+  void _triggerDdns() {
+    final resolver = ddnsConfigResolver;
+    if (resolver == null) return;
+    resolver().then((config) {
+      if (config.enabled) _startDdns(config);
+    });
+  }
+
+  /// 启动 DDNS：立即更新一次，并按配置间隔周期检查公网 IP 变化。
+  void _startDdns(DdnsConfig config) {
+    if (_ddnsActive) return;
+    _ddnsActive = true;
+    _ddnsSucceeded = false;
+    _ddnsError = null;
+    _ddnsDomain = DdnsService.displayDomain(config);
+    final epoch = ++_ddnsEpoch;
+    notifyListeners();
+
+    _runDdnsUpdate(config, epoch, notify: true);
+    final interval = Duration(
+      minutes: config.intervalMinutes < 1 ? 1 : config.intervalMinutes,
+    );
+    _ddnsTimer?.cancel();
+    _ddnsTimer = Timer.periodic(interval, (_) {
+      // 周期轮次仅在 IP 变化或出错时提示，避免刷屏。
+      _runDdnsUpdate(config, epoch, notify: false);
+    });
+  }
+
+  /// 执行一次 DDNS 更新并同步状态。
+  ///
+  /// [notify] 为 true 时无论结果如何都写终端提示（首次/手动更新）；
+  /// 为 false 时仅在 IP 实际变化或出错时提示（周期检查）。
+  void _runDdnsUpdate(DdnsConfig config, int epoch, {required bool notify}) {
+    if (_ddnsUpdating) return;
+    _ddnsUpdating = true;
+    // 公共 IP API 全部失败时回退到路由器（UPnP 网关）上报的 WAN IP；
+    // 与 UPnP 共用同一网关发现结果，配合端口映射使用时无额外开销。
+    _ddns
+        .update(config, ipv4Fallback: _upnp.getExternalIp)
+        .then((result) {
+      // 期间 DDNS 已停止或重启（代次不符），丢弃过期结果。
+      if (epoch != _ddnsEpoch) return;
+      if (result.success) {
+        _ddnsSucceeded = true;
+        _ddnsError = null;
+        if (!result.unchanged) {
+          final ip = [
+            result.ipv4,
+            result.ipv6,
+          ].whereType<String>().join(' / ');
+          _notice(tr('server.notice.ddnsUpdated', {
+            'domain': _ddnsDomain ?? '',
+            'ip': ip,
+          }));
+        } else if (notify) {
+          _notice(tr('server.notice.ddnsUnchanged', {
+            'domain': _ddnsDomain ?? '',
+          }));
+        }
+      } else {
+        _ddnsSucceeded = false;
+        _ddnsError = result.error;
+        _notice(tr('server.notice.ddnsFailed', {'error': result.error ?? ''}));
+      }
+      notifyListeners();
+    }).whenComplete(() {
+      _ddnsUpdating = false;
+    });
+  }
+
+  /// 停止 DDNS 周期更新。
+  ///
+  /// [maybeDeleteRecords] 为 true（服务器停止路径）且配置开启「关闭服务器后
+  /// 删除解析」时，异步删除远端解析记录；用户手动关闭开关等其它路径保持
+  /// 现状（域名继续指向最后的 IP）。
+  void _stopDdns({bool maybeDeleteRecords = false}) {
+    if (!_ddnsActive) return;
+    _ddnsActive = false;
+    _ddnsEpoch++;
+    _ddnsTimer?.cancel();
+    _ddnsTimer = null;
+    _ddnsSucceeded = false;
+    _ddnsError = null;
+    _ddnsDomain = null;
+    _ddns.reset();
+    notifyListeners();
+    if (maybeDeleteRecords) _maybeDeleteDdnsRecords();
+  }
+
+  /// 按配置决定是否删除远端解析记录（服务器停止时调用）。
+  void _maybeDeleteDdnsRecords() {
+    final resolver = ddnsConfigResolver;
+    if (resolver == null) return;
+    resolver().then((config) async {
+      if (!config.deleteOnStop) return;
+      final domain = DdnsService.displayDomain(config);
+      try {
+        await _ddns.deleteRecords(config);
+        _notice(tr('server.notice.ddnsDeleted', {'domain': domain}));
+      } catch (e) {
+        _notice(tr('server.notice.ddnsDeleteFailed', {'error': '$e'}));
+      }
     });
   }
 
@@ -1469,6 +1616,50 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     _stopUpnp();
   }
 
+  /// 立即启用 DDNS（用户在 UI 中打开开关时调用）。
+  void enableDdnsNow() {
+    if (_ddnsActive || _status != ServerStatus.running) return;
+    _triggerDdns();
+  }
+
+  /// 立即停用 DDNS（用户在 UI 中关闭开关时调用）。
+  void disableDdnsNow() {
+    if (!_ddnsActive) return;
+    _stopDdns();
+  }
+
+  /// 重启 DDNS 以应用最新配置（保存配置后调用）；未激活时无操作。
+  void applyDdnsConfig() {
+    if (!_ddnsActive || _status != ServerStatus.running) return;
+    _stopDdns();
+    _triggerDdns();
+  }
+
+  /// 手动触发一次 DDNS 更新（强制推送，即使 IP 未变化）。
+  ///
+  /// 与服务器运行状态无关，供「立即更新」按钮在任意时刻测试配置；
+  /// 返回更新结果供 UI 展示。
+  Future<DdnsUpdateResult> updateDdnsOnce() async {
+    final resolver = ddnsConfigResolver;
+    if (resolver == null) {
+      return const DdnsUpdateResult(error: 'not configured');
+    }
+    final config = await resolver();
+    final result = await _ddns.update(
+      config,
+      force: true,
+      ipv4Fallback: _upnp.getExternalIp,
+    );
+    // 若 DDNS 正随服务器运行，同步芯片状态与域名显示。
+    if (_ddnsActive) {
+      _ddnsSucceeded = result.success;
+      _ddnsError = result.error;
+      _ddnsDomain = DdnsService.displayDomain(config);
+      notifyListeners();
+    }
+    return result;
+  }
+
   /// 立即启用 FRP 隧道（用户在 UI 中打开开关时调用）。
   void enableTunnelNow([FrpcConfig? config, String? runtimeId]) {
     if (_tunnelActive || _status != ServerStatus.running) return;
@@ -1585,6 +1776,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   void dispose() {
     _sub.cancel();
     _tunnelSub.cancel();
+    _ddnsTimer?.cancel();
     _closeLogFile();
     super.dispose();
   }

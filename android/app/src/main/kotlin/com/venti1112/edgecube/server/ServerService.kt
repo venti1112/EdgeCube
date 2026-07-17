@@ -55,9 +55,17 @@ class ServerService : Service() {
             else -> {
                 val name = intent?.getStringExtra(EXTRA_NAME) ?: "Minecraft 服务器"
                 startInForeground(name)
+                // 按用户开关获取 WakeLock/WifiLock 并显示状态悬浮窗。
+                KeepAliveManager.acquire(applicationContext, name)
             }
         }
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        // 服务端进程退出（或系统回收 Service）：释放锁与悬浮窗。
+        KeepAliveManager.release(applicationContext)
+        super.onDestroy()
     }
 
     private fun startInForeground(name: String) {

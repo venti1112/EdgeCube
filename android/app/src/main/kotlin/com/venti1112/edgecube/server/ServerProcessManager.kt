@@ -115,6 +115,8 @@ recursionguard.enabled=0"""
     @Volatile private var currentStatus: String? = null
     /** 当前启动是否为 proot 模式（顶层进程是 proot，实际服务端在其子进程中）。 */
     @Volatile private var runningIsProot: Boolean = false
+    /** 本次启动解析到的 JVM 最大堆（-Xmx，MB）；未配置为 -1。 */
+    @Volatile private var runningMaxHeapMb: Long = -1
 
     // —— 最近一次由界面上报的终端尺寸；新进程沿用，避免一闪一变。 ——
     @Volatile private var lastRows = DEFAULT_ROWS
@@ -133,6 +135,9 @@ recursionguard.enabled=0"""
 
     /** 当前启动是否为 proot 模式（顶层进程是 proot，服务端在其子进程中）。 */
     val isProotLaunch: Boolean get() = running && runningIsProot
+
+    /** 本次启动的 JVM 最大堆（-Xmx，MB）；未运行或未配置返回 -1。 */
+    val maxHeapMb: Long get() = if (running) runningMaxHeapMb else -1
 
     /**
      * 设置/解除事件接收端。设置时回放历史（清洗日志行 + 原始终端字节）与当前状态，
@@ -190,6 +195,8 @@ recursionguard.enabled=0"""
 
         // 重置上一次运行的 proot 标记（防止误读旧值）
         runningIsProot = false
+        // 解析 -Xmx（如 -Xmx2048M / -Xmx2G），供服务端内存占用率计算。
+        runningMaxHeapMb = parseXmxMb(runtimeArgs)
 
         val work = File(workingDir)
         if (!work.isDirectory) throw IllegalStateException("工作目录不存在：$workingDir")
@@ -601,6 +608,28 @@ recursionguard.enabled=0"""
         map["instanceName"] = name
         if (exitCode != null) map["exitCode"] = exitCode
         return map
+    }
+
+    /**
+     * 从 JVM 参数中解析 -Xmx 最大堆（MB）；无 -Xmx 或不可解析返回 -1。
+     * 支持 K/M/G/T 单位后缀与无后缀（字节）写法，大小写不敏感。
+     */
+    private fun parseXmxMb(args: List<String>): Long {
+        // 取最后一个 -Xmx（JVM 语义：后者覆盖前者）。
+        val raw = args.lastOrNull { it.startsWith("-Xmx") }
+            ?.removePrefix("-Xmx")?.trim() ?: return -1
+        if (raw.isEmpty()) return -1
+        val unit = raw.last().lowercaseChar()
+        val hasUnit = unit in charArrayOf('k', 'm', 'g', 't')
+        val number = (if (hasUnit) raw.dropLast(1) else raw).toLongOrNull() ?: return -1
+        if (number <= 0) return -1
+        return when (unit) {
+            'k' -> number / 1024
+            'm' -> number
+            'g' -> number * 1024
+            't' -> number * 1024 * 1024
+            else -> number / (1024 * 1024) // 无后缀：字节
+        }
     }
 
     /**
