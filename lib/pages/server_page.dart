@@ -58,14 +58,14 @@ class ServerPage extends StatelessWidget {
 }
 
 /// 启动所需的上下文：实例工作目录、可作为服务端的文件列表（.jar / .phar / 全部）、
-/// 当前架构可用的 JRE 版本与 PHP 运行时，以及运行时 id→名称映射。
+/// 当前架构可用的 JRE id 与 PHP 运行时，以及运行时 id→名称映射。
 class _LaunchContext {
   const _LaunchContext({
     required this.workingDir,
     required this.jars,
     required this.phars,
     required this.allFiles,
-    required this.versions,
+    required this.jreIds,
     required this.phpRuntimes,
     required this.prootRootfsInfos,
     required this.runtimeNames,
@@ -76,7 +76,7 @@ class _LaunchContext {
   final List<String> phars;
   /// 实例目录下所有文件（含无扩展名的 x86_64 二进制），用于 box64 等环境。
   final List<String> allFiles;
-  final List<String> versions;
+  final List<String> jreIds;
   final List<String> phpRuntimes;
 
   /// 已导入的 proot rootfs 信息列表（每个含元数据清单，可能为 generic 纯容器）。
@@ -110,8 +110,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   late final TextEditingController _jvmArgsController;
   late final TextEditingController _prootStartupCommandController;
   String _runtime = kRuntimeJava;
-  String _version = 'jre21';
-  String? _selectedJar;
+  String _selectedJreId = 'jre21';
+  String? _selectedServerFile;
   bool _compatMode = false;
   Future<_LaunchContext>? _ctxFuture;
 
@@ -134,15 +134,14 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       text: widget.instance.prootStartupCommand ?? '',
     );
     _runtime = widget.instance.runtime;
-    // proot 运行时把所选 rootfs id 存入 javaVersion 字段（proot 不用 EdgeCube JRE，
-    // 该字段在此场景下闲置，复用可避免给 Instance 增加新字段）。
-    if (_isProot && widget.instance.javaVersion != null) {
-      _prootRootfsId = widget.instance.javaVersion!;
-      _version = 'jre21';
+    // runtimeEnvId：proot 时存 rootfs id，java 时存 JRE id。
+    if (_isProot && widget.instance.runtimeEnvId != null) {
+      _prootRootfsId = widget.instance.runtimeEnvId!;
+      _selectedJreId = 'jre21';
     } else {
-      _version = widget.instance.javaVersion ?? 'jre21';
+      _selectedJreId = widget.instance.runtimeEnvId ?? 'jre21';
     }
-    _selectedJar = widget.instance.selectedJar;
+    _selectedServerFile = widget.instance.serverFile;
     _compatMode = widget.instance.compatMode;
     // 设置崩溃回调：服务端意外退出时弹出报告弹窗。
     final server = ServerScope.of(context);
@@ -229,11 +228,11 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   @override
   void didUpdateWidget(covariant _ServerControlPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 实例配置变化（如下载完成后 selectedJar/javaVersion 更新、导入 phar 改变 runtime、
+    // 实例配置变化（如下载完成后 serverFile/runtimeEnvId 更新、导入 phar 改变 runtime、
     // Survivalcraft 安装完成后更新 path/prootStartupCommand）时，同步表单值。
     final configChanged =
-        oldWidget.instance.selectedJar != widget.instance.selectedJar ||
-        oldWidget.instance.javaVersion != widget.instance.javaVersion ||
+        oldWidget.instance.serverFile != widget.instance.serverFile ||
+        oldWidget.instance.runtimeEnvId != widget.instance.runtimeEnvId ||
         oldWidget.instance.runtime != widget.instance.runtime ||
         oldWidget.instance.compatMode != widget.instance.compatMode ||
         oldWidget.instance.prootStartupCommand !=
@@ -241,13 +240,13 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         oldWidget.instance.path != widget.instance.path;
     if (configChanged) {
       _runtime = widget.instance.runtime;
-      if (_isProot && widget.instance.javaVersion != null) {
-        _prootRootfsId = widget.instance.javaVersion!;
-        _version = 'jre21';
+      if (_isProot && widget.instance.runtimeEnvId != null) {
+        _prootRootfsId = widget.instance.runtimeEnvId!;
+        _selectedJreId = 'jre21';
       } else {
-        _version = widget.instance.javaVersion ?? 'jre21';
+        _selectedJreId = widget.instance.runtimeEnvId ?? 'jre21';
       }
-      _selectedJar = widget.instance.selectedJar;
+      _selectedServerFile = widget.instance.serverFile;
       _compatMode = widget.instance.compatMode;
       // 同步 proot 启动命令（Survivalcraft 等场景下，实例创建初期可能为空，
       // 安装完成后 updateConfig 才会写入，此时须刷新 TextEditingController）。
@@ -282,12 +281,10 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       widget.instance.id,
       runtime: _runtime,
       maxMemory: int.tryParse(_memController.text.trim()),
-      // proot 复用 javaVersion 字段保存所选 rootfs id；
-      // 非 proot 则保存 JRE 版本号。
-      javaVersion: _isProot
+      runtimeEnvId: _isProot
           ? (_prootRootfsId.isEmpty ? null : _prootRootfsId)
-          : _version,
-      selectedJar: _selectedJar,
+          : _selectedJreId,
+      serverFile: _selectedServerFile,
       customJvmArgs: argsText.isEmpty ? null : argsText,
       compatMode: _compatMode,
       prootStartupCommand: _isProot ? prootCmd : null,
@@ -311,13 +308,13 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         final files = showPhars
             ? ctx.phars
             : (showAllFiles ? ctx.allFiles : ctx.jars);
-        if (_selectedJar == null || !files.contains(_selectedJar)) {
-          _selectedJar = files.isNotEmpty ? files.first : null;
+        if (_selectedServerFile == null || !files.contains(_selectedServerFile)) {
+          _selectedServerFile = files.isNotEmpty ? files.first : null;
         }
-        if (!ctx.versions.contains(_version) && ctx.versions.isNotEmpty) {
-          _version = ctx.versions.contains('jre21')
+        if (!ctx.jreIds.contains(_selectedJreId) && ctx.jreIds.isNotEmpty) {
+          _selectedJreId = ctx.jreIds.contains('jre21')
               ? 'jre21'
-              : ctx.versions.first;
+              : ctx.jreIds.first;
         }
       });
     });
@@ -375,7 +372,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     if (forgeArgfile != null && !jars.contains(forgeArgfile)) {
       jars.insert(0, forgeArgfile);
     }
-    final versions = await server.availableJreIds();
+    final jreIds = await server.availableJreIds();
     final phpRuntimes = await server.availablePhpIds();
     final runtimeService = const RuntimeService();
     final runtimes = await runtimeService.installedRuntimes();
@@ -393,7 +390,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       jars: jars,
       phars: phars,
       allFiles: allFiles,
-      versions: versions,
+      jreIds: jreIds,
       phpRuntimes: phpRuntimes,
       prootRootfsInfos: prootRootfsList,
       runtimeNames: runtimeNames,
@@ -476,7 +473,35 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   }
 
   void _start(ServerController server, _LaunchContext ctx) async {
-    final file = _selectedJar;
+    String? file = _selectedServerFile;
+
+    // 新实例的目录在首次扫描时可能还是空的（服务端文件随后才下载/导入完成），
+    // 导致启动文件未被选中。启动前若仍未设置，先重新扫描实例根目录：
+    // 扫描到有效文件则自动选中（_loadContext 的回填逻辑）并继续启动，
+    // 仍扫描不到再由后续各分支给出对应的缺文件提示。
+    // proot 纯容器与容器内直装（Survivalcraft）场景用启动命令而非服务端文件，
+    // 无需扫描。
+    final needsServerFile = !_isProot ||
+        (widget.instance.path == null &&
+            _selectedRootfsEnvType(ctx) != 'generic');
+    if (file == null && needsServerFile) {
+      final future = _loadContext();
+      setState(() => _ctxFuture = future);
+      try {
+        ctx = await future;
+      } catch (_) {
+        // 扫描失败时沿用旧上下文，由后续分支给出对应提示。
+      }
+      if (!mounted) return;
+      file = _selectedServerFile;
+      // 把扫描结果持久化，下次启动无需再扫描。
+      if (file != null && file != widget.instance.serverFile) {
+        InstanceScope.of(context).updateConfig(
+          widget.instance.id,
+          serverFile: file,
+        );
+      }
+    }
 
     // PHP（PocketMine）：用 PHP 运行时执行选中的 .phar。
     if (_isPhp) {
@@ -496,7 +521,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         workingDir: ctx.workingDir,
         runtimeId: ctx.phpRuntimes.first,
         runtime: kRuntimePhp,
-        jvmArgs: const [],
+        runtimeArgs: const [],
         programArgs: [file, '--no-wizard'],
         compatMode: _compatMode,
       );
@@ -541,7 +566,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           workingDir: ctx.workingDir,
           runtimeId: rootfsId,
           runtime: kRuntimeProot,
-          jvmArgs: const [],
+          runtimeArgs: const [],
           programArgs: [prootCmd],
           compatMode: _compatMode,
           directExecute: true,
@@ -564,17 +589,23 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           workingDir: ctx.workingDir,
           runtimeId: rootfsId,
           runtime: kRuntimeProot,
-          jvmArgs: const [],
+          runtimeArgs: const [],
           programArgs: [command],
           compatMode: _compatMode,
         );
       } else {
         // 带元数据的 rootfs：按清单声明的 envMainBin 启动。
-        // Java 与 PHP 复用 _selectedJar（.jar / .phar），其余环境同样复用
-        // _selectedJar 作为入口文件名（用户可在文件页导入任意类型文件）。
+        // Java 与 PHP 复用 _selectedServerFile（.jar / .phar），其余环境同样复用
+        // _selectedServerFile 作为入口文件名（用户可在文件页导入任意类型文件）。
         if (file == null) {
+          // 入口文件按 envType 不同可为 .jar/.phar/任意文件，提示用对应文案。
+          final missingKey = switch (rootfsInfo.envType) {
+            'java' => 'server.noJarFound',
+            'php' => 'server.noPharFound',
+            _ => 'server.noServerFileFound',
+          };
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(context.tr('server.noJarFound'))),
+            SnackBar(content: Text(context.tr(missingKey))),
           );
           return;
         }
@@ -596,7 +627,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           runtimeId: rootfsId,
           runtime: kRuntimeProot,
           // -Xmx 等仅对 JVM 有意义，非 Java 环境不传 jvmArgs。
-          jvmArgs: isJavaEnv ? javaJvmArgs : const [],
+          runtimeArgs: isJavaEnv ? javaJvmArgs : const [],
           programArgs: isJavaEnv ? javaProgramArgs : [file],
           compatMode: _compatMode,
         );
@@ -605,9 +636,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     }
 
     // Java（原生）：runtime == "java"，用实例配置里选的 JRE 启动。
-    // javaVersion 永远是原生 JRE id（来自实例配置的 JRE 版本下拉框）。
+    // runtimeEnvId 在此分支永远是原生 JRE id（来自实例配置的 JRE 版本下拉框）。
     // 若所选 JRE 已不可用 → 尝试其他原生 JRE → 还不行则回退到 proot。
-    if (ctx.versions.isEmpty) {
+    if (ctx.jreIds.isEmpty) {
       // 无原生 JRE：尝试回退到任意 proot Java 容器。
       final javaRootfs = ctx.prootRootfsInfos
           .where((r) => !r.isGeneric && r.envType == 'java')
@@ -620,7 +651,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       return;
     }
     // 优先用实例保存的 JRE，不可用则取首个原生 JRE。
-    final jreId = ctx.versions.contains(_version) ? _version : ctx.versions.first;
+    final jreId = ctx.jreIds.contains(_selectedJreId) ? _selectedJreId : ctx.jreIds.first;
     await _startNativeJava(jreId, ctx, file, server);
     return;
   }
@@ -651,7 +682,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       workingDir: ctx.workingDir,
       runtimeId: jreId,
       runtime: kRuntimeJava,
-      jvmArgs: isArgfile
+      runtimeArgs: isArgfile
           ? [...jvmArgs, '@${ForgeLaunch.argfilePath(file)}']
           : jvmArgs,
       programArgs: isArgfile ? const ['nogui'] : ['-jar', file, 'nogui'],
@@ -685,7 +716,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       workingDir: ctx.workingDir,
       runtimeId: rootfs.id,
       runtime: kRuntimeProot,
-      jvmArgs: isArgfile
+      runtimeArgs: isArgfile
           ? [...jvmArgs, '@${ForgeLaunch.argfilePath(file)}']
           : jvmArgs,
       programArgs: isArgfile ? const ['nogui'] : ['-jar', file, 'nogui'],
@@ -741,15 +772,15 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       return context.tr('server.envLabelProot', {'name': info.envName.isNotEmpty ? info.envName : info.id});
     }
     // runtime=java：实例存的是原生 JRE id。
-    if (ctx.versions.contains(_version)) {
-      final name = ctx.runtimeNames[_version];
+    if (ctx.jreIds.contains(_selectedJreId)) {
+      final name = ctx.runtimeNames[_selectedJreId];
       return name != null
           ? context.tr('server.envLabelNative', {'name': name})
           : context.tr('server.envLabelNativeJre');
     }
     // 实例存的 JRE 已卸载，回退到首个可用的原生 JRE。
-    if (ctx.versions.isNotEmpty) {
-      final name = ctx.runtimeNames[ctx.versions.first];
+    if (ctx.jreIds.isNotEmpty) {
+      final name = ctx.runtimeNames[ctx.jreIds.first];
       return name != null
           ? context.tr('server.envLabelNative', {'name': name})
           : context.tr('server.envLabelNativeJre');
@@ -887,11 +918,24 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   }
 
   /// 打开启动配置对话框。
+  ///
+  /// 打开前会重新扫描实例根目录：服务端文件可能在上次扫描之后才写入磁盘
+  /// （如下载/导入刚完成、或用户用外部工具放入文件），确保弹窗展示最新列表。
   Future<void> _openSettings(
     BuildContext context,
     ServerController server,
-    _LaunchContext? ctx,
+    _LaunchContext? initialCtx,
   ) async {
+    final future = _loadContext();
+    setState(() => _ctxFuture = future);
+    _LaunchContext? scanned;
+    try {
+      scanned = await future;
+    } catch (_) {
+      // 重新扫描失败时沿用已有快照，弹窗仍可正常打开。
+    }
+    if (!context.mounted) return;
+    final ctx = scanned ?? initialCtx;
     if (ctx == null) return;
     final nameController = TextEditingController(text: widget.instance.name);
     final controller = InstanceScope.of(context);
@@ -980,7 +1024,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                           _runtime = v;
                           // 切换运行环境后，把服务端文件/版本回退到该环境下的有效默认值。
                           if (_isPhp) {
-                            _selectedJar = ctx.phars.isNotEmpty
+                            _selectedServerFile = ctx.phars.isNotEmpty
                                 ? ctx.phars.first
                                 : null;
                           } else if (_isProot) {
@@ -991,7 +1035,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                             final fileList = envType == 'box64'
                                 ? ctx.allFiles
                                 : ctx.jars;
-                            _selectedJar = fileList.isNotEmpty
+                            _selectedServerFile = fileList.isNotEmpty
                                 ? fileList.first
                                 : null;
                             // 默认选第一个 rootfs
@@ -1000,14 +1044,14 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                               _prootRootfsId = ctx.prootRootfs.first;
                             }
                           } else {
-                            _selectedJar = ctx.jars.isNotEmpty
+                            _selectedServerFile = ctx.jars.isNotEmpty
                                 ? ctx.jars.first
                                 : null;
-                            if (!ctx.versions.contains(_version) &&
-                                ctx.versions.isNotEmpty) {
-                              _version = ctx.versions.contains('jre21')
+                            if (!ctx.jreIds.contains(_selectedJreId) &&
+                                ctx.jreIds.isNotEmpty) {
+                              _selectedJreId = ctx.jreIds.contains('jre21')
                                   ? 'jre21'
-                                  : ctx.versions.first;
+                                  : ctx.jreIds.first;
                             }
                           }
                         });
@@ -1086,8 +1130,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                     ] else if (!_isPhp) ...[
                       DropdownButtonFormField<String>(
                         isExpanded: true,
-                        initialValue: ctx.versions.contains(_version)
-                            ? _version
+                        initialValue: ctx.jreIds.contains(_selectedJreId)
+                            ? _selectedJreId
                             : null,
                         decoration: InputDecoration(
                           labelText: context.tr('server.javaVersionLabel'),
@@ -1095,14 +1139,14 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                           isDense: true,
                         ),
                         items: [
-                          for (final v in ctx.versions)
+                          for (final v in ctx.jreIds)
                             DropdownMenuItem(
                               value: v,
                               child: Text(ctx.runtimeNames[v] ?? v),
                             ),
                         ],
                         selectedItemBuilder: (context) => [
-                          for (final v in ctx.versions)
+                          for (final v in ctx.jreIds)
                             DropdownMenuItem<String>(
                               value: v,
                               child: Text(
@@ -1112,7 +1156,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                             ),
                         ],
                         onChanged: (v) {
-                          setDialogState(() => _version = v ?? _version);
+                          setDialogState(() => _selectedJreId = v ?? _selectedJreId);
                         },
                       ),
                       const SizedBox(height: 16),
@@ -1261,7 +1305,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       );
     }
     // 持久化的选择可能属于另一种运行环境（jar/phar），回退到首个有效项以避免下拉断言。
-    final value = files.contains(_selectedJar) ? _selectedJar : files.first;
+    final value = files.contains(_selectedServerFile) ? _selectedServerFile : files.first;
     return DropdownButtonFormField<String>(
       isExpanded: true,
       initialValue: value,
@@ -1285,7 +1329,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           ),
       ],
       onChanged: (v) {
-        _selectedJar = v;
+        _selectedServerFile = v;
       },
     );
   }
@@ -2350,7 +2394,11 @@ class _CrashDialogState extends State<_CrashDialog> {
         context.tr('server.crashUsedMem', {'mem': '${sysInfo.usedMemMb}'}),
       ];
       if (widget.crash.kind == 'server') {
-        final envType = widget.crash.envType == 'php' ? 'PHP' : 'Java';
+        final envType = switch (widget.crash.envType) {
+          'php' => 'PHP',
+          'proot' => 'proot',
+          _ => 'Java',
+        };
         final envDisplay = (widget.crash.runtimeName != null &&
                 widget.crash.runtimeName!.isNotEmpty)
             ? widget.crash.runtimeName!

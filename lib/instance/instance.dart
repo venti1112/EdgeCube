@@ -1,4 +1,5 @@
-/// 运行环境标识：Java 版（JVM 跑 .jar）与 PHP 版（PocketMine 跑 .phar）。
+/// 运行环境标识：Java 版（JVM 跑 .jar）、PHP 版（PocketMine 跑 .phar）
+/// 与 proot 容器（rootfs 内跑任意服务端）。
 const String kRuntimeJava = 'java';
 const String kRuntimePhp = 'php';
 const String kRuntimeProot = 'proot';
@@ -44,9 +45,10 @@ class InstanceSummary {
 ///
 /// [id] 同时是该实例在磁盘上的文件夹名（随机生成、不可变）；
 /// [name] 是用户可编辑的名称；
-/// [runtime] 运行环境（[kRuntimeJava] / [kRuntimePhp]），决定用 JVM 还是 PHP 启动，
-/// 以及服务端文件取 .jar 还是 .phar；
-/// [maxMemory]、[javaVersion]、[selectedJar] 为启动配置（PHP 版不使用 javaVersion/maxMemory）；
+/// [runtime] 运行环境（[kRuntimeJava] / [kRuntimePhp] / [kRuntimeProot]），
+/// 决定用 JVM、PHP 还是 proot 容器启动，以及服务端文件取 .jar、.phar 还是任意入口文件；
+/// [maxMemory]、[runtimeEnvId]、[serverFile] 为启动配置（PHP 版不使用
+/// runtimeEnvId/maxMemory；proot 版的 runtimeEnvId 为 rootfs id）；
 /// [customJvmArgs] 为用户自定义的 JVM 参数（以空白符/换行分隔，原样附加在内置参数之后，仅 Java 版）；
 /// [compatMode] 兼容模式：开启后「准备中」完成、服务端进程起来后直接视为「运行中」，
 /// 跳过「启动中」阶段（适配不输出 Done 标志的非标准服务端）。
@@ -59,8 +61,8 @@ class Instance {
     required this.name,
     this.runtime = kRuntimeJava,
     this.maxMemory,
-    this.javaVersion,
-    this.selectedJar,
+    this.runtimeEnvId,
+    this.serverFile,
     this.customJvmArgs,
     this.compatMode = false,
     this.prootStartupCommand,
@@ -71,8 +73,15 @@ class Instance {
   final String name;
   final String runtime;
   final int? maxMemory;
-  final String? javaVersion;
-  final String? selectedJar;
+
+  /// 运行环境标识：runtime=java 时为原生 JRE id（如 `jre21`）；
+  /// runtime=proot 时为所选 rootfs id。历史上叫 `javaVersion`（JSON 兼容旧 key）。
+  final String? runtimeEnvId;
+
+  /// 所选服务端入口文件名：Java 为 .jar，PHP 为 .phar，proot 其他环境为任意
+  /// 入口文件；现代 Forge/NeoForge 为 `@<argfile 相对路径>` 哨兵（见 ForgeLaunch）。
+  /// 历史上叫 `selectedJar`（JSON 兼容旧 key）。
+  final String? serverFile;
   final String? customJvmArgs;
   final bool compatMode;
 
@@ -94,15 +103,15 @@ class Instance {
     String? name,
     String? runtime,
     int? maxMemory,
-    String? javaVersion,
-    String? selectedJar,
+    String? runtimeEnvId,
+    String? serverFile,
     String? customJvmArgs,
     bool? compatMode,
     String? prootStartupCommand,
     String? path,
     bool clearMaxMemory = false,
-    bool clearJavaVersion = false,
-    bool clearSelectedJar = false,
+    bool clearRuntimeEnvId = false,
+    bool clearServerFile = false,
     bool clearCustomJvmArgs = false,
     bool clearProotStartupCommand = false,
     bool clearPath = false,
@@ -111,8 +120,8 @@ class Instance {
     name: name ?? this.name,
     runtime: runtime ?? this.runtime,
     maxMemory: clearMaxMemory ? null : (maxMemory ?? this.maxMemory),
-    javaVersion: clearJavaVersion ? null : (javaVersion ?? this.javaVersion),
-    selectedJar: clearSelectedJar ? null : (selectedJar ?? this.selectedJar),
+    runtimeEnvId: clearRuntimeEnvId ? null : (runtimeEnvId ?? this.runtimeEnvId),
+    serverFile: clearServerFile ? null : (serverFile ?? this.serverFile),
     customJvmArgs: clearCustomJvmArgs
         ? null
         : (customJvmArgs ?? this.customJvmArgs),
@@ -128,8 +137,8 @@ class Instance {
     'name': name,
     'runtime': runtime,
     if (maxMemory != null) 'maxMemory': maxMemory,
-    if (javaVersion != null) 'javaVersion': javaVersion,
-    if (selectedJar != null) 'selectedJar': selectedJar,
+    if (runtimeEnvId != null) 'runtimeEnvId': runtimeEnvId,
+    if (serverFile != null) 'serverFile': serverFile,
     if (customJvmArgs != null) 'customJvmArgs': customJvmArgs,
     if (compatMode) 'compatMode': true,
     if (prootStartupCommand != null) 'prootStartupCommand': prootStartupCommand,
@@ -141,8 +150,11 @@ class Instance {
     name: json['name'] as String,
     runtime: json['runtime'] as String? ?? kRuntimeJava,
     maxMemory: json['maxMemory'] as int?,
-    javaVersion: json['javaVersion'] as String?,
-    selectedJar: json['selectedJar'] as String?,
+    // 新 key 优先，读不到时回退历史 key（javaVersion / selectedJar），
+    // 保证旧版本写出的实例配置可直接加载。
+    runtimeEnvId:
+        (json['runtimeEnvId'] ?? json['javaVersion']) as String?,
+    serverFile: (json['serverFile'] ?? json['selectedJar']) as String?,
     customJvmArgs: json['customJvmArgs'] as String?,
     compatMode: json['compatMode'] as bool? ?? false,
     prootStartupCommand: json['prootStartupCommand'] as String?,

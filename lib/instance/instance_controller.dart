@@ -241,14 +241,14 @@ class InstanceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 更新指定实例的启动配置（运行环境、内存、Java 版本、服务端 jar/phar、自定义 JVM 参数、
+  /// 更新指定实例的启动配置（运行环境、内存、运行环境 id、服务端入口文件、自定义 JVM 参数、
   /// 兼容模式、proot 纯容器启动命令）。
   Future<void> updateConfig(
     String id, {
     String? runtime,
     int? maxMemory,
-    String? javaVersion,
-    String? selectedJar,
+    String? runtimeEnvId,
+    String? serverFile,
     String? customJvmArgs,
     bool? compatMode,
     String? prootStartupCommand,
@@ -260,8 +260,8 @@ class InstanceController extends ChangeNotifier {
     final updated = config.copyWith(
       runtime: runtime,
       maxMemory: maxMemory,
-      javaVersion: javaVersion,
-      selectedJar: selectedJar,
+      runtimeEnvId: runtimeEnvId,
+      serverFile: serverFile,
       customJvmArgs: customJvmArgs,
       compatMode: compatMode,
       prootStartupCommand: prootStartupCommand,
@@ -326,7 +326,7 @@ class InstanceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 自定义实例文件夹路径变更后调用：[defaultEdgeCubeRoot] 会动态读取
+  /// 自定义数据文件夹路径变更后调用：[defaultEdgeCubeRoot] 会动态读取
   /// 新路径，[defaultInstancesRoot] 再在其下拼接 `instances` 子目录，
   /// 此处仅触发监听者（FTP/SSH 根目录同步等）重新解析实例目录。
   void refreshAfterPathChange() {

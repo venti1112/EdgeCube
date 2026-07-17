@@ -15,7 +15,7 @@ class ServerService {
 
   /// 当前设备架构下可用的 JRE 标识（如 ['jre17','jre21','jre25']）。
   Future<List<String>> availableJreIds() async {
-    final list = await _method.invokeMethod<List<dynamic>>('availableVersions');
+    final list = await _method.invokeMethod<List<dynamic>>('availableJreIds');
     return list?.cast<String>() ?? const [];
   }
 
@@ -52,7 +52,7 @@ class ServerService {
     required String workingDir,
     required String runtimeId,
     required String runtime,
-    required List<String> jvmArgs,
+    required List<String> runtimeArgs,
     required List<String> programArgs,
     bool directExecute = false,
   }) {
@@ -62,7 +62,7 @@ class ServerService {
       'workingDir': workingDir,
       'runtimeId': runtimeId,
       'runtime': runtime,
-      'jvmArgs': jvmArgs,
+      'runtimeArgs': runtimeArgs,
       'programArgs': programArgs,
       'directExecute': directExecute,
     });

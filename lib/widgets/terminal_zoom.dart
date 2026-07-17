@@ -3,6 +3,7 @@ import 'package:xterm/xterm.dart';
 
 import '../config/terminal_store.dart';
 import '../i18n/locale_scope.dart';
+import 'patched_terminal_view.dart';
 
 /// 可缩放终端视图：在 [TerminalView] 外包一层双指捏合缩放。
 ///
@@ -105,7 +106,9 @@ class _ZoomableTerminalState extends State<ZoomableTerminal> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          TerminalView(
+          // 修补版 TerminalView：修复部分输入法（发 performAction 而非 '\n'）
+          // 无法回车执行命令的问题，见 patched_terminal_view.dart 文件头。
+          PatchedTerminalView(
             widget.terminal,
             theme: TerminalThemes.defaultTheme,
             textStyle: TerminalStyle(fontSize: widget.fontSize),

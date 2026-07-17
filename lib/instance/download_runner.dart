@@ -159,7 +159,8 @@ class DownloadRunner {
 
   // —— 下载与配置 ——
 
-  /// 下载服务端 jar 到实例目录并校验哈希，成功后按服务端类型写入实例配置。
+  /// 下载服务端文件（.jar / .phar）到实例目录并校验哈希，成功后按服务端类型
+  /// 写入实例配置。
   ///
   /// 进度经 [onProgress] 回传（0..1）。HTTP 非 200 抛 [DownloadHttpException]，
   /// 哈希不匹配抛 [HashMismatchException]，其余 IO 错误原样抛出。
@@ -168,19 +169,19 @@ class DownloadRunner {
     required String instanceId,
     required DownloadInfo info,
     required String serverType,
-    String jarName = 'server.jar',
+    String serverFileName = 'server.jar',
     String? selectedVersion,
     String? selectedMcVersion,
     void Function(DownloadProgress progress)? onProgress,
   }) async {
     final dir = await controller.directoryForId(instanceId);
-    final jarPath = p.join(dir.path, jarName);
+    final serverFilePath = p.join(dir.path, serverFileName);
 
     // 下载并由引擎校验哈希（优先 sha1，其次 sha256）；分片并行 + 断点续传。
     try {
       await DownloadEngine.instance.downloadToFile(
         info.url,
-        jarPath,
+        serverFilePath,
         sha1: info.sha1,
         sha256: info.sha256,
         onProgress: onProgress,
@@ -191,12 +192,12 @@ class DownloadRunner {
       throw DownloadHttpException(e.statusCode);
     }
 
-    // 按服务端类型写入运行环境与 Java 版本。
+    // 按服务端类型写入运行环境与运行环境 id。
     if (serverType == 'pocketmine') {
-      // PocketMine-MP 使用 PHP 运行环境，无需 Java 版本。
+      // PocketMine-MP 使用 PHP 运行环境，无需 JRE。
       await controller.updateConfig(
         instanceId,
-        selectedJar: jarName,
+        serverFile: serverFileName,
         runtime: kRuntimePhp,
       );
       return;
@@ -216,19 +217,17 @@ class DownloadRunner {
     }
     await controller.updateConfig(
       instanceId,
-      selectedJar: jarName,
-      javaVersion: javaVer,
+      serverFile: serverFileName,
+      runtimeEnvId: javaVer,
     );
   }
 
-  // —— Java 版本推断 ——
-
-  /// 根据 MC 版本号推断所需的 Java 版本（已移除 jre8）。
+  /// 根据 MC 版本号推断所需的 JRE id（已移除 jre8）。
   ///
   /// MC 26+（年份命名）          → jre25
   /// MC 1.20.5 - 1.21.11（含边界） → jre21
   /// MC ≤1.20.4                  → jre17
-  static String javaVersionForMc(String mcVersion) {
+  static String jreIdForMc(String mcVersion) {
     final parts = mcVersion.split('.');
     if (parts.isEmpty) return 'jre17';
     final major = int.tryParse(parts[0]) ?? 1;
@@ -246,9 +245,9 @@ class DownloadRunner {
     return 'jre17';
   }
 
-  /// 根据 MC 版本推断首选 Java 版本；若该版本未安装，回退到首个已安装 JRE。
+  /// 根据 MC 版本推断首选 JRE id；若该版本未安装，回退到首个已安装 JRE。
   static Future<String> resolveJavaVersion(String mcVersion) async {
-    final preferred = javaVersionForMc(mcVersion);
+    final preferred = jreIdForMc(mcVersion);
     final available = await ServerService().availableJreIds();
     if (available.contains(preferred)) return preferred;
     if (available.isEmpty) return preferred;

@@ -333,7 +333,7 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
       await _controller.updateConfig(
         instance.id,
         runtime: kRuntimeProot,
-        javaVersion: _session.selectedProotRootfsId,
+        runtimeEnvId: _session.selectedProotRootfsId,
         prootStartupCommand: startupCommand,
         compatMode: true,
       );

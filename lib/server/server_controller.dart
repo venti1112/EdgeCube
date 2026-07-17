@@ -64,10 +64,10 @@ class CrashData {
   final int exitCode;
   final List<String> logLines;
 
-  /// 运行环境类型：'java' 或 'php'。
+  /// 运行环境类型：'java'、'php' 或 'proot'。
   final String envType;
 
-  /// 运行环境标识：如 'jre21'、'php8.2'。
+  /// 运行环境标识：原生 JRE id（'jre21'）、PHP id（'php8.2'）或 proot rootfs id。
   final String envRuntimeId;
 
   /// 崩溃来源：'server'（服务端）或 'tunnel'（FRP 隧道）。
@@ -297,7 +297,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   String? _lastWorkingDir;
   String? _lastRuntimeId;
   String? _lastRuntime;
-  List<String> _lastJvmArgs = const [];
+  List<String> _lastRuntimeArgs = const [];
   List<String> _lastProgramArgs = const [];
   bool _lastCompatMode = false;
   bool _lastDirectExecute = false;
@@ -503,16 +503,18 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   /// 当前实例是否就是正在运行/启动中的那个。
   bool isActive(String instanceId) => _instanceId == instanceId;
 
-  /// 启动服务端。[runtime] 为 `'java'` 或 `'php'`：
-  /// Java 版 [jvmArgs] 如 `['-Xmx1024M']`、[programArgs] 如 `['-jar','server.jar','nogui']`；
-  /// PHP 版 [jvmArgs] 为空、[programArgs] 即 `['PocketMine-MP.phar']`。
+  /// 启动服务端。[runtime] 为 `'java'` / `'php'` / `'proot'`：
+  /// Java 版 [runtimeArgs] 如 `['-Xmx1024M']`（JVM 参数）、[programArgs] 如
+  /// `['-jar','server.jar','nogui']`；PHP 版 [runtimeArgs] 为空、[programArgs]
+  /// 即 `['PocketMine-MP.phar']`；proot 非 Java 环境的 [runtimeArgs] 会原样
+  /// 追加到主程序之后。
   Future<void> start({
     required String instanceId,
     required String instanceName,
     required String workingDir,
     required String runtimeId,
     required String runtime,
-    required List<String> jvmArgs,
+    required List<String> runtimeArgs,
     required List<String> programArgs,
     bool compatMode = false,
     bool directExecute = false,
@@ -541,7 +543,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     _lastWorkingDir = workingDir;
     _lastRuntimeId = runtimeId;
     _lastRuntime = runtime;
-    _lastJvmArgs = jvmArgs;
+    _lastRuntimeArgs = runtimeArgs;
     _lastProgramArgs = programArgs;
     _lastCompatMode = compatMode;
     _lastDirectExecute = directExecute;
@@ -572,7 +574,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
         workingDir: workingDir,
         runtimeId: runtimeId,
         runtime: runtime,
-        jvmArgs: jvmArgs,
+        runtimeArgs: runtimeArgs,
         programArgs: programArgs,
         directExecute: directExecute,
       );
@@ -653,7 +655,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
       workingDir: dir,
       runtimeId: runtimeId,
       runtime: runtime,
-      jvmArgs: _lastJvmArgs,
+      runtimeArgs: _lastRuntimeArgs,
       programArgs: _lastProgramArgs,
       compatMode: _lastCompatMode,
       directExecute: _lastDirectExecute,
@@ -983,7 +985,11 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
       _logFileSink!.writeln('=== EdgeCube Server Log ===');
       _logFileSink!.writeln('Instance: $instanceName ($instanceId)');
       _logFileSink!.writeln('Start Time: ${DateTime.now()}');
-      final envLabel = _runtimeType == 'php' ? 'PHP' : 'JRE';
+      final envLabel = switch (_runtimeType) {
+        'php' => 'PHP',
+        'proot' => 'proot',
+        _ => 'JRE',
+      };
       _logFileSink!.writeln('Runtime: $envLabel ($_runtimeId)');
       _logFileSink!.writeln('============================');
     } catch (_) {

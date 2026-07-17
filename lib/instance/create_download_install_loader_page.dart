@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../config/network_store.dart';
-import '../config/runtime_pref_store.dart';
+import '../config/java_env_pref_store.dart';
 import '../i18n/locale_scope.dart';
 import '../instance/instance_controller.dart';
 import '../net/download_engine.dart';
@@ -208,8 +208,8 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
         'workingDir': (await widget.instanceController.directoryForId(
           widget.instanceId,
         )).path,
-        // 原生传 javaVersion（JRE 标识）；proot 传 prootRootfsId（rootfs 标识）。
-        if (env.kind == JavaEnvKind.native) 'javaVersion': env.id,
+        // 原生传 jreId（JRE 标识）；proot 传 prootRootfsId（rootfs 标识）。
+        if (env.kind == JavaEnvKind.native) 'jreId': env.id,
         if (env.kind == JavaEnvKind.proot) 'prootRootfsId': env.id,
       });
 
@@ -245,13 +245,13 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
       }
 
       // 用哪种环境装的，就把实例配置写成用同一种环境启动：
-      //  - 原生：runtime=java，javaVersion=JRE 标识。
-      //  - proot：runtime=proot，javaVersion=rootfs 标识（沿用 javaVersion 存 rootfsId 的约定）。
+      //  - 原生：runtime=java，runtimeEnvId=JRE 标识。
+      //  - proot：runtime=proot，runtimeEnvId=rootfs 标识。
       await widget.instanceController.updateConfig(
         widget.instanceId,
-        selectedJar: serverJar,
+        serverFile: serverJar,
         runtime: env.kind == JavaEnvKind.proot ? kRuntimeProot : kRuntimeJava,
-        javaVersion: env.id,
+        runtimeEnvId: env.id,
       );
 
       try {
@@ -292,7 +292,7 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
     return serverJar;
   }
 
-  static String _javaVersionForMc(String mcVersion) {
+  static String _jreIdForMc(String mcVersion) {
     final majorStr = mcVersion.split('.').first;
     final major = int.tryParse(majorStr) ?? 0;
     if (major >= 26) return 'jre25';
@@ -316,16 +316,16 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
   /// 解析本次安装使用的 Java 环境：按优先级设置在「原生 JRE」与「proot Java 容器」
   /// 间选择（先试优先项，不可用回退另一种）；两者都没有时返回 null。
   Future<JavaEnv?> _resolveInstallEnv(String mcVersion) async {
-    final preferredJre = _javaVersionForMc(mcVersion);
+    final preferredJre = _jreIdForMc(mcVersion);
     final results = await Future.wait([
       ServerService().availableJreIds(),
       const ProotService().listRootfs().catchError(
         (_) => <ProotRootfsInfo>[],
       ),
-      RuntimePrefStore.loadPriority(),
+      JavaEnvPrefStore.loadPriority(),
     ]);
     return resolveJavaEnv(
-      priority: results[2] as RuntimePriority,
+      priority: results[2] as JavaEnvPriority,
       nativeJreIds: results[0] as List<String>,
       rootfsList: results[1] as List<ProotRootfsInfo>,
       preferredNativeJreId: preferredJre,

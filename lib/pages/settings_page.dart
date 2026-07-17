@@ -5,13 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
-import '../config/instance_path_store.dart';
-import '../config/runtime_pref_store.dart';
+import '../config/data_folder_store.dart';
+import '../config/java_env_pref_store.dart';
 import '../config/terminal_store.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
-import '../instance/instance_migration.dart';
+import '../instance/data_folder_migration.dart';
 import '../instance/instance_scope.dart';
 import '../instance/instance_store.dart';
 import '../server/power_service.dart';
@@ -34,7 +34,7 @@ class _SettingsPageState extends State<SettingsPage>
   bool _ignoringBattery = true;
   bool _batteryLoaded = false;
   bool _autoClearLogOnStart = true;
-  RuntimePriority _runtimePriority = RuntimePriority.proot;
+  JavaEnvPriority _javaEnvPriority = JavaEnvPriority.proot;
 
   @override
   void initState() {
@@ -42,49 +42,49 @@ class _SettingsPageState extends State<SettingsPage>
     WidgetsBinding.instance.addObserver(this);
     _refreshBattery();
     _loadAutoClearLogOnStart();
-    _loadRuntimePriority();
+    _loadJavaEnvPriority();
   }
 
-  Future<void> _loadRuntimePriority() async {
-    final value = await RuntimePrefStore.loadPriority();
-    if (mounted) setState(() => _runtimePriority = value);
+  Future<void> _loadJavaEnvPriority() async {
+    final value = await JavaEnvPrefStore.loadPriority();
+    if (mounted) setState(() => _javaEnvPriority = value);
   }
 
-  Future<void> _saveRuntimePriority(RuntimePriority value) async {
-    setState(() => _runtimePriority = value);
-    await RuntimePrefStore.savePriority(value);
+  Future<void> _saveJavaEnvPriority(JavaEnvPriority value) async {
+    setState(() => _javaEnvPriority = value);
+    await JavaEnvPrefStore.savePriority(value);
   }
 
-  String _runtimePriorityLabel(BuildContext context, RuntimePriority p) {
-    return p == RuntimePriority.proot
-        ? context.tr('settings.runtimePriority.proot')
-        : context.tr('settings.runtimePriority.native');
+  String _javaEnvPriorityLabel(BuildContext context, JavaEnvPriority p) {
+    return p == JavaEnvPriority.proot
+        ? context.tr('settings.javaEnvPriority.proot')
+        : context.tr('settings.javaEnvPriority.native');
   }
 
   /// 弹出优先级选择对话框（proot 优先 / 原生优先）。
-  Future<void> _pickRuntimePriority() async {
-    final selected = await showDialog<RuntimePriority>(
+  Future<void> _pickJavaEnvPriority() async {
+    final selected = await showDialog<JavaEnvPriority>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: Text(ctx.tr('settings.runtimePriority.dialogTitle')),
+        title: Text(ctx.tr('settings.javaEnvPriority.dialogTitle')),
         children: [
-          for (final p in RuntimePriority.values)
+          for (final p in JavaEnvPriority.values)
             ListTile(
               leading: Icon(
-                p == _runtimePriority
+                p == _javaEnvPriority
                     ? Icons.radio_button_checked
                     : Icons.radio_button_unchecked,
-                color: p == _runtimePriority
+                color: p == _javaEnvPriority
                     ? Theme.of(ctx).colorScheme.primary
                     : null,
               ),
-              title: Text(_runtimePriorityLabel(ctx, p)),
+              title: Text(_javaEnvPriorityLabel(ctx, p)),
               onTap: () => Navigator.of(ctx).pop(p),
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
             child: Text(
-              ctx.tr('settings.runtimePriority.hint'),
+              ctx.tr('settings.javaEnvPriority.hint'),
               style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                     color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                   ),
@@ -93,7 +93,7 @@ class _SettingsPageState extends State<SettingsPage>
         ],
       ),
     );
-    if (selected != null) await _saveRuntimePriority(selected);
+    if (selected != null) await _saveJavaEnvPriority(selected);
   }
 
   Future<void> _loadAutoClearLogOnStart() async {
@@ -200,7 +200,7 @@ class _SettingsPageState extends State<SettingsPage>
           ],
           const Divider(),
           _sectionHeader(theme, context.tr('settings.section.storage')),
-          _CustomInstancePathTile(),
+          _CustomDataFolderTile(),
           ListTile(
             leading: const Icon(Icons.storage),
             title: Text(context.tr('storage.title')),
@@ -218,14 +218,14 @@ class _SettingsPageState extends State<SettingsPage>
           _sectionHeader(theme, context.tr('settings.section.runtime')),
           ListTile(
             leading: const Icon(Icons.memory),
-            title: Text(context.tr('settings.runtimePriority.title')),
+            title: Text(context.tr('settings.javaEnvPriority.title')),
             subtitle: Text(
-              context.tr('settings.runtimePriority.subtitle', {
-                'value': _runtimePriorityLabel(context, _runtimePriority),
+              context.tr('settings.javaEnvPriority.subtitle', {
+                'value': _javaEnvPriorityLabel(context, _javaEnvPriority),
               }),
             ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: _pickRuntimePriority,
+            onTap: _pickJavaEnvPriority,
           ),
           const Divider(),
           _sectionHeader(theme, context.tr('settings.section.network')),
@@ -310,21 +310,21 @@ class _SettingsPageState extends State<SettingsPage>
   }
 }
 
-/// 「自定义实例文件夹」入口：显示当前 EdgeCube 数据文件夹，支持选择新位置或恢复默认。
+/// 「自定义数据文件夹」入口：显示当前 EdgeCube 数据文件夹，支持选择新位置或恢复默认。
 ///
-/// 「实例文件夹」指 EdgeCube 数据文件夹（其下 `instances/` 子目录存放各实例）。
+/// EdgeCube 数据文件夹下的 `instances/` 子目录存放各实例的工作文件夹。
 /// 更改路径时会把旧 EdgeCube 文件夹下的全部内容（含 `instances/`）移动到新位置
-/// （复用 [InstanceMigration] 的迁移逻辑），完成后持久化新路径并通知
+/// （复用 [DataFolderMigration] 的迁移逻辑），完成后持久化新路径并通知
 /// [InstanceController] 刷新依赖方（FTP/SSH 根目录同步等）。
-class _CustomInstancePathTile extends StatefulWidget {
-  const _CustomInstancePathTile();
+class _CustomDataFolderTile extends StatefulWidget {
+  const _CustomDataFolderTile();
 
   @override
-  State<_CustomInstancePathTile> createState() =>
-      _CustomInstancePathTileState();
+  State<_CustomDataFolderTile> createState() =>
+      _CustomDataFolderTileState();
 }
 
-class _CustomInstancePathTileState extends State<_CustomInstancePathTile>
+class _CustomDataFolderTileState extends State<_CustomDataFolderTile>
     with WidgetsBindingObserver {
   String? _customPath;
   String _defaultPath = '';
@@ -361,7 +361,7 @@ class _CustomInstancePathTileState extends State<_CustomInstancePathTile>
   }
 
   Future<void> _load() async {
-    final custom = await InstancePathStore.loadCustomPath();
+    final custom = await DataFolderStore.loadCustomPath();
     final defaultDir = await builtinEdgeCubeRoot();
     if (!mounted) return;
     setState(() {
@@ -387,7 +387,7 @@ class _CustomInstancePathTileState extends State<_CustomInstancePathTile>
     if (p.equals(normalized, p.normalize(_currentPath))) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(context.tr('settings.storage.customPathSameAsCurrent')),
+          content: Text(context.tr('settings.storage.dataFolderSameAsCurrent')),
         ),
       );
       return;
@@ -411,13 +411,13 @@ class _CustomInstancePathTileState extends State<_CustomInstancePathTile>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(context.tr('settings.storage.customPathConfirmTitle')),
+        title: Text(context.tr('settings.storage.dataFolderConfirmTitle')),
         content: Text(
           isReset
-              ? context.tr('settings.storage.customPathResetConfirmMessage', {
+              ? context.tr('settings.storage.dataFolderResetConfirmMessage', {
                   'path': targetPath,
                 })
-              : context.tr('settings.storage.customPathConfirmMessage', {
+              : context.tr('settings.storage.dataFolderConfirmMessage', {
                   'path': targetPath,
                 }),
         ),
@@ -437,14 +437,14 @@ class _CustomInstancePathTileState extends State<_CustomInstancePathTile>
 
     setState(() => _busy = true);
     try {
-      final result = await showDialog<InstanceMigrationResult>(
+      final result = await showDialog<DataFolderMigrationResult>(
         context: context,
         barrierDismissible: false,
         builder: (_) => _PathMigrationDialog(source: source, target: target),
       );
       if (!mounted) return;
       if (result == null) return;
-      await InstancePathStore.saveCustomPath(isReset ? null : targetPath);
+      await DataFolderStore.saveCustomPath(isReset ? null : targetPath);
       instances.refreshAfterPathChange();
       await _load();
       if (!mounted) return;
@@ -456,7 +456,7 @@ class _CustomInstancePathTileState extends State<_CustomInstancePathTile>
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            context.tr('settings.storage.customPathFailed', {
+            context.tr('settings.storage.dataFolderFailed', {
               'error': error.toString(),
             }),
           ),
@@ -467,15 +467,15 @@ class _CustomInstancePathTileState extends State<_CustomInstancePathTile>
     }
   }
 
-  String _resultMessage(InstanceMigrationResult result, bool isReset) {
+  String _resultMessage(DataFolderMigrationResult result, bool isReset) {
     if (!result.success) {
-      return context.tr('settings.storage.customPathPartial', {
+      return context.tr('settings.storage.dataFolderPartial', {
         'migrated': '${result.migrated}',
         'skipped': '${result.skipped}',
         'failed': '${result.failed}',
       });
     }
-    return context.tr('settings.storage.customPathSuccess', {
+    return context.tr('settings.storage.dataFolderSuccess', {
       'migrated': '${result.migrated}',
       'skipped': '${result.skipped}',
     });
@@ -529,12 +529,12 @@ class _CustomInstancePathTileState extends State<_CustomInstancePathTile>
         ? context.tr('common.loading')
         : (_isCustom
               ? _customPath!
-              : '${context.tr('settings.storage.customPathDefault')} · $_defaultPath');
+              : '${context.tr('settings.storage.dataFolderDefault')} · $_defaultPath');
     return Column(
       children: [
         ListTile(
           leading: const Icon(Icons.folder_open),
-          title: Text(context.tr('settings.storage.customPathTitle')),
+          title: Text(context.tr('settings.storage.dataFolderTitle')),
           subtitle: Text(
             subtitle,
             style: theme.textTheme.bodySmall?.copyWith(
@@ -553,7 +553,7 @@ class _CustomInstancePathTileState extends State<_CustomInstancePathTile>
                 )
               : FilledButton.tonal(
                   onPressed: _change,
-                  child: Text(context.tr('settings.storage.customPathChange')),
+                  child: Text(context.tr('settings.storage.dataFolderChange')),
                 ),
           onTap: _busy ? null : _change,
         ),
@@ -565,7 +565,7 @@ class _CustomInstancePathTileState extends State<_CustomInstancePathTile>
               child: TextButton.icon(
                 onPressed: _reset,
                 icon: const Icon(Icons.restore, size: 18),
-                label: Text(context.tr('settings.storage.customPathReset')),
+                label: Text(context.tr('settings.storage.dataFolderReset')),
               ),
             ),
           ),
@@ -596,7 +596,7 @@ class _PathMigrationDialogState extends State<_PathMigrationDialog> {
   }
 
   Future<void> _migrate() async {
-    final result = await InstanceMigration.migrateBetween(
+    final result = await DataFolderMigration.migrateBetween(
       source: widget.source,
       target: widget.target,
       onProgress: (processed, total) {
@@ -627,9 +627,9 @@ class _PathMigrationDialogState extends State<_PathMigrationDialog> {
                 Expanded(
                   child: Text(
                     _total == 0
-                        ? context.tr('settings.storage.customPathMigrating')
+                        ? context.tr('settings.storage.dataFolderMigrating')
                         : context.tr(
-                            'settings.storage.customPathMigratingProgress',
+                            'settings.storage.dataFolderMigratingProgress',
                             {'processed': '$_processed', 'total': '$_total'},
                           ),
                   ),
@@ -637,7 +637,7 @@ class _PathMigrationDialogState extends State<_PathMigrationDialog> {
               ],
             ),
             const SizedBox(height: 16),
-            Text(context.tr('settings.storage.customPathMigratingDoNotClose')),
+            Text(context.tr('settings.storage.dataFolderMigratingDoNotClose')),
           ],
         ),
       ),

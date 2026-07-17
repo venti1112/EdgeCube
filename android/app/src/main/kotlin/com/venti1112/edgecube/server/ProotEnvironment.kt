@@ -452,7 +452,7 @@ object ProotEnvironment {
      *
      * 根据 rootfs 元数据 [RootfsManifest.envType] 决定启动方式：
      *  - java：执行 [RootfsManifest.envMainBin]（如 /usr/bin/java），附加 -XX:ErrorFile
-     *    与 -Djava.io.tmpdir 等容器内可用的 JVM 标准参数，再追加 [jvmArgs] 与 [programArgs]。
+     *    与 -Djava.io.tmpdir 等容器内可用的 JVM 标准参数，再追加 [runtimeArgs] 与 [programArgs]。
      *  - php / node / python / box64 / dotnet：执行 envMainBin，附加 envArgs（如有）+ programArgs。
      *    box64 的 envMainBin 为 /usr/local/bin/box64，programArgs 为 x86_64 服务端文件。
      *    dotnet 的 envMainBin 为 /usr/bin/dotnet，programArgs 为 .dll 文件。
@@ -463,14 +463,14 @@ object ProotEnvironment {
      * [GUEST_SERVER_DIR]，proot 的 cwd 设为该挂载点。运行时本体（Java/PHP/…）
      * 来自 rootfs，故运行的是 rootfs 内未打补丁的原版。
      *
-     * @param jvmArgs 运行时参数（如 -Xmx2G）；非 java 环境也会原样追加到主程序后。
+     * @param runtimeArgs 运行时参数（如 -Xmx2G）；非 java 环境也会原样追加到主程序后。
      * @param programArgs 程序参数（如 -jar server.jar nogui；或脚本文件路径 + 参数）。
      */
     fun buildServerCommand(
         context: Context,
         rootfsId: String,
         workingDir: String,
-        jvmArgs: List<String>,
+        runtimeArgs: List<String>,
         programArgs: List<String>,
     ): ProotCommand {
         val rootfs = installedRootfs(context, rootfsId)
@@ -537,17 +537,17 @@ object ProotEnvironment {
         }
         // 清单声明的固定前缀参数（如 php/node 等的启动前缀）。
         // Java 环境**跳过** envArgs：java 的 `-jar` 必须紧邻 jar 文件、位于所有 JVM
-        // 参数（如 -Xmx）之后，而 envArgs 是在 jvmArgs 之前追加的——放在这里会得到
+        // 参数（如 -Xmx）之后，而 envArgs 是在 runtimeArgs 之前追加的——放在这里会得到
         // `java -jar -Xmx2G server.jar`，JVM 会把 -Xmx2G 当作 jar 文件名而失败。
-        // Java 的 `-jar` 改由调用方在 programArgs 中于正确位置（jvmArgs 之后、jar 之前）
+        // Java 的 `-jar` 改由调用方在 programArgs 中于正确位置（runtimeArgs 之后、jar 之前）
         // 提供（见 server_page 的 `['-jar', file, 'nogui']`），与原生启动路径一致。
         // 现代 Forge/NeoForge（1.17+）走 @argfile，argfile 内已含主类，也不需要 -jar。
-        val hasArgfile = jvmArgs.any { it.startsWith("@") }
+        val hasArgfile = runtimeArgs.any { it.startsWith("@") }
         if (!hasArgfile && manifest.envType != ENV_JAVA) {
             argv.addAll(manifest.envArgs)
         }
         // 调用方传入的运行时参数（如 -Xmx2G、@libraries/.../unix_args.txt）
-        argv.addAll(jvmArgs)
+        argv.addAll(runtimeArgs)
         // 调用方传入的程序参数（如 server.jar nogui）
         argv.addAll(programArgs)
 

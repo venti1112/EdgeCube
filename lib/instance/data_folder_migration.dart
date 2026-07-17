@@ -4,8 +4,8 @@ import 'package:path/path.dart' as p;
 
 import '../files/storage_permission.dart';
 
-class InstanceMigrationResult {
-  const InstanceMigrationResult({
+class DataFolderMigrationResult {
+  const DataFolderMigrationResult({
     required this.migrated,
     required this.skipped,
     required this.failed,
@@ -25,8 +25,8 @@ class InstanceMigrationResult {
   bool get success => failed == 0 && error == null;
 }
 
-class InstanceMigration {
-  InstanceMigration._();
+class DataFolderMigration {
+  DataFolderMigration._();
 
   /// 在两个 EdgeCube 数据文件夹之间迁移内容：将 [source] 下所有条目
   /// （含 `instances/` 子目录）移动到 [target]。
@@ -38,7 +38,7 @@ class InstanceMigration {
   /// [copyFirst] 为 true 时（默认）采用「先复制后删除」策略：先将源文件
   /// 复制到目标位置（经临时文件中转），确认复制成功后再删除源文件，避免
   /// 跨文件系统移动中途出错导致文件损坏。
-  static Future<InstanceMigrationResult> migrateBetween({
+  static Future<DataFolderMigrationResult> migrateBetween({
     required Directory source,
     required Directory target,
     void Function(int processed, int total)? onProgress,
@@ -52,14 +52,14 @@ class InstanceMigration {
     );
   }
 
-  static Future<InstanceMigrationResult> _migrateBetween(
+  static Future<DataFolderMigrationResult> _migrateBetween(
     Directory source,
     Directory target, {
     void Function(int processed, int total)? onProgress,
     bool copyFirst = false,
   }) async {
     if (p.equals(p.normalize(source.path), p.normalize(target.path))) {
-      return InstanceMigrationResult(
+      return DataFolderMigrationResult(
         migrated: 0,
         skipped: 0,
         failed: 0,
@@ -68,7 +68,7 @@ class InstanceMigration {
       );
     }
     if (!await source.exists()) {
-      return InstanceMigrationResult(
+      return DataFolderMigrationResult(
         migrated: 0,
         skipped: 0,
         failed: 0,
@@ -78,7 +78,7 @@ class InstanceMigration {
     }
     final entries = await source.list(followLinks: false).toList();
     if (entries.isEmpty) {
-      return InstanceMigrationResult(
+      return DataFolderMigrationResult(
         migrated: 0,
         skipped: 0,
         failed: 0,
@@ -87,7 +87,7 @@ class InstanceMigration {
       );
     }
     if (Platform.isAndroid && !await StoragePermission.isGranted()) {
-      return InstanceMigrationResult(
+      return DataFolderMigrationResult(
         migrated: 0,
         skipped: 0,
         failed: entries.length,
@@ -124,7 +124,7 @@ class InstanceMigration {
       await _deleteEmptyDirectory(source);
     }
 
-    return InstanceMigrationResult(
+    return DataFolderMigrationResult(
       migrated: migrated,
       skipped: skipped,
       failed: failed,

@@ -124,17 +124,17 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
       return;
     }
 
-    final String jarName;
+    final String serverFileName;
     if (_serverType == 'powernukkitx') {
-      jarName = 'powernukkitx.jar';
+      serverFileName = 'powernukkitx.jar';
     } else if (_serverType == 'pocketmine') {
-      jarName = 'PocketMine-MP.phar';
+      serverFileName = 'PocketMine-MP.phar';
     } else if (_serverType == 'allay') {
-      jarName = 'allay-server.jar';
+      serverFileName = 'allay-server.jar';
     } else {
-      jarName = 'server.jar';
+      serverFileName = 'server.jar';
     }
-    await _download(info, jarName);
+    await _download(info, serverFileName);
   }
 
   Future<void> _downloadFabric() async {
@@ -167,15 +167,15 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
     await _download(info, 'bungeecord.jar');
   }
 
-  /// 通用下载：下载 jar → 校验 → 写配置 → 结束流程。
-  Future<void> _download(DownloadInfo info, String jarName) async {
+  /// 通用下载：下载服务端文件 → 校验 → 写配置 → 结束流程。
+  Future<void> _download(DownloadInfo info, String serverFileName) async {
     try {
       await DownloadRunner.downloadAndConfigure(
         controller: _controller,
         instanceId: _instanceId!,
         info: info,
         serverType: _serverType,
-        jarName: jarName,
+        serverFileName: serverFileName,
         selectedVersion: _session.selectedVersion,
         selectedMcVersion: _session.selectedMcVersion,
         onProgress: (prog) {

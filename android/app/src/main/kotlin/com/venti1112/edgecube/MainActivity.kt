@@ -390,7 +390,7 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(messenger, serverChannel).setMethodCallHandler { call, result ->
             when (call.method) {
-                "availableVersions" ->
+                "availableJreIds" ->
                     result.success(RuntimeInstaller.availableJreIds(applicationContext))
 
                 "availablePhpRuntimes" ->
@@ -414,7 +414,7 @@ class MainActivity : FlutterActivity() {
                     val workingDir = call.argument<String>("workingDir")
                     val runtimeId = call.argument<String>("runtimeId")
                     val runtime = call.argument<String>("runtime") ?: "java"
-                    val jvmArgs = call.argument<List<String>>("jvmArgs") ?: emptyList()
+                    val runtimeArgs = call.argument<List<String>>("runtimeArgs") ?: emptyList()
                     val programArgs = call.argument<List<String>>("programArgs") ?: emptyList()
                     val directExecute = call.argument<Boolean>("directExecute") ?: false
                     if (instanceId == null || workingDir == null || runtimeId == null) {
@@ -425,7 +425,7 @@ class MainActivity : FlutterActivity() {
                         thread {
                             try {
                                 serverManager.start(
-                                    instanceId, instanceName, workingDir, runtimeId, runtime, jvmArgs, programArgs, directExecute,
+                                    instanceId, instanceName, workingDir, runtimeId, runtime, runtimeArgs, programArgs, directExecute,
                                 )
                                 runOnUiThread { result.success(true) }
                             } catch (e: Exception) {
@@ -526,7 +526,7 @@ class MainActivity : FlutterActivity() {
                 "runInstaller" -> {
                     val installerJar = call.argument<String>("installerJar")
                     val workingDir = call.argument<String>("workingDir")
-                    val javaVersion = call.argument<String>("javaVersion") ?: "jre21"
+                    val jreId = call.argument<String>("jreId") ?: "jre21"
                     // 非空时改用 proot 容器（Java rootfs）内的 java 运行安装器，
                     // 供未安装原生 JRE 的场景使用。
                     val prootRootfsId = call.argument<String>("prootRootfsId")
@@ -541,7 +541,7 @@ class MainActivity : FlutterActivity() {
                                     )
                                 } else {
                                     runForgeInstaller(
-                                        installerJar, workingDir, javaVersion, forgeEventSink,
+                                        installerJar, workingDir, jreId, forgeEventSink,
                                     )
                                 }
                                 runOnUiThread { result.success(exitCode) }
@@ -1708,7 +1708,7 @@ class MainActivity : FlutterActivity() {
     private fun runForgeInstaller(
         installerJar: String,
         workingDir: String,
-        javaVersion: String,
+        jreId: String,
         sink: EventChannel.EventSink?,
         mainHandler: Handler = Handler(Looper.getMainLooper()),
     ): Int {
@@ -1716,10 +1716,10 @@ class MainActivity : FlutterActivity() {
         val tagfixLib = "$nativeDir/libtagfix.so"
 
         // 确保 JRE 已安装。
-        val manifest = RuntimeInstaller.installedRuntime(applicationContext, javaVersion)
-            ?: throw IllegalStateException("JRE 运行时 $javaVersion 未安装，请先在「管理 → 运行环境」导入")
+        val manifest = RuntimeInstaller.installedRuntime(applicationContext, jreId)
+            ?: throw IllegalStateException("JRE 运行时 $jreId 未安装，请先在「管理 → 运行环境」导入")
 
-        val jreDir = RuntimeInstaller.runtimeDir(applicationContext, javaVersion)
+        val jreDir = RuntimeInstaller.runtimeDir(applicationContext, jreId)
         val resolved = JreLayout.resolve(jreDir, nativeDir)
         val launchBin = File(nativeDir, "liblaunch.so")
         if (!launchBin.exists()) {

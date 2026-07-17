@@ -32,7 +32,10 @@ import kotlin.concurrent.thread
  * 实现 [InvertedShell] 的「反转流」语义（站在子进程视角命名）：
  *  - [getInputStream] 返回 PTY master 的写端：SSH server 把客户端按键写进来 → 子进程 stdin；
  *  - [getOutputStream] 返回 PTY master 的读端：SSH server 从这里读 → 子进程 stdout；
- *  - [getErrorStream] 返回 null：PTY 已把 stderr 合并进 master。
+ *  - [getErrorStream] 返回恒空流：PTY 已把 stderr 合并进 master，无独立 stderr。
+ *    注意**不能返回 null**——MINA SSHD 的 `InvertedShellWrapper.pumpStreams()` 会无条件
+ *    调用 `shellErr.available()`，null 会在泵循环首轮触发 NPE → catch(Throwable) →
+ *    destroy() → 会话立即断开（表现为登录后刚打出提示符就 Connection closed）。
  *
  * 回显不在此处理（不调 setPtyEcho）：由 PTY 的 tty 行规负责，这正是真实终端体验的来源。
  *
@@ -335,7 +338,21 @@ class EcPtyInvertedShell(
     override fun getOutputStream(): InputStream =
         fromPty ?: throw IllegalStateException("shell 尚未启动")
 
-    override fun getErrorStream(): InputStream? = null
+    /**
+     * 恒空的 stderr 流。PTY 行规已把子进程 stderr 合并进 master（dup2 到同一从设备），
+     * 不存在独立错误流；`available()` 恒 0 使 MINA 的泵循环直接跳过 stderr 方向。
+     *
+     * 不能返回 null：`InvertedShellWrapper.pumpStreams()` 每轮都会无条件调用
+     * `shellErr.available()`（泵和退出判定各一次，均无 null 检查），null 会在首轮
+     * 触发 NPE → catch(Throwable) → destroy()，表现为客户端刚看到提示符就被断开。
+     */
+    private val emptyErrorStream = object : InputStream() {
+        override fun available(): Int = 0
+        override fun read(): Int = -1
+        override fun read(b: ByteArray, off: Int, len: Int): Int = if (len == 0) 0 else -1
+    }
+
+    override fun getErrorStream(): InputStream = emptyErrorStream
 
     override fun isAlive(): Boolean = alive
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../config/runtime_pref_store.dart';
+import '../config/java_env_pref_store.dart';
 import '../i18n/locale_scope.dart';
 import '../server/java_env_resolver.dart';
 import '../server/proot_service.dart';
@@ -107,10 +107,10 @@ class _SelectLoaderVersionPageState extends State<SelectLoaderVersionPage> {
       const ProotService().listRootfs().catchError(
             (_) => <ProotRootfsInfo>[],
           ),
-      RuntimePrefStore.loadPriority(),
+      JavaEnvPrefStore.loadPriority(),
     ]);
     final env = resolveJavaEnv(
-      priority: results[2] as RuntimePriority,
+      priority: results[2] as JavaEnvPriority,
       nativeJreIds: results[0] as List<String>,
       rootfsList: results[1] as List<ProotRootfsInfo>,
       preferredNativeJreId: null,

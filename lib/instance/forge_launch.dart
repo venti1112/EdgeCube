@@ -9,25 +9,25 @@ import 'package:path/path.dart' as p;
 /// 服务端类位于 `libraries/…` 下，通过 JVM `@argfile`
 /// （`libraries/net/minecraftforge/forge/<mc>-<forge>/unix_args.txt`）启动。
 ///
-/// 为不改动实例配置结构与原生启动层，这里用一个「以 `@` ���头的 selectedJar 哨兵」
+/// 为不改动实例配置结构与原生启动层，这里用一个「以 `@` 开头的 serverFile 哨兵」
 /// 承载该 argfile 的相对路径：
-/// - 安装页检测到现代布局时，将 selectedJar 记为 `@<相对路径>`；
-/// - 启动时若 selectedJar 以 `@` 开头，则作为 JVM argfile 传入而非 `-jar`。
+/// - 安装页检测到现代布局时，将 serverFile 记为 `@<相对路径>`；
+/// - 启动时若 serverFile 以 `@` 开头，则作为 JVM argfile 传入而非 `-jar`。
 ///
 /// 旧版 Forge（≤1.16）仍生成可运行的根 jar，走原有 `-jar` 流程，不受影响。
 class ForgeLaunch {
   ForgeLaunch._();
 
-  /// selectedJar 哨兵前缀：以此开头表示「用 JVM @argfile 启动」。
+  /// serverFile 哨兵前缀：以此开头表示「用 JVM @argfile 启动」。
   static const String argfilePrefix = '@';
 
-  /// 判断某个 selectedJar 是否为现代 Forge 的 @argfile 启动方式。
-  static bool isArgfile(String? selectedJar) =>
-      selectedJar != null && selectedJar.startsWith(argfilePrefix);
+  /// 判断某个 serverFile 是否为现代 Forge 的 @argfile 启动方式。
+  static bool isArgfile(String? serverFile) =>
+      serverFile != null && serverFile.startsWith(argfilePrefix);
 
   /// 从 @argfile 哨兵中取出实际的相对路径（去掉前缀 `@`）。
-  static String argfilePath(String selectedJar) =>
-      selectedJar.substring(argfilePrefix.length);
+  static String argfilePath(String serverFile) =>
+      serverFile.substring(argfilePrefix.length);
 
   /// 在实例目录中检测现代 Forge/NeoForge 布局，返回 @argfile 哨兵字符串
   /// （如 `@libraries/net/minecraftforge/forge/1.20.1-47.4.20/unix_args.txt`），

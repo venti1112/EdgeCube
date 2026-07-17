@@ -1,4 +1,4 @@
-import '../config/runtime_pref_store.dart';
+import '../config/java_env_pref_store.dart';
 import '../i18n/i18n_service.dart';
 import 'proot_service.dart';
 
@@ -43,7 +43,7 @@ bool isJavaRootfs(ProotRootfsInfo r) => !r.isGeneric && r.envType == 'java';
 /// [preferredNativeJreId] / [preferredRootfsId] 为调用方希望优先选中的具体标识
 /// （如按 MC 版本推荐的 jreXX、实例已配置的 rootfs），无效或缺失时回退到列表首项。
 JavaEnv? resolveJavaEnv({
-  required RuntimePriority priority,
+  required JavaEnvPriority priority,
   required List<String> nativeJreIds,
   required List<ProotRootfsInfo> rootfsList,
   String? preferredNativeJreId,
@@ -53,7 +53,7 @@ JavaEnv? resolveJavaEnv({
 
   // 实例已保存的具体选择优先于全局默认：用户曾在实例配置里显式选定某个原生 JRE
   // 或 proot rootfs，它就代表用户的意图，不应被全局优先级覆盖。只有实例未配置
-  // （javaVersion 为空 / 都不匹配）时才用全局优先级。
+  // （runtimeEnvId 为空 / 都不匹配）时才用全局优先级。
   final effectivePriority = _resolveEffectivePriority(
     priority,
     nativeJreIds,
@@ -90,7 +90,7 @@ JavaEnv? resolveJavaEnv({
   }
 
   // 按优先级顺序尝试；先试的不可用则回退另一种。
-  final order = effectivePriority == RuntimePriority.proot
+  final order = effectivePriority == JavaEnvPriority.proot
       ? [prootEnv, nativeEnv]
       : [nativeEnv, prootEnv];
   for (final build in order) {
@@ -106,8 +106,8 @@ JavaEnv? resolveJavaEnv({
 ///   即使用户全局设置为优先 proot 也遵循实例选择。
 /// - 如果实例的 [preferredRootfsId] 命中某个可用的 proot Java rootfs → 返回 proot。
 /// - 两者都不命中（新实例未配置、或已选的环境被删除了）→ 按全局 [priority] 执行。
-RuntimePriority _resolveEffectivePriority(
-  RuntimePriority priority,
+JavaEnvPriority _resolveEffectivePriority(
+  JavaEnvPriority priority,
   List<String> nativeJreIds,
   List<ProotRootfsInfo> javaRootfs, {
   String? preferredNativeJreId,
@@ -115,11 +115,11 @@ RuntimePriority _resolveEffectivePriority(
 }) {
   if (preferredNativeJreId != null &&
       nativeJreIds.contains(preferredNativeJreId)) {
-    return RuntimePriority.native;
+    return JavaEnvPriority.native;
   }
   if (preferredRootfsId != null &&
       javaRootfs.any((r) => r.id == preferredRootfsId)) {
-    return RuntimePriority.proot;
+    return JavaEnvPriority.proot;
   }
   return priority;
 }

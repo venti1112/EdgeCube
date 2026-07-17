@@ -182,7 +182,7 @@ recursionguard.enabled=0"""
         workingDir: String,
         runtimeId: String,
         runtime: String,
-        jvmArgs: List<String>,
+        runtimeArgs: List<String>,
         programArgs: List<String>,
         directExecute: Boolean = false,
     ) {
@@ -275,7 +275,7 @@ recursionguard.enabled=0"""
             // runtimeId 此处为 rootfs id（如 "debian-12-jdk21"）。
             // 根据 rootfs 内嵌清单（edgecube-rootfs.json）决定启动方式：
             //  - 带元数据且 envMainBin 非空：按清单声明的 envType/envArgs 启动主程序
-            //    （java/php/node/python…），jvmArgs 作为运行时参数追加，programArgs
+            //    （java/php/node/python…），runtimeArgs 作为运行时参数追加，programArgs
             //    作为程序参数追加（如 server.jar nogui）。
             //  - 无清单或 envType=generic（纯容器）：programArgs 拼接为完整启动命令，
             //    由 buildGenericCommand 用 sh -c 包裹执行，支持 shell 语法。
@@ -300,7 +300,7 @@ recursionguard.enabled=0"""
                     appContext,
                     runtimeId,
                     workingDir,
-                    jvmArgs,
+                    runtimeArgs,
                     programArgs,
                 )
             }
@@ -330,7 +330,7 @@ recursionguard.enabled=0"""
             if (dnsServers.isNotEmpty()) {
                 argv.add("-Dsun.net.spi.nameservice.nameservers=${dnsServers.joinToString(",")}")
             }
-            argv.addAll(expandArgfiles(jvmArgs, workingDir))
+            argv.addAll(expandArgfiles(runtimeArgs, workingDir))
             argv.addAll(expandArgfiles(programArgs, workingDir))
 
             env["LD_PRELOAD"] = tagfixLib

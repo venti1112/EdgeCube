@@ -77,12 +77,12 @@ class _ImportServerPageState extends State<ImportServerPage> {
     try {
       final dir = await widget.controller.directoryForId(widget.instanceId);
       final savedPath = await _fileService.importFile(sourcePath, dir);
-      final jarName = p.basename(savedPath);
+      final serverFileName = p.basename(savedPath);
       // 导入 .phar 时自动切到 PHP（PocketMine）运行环境，其余按 Java 处理。
-      final isPhar = jarName.toLowerCase().endsWith('.phar');
+      final isPhar = serverFileName.toLowerCase().endsWith('.phar');
       await widget.controller.updateConfig(
         widget.instanceId,
-        selectedJar: jarName,
+        serverFile: serverFileName,
         runtime: isPhar ? kRuntimePhp : kRuntimeJava,
       );
       _finish();

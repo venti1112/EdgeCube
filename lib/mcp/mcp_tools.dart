@@ -164,8 +164,8 @@ void _registerReadTools(
         'runtime': sel.runtime,
         'isPhp': sel.isPhp,
         'maxMemory': sel.maxMemory,
-        'javaVersion': sel.javaVersion,
-        'selectedJar': sel.selectedJar,
+        'runtimeEnvId': sel.runtimeEnvId,
+        'serverFile': sel.serverFile,
         'customJvmArgs': sel.customJvmArgs,
         'compatMode': sel.compatMode,
       });
@@ -428,7 +428,7 @@ Future<CallToolResult> _startInstance(
   if (instance.isPhp) {
     final phpRuntimes = await server.availablePhpIds();
     if (phpRuntimes.isEmpty) return _err(tr('mcp.err.phpArchUnsupported'));
-    final phar = _pickFile(instance.selectedJar, phars);
+    final phar = _pickFile(instance.serverFile, phars);
     if (phar == null) {
       return _err(tr('mcp.err.pharNotFound'));
     }
@@ -438,7 +438,7 @@ Future<CallToolResult> _startInstance(
       workingDir: dir.path,
       runtimeId: phpRuntimes.first,
       runtime: kRuntimePhp,
-      jvmArgs: const [],
+      runtimeArgs: const [],
       programArgs: [phar, '--no-wizard'],
       compatMode: instance.compatMode,
     );
@@ -451,7 +451,7 @@ Future<CallToolResult> _startInstance(
   }
 
   // Java：用 JRE 执行选中的 .jar。
-  final jar = _pickFile(instance.selectedJar, jars);
+  final jar = _pickFile(instance.serverFile, jars);
   if (jar == null) {
     return _err(tr('mcp.err.jarNotFound'));
   }
@@ -459,7 +459,7 @@ Future<CallToolResult> _startInstance(
   if (versions.isEmpty) {
     return _err(tr('mcp.err.noJavaRuntime'));
   }
-  var runtimeId = instance.javaVersion ?? 'jre21';
+  var runtimeId = instance.runtimeEnvId ?? 'jre21';
   if (!versions.contains(runtimeId)) {
     runtimeId = versions.contains('jre21') ? 'jre21' : versions.first;
   }
@@ -477,7 +477,7 @@ Future<CallToolResult> _startInstance(
     workingDir: dir.path,
     runtimeId: runtimeId,
     runtime: kRuntimeJava,
-    jvmArgs: jvmArgs,
+    runtimeArgs: jvmArgs,
     programArgs: ['-jar', jar, 'nogui'],
     compatMode: instance.compatMode,
   );

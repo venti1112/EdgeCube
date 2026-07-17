@@ -4,7 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../config/config_store.dart';
-import '../config/instance_path_store.dart';
+import '../config/data_folder_store.dart';
 import '../files/storage_permission.dart';
 import 'instance.dart';
 
@@ -19,11 +19,11 @@ typedef InstancesRootResolver = Future<Directory> Function();
 
 /// 默认 EdgeCube 数据根目录 `<storage>/EdgeCube`。
 ///
-/// 「实例文件夹」概念指此 EdgeCube 数据文件夹（其下 `instances/` 子目录存放
-/// 各实例的工作文件夹）。若用户在设置中指定了自定义实例文件夹路径
-/// （[InstancePathStore]），则返回该自定义路径；否则回退到默认位置。
+/// 其下 `instances/` 子目录存放各实例的工作文件夹。若用户在设置中指定了
+/// 自定义数据文件夹路径（[DataFolderStore]），则返回该自定义路径；
+/// 否则回退到默认位置。
 Future<Directory> defaultEdgeCubeRoot() async {
-  final customPath = await InstancePathStore.loadCustomPath();
+  final customPath = await DataFolderStore.loadCustomPath();
   if (customPath != null && customPath.isNotEmpty) {
     return Directory(customPath);
   }
