@@ -365,6 +365,10 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   /// UI 层可通过 [suppressUpnpTimeout] 关闭后续超时检测。
   void Function()? onUpnpTimeout;
 
+  /// frpc.toml 仍为默认模板配置、FRP 隧道启动被拒绝时触发，
+  /// 通知 UI 弹窗引导用户先修改配置。
+  void Function()? onTunnelTemplateConfig;
+
   // —— 映射结果追踪 ——
   String? _upnpExternalIp; // UPnP 映射成功后的公网 IP
   FrpcConfig? _activeFrpcConfig; // 当前活跃的 FRP 配置
@@ -1498,6 +1502,15 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
       if (raw.trim().isEmpty) {
         _notice(tr('server.notice.tunnelConfigEmpty'));
         _tunnelActive = false;
+        return;
+      }
+      // 拒绝启动未修改的默认模板配置：占位地址连不上任何真实 frps 服务器，
+      // 启动只会得到一次令人困惑的"连接失败→异常退出"崩溃弹窗。
+      if (NetworkStore.isTemplateFrpcConfig(raw)) {
+        _notice(tr('server.notice.tunnelTemplateConfig'));
+        _tunnelActive = false;
+        notifyListeners();
+        onTunnelTemplateConfig?.call();
         return;
       }
       final path = await _tunnel.writeRawConfig(raw);

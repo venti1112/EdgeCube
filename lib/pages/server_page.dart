@@ -21,6 +21,7 @@ import '../server/proot_service.dart';
 import '../server/runtime_service.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
+import 'port_mapping_page.dart';
 import 'runtime_page.dart';
 import '../net/network_address.dart';
 import '../server/system_monitor_scope.dart';
@@ -150,6 +151,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     server.onCrashExit = _onCrashExit;
     // FRP 隧道异常退出时复用同一崩溃弹窗（导出/上传日志）。
     server.onTunnelCrashExit = _onTunnelCrashExit;
+    // frpc.toml 仍为默认模板时拒绝启动并弹窗提示。
+    server.onTunnelTemplateConfig = _onTunnelTemplateConfig;
     // UPnP 超时提示。
     server.onUpnpTimeout = _onUpnpTimeout;
     // 监听运行时导入/删除，自动刷新可用运行时列表。
@@ -181,6 +184,36 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _CrashDialog(crash: crash),
+    );
+  }
+
+  /// frpc.toml 仍为默认模板配置、隧道启动被拒绝时弹窗提示，
+  /// 引导用户前往网络映射页修改配置。
+  void _onTunnelTemplateConfig() {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.tr('portMapping.templateConfigTitle')),
+        content: Text(context.tr('portMapping.templateConfigMessage')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(context.tr('common.close')),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const PortMappingPage(),
+                ),
+              );
+            },
+            child: Text(context.tr('portMapping.templateConfigGo')),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2051,8 +2084,12 @@ class _ConnectionCardState extends State<_ConnectionCard> {
                 ],
               ),
 
-              // 未启用任何端口映射时，明确提示当前地址仅限局域网访问。
-              if (!upnpActive && !tunnelActive && !ddnsActive)
+              // 尚无任何已成功建立的外网入口（UPnP 映射成功 / FRP 已连接 /
+              // DDNS 解析成功）时，明确提示当前地址仅限局域网访问；
+              // 映射进行中或失败时该提示保持显示，直到真正映射成功。
+              if (!(upnpActive && upnpIp != null) &&
+                  !(tunnelActive && tunnelRunning) &&
+                  !(ddnsActive && ddnsSucceeded))
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: Row(
@@ -2066,7 +2103,11 @@ class _ConnectionCardState extends State<_ConnectionCard> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          context.tr('server.lanOnlyHint'),
+                          // 已启用映射但尚未成功（映射中/出错）：提示"映射未
+                          // 完成"；完全未启用：提示"开启端口映射"。
+                          upnpActive || tunnelActive || ddnsActive || tunnelCrashed
+                              ? context.tr('server.lanOnlyMappingPendingHint')
+                              : context.tr('server.lanOnlyHint'),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),

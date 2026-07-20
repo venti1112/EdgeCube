@@ -45,6 +45,18 @@ class NetworkStore {
     return file;
   }
 
+  /// 匹配模板配置中未修改的占位服务器地址行（`serverAddr = "frp.example.com"`）。
+  /// 行首允许缩进；被 `#` 注释掉的行不匹配。与 [_defaultTemplate] 保持一致。
+  static final RegExp _templateAddrPattern = RegExp(
+    r'''^\s*serverAddr\s*=\s*["']frp\.example\.com["']''',
+    multiLine: true,
+  );
+
+  /// 判断 frpc 配置内容是否仍为未修改的默认模板
+  /// （serverAddr 仍指向占位地址，连不上任何真实 frps 服务器）。
+  static bool isTemplateFrpcConfig(String content) =>
+      _templateAddrPattern.hasMatch(content);
+
   static String _defaultTemplate() {
     return '''${tr('network.frpcTemplateHeader')}serverAddr = "frp.example.com"
 serverPort = 7000

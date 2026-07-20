@@ -230,6 +230,11 @@ class _PortMappingPageState extends State<PortMappingPage> {
       _showFrpcRequiredDialog();
       return;
     }
+    // 配置仍为默认模板时拒绝启用：占位地址连不上任何真实 frps 服务器。
+    if (value && await _isTemplateConfig()) {
+      if (mounted) _showTemplateConfigDialog();
+      return;
+    }
     await NetworkStore.saveTunnelEnabled(value);
     if (!mounted) return;
     setState(() => _tunnelEnabled = value);
@@ -238,6 +243,45 @@ class _PortMappingPageState extends State<PortMappingPage> {
       server.enableTunnelNow(null, _selectedFrpcRuntimeId);
     } else {
       server.disableTunnelNow();
+    }
+  }
+
+  /// 当前 frpc.toml 是否仍为未修改的默认模板（文件不存在视为模板）。
+  Future<bool> _isTemplateConfig() async {
+    try {
+      final file = await NetworkStore.ensureCustomFrpcFile();
+      return NetworkStore.isTemplateFrpcConfig(await file.readAsString());
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// frpc.toml 仍为默认模板，提示用户先修改配置再启用隧道。
+  Future<void> _showTemplateConfigDialog() async {
+    final tr = LocaleScope.of(context).translations;
+    final edit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr.get('portMapping.templateConfigTitle')),
+        content: Text(tr.get('portMapping.templateConfigMessage')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(tr.get('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(tr.get('portMapping.editConfigFile')),
+          ),
+        ],
+      ),
+    );
+    if (edit == true && mounted) {
+      await _editFrpcConfigFile();
+      // 编辑返回后配置已修改的话，继续完成用户原本的「启用」操作。
+      if (mounted && !await _isTemplateConfig()) {
+        await _setTunnel(true);
+      }
     }
   }
 
@@ -281,9 +325,15 @@ class _PortMappingPageState extends State<PortMappingPage> {
       ),
     );
     if (!mounted) return;
-    // 编辑返回后，若隧道运行中，重启以应用最新内容。
-    if (_tunnelEnabled && ServerScope.of(context).isRunning) {
-      await ServerScope.of(context).restartTunnel();
+    // 编辑返回后，若隧道运行中，重启以应用最新内容；若启用了隧道但此前
+    // 未能启动（如模板配置被拒绝、frpc 异常退出），则重新拉起。
+    final server = ServerScope.of(context);
+    if (_tunnelEnabled && server.isRunning) {
+      if (server.isTunnelActive) {
+        await server.restartTunnel();
+      } else if (!await _isTemplateConfig()) {
+        server.enableTunnelNow(null, _selectedFrpcRuntimeId);
+      }
     }
   }
 
