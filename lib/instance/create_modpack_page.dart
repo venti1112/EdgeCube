@@ -94,15 +94,12 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
 
     setState(() => _modpackPhase = 'parsing');
     try {
-      final format = await ModpackService.detectFormat(sourcePath);
-      if (format == ModpackFormat.plainZip) {
-        // 普通 zip：直接解压到实例目录后完成。
+      final modpack = await ModpackService.detectAndParse(sourcePath);
+      if (modpack == null) {
+        // 无可识别清单：作为普通 zip 直接解压到实例目录后完成。
         await _extractPlainZip(sourcePath);
         return;
       }
-
-      // Modrinth：解析清单。
-      final modpack = await ModpackService.parseModrinth(sourcePath);
       if (!mounted) return;
 
       // 确认对话框。
@@ -140,7 +137,7 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
         _modpackPhase = 'extracting';
         _modpackError = null;
       });
-      await ModpackService.extractOverrides(sourcePath, dir);
+      await ModpackService.extractOverrides(sourcePath, modpack, dir);
 
       // 下载服务端 jar。
       if (!mounted) return;
@@ -175,7 +172,7 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
   }
 
   /// 根据整合包 dependencies 下载对应服务端 jar，复用共享下载逻辑。
-  Future<void> _downloadServerJarFromModpack(ModrinthModpack modpack) async {
+  Future<void> _downloadServerJarFromModpack(ParsedModpack modpack) async {
     final deps = modpack.dependencies;
     final mcVersion = deps['minecraft'];
     if (mcVersion == null || mcVersion.isEmpty) {
@@ -300,7 +297,7 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
     return nfVersion;
   }
 
-  Future<bool?> _showModpackConfirm(ModrinthModpack modpack) {
+  Future<bool?> _showModpackConfirm(ParsedModpack modpack) {
     final mc = modpack.dependencies['minecraft'] ?? '-';
     final loader = _modpackLoaderLabel(modpack);
     final modCount = modpack.serverFiles.length;
@@ -330,7 +327,7 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
     );
   }
 
-  String _modpackLoaderLabel(ModrinthModpack modpack) {
+  String _modpackLoaderLabel(ParsedModpack modpack) {
     final deps = modpack.dependencies;
     if (deps['fabric-loader'] != null) return 'Fabric';
     if (deps['quilt-loader'] != null) return 'Quilt';

@@ -278,6 +278,10 @@
   "modsPlugins.cancelAll": "Cancel all",
   "modsPlugins.viewQueue": "View queue",
   "modsPlugins.noResults": "No results found",
+  "modsPlugins.noResultsSourceHidden": "No results found. Some platforms (e.g. CurseForge) are currently unavailable; enable the mirror source in Network Settings and try again.",
+  "modsPlugins.noAvailableSource": "No download platform available. CurseForge requires enabling the mirror source in Network Settings, or injecting an API key at build time.",
+  "modsPlugins.externalTitle": "Download from official site",
+  "modsPlugins.externalMessage": "This resource is hosted off-site by its author and cannot be downloaded directly. Please get it from:\n{url}",
   "modsPlugins.noUpdates": "All mods are up to date",
   "modsPlugins.releaseType.alpha": "Alpha",
   "modsPlugins.releaseType.beta": "Beta",
@@ -773,8 +777,8 @@
   "network.mirrorByMsl": "Mirror provided by MSL",
   "network.mirrorSite": "mslmc.cn · Visit official site",
   "network.title": "Network Settings",
-  "network.useMirror": "Use Mirror to Download Server",
-  "network.useMirrorDesc": "When enabled, downloads are accelerated via MSL mirror for faster speeds in China; automatically falls back to official source if mirror is unavailable",
+  "network.useMirror": "Use Mirror for Downloads",
+  "network.useMirrorDesc": "When enabled, downloads of servers, mods and modpacks are accelerated via mirror for faster speeds in China, and CurseForge can be accessed without an API key. Automatically falls back to official source if mirror is unavailable",
   "network.updateSection": "Update Check",
   "network.updateCheckUrl": "Update Check URL",
   "network.ecpkgCatalogUrl": "Runtime Download URL",
@@ -1471,5 +1475,6 @@
   "modpack.hashMismatch": "Hash mismatch for {fileName}: expected {expected}, got {actual}",
   "modpack.invalidPath": "Modpack contains invalid path: {path}",
   "modpack.pathEscape": "Modpack path escapes instance directory",
+  "modpack.curseForgeUnavailable": "Parsing a CurseForge modpack requires CurseForge to be available: enable the mirror source in Network Settings, or inject an API key at build time.",
   "network.frpcTemplateHeader": "# frpc config file\n# Modify the following based on your frps server info\n"
 }

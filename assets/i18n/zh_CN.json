@@ -278,6 +278,10 @@
   "modsPlugins.cancelAll": "全部取消",
   "modsPlugins.viewQueue": "查看队列",
   "modsPlugins.noResults": "未找到结果",
+  "modsPlugins.noResultsSourceHidden": "未找到结果。部分平台（如 CurseForge）当前不可用，可在网络设置中开启镜像源后重试。",
+  "modsPlugins.noAvailableSource": "当前没有可用的下载平台。CurseForge 需在网络设置中开启镜像源，或在构建时注入 API Key。",
+  "modsPlugins.externalTitle": "需前往官网下载",
+  "modsPlugins.externalMessage": "该资源由作者托管在站外，无法直接下载。请前往官网获取：\n{url}",
   "modsPlugins.noUpdates": "所有模组均为最新",
   "modsPlugins.releaseType.alpha": "实验版",
   "modsPlugins.releaseType.beta": "测试版",
@@ -773,8 +777,8 @@
   "network.mirrorByMsl": "镜像源由 MSL 开服器提供",
   "network.mirrorSite": "mslmc.cn · 点击访问官网",
   "network.title": "网络设置",
-  "network.useMirror": "使用镜像源下载服务端",
-  "network.useMirrorDesc": "开启后通过 MSL 镜像源加速下载，国内网络更快；镜像不可用时自动回退官方源",
+  "network.useMirror": "使用镜像源下载",
+  "network.useMirrorDesc": "开启后通过镜像源加速下载服务端、模组与整合包，国内网络更快；同时可免 API Key 访问 CurseForge。镜像不可用时自动回退官方源",
   "network.updateSection": "更新检查",
   "network.updateCheckUrl": "更新检查地址",
   "network.ecpkgCatalogUrl": "运行环境下载地址",
@@ -1471,5 +1475,6 @@
   "modpack.hashMismatch": "哈希校验失败：{fileName}（期望 {expected}，实际 {actual}）",
   "modpack.invalidPath": "整合包包含非法路径：{path}",
   "modpack.pathEscape": "整合包路径逃逸出实例目录",
+  "modpack.curseForgeUnavailable": "解析 CurseForge 整合包需要 CurseForge 服务可用：请在网络设置中开启镜像源，或在构建时注入 API Key。",
   "network.frpcTemplateHeader": "# frpc 配置文件\n# 请根据你的 frps 服务器信息修改以下内容\n"
 }

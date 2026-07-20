@@ -7,12 +7,16 @@ import '../i18n/locale_scope.dart';
 import '../mods/download_queue.dart';
 import '../mods/icon_cache.dart';
 import '../mods/modrinth_service.dart';
+import '../mods/sources/mod_source.dart';
+import '../mods/sources/mod_source_registry.dart';
 import '../net/download_format.dart';
+import '../net/mod_mirror.dart';
 
-/// 模组/插件下载页：搜索 Modrinth 并下载到指定目录。
+/// 模组/插件下载页：跨平台搜索并下载到指定目录。
 ///
-/// 支持搜索、浏览、筛选（游戏版本 / 加载器）和排序，
-/// 参考 PCL-CE 的 PageComp 实现分页加载（offset + limit）。
+/// 支持多平台切换（Modrinth / CurseForge / Hangar / SpigotMC，经 [ModSourceRegistry]）、
+/// 搜索、浏览、筛选（游戏版本 / 加载器）和排序，分页加载（offset + limit）。
+/// UI 只依赖中立模型（[ModSearchHit] / [ModVersionInfo]），与具体平台解耦。
 class ModDownloadPage extends StatefulWidget {
   const ModDownloadPage({
     super.key,
@@ -25,7 +29,7 @@ class ModDownloadPage extends StatefulWidget {
   final Directory modsFolder;
   final bool embedded;
 
-  /// 'mod' 或 'plugin'，决定搜索的 project_type 和可选加载器列表。
+  /// 'mod' 或 'plugin'，决定可用平台列表与可选加载器列表。
   final String projectType;
 
   /// AppBar 标题的 i18n 键。
@@ -39,7 +43,15 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
   final _controller = TextEditingController();
   final _scrollCtrl = ScrollController();
 
-  List<ModrinthSearchHit> _results = [];
+  // 平台
+  List<ModSource> _sources = [];
+  ModSource? _source;
+  bool _initializingSources = true;
+
+  /// 是否有平台因不可用（如 CF 无 Key 且未开镜像）被过滤掉，用于提示引导。
+  bool _hasHiddenSource = false;
+
+  List<ModSearchHit> _results = [];
   bool _loading = false;
   bool _loadingMore = false;
   String? _error;
@@ -49,28 +61,17 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
   List<ModrinthGameVersion> _gameVersions = [];
   String? _selectedGameVersion;
   String? _selectedLoader;
-  ModrinthSort _sort = ModrinthSort.relevance;
+  ModSortType _sort = ModSortType.relevance;
 
-  /// 根据项目类型返回可选加载器列表。
-  List<String> get _loaders => widget.projectType == 'plugin'
-      ? const [
-          'paper',
-          'spigot',
-          'bukkit',
-          'bungeecord',
-          'velocity',
-          'waterfall',
-          'folia',
-          'purpur',
-        ]
-      : const ['fabric', 'forge', 'quilt', 'neoforge'];
+  /// 当前平台可选加载器列表（随平台变化）。
+  List<String> get _loaders =>
+      _source?.supportedLoaders(widget.projectType) ?? const [];
 
   @override
   void initState() {
     super.initState();
     _scrollCtrl.addListener(_onScroll);
-    _loadGameVersions();
-    _search(); // 初始加载浏览列表
+    _initSources();
   }
 
   @override
@@ -81,6 +82,38 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
     super.dispose();
   }
 
+  /// 初始化可用平台列表（按 isAvailable 过滤，如 CF 无 Key 且未开镜像则剔除）。
+  Future<void> _initSources() async {
+    final all = ModSourceRegistry.sourcesFor(widget.projectType);
+    final sources = await ModSourceRegistry.availableSources(widget.projectType);
+    if (!mounted) return;
+    setState(() {
+      _sources = sources;
+      _source = sources.isEmpty ? null : sources.first;
+      _hasHiddenSource = sources.length < all.length;
+      _initializingSources = false;
+    });
+    if (_source != null) {
+      _loadGameVersions();
+      _search();
+    }
+  }
+
+  /// 切换平台：重置筛选与结果并重新搜索。
+  void _switchSource(ModSource source) {
+    if (source.type == _source?.type) return;
+    setState(() {
+      _source = source;
+      // 加载器随平台变化，清掉不适用的选择。
+      if (_selectedLoader != null &&
+          !source.supportedLoaders(widget.projectType).contains(_selectedLoader)) {
+        _selectedLoader = null;
+      }
+      if (!source.supportsGameVersionFilter) _selectedGameVersion = null;
+    });
+    _search();
+  }
+
   void _onScroll() {
     if (_scrollCtrl.position.pixels >=
         _scrollCtrl.position.maxScrollExtent - 200) {
@@ -89,6 +122,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
   }
 
   Future<void> _loadGameVersions() async {
+    if (_gameVersions.isNotEmpty) return;
     try {
       final versions = await ModrinthService.getGameVersions();
       if (!mounted) return;
@@ -99,6 +133,8 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
   }
 
   Future<void> _search() async {
+    final source = _source;
+    if (source == null) return;
     final query = _controller.text.trim();
     setState(() {
       _loading = true;
@@ -107,22 +143,22 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
       _totalHits = 0;
     });
     try {
-      final result = await ModrinthService.search(
+      final result = await source.search(
         query,
         offset: 0,
         gameVersion: _selectedGameVersion,
         loader: _selectedLoader,
-        sort: query.isEmpty ? ModrinthSort.downloads : _sort,
+        sort: query.isEmpty ? ModSortType.downloads : _sort,
         projectType: widget.projectType,
       );
-      if (!mounted) return;
+      if (!mounted || source.type != _source?.type) return;
       setState(() {
         _results = result.hits;
         _totalHits = result.totalHits;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || source.type != _source?.type) return;
       setState(() {
         _error = '$e';
         _loading = false;
@@ -131,20 +167,22 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
   }
 
   Future<void> _loadMore() async {
+    final source = _source;
+    if (source == null) return;
     if (_loadingMore || _loading || _error != null) return;
     if (_results.length >= _totalHits) return;
     setState(() => _loadingMore = true);
     try {
       final query = _controller.text.trim();
-      final result = await ModrinthService.search(
+      final result = await source.search(
         query,
         offset: _results.length,
         gameVersion: _selectedGameVersion,
         loader: _selectedLoader,
-        sort: query.isEmpty ? ModrinthSort.downloads : _sort,
+        sort: query.isEmpty ? ModSortType.downloads : _sort,
         projectType: widget.projectType,
       );
-      if (!mounted) return;
+      if (!mounted || source.type != _source?.type) return;
       setState(() {
         _results.addAll(result.hits);
         _totalHits = result.totalHits;
@@ -156,7 +194,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
     }
   }
 
-  void _openVersions(ModrinthSearchHit hit) {
+  void _openVersions(ModSearchHit hit) {
     _showVersionSheet(
       projectId: hit.projectId,
       title: hit.title,
@@ -169,11 +207,14 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
     required String title,
     String? iconUrl,
   }) {
+    final source = _source;
+    if (source == null) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
       builder: (_) => _VersionSheet(
+        source: source,
         projectId: projectId,
         title: title,
         iconUrl: iconUrl,
@@ -214,10 +255,33 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
           : AppBar(title: Text(context.tr(widget.titleKey))),
       body: Column(
         children: [
+          if (_sources.length > 1) _buildSourceBar(theme),
           _buildSearchBar(theme),
           _buildFilterBar(theme),
           const DownloadQueueBanner(),
           Expanded(child: _buildBody(theme)),
+        ],
+      ),
+    );
+  }
+
+  /// 平台切换条（仅当可用平台 > 1 时显示）。
+  Widget _buildSourceBar(ThemeData theme) {
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+        children: [
+          for (final s in _sources)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ChoiceChip(
+                label: Text(s.displayName),
+                selected: s.type == _source?.type,
+                onSelected: (_) => _switchSource(s),
+              ),
+            ),
         ],
       ),
     );
@@ -277,20 +341,22 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
             icon: Icons.sort,
             onTap: () => _showSortPicker(theme),
           ),
-          _filterChip(
-            theme,
-            label: context.tr('modsPlugins.loader'),
-            value: _selectedLoader ?? context.tr('modsPlugins.any'),
-            icon: Icons.extension_outlined,
-            onTap: () => _showLoaderPicker(theme),
-          ),
-          _filterChip(
-            theme,
-            label: context.tr('modsPlugins.gameVersion'),
-            value: _selectedGameVersion ?? context.tr('modsPlugins.any'),
-            icon: Icons.verified_outlined,
-            onTap: () => _showVersionPicker(theme),
-          ),
+          if (_loaders.isNotEmpty)
+            _filterChip(
+              theme,
+              label: context.tr('modsPlugins.loader'),
+              value: _selectedLoader ?? context.tr('modsPlugins.any'),
+              icon: Icons.extension_outlined,
+              onTap: () => _showLoaderPicker(theme),
+            ),
+          if (_source?.supportsGameVersionFilter ?? true)
+            _filterChip(
+              theme,
+              label: context.tr('modsPlugins.gameVersion'),
+              value: _selectedGameVersion ?? context.tr('modsPlugins.any'),
+              icon: Icons.verified_outlined,
+              onTap: () => _showVersionPicker(theme),
+            ),
           if (_selectedLoader != null || _selectedGameVersion != null)
             Padding(
               padding: const EdgeInsets.only(left: 4, top: 8),
@@ -329,7 +395,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
   }
 
   void _showSortPicker(ThemeData theme) {
-    final options = ModrinthSort.values;
+    final options = ModSortType.values;
     showDialog(
       context: context,
       builder: (ctx) => SimpleDialog(
@@ -445,6 +511,17 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
       s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
 
   Widget _buildBody(ThemeData theme) {
+    if (_initializingSources) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_source == null) {
+      // 没有任何可用平台（如仅登记 CF 但无 Key 且未开镜像）。
+      return _centerMessage(
+        theme,
+        Icons.cloud_off_outlined,
+        context.tr('modsPlugins.noAvailableSource'),
+      );
+    }
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -459,7 +536,9 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
       return _centerMessage(
         theme,
         Icons.inbox_outlined,
-        context.tr('modsPlugins.noResults'),
+        _hasHiddenSource
+            ? context.tr('modsPlugins.noResultsSourceHidden')
+            : context.tr('modsPlugins.noResults'),
       );
     }
     return ListView.builder(
@@ -554,6 +633,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
 /// 版本选择底部弹层。
 class _VersionSheet extends StatefulWidget {
   const _VersionSheet({
+    required this.source,
     required this.projectId,
     required this.title,
     required this.iconUrl,
@@ -564,6 +644,7 @@ class _VersionSheet extends StatefulWidget {
     this.filterLoader,
   });
 
+  final ModSource source;
   final String projectId;
   final String title;
   final String? iconUrl;
@@ -578,7 +659,7 @@ class _VersionSheet extends StatefulWidget {
 }
 
 class _VersionSheetState extends State<_VersionSheet> {
-  List<ModrinthVersion> _versions = [];
+  List<ModVersionInfo> _versions = [];
   bool _loading = true;
   String? _error;
 
@@ -590,7 +671,10 @@ class _VersionSheetState extends State<_VersionSheet> {
 
   Future<void> _loadVersions() async {
     try {
-      final versions = await ModrinthService.getVersions(widget.projectId);
+      final versions = await widget.source.getVersions(
+        widget.projectId,
+        projectType: widget.projectType,
+      );
       if (!mounted) return;
       setState(() {
         _versions = _applyFilters(versions);
@@ -605,28 +689,9 @@ class _VersionSheetState extends State<_VersionSheet> {
     }
   }
 
-  /// 模组加载器集合，用于过滤跨平台项目的版本。
-  static const _modLoaders = {'fabric', 'forge', 'quilt', 'neoforge'};
-  static const _pluginLoaders = {
-    'paper',
-    'spigot',
-    'bukkit',
-    'bungeecord',
-    'velocity',
-    'waterfall',
-    'folia',
-    'purpur',
-  };
-
-  List<ModrinthVersion> _applyFilters(List<ModrinthVersion> versions) {
-    // 先按项目类型过滤版本（只保留包含对应加载器的版本）
-    final typeLoaders = widget.projectType == 'plugin'
-        ? _pluginLoaders
-        : _modLoaders;
-    var filtered = versions
-        .where((v) => v.loaders.any((l) => typeLoaders.contains(l)))
-        .toList();
-
+  /// 按当前筛选条件过滤版本（版本类型已由各平台源在 getVersions 内处理）。
+  List<ModVersionInfo> _applyFilters(List<ModVersionInfo> versions) {
+    var filtered = versions;
     if (widget.filterGameVersion != null) {
       filtered = filtered
           .where((v) => v.gameVersions.contains(widget.filterGameVersion))
@@ -732,10 +797,11 @@ class _VersionSheetState extends State<_VersionSheet> {
     );
   }
 
-  void _showVersionDetail(ModrinthVersion version) {
+  void _showVersionDetail(ModVersionInfo version) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _VersionDetailPage(
+          source: widget.source,
           projectId: widget.projectId,
           title: widget.title,
           iconUrl: widget.iconUrl,
@@ -753,6 +819,7 @@ class _VersionSheetState extends State<_VersionSheet> {
 /// 版本详情页：显示版本完整信息和依赖关系。
 class _VersionDetailPage extends StatefulWidget {
   const _VersionDetailPage({
+    required this.source,
     required this.projectId,
     required this.title,
     required this.iconUrl,
@@ -762,10 +829,11 @@ class _VersionDetailPage extends StatefulWidget {
     this.projectType = 'mod',
   });
 
+  final ModSource source;
   final String projectId;
   final String title;
   final String? iconUrl;
-  final ModrinthVersion version;
+  final ModVersionInfo version;
   final Directory modsFolder;
   final VoidCallback onDownloaded;
   final String projectType;
@@ -776,7 +844,7 @@ class _VersionDetailPage extends StatefulWidget {
 
 class _VersionDetailPageState extends State<_VersionDetailPage> {
   // 依赖项目 ID → 项目信息
-  final Map<String, ModrinthProject> _depProjects = {};
+  final Map<String, ModProjectInfo> _depProjects = {};
   bool _loadingDeps = true;
 
   @override
@@ -796,7 +864,7 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
       return;
     }
     try {
-      final projects = await ModrinthService.getProjects(depIds);
+      final projects = await widget.source.getProjects(depIds);
       if (!mounted) return;
       setState(() {
         for (final p in projects) {
@@ -810,12 +878,25 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
   }
 
   /// 加入下载队列。退出页面后下载仍会继续。
-  void _enqueueDownload() {
+  ///
+  /// 外链文件（如 SpigotMC 部分资源）无法直连下载，改为提示前往官网。
+  /// 镜像开启时用镜像 URL（[ModMirror.downloadCandidates] 首选项）加速。
+  Future<void> _enqueueDownload() async {
     final file = widget.version.primaryFile;
     if (file == null) return;
+
+    if (!file.downloadable) {
+      // 外链资源：提示前往官网下载。
+      if (!mounted) return;
+      await _showExternalDialog();
+      return;
+    }
+
+    final url = file.url!;
+    final candidates = await ModMirror.downloadCandidates(url);
     final destPath = p.join(widget.modsFolder.path, file.filename);
     DownloadQueue.instance.enqueue(
-      url: file.url,
+      url: candidates.first,
       destPath: destPath,
       filename: file.filename,
       projectTitle: widget.title,
@@ -830,13 +911,31 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
     widget.onDownloaded();
   }
 
-  String _dependencyLabel(ModrinthDependency dep) {
+  Future<void> _showExternalDialog() async {
+    final pageUrl = widget.version.primaryFile?.url;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.tr('modsPlugins.externalTitle')),
+        content: Text(
+          ctx.tr('modsPlugins.externalMessage', {'url': pageUrl ?? '-'}),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(ctx.tr('common.ok')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _dependencyLabel(ModVersionDependency dep) {
     if (dep.dependencyName != null && dep.dependencyName!.isNotEmpty) {
       return dep.dependencyName!;
     }
     final project = dep.projectId != null ? _depProjects[dep.projectId] : null;
     if (project != null) return project.title;
-    if (dep.fileName != null) return dep.fileName!;
     return context.tr('modsPlugins.dependencyUnknown');
   }
 
@@ -1127,7 +1226,7 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
 
   Widget _depTile(
     ThemeData theme,
-    ModrinthDependency dep, {
+    ModVersionDependency dep, {
     required bool required,
     bool incompatible = false,
   }) {
@@ -1188,6 +1287,7 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
       isScrollControlled: true,
       useRootNavigator: true,
       builder: (_) => _VersionSheet(
+        source: widget.source,
         projectId: projectId,
         title: title,
         iconUrl: iconUrl,
