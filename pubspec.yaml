@@ -2,7 +2,7 @@ name: edgecube
 description: "Run Minecraft server on Android"
 publish_to: 'none'
 
-version: 1.0.0-beta21+21
+version: 1.0.0-beta22+22
 
 environment:
   sdk: ^3.12.1
@@ -19,12 +19,12 @@ dependencies:
   port_forwarder: ^1.0.0
   dynamic_color: ^1.8.1
   flex_color_picker: ^3.8.0
-  package_info_plus: ^10.2.0
+  package_info_plus: ^10.2.1
   url_launcher: ^6.3.2
   http: ^1.6.0
   battery_optimization_helper: ^0.2.0
   downloadx: ^0.3.0
-  share_plus: ^13.2.0
+  share_plus: ^13.2.1
   xterm: ^4.0.0
   mcp_dart: ^2.2.2
   image: ^4.8.0
