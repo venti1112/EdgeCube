@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import '../files/file_service.dart';
 import '../files/photo_picker.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../instance/instance_scope.dart';
 import '../server/server_controller.dart';
 import '../server/server_properties.dart';
@@ -689,12 +690,9 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              context.tr('serverProps.saveFailed', {'error': e.toString()}),
-            ),
-          ),
+        showErrorDialog(
+          context,
+          context.tr('serverProps.saveFailed', {'error': e.toString()}),
         );
         setState(() => _saving = false);
       }

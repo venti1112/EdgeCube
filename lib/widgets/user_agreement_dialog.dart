@@ -83,11 +83,15 @@ class _UserAgreementDialogState extends State<UserAgreementDialog> {
 
     String buttonLabel;
     if (!timerDone && !_scrolledToBottom) {
-      buttonLabel = '请阅读完整协议 ($_remaining秒)';
+      buttonLabel = context.tr('userAgreement.readFullCountdown', {
+        'seconds': '$_remaining',
+      });
     } else if (!timerDone) {
-      buttonLabel = '请等待 ($_remaining秒)';
+      buttonLabel = context.tr('userAgreement.waitCountdown', {
+        'seconds': '$_remaining',
+      });
     } else if (!_scrolledToBottom) {
-      buttonLabel = '请阅读完整协议';
+      buttonLabel = context.tr('userAgreement.readFull');
     } else {
       buttonLabel = context.tr('common.agree');
     }

@@ -8,6 +8,7 @@ import '../files/file_service.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../instance/instance_scope.dart';
 import '../mods/download_queue.dart';
 import '../mods/icon_cache.dart';
@@ -407,14 +408,11 @@ class _ContentTabState extends State<_ContentTab> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _checkingUpdates = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            LocaleScope.of(
-              context,
-            ).translations.get('modsPlugins.searchFailed', {'error': '$e'}),
-          ),
-        ),
+      showErrorDialog(
+        context,
+        LocaleScope.of(
+          context,
+        ).translations.get('modsPlugins.searchFailed', {'error': '$e'}),
       );
     }
   }
@@ -658,7 +656,6 @@ class _ContentTabState extends State<_ContentTab> {
   /// 原地更新条目，保留已获取的元数据/图标/哈希（迁移到新路径）。
   Future<void> _toggleEnabled(FileEntry entry) async {
     final tr = LocaleScope.of(context).translations;
-    final messenger = ScaffoldMessenger.of(context);
     final lower = entry.name.toLowerCase();
     final isDisabled = lower.endsWith('.jar.disabled') ||
         lower.endsWith('.phar.disabled');
@@ -717,16 +714,11 @@ class _ContentTabState extends State<_ContentTab> {
       });
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            tr.get(
-              isDisabled
-                  ? 'modsPlugins.enableFailed'
-                  : 'modsPlugins.disableFailed',
-              {'error': '$e'},
-            ),
-          ),
+      showErrorDialog(
+        context,
+        tr.get(
+          isDisabled ? 'modsPlugins.enableFailed' : 'modsPlugins.disableFailed',
+          {'error': '$e'},
         ),
       );
     }
@@ -800,10 +792,9 @@ class _ContentTabState extends State<_ContentTab> {
       );
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(tr.get('modsPlugins.importFailed', {'error': '$e'})),
-        ),
+      showErrorDialog(
+        context,
+        tr.get('modsPlugins.importFailed', {'error': '$e'}),
       );
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -814,7 +805,6 @@ class _ContentTabState extends State<_ContentTab> {
 
   Future<void> _delete(FileEntry entry) async {
     final theme = Theme.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     final tr = LocaleScope.of(context).translations;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -844,10 +834,9 @@ class _ContentTabState extends State<_ContentTab> {
       await _load();
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(tr.get('modsPlugins.deleteFailed', {'error': '$e'})),
-        ),
+      showErrorDialog(
+        context,
+        tr.get('modsPlugins.deleteFailed', {'error': '$e'}),
       );
     }
   }

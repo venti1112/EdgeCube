@@ -10,6 +10,7 @@ import '../i18n/app_language.dart';
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_controller.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 
 /// 语言设置页：选择内置/自定义语言，导入与删除自定义翻译，导出翻译模板。
 class LanguageSettingsPage extends StatelessWidget {
@@ -141,7 +142,7 @@ class LanguageSettingsPage extends StatelessWidget {
         SnackBar(content: Text(successTpl.replaceAll('{name}', lang.name))),
       );
     } catch (_) {
-      messenger.showSnackBar(SnackBar(content: Text(failed)));
+      if (context.mounted) showErrorDialog(context, failed);
     }
   }
 

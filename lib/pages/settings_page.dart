@@ -11,6 +11,7 @@ import '../config/terminal_store.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../instance/data_folder_migration.dart';
 import '../instance/instance_scope.dart';
 import '../instance/instance_store.dart';
@@ -336,10 +337,9 @@ class _CustomDataFolderTileState extends State<_CustomDataFolderTile>
     if (picked == null || !mounted) return;
     final normalized = p.normalize(picked);
     if (p.equals(normalized, p.normalize(_currentPath))) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.tr('settings.storage.dataFolderSameAsCurrent')),
-        ),
+      showErrorDialog(
+        context,
+        context.tr('settings.storage.dataFolderSameAsCurrent'),
       );
       return;
     }
@@ -404,14 +404,11 @@ class _CustomDataFolderTileState extends State<_CustomDataFolderTile>
       );
     } catch (error) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            context.tr('settings.storage.dataFolderFailed', {
-              'error': error.toString(),
-            }),
-          ),
-        ),
+      showErrorDialog(
+        context,
+        context.tr('settings.storage.dataFolderFailed', {
+          'error': error.toString(),
+        }),
       );
     } finally {
       if (mounted) setState(() => _busy = false);

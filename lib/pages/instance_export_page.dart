@@ -11,6 +11,7 @@ import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
@@ -130,7 +131,6 @@ class _InstanceExportTile extends StatelessWidget {
 
   /// 压缩实例目录到临时文件并调起系统分享面板。
   Future<void> _share(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
     final dirNotExistMsg = context.tr('instanceExport.dirNotExist', {
       'name': instance.name,
     });
@@ -139,7 +139,7 @@ class _InstanceExportTile extends StatelessWidget {
     });
     final dir = await controller.directoryForId(instance.id);
     if (!await dir.exists()) {
-      messenger.showSnackBar(SnackBar(content: Text(dirNotExistMsg)));
+      if (context.mounted) showErrorDialog(context, dirNotExistMsg);
       return;
     }
     if (!context.mounted) return;
@@ -172,12 +172,13 @@ class _InstanceExportTile extends StatelessWidget {
         ShareParams(files: [XFile(zipPath)], text: shareText),
       );
     } catch (e) {
-      if (context.mounted) Navigator.of(context).pop();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(tr('instanceExport.exportFailed', {'error': '$e'})),
-        ),
-      );
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        showErrorDialog(
+          context,
+          tr('instanceExport.exportFailed', {'error': '$e'}),
+        );
+      }
     }
   }
 
@@ -191,7 +192,7 @@ class _InstanceExportTile extends StatelessWidget {
     if (!context.mounted) return;
     final dir = await controller.directoryForId(instance.id);
     if (!await dir.exists()) {
-      messenger.showSnackBar(SnackBar(content: Text(dirNotExistMsg)));
+      if (context.mounted) showErrorDialog(context, dirNotExistMsg);
       return;
     }
     if (!context.mounted) return;
@@ -231,12 +232,13 @@ class _InstanceExportTile extends StatelessWidget {
         ),
       );
     } catch (e) {
-      if (context.mounted) Navigator.of(context).pop();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(tr('instanceExport.exportFailed', {'error': '$e'})),
-        ),
-      );
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        showErrorDialog(
+          context,
+          tr('instanceExport.exportFailed', {'error': '$e'}),
+        );
+      }
     }
   }
 

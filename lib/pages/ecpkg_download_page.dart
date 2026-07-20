@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../ecpkg/ecpkg_catalog_service.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../net/download_engine.dart';
 import '../net/download_format.dart';
 import '../server/runtime_service.dart';
@@ -90,13 +91,10 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
 
   /// 下载并安装：自动匹配当前设备架构，走下载→校验→安装流程。
   Future<void> _downloadAndInstall(EcpkgCatalogPackage pkg) async {
-    final messenger = ScaffoldMessenger.of(context);
     final deviceArch = _deviceArch;
 
     if (deviceArch.isEmpty) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('ecpkgDownload.archUnknown'))),
-      );
+      showErrorDialog(context, context.tr('ecpkgDownload.archUnknown'));
       return;
     }
 
@@ -106,9 +104,7 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
     // 自动匹配架构
     final entry = detail.pickEntry(deviceArch);
     if (entry == null) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('ecpkgDownload.noMatchingArch'))),
-      );
+      showErrorDialog(context, context.tr('ecpkgDownload.noMatchingArch'));
       return;
     }
 

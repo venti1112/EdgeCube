@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import 'file_entry.dart';
 import 'file_search_bar.dart';
 import 'file_service.dart';
@@ -148,14 +149,13 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
   }
 
   Future<void> _createFolder() async {
-    final messenger = ScaffoldMessenger.of(context);
     final name = await _promptFolderName(context);
     if (name == null || name.isEmpty) return;
     try {
       await _service.createDirectory(_current, name);
       await _load();
     } on FileConflictException catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted) showErrorDialog(context, e.toString());
     }
   }
 

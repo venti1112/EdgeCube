@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../config/terminal_store.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
 import '../widgets/terminal_keys_bar.dart';
@@ -74,10 +75,9 @@ class _ConsolePageState extends State<ConsolePage> {
       await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.tr('console.exportFailed', {'error': '$e'})),
-          ),
+        showErrorDialog(
+          context,
+          context.tr('console.exportFailed', {'error': '$e'}),
         );
       }
     } finally {

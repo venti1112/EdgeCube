@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config/network_store.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../net/msl_mirror.dart';
 import '../online/online_service.dart';
 import '../server/proot_service.dart';
@@ -87,9 +88,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
   Future<void> _saveDns() async {
     final text = _dnsController.text.trim();
     if (!_validateDns(text)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('network.dnsInvalid'))),
-      );
+      showErrorDialog(context, context.tr('network.dnsInvalid'));
       return;
     }
     await NetworkStore.saveCustomDns(text);

@@ -7,6 +7,7 @@ import 'package:re_highlight/styles/github-dark.dart';
 import 'package:re_highlight/styles/github.dart';
 
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import 'code_find_panel.dart';
 import 'editor_language.dart';
 import 'file_service.dart';
@@ -172,12 +173,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            context.tr('textEditor.saveFailed', {'error': e.toString()}),
-          ),
-        ),
+      showErrorDialog(
+        context,
+        context.tr('textEditor.saveFailed', {'error': e.toString()}),
       );
     }
   }

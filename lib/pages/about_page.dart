@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
 import '../online/update_service.dart';
+import '../widgets/error_dialog.dart';
 import '../widgets/update_dialog.dart';
 
 /// 「关于」页面：展示应用版本、简介、开源许可等信息。
@@ -45,9 +46,7 @@ class _AboutPageState extends State<AboutPage> {
       final result = await UpdateService.checkForUpdates();
       if (result == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('about.checkUpdateFailed'))),
-        );
+        showErrorDialog(context, context.tr('about.checkUpdateFailed'));
         return;
       }
       final updateInfo = await UpdateService.pickBestUpdate(result);

@@ -5,7 +5,9 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 
+import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 
 /// 图片裁剪页面：将导入的图片裁剪为 1:1 并缩放至 64×64，保存为 PNG。
 ///
@@ -135,7 +137,7 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
     try {
       final bytes = await File(widget.imagePath).readAsBytes();
       final decoded = img.decodeImage(bytes);
-      if (decoded == null) throw Exception('无法解码图片');
+      if (decoded == null) throw Exception(tr('serverIcon.decodeFailed'));
 
       // 裁剪框在原图坐标中的尺寸
       final cropInImage = _cropBoxSize / _zoom;
@@ -161,12 +163,9 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              context.tr('serverIcon.saveFailed', {'error': e.toString()}),
-            ),
-          ),
+        showErrorDialog(
+          context,
+          context.tr('serverIcon.saveFailed', {'error': e.toString()}),
         );
         setState(() => _saving = false);
       }

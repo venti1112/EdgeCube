@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../net/download_format.dart';
 import '../server/ecpkg_handler.dart';
 import '../server/proot_service.dart';
@@ -65,9 +66,7 @@ class _RuntimePageState extends State<RuntimePage> {
   void _handleOpenEcpkg(String path) {
     if (!mounted) return;
     if (!path.toLowerCase().endsWith('.ecpkg')) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(context.tr('runtime.notEcpkg'))));
+      showErrorDialog(context, context.tr('runtime.notEcpkg'));
       return;
     }
     _doImport(path);
@@ -120,7 +119,6 @@ class _RuntimePageState extends State<RuntimePage> {
     }
 
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     final tr = LocaleScope.of(context).translations;
     final path = await pickFromSystem(
       context,
@@ -129,9 +127,7 @@ class _RuntimePageState extends State<RuntimePage> {
     );
     if (path == null || !path.toLowerCase().endsWith('.ecpkg')) {
       if (mounted && path != null) {
-        messenger.showSnackBar(
-          SnackBar(content: Text(tr.get('runtime.notEcpkg'))),
-        );
+        showErrorDialog(context, tr.get('runtime.notEcpkg'));
       }
       return;
     }
@@ -178,19 +174,15 @@ class _RuntimePageState extends State<RuntimePage> {
         }
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            tr.get('runtime.importFailed', {'error': '${e.message}'}),
-          ),
-        ),
+      showErrorDialog(
+        context,
+        tr.get('runtime.importFailed', {'error': '${e.message}'}),
       );
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(tr.get('runtime.importFailed', {'error': '$e'})),
-        ),
+      showErrorDialog(
+        context,
+        tr.get('runtime.importFailed', {'error': '$e'}),
       );
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -199,14 +191,11 @@ class _RuntimePageState extends State<RuntimePage> {
 
   Future<void> _delete(RuntimeInfo info) async {
     final theme = Theme.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     final tr = LocaleScope.of(context).translations;
     final runtimeRunning = await _service.isRuntimeRunning(info.id);
     if (runtimeRunning) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(tr.get('runtime.cannotDeleteRunning'))),
-      );
+      showErrorDialog(context, tr.get('runtime.cannotDeleteRunning'));
       return;
     }
 
@@ -241,10 +230,9 @@ class _RuntimePageState extends State<RuntimePage> {
       await _load();
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(tr.get('runtime.deleteFailed', {'error': '$e'})),
-        ),
+      showErrorDialog(
+        context,
+        tr.get('runtime.deleteFailed', {'error': '$e'}),
       );
     }
   }
@@ -254,11 +242,7 @@ class _RuntimePageState extends State<RuntimePage> {
   Future<void> _importRootfs() async {
     if (!_prootAvailable) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.tr('runtime.proot.notAvailable')),
-        ),
-      );
+      showErrorDialog(context, context.tr('runtime.proot.notAvailable'));
       return;
     }
 
@@ -346,13 +330,15 @@ class _RuntimePageState extends State<RuntimePage> {
         }
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('runtime.proot.importRootfsFailed', {'error': e.message ?? ''}))),
+      showErrorDialog(
+        context,
+        context.tr('runtime.proot.importRootfsFailed', {'error': e.message ?? ''}),
       );
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('runtime.proot.importRootfsFailed', {'error': '$e'}))),
+      showErrorDialog(
+        context,
+        context.tr('runtime.proot.importRootfsFailed', {'error': '$e'}),
       );
     } finally {
       if (mounted) setState(() => _importingRootfs = false);
@@ -446,7 +432,6 @@ class _RuntimePageState extends State<RuntimePage> {
 
   Future<void> _deleteRootfs(ProotRootfsInfo info) async {
     final theme = Theme.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -475,8 +460,9 @@ class _RuntimePageState extends State<RuntimePage> {
       await _load();
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('runtime.proot.deleteRootfsFailed', {'error': '$e'}))),
+      showErrorDialog(
+        context,
+        context.tr('runtime.proot.deleteRootfsFailed', {'error': '$e'}),
       );
     }
   }
@@ -487,9 +473,7 @@ class _RuntimePageState extends State<RuntimePage> {
     final messenger = ScaffoldMessenger.of(context);
 
     if (!info.canCheckUpdate) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(tr.get('runtime.update.noUpdateUrl'))),
-      );
+      showErrorDialog(context, tr.get('runtime.update.noUpdateUrl'));
       return;
     }
 
@@ -497,9 +481,7 @@ class _RuntimePageState extends State<RuntimePage> {
     final running = await _service.isRuntimeRunning(info.id);
     if (running) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(tr.get('runtime.cannotUpdateRunning'))),
-      );
+      showErrorDialog(context, tr.get('runtime.cannotUpdateRunning'));
       return;
     }
 
@@ -530,12 +512,9 @@ class _RuntimePageState extends State<RuntimePage> {
     Navigator.of(context).pop(); // 关闭加载对话框
 
     if (updateInfo == null) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            tr.get('runtime.update.checkFailed', {'error': error ?? ''}),
-          ),
-        ),
+      showErrorDialog(
+        context,
+        tr.get('runtime.update.checkFailed', {'error': error ?? ''}),
       );
       return;
     }
@@ -557,7 +536,6 @@ class _RuntimePageState extends State<RuntimePage> {
     RuntimeUpdateInfo info,
   ) async {
     final tr = LocaleScope.of(context).translations;
-    final messenger = ScaffoldMessenger.of(context);
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -621,9 +599,9 @@ class _RuntimePageState extends State<RuntimePage> {
     final deviceArch = await _service.getDeviceArch();
     final pkg = RuntimeUpdateService.pickPackage(info, deviceArch);
     if (pkg == null) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(tr.get('runtime.update.noMatchingPackage'))),
-      );
+      if (mounted) {
+        showErrorDialog(context, tr.get('runtime.update.noMatchingPackage'));
+      }
       return;
     }
 
@@ -700,12 +678,9 @@ class _RuntimePageState extends State<RuntimePage> {
       await dialogFuture;
       progressNotifier.dispose();
       if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              tr.get('runtime.update.downloadFailed', {'error': error}),
-            ),
-          ),
+        showErrorDialog(
+          context,
+          tr.get('runtime.update.downloadFailed', {'error': error}),
         );
       }
       return;
@@ -768,13 +743,12 @@ class _RuntimePageState extends State<RuntimePage> {
       );
       await dialogFuture;
       progressNotifier.dispose();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            tr.get('runtime.update.installFailed', {'error': '$e'}),
-          ),
-        ),
-      );
+      if (mounted) {
+        showErrorDialog(
+          context,
+          tr.get('runtime.update.installFailed', {'error': '$e'}),
+        );
+      }
     }
   }
 

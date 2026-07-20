@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
 
 class PhotoAsset {
@@ -62,7 +63,7 @@ class PhotoLibrary {
       'uri': uri,
       'maxSize': maxSize,
     });
-    if (bytes == null) throw StateError('无法读取图片');
+    if (bytes == null) throw StateError(tr('photoPicker.readFailed'));
     return bytes;
   }
 
@@ -71,7 +72,7 @@ class PhotoLibrary {
     final bytes = await _channel.invokeMethod<Uint8List>('originalBytes', {
       'uri': uri,
     });
-    if (bytes == null) throw StateError('无法读取图片');
+    if (bytes == null) throw StateError(tr('photoPicker.readFailed'));
     return bytes;
   }
 
@@ -80,7 +81,7 @@ class PhotoLibrary {
       'uri': photo.uri,
       'name': photo.name,
     });
-    if (path == null) throw StateError('无法复制图片');
+    if (path == null) throw StateError(tr('photoPicker.copyFailed'));
     return path;
   }
 }

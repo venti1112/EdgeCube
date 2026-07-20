@@ -7,6 +7,7 @@ import '../config/ddns_store.dart';
 import '../config/network_store.dart';
 import '../files/text_editor_page.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../server/runtime_service.dart';
 import '../server/server_scope.dart';
 import '../tunnel/tunnel_service.dart';
@@ -197,16 +198,28 @@ class _PortMappingPageState extends State<PortMappingPage> {
     try {
       final result = await ServerScope.of(context).updateDdnsOnce();
       if (!mounted) return;
-      final text = result.success
-          ? trans.get('portMapping.ddnsUpdateSuccess', {
-              'ip': [result.ipv4, result.ipv6].whereType<String>().join(' / '),
-            })
-          : trans.get('portMapping.ddnsUpdateFailed', {
-              'error': result.error ?? '',
-            });
-      messenger.showSnackBar(
-        SnackBar(content: Text(text), duration: const Duration(seconds: 3)),
-      );
+      if (result.success) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              trans.get('portMapping.ddnsUpdateSuccess', {
+                'ip': [
+                  result.ipv4,
+                  result.ipv6,
+                ].whereType<String>().join(' / '),
+              }),
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        showErrorDialog(
+          context,
+          trans.get('portMapping.ddnsUpdateFailed', {
+            'error': result.error ?? '',
+          }),
+        );
+      }
     } finally {
       if (mounted) setState(() => _ddnsUpdating = false);
     }

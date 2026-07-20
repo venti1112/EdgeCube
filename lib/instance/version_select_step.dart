@@ -45,7 +45,7 @@ class VersionSelectStep extends StatelessWidget {
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: onRetry,
-                child: Text(context.tr('instance.retry')),
+                child: Text(context.tr('common.retry')),
               ),
             ],
           ),
@@ -55,7 +55,7 @@ class VersionSelectStep extends StatelessWidget {
     if (versions.isEmpty) {
       return Center(
         child: Text(
-          context.tr('instance.noVersions'),
+          context.tr('instance.noVersionsAvailable'),
           style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
       );

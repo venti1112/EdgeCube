@@ -265,7 +265,10 @@ class VersionFetchService {
   }
 
   /// 解析 Forge Maven 元数据 XML，返回 {mcVersion: [forgeVersion...]}。
-  /// 版本格式为 "{mcVersion}-{forgeVersion}"，按最后一个 "-" 分割。
+  /// 版本格式为 "{mcVersion}-{forgeVersion}"。MC 版本段本身不含 "-"，
+  /// 而部分老版本的 Forge 段带分支后缀（如 "10.13.2.1300-1.7.10"、
+  /// "12.18.0.1981-1.10.0"），因此必须按第一个 "-" 分割，
+  /// 否则后缀会被误当成独立的 MC 版本。
   static Future<Map<String, List<String>>> fetchAllForgeVersions() async {
     final client = HttpClient();
     try {
@@ -283,10 +286,10 @@ class VersionFetchService {
       final map = <String, List<String>>{};
       for (final m in matches) {
         final full = m.group(1)!;
-        final lastDash = full.lastIndexOf('-');
-        if (lastDash < 0) continue;
-        final mcVersion = full.substring(0, lastDash);
-        final forgeVersion = full.substring(lastDash + 1);
+        final firstDash = full.indexOf('-');
+        if (firstDash < 0) continue;
+        final mcVersion = full.substring(0, firstDash);
+        final forgeVersion = full.substring(firstDash + 1);
         map.putIfAbsent(mcVersion, () => []).add(forgeVersion);
       }
 

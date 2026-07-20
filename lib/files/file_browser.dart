@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
+import '../widgets/error_dialog.dart';
 import 'file_entry.dart';
 import 'file_search_bar.dart';
 import 'file_service.dart';
@@ -213,9 +214,7 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   void _showError(Object error) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(error.toString())));
+    showErrorDialog(context, error.toString());
   }
 
   void _enter(FileEntry entry) {
@@ -703,14 +702,19 @@ class _FileBrowserState extends State<FileBrowser> {
   /// 汇报批量操作结果；[failed] 为失败条目名称列表。
   void _reportBulkResult(String actionName, List<String> failed) {
     if (!mounted) return;
-    final msg = failed.isEmpty
-        ? context.tr('fileBrowser.bulkSuccess', {'action': actionName})
-        : context.tr('fileBrowser.bulkPartial', {
-            'action': actionName,
-            'count': failed.length.toString(),
-            'list': failed.join('、'),
-          });
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    if (failed.isEmpty) {
+      final msg = context.tr('fileBrowser.bulkSuccess', {'action': actionName});
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } else {
+      showErrorDialog(
+        context,
+        context.tr('fileBrowser.bulkPartial', {
+          'action': actionName,
+          'count': failed.length.toString(),
+          'list': failed.join('、'),
+        }),
+      );
+    }
   }
 
   Future<void> _deleteSelected() async {

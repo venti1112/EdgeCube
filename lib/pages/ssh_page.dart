@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../config/ssh_store.dart';
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../instance/instance_scope.dart';
 import '../net/network_address.dart';
 import '../ssh/ssh_controller.dart';
@@ -135,7 +136,7 @@ class _SshPageState extends State<SshPage> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    showErrorDialog(context, msg);
   }
 
   @override

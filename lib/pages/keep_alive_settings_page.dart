@@ -4,6 +4,7 @@ import 'package:battery_optimization_helper/battery_optimization_helper.dart';
 import 'package:flutter/material.dart';
 
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../server/power_service.dart';
 
 /// 后台保活设置子页面（仅 Android）。
@@ -99,12 +100,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
   Future<void> _openAutoStartSettings() async {
     final opened = await BatteryOptimizationHelper.openAutoStartSettings();
     if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.tr('settings.autoStart.openFailed')),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      showErrorDialog(context, context.tr('settings.autoStart.openFailed'));
     }
   }
 

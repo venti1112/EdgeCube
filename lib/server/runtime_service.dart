@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../i18n/i18n_service.dart';
+
 /// 已安装运行时的信息模型。
 class RuntimeInfo {
   const RuntimeInfo({
@@ -123,7 +125,7 @@ class RuntimeService {
   /// 返回下载目录路径（内部存储/Download/EdgeCube）。
   static Future<String> getDownloadDir() async {
     final path = await _method.invokeMethod<String>('getDownloadDir');
-    if (path == null) throw Exception('获取下载目录失败');
+    if (path == null) throw Exception(tr('runtime.getDownloadDirFailed'));
     return path;
   }
 }

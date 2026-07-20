@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:xterm/xterm.dart';
 
+import '../i18n/i18n_service.dart';
 import 'shell_service.dart';
 import '../widgets/terminal_keys_bar.dart';
 
@@ -64,7 +65,7 @@ class ShellController extends ChangeNotifier implements TerminalKeysController {
     try {
       await _service.start(cwd: cwd, shellId: shellId);
     } catch (e) {
-      _writeTerm('\r\n[EdgeCube] 启动 shell 失败：$e\r\n');
+      _writeTerm('\r\n[EdgeCube] ${tr('shell.startFailed', {'error': '$e'})}\r\n');
     }
   }
 

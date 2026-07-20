@@ -5,6 +5,7 @@ import '../config/ftp_store.dart';
 import '../ftp/ftp_controller.dart';
 import '../ftp/ftp_scope.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../instance/instance_scope.dart';
 import '../net/network_address.dart';
 import '../widgets/expandable_address_list.dart';
@@ -82,21 +83,16 @@ class _FtpPageState extends State<FtpPage> {
     final instances = InstanceScope.of(context);
     if (value && instances.selected == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('ftp.noInstanceSelected'))),
-      );
+      showErrorDialog(context, context.tr('ftp.noInstanceSelected'));
       return;
     }
     try {
       await ftp.setEnabled(value);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            context.tr('ftp.operationFailed', {'error': e.toString()}),
-          ),
-        ),
+      showErrorDialog(
+        context,
+        context.tr('ftp.operationFailed', {'error': e.toString()}),
       );
     }
   }

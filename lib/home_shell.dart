@@ -22,6 +22,7 @@ import 'server/ecpkg_handler.dart';
 import 'server/power_service.dart';
 import 'server/server_controller.dart';
 import 'server/server_scope.dart';
+import 'widgets/error_dialog.dart';
 import 'widgets/update_dialog.dart';
 import 'widgets/open_source_notice_dialog.dart';
 import 'widgets/user_agreement_dialog.dart';
@@ -68,9 +69,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void _handleOpenEcpkg(String path) {
     if (!mounted) return;
     if (!path.toLowerCase().endsWith('.ecpkg')) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(context.tr('runtime.notEcpkg'))));
+      showErrorDialog(context, context.tr('runtime.notEcpkg'));
       return;
     }
     Navigator.of(context)
@@ -88,10 +87,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   void _handleEcpkgError(String error) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(context.tr('runtime.openEcpkgFailed', {'error': error})),
-      ),
+    showErrorDialog(
+      context,
+      context.tr('runtime.openEcpkgFailed', {'error': error}),
     );
   }
 

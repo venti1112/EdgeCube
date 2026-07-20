@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../config/config_store.dart';
 import '../files/storage_permission.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../i18n/translations.dart';
 import '../instance/instance_store.dart';
 import '../mods/icon_cache.dart';
@@ -178,14 +179,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _clearing = false);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(tr.get('storage.clearFailed', {'error': '$e'})),
-            duration: const Duration(seconds: 3),
-          ),
-        );
+      showErrorDialog(context, tr.get('storage.clearFailed', {'error': '$e'}));
     }
   }
 
@@ -706,7 +700,7 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
                           ? '${r.envName} (${r.id})'
                           : r.id,
                       subtitle: r.isGeneric
-                          ? 'generic · 纯容器'
+                          ? 'generic · ${tr.get('storage.genericContainer')}'
                           : '${r.envType}: ${r.envMainBin}'
                               '${r.envVersionName.isNotEmpty ? ' (${r.envVersionName})' : ''}',
                       size: _prootSizes[r.id],

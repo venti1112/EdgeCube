@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/network_store.dart';
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../instance/create_instance_page.dart';
 import '../instance/forge_launch.dart';
 import '../instance/instance.dart';
@@ -513,9 +514,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         return;
       }
       if (file == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('server.noPharFound'))),
-        );
+        showErrorDialog(context, context.tr('server.noPharFound'));
         return;
       }
       server.start(
@@ -540,9 +539,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     //  - 纯容器（generic）：用户须提供完整启动命令，作为 programArgs 传入。
     if (_isProot) {
       if (ctx.prootRootfsInfos.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('server.noProotRootfs'))),
-        );
+        showErrorDialog(context, context.tr('server.noProotRootfs'));
         return;
       }
       final rootfsId = _prootRootfsId.isNotEmpty
@@ -580,8 +577,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         // 纯容器：用户必须提供完整启动命令
         final command = _prootStartupCommandController.text.trim();
         if (command.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(context.tr('server.genericContainerCommandRequired'))),
+          showErrorDialog(
+            context,
+            context.tr('server.genericContainerCommandRequired'),
           );
           return;
         }
@@ -607,9 +605,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
             'php' => 'server.noPharFound',
             _ => 'server.noServerFileFound',
           };
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(context.tr(missingKey))),
-          );
+          showErrorDialog(context, context.tr(missingKey));
           return;
         }
         if (!await _ensureEula(ctx.workingDir)) return;
@@ -667,9 +663,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     ServerController server,
   ) async {
     if (file == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(context.tr('server.noJarFound'))));
+      showErrorDialog(context, context.tr('server.noJarFound'));
       return;
     }
     if (!await _ensureEula(ctx.workingDir)) return;
@@ -701,9 +695,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     ServerController server,
   ) async {
     if (file == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(context.tr('server.noJarFound'))));
+      showErrorDialog(context, context.tr('server.noJarFound'));
       return;
     }
     if (!await _ensureEula(ctx.workingDir)) return;
@@ -2294,7 +2286,6 @@ class _ConnectionCardState extends State<_ConnectionCard> {
     ThemeData theme,
     bool online,
   ) async {
-    final messenger = ScaffoldMessenger.of(context);
     final failedMsg = context.tr('server.authChangeFailed');
 
     final toValue = await showDialog<bool>(
@@ -2347,7 +2338,7 @@ class _ConnectionCardState extends State<_ConnectionCard> {
     if (toValue == null) return;
     final ok = await widget.server.setOnlineMode(toValue);
     if (!ok) {
-      messenger.showSnackBar(SnackBar(content: Text(failedMsg)));
+      if (context.mounted) showErrorDialog(context, failedMsg);
       return;
     }
     // 写回成功：服务端运行中则弹「需要重启生效」对话框（复用配置页文案）。
@@ -2516,10 +2507,9 @@ class _CrashDialogState extends State<_CrashDialog> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.tr('server.exportFailed', {'error': '$e'})),
-          ),
+        showErrorDialog(
+          context,
+          context.tr('server.exportFailed', {'error': '$e'}),
         );
       }
     } finally {

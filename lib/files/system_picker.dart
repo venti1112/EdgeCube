@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import 'file_entry.dart';
 import 'file_search_bar.dart';
 import 'file_service.dart';
@@ -171,7 +172,6 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
 
   /// 在当前目录下新建文件夹（仅目录选择模式可用）。
   Future<void> _createFolder() async {
-    final messenger = ScaffoldMessenger.of(context);
     final name = await _promptFolderName(context);
     if (name == null || name.isEmpty || !mounted) return;
     try {
@@ -179,15 +179,12 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
       await _load();
     } on FileConflictException catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+      showErrorDialog(context, e.toString());
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            context.tr('picker.createFolderFailed', {'error': e.toString()}),
-          ),
-        ),
+      showErrorDialog(
+        context,
+        context.tr('picker.createFolderFailed', {'error': e.toString()}),
       );
     }
   }

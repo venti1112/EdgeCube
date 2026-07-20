@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../config/mcp_store.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../mcp/mcp_controller.dart';
 import '../mcp/mcp_scope.dart';
 import '../net/network_address.dart';
@@ -77,22 +78,18 @@ class _McpPageState extends State<McpPage> {
       await mcp.setEnabled(value);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.tr('mcpPage.operationFailed', {'error': '$e'})),
-        ),
+      showErrorDialog(
+        context,
+        context.tr('mcpPage.operationFailed', {'error': '$e'}),
       );
       return;
     }
     if (!mounted) return;
     // 开启失败（如端口被占用）时给出提示。
     if (value && !mcp.isRunning && mcp.lastError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            context.tr('mcpPage.startFailed', {'error': mcp.lastError ?? ''}),
-          ),
-        ),
+      showErrorDialog(
+        context,
+        context.tr('mcpPage.startFailed', {'error': mcp.lastError ?? ''}),
       );
     }
   }

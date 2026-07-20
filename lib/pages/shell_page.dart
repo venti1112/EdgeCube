@@ -106,7 +106,7 @@ class _ShellPageState extends State<ShellPage> {
           // 仅在有多于一个选项时显示，避免单一 shell 时浪费空间。
           if (_optionsLoaded && _options.length > 1)
             PopupMenuButton<String>(
-              tooltip: '切换 shell',
+              tooltip: context.tr('shell.switch'),
               icon: const Icon(Icons.terminal),
               onSelected: (id) {
                 final opt = _options.firstWhere(
