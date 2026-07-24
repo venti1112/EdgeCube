@@ -22,9 +22,10 @@ dependencies:
   package_info_plus: ^10.2.1
   url_launcher: ^6.3.2
   http: ^1.6.0
+  flutter_secure_storage: ^10.3.1
   battery_optimization_helper: ^0.2.0
   downloadx: ^0.3.0
-  share_plus: ^13.2.1
+  share_plus: ^13.3.0
   xterm: ^4.0.0
   mcp_dart: ^2.2.2
   image: ^4.8.0
@@ -33,6 +34,7 @@ dependencies:
   re_editor: ^0.10.0
   re_highlight: ^0.0.3
   flutter_svg: ^2.3.0
+  pinenacl: ^0.6.0
 
 dev_dependencies:
   flutter_test:

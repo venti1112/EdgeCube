@@ -191,7 +191,9 @@ class MainActivity : FlutterActivity() {
 
     /** Android 17+ 需要 ACCESS_LOCAL_NETWORK 权限才能访问局域网（Minecraft 服务端、FTP、SSH、UPnP）。 */
     private fun requestLocalNetworkPermission() {
-        if (Build.VERSION.SDK_INT >= 37) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA &&
+            Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.CINNAMON_BUN_1
+        ) {
             if (checkSelfPermission(android.Manifest.permission.ACCESS_LOCAL_NETWORK)
                 != PackageManager.PERMISSION_GRANTED
             ) {
@@ -199,7 +201,6 @@ class MainActivity : FlutterActivity() {
                 return
             }
         }
-        // 所有启动权限请求链已结束（无需请求或已全部处理），回调 Dart 端。
         pendingStartupPermissionResult?.success(null)
         pendingStartupPermissionResult = null
     }
@@ -212,8 +213,6 @@ class MainActivity : FlutterActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
             1001 -> {
-                // 通知权限对话框关闭后，接着请求本地网络权限。
-                // requestLocalNetworkPermission 内部会在无需请求时回调 pendingStartupPermissionResult。
                 requestLocalNetworkPermission()
             }
             1002 -> {
@@ -225,7 +224,6 @@ class MainActivity : FlutterActivity() {
                 pendingStoragePermissionResult = null
             }
             1004 -> {
-                // 本地网络权限对话框关闭，启动权限请求链结束，回调 Dart 端。
                 pendingStartupPermissionResult?.success(null)
                 pendingStartupPermissionResult = null
             }
@@ -243,12 +241,10 @@ class MainActivity : FlutterActivity() {
         trySendPendingEcpkg()
 
         // 启动权限：由 Dart 端在用户同意用户协议后调用，依次请求通知权限与本地网络权限。
-        // 请求链结束后（无论授权与否）回调 result.success，Dart 端据此继续后续流程。
         MethodChannel(messenger, permissionChannel).setMethodCallHandler { call, result ->
             when (call.method) {
                 "requestStartupPermissions" -> {
                     if (pendingStartupPermissionResult != null) {
-                        // 已有请求在进行，直接返回避免重复。
                         result.success(null)
                         return@setMethodCallHandler
                     }
@@ -386,7 +382,7 @@ class MainActivity : FlutterActivity() {
                     requestIgnoreBatteryOptimizations()
                     result.success(null)
                 }
-                // —— 保活增强：WakeLock/WifiLock 与状态悬浮窗 ——
+                // —— WakeLock/WifiLock 与状态悬浮窗 ——
                 "isWakeLockEnabled" ->
                     result.success(KeepAliveManager.isWakeLockEnabled(applicationContext))
                 "setWakeLockEnabled" -> {

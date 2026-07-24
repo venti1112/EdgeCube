@@ -21,7 +21,6 @@ import '../server/proot_service.dart';
 import '../server/runtime_service.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
-import 'port_mapping_page.dart';
 import 'runtime_page.dart';
 import '../net/network_address.dart';
 import '../server/system_monitor_scope.dart';
@@ -151,8 +150,6 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     server.onCrashExit = _onCrashExit;
     // FRP 隧道异常退出时复用同一崩溃弹窗（导出/上传日志）。
     server.onTunnelCrashExit = _onTunnelCrashExit;
-    // frpc.toml 仍为默认模板时拒绝启动并弹窗提示。
-    server.onTunnelTemplateConfig = _onTunnelTemplateConfig;
     // UPnP 超时提示。
     server.onUpnpTimeout = _onUpnpTimeout;
     // 监听运行时导入/删除，自动刷新可用运行时列表。
@@ -184,36 +181,6 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _CrashDialog(crash: crash),
-    );
-  }
-
-  /// frpc.toml 仍为默认模板配置、隧道启动被拒绝时弹窗提示，
-  /// 引导用户前往网络映射页修改配置。
-  void _onTunnelTemplateConfig() {
-    if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.tr('portMapping.templateConfigTitle')),
-        content: Text(context.tr('portMapping.templateConfigMessage')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(context.tr('common.close')),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const PortMappingPage(),
-                ),
-              );
-            },
-            child: Text(context.tr('portMapping.templateConfigGo')),
-          ),
-        ],
-      ),
     );
   }
 

@@ -13,8 +13,13 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.venti1112.edgecube"
-    compileSdk = 37
-    ndkVersion = flutter.ndkVersion
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
+    buildToolsVersion = "37.0.0"
+    ndkVersion = "30.0.15729638"
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -55,6 +60,8 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
+            // 强制使用指定 CMake 版本,不允许 SDK Manager 默认版本。
+            version = "4.1.2"
         }
     }
 

@@ -9,6 +9,9 @@ import 'server/runtime_migration.dart';
 import 'route_observer.dart';
 import 'ftp/ftp_controller.dart';
 import 'ftp/ftp_scope.dart';
+import 'frp/frp_controller.dart';
+import 'frp/frp_default_tunnel.dart';
+import 'frp/frp_scope.dart';
 import 'home_shell.dart';
 import 'i18n/locale_controller.dart';
 import 'i18n/locale_scope.dart';
@@ -65,6 +68,8 @@ Future<void> main() async {
   serverController.upnpProtocolResolver = NetworkStore.loadUpnpProtocol;
   // FRP 隧道开关：读取 config/network.json 中的持久化配置。
   serverController.tunnelEnabledResolver = NetworkStore.loadTunnelEnabled;
+  // 默认映射隧道：开关打开时随服务端启停的隧道（生成配置并返回路径）。
+  serverController.defaultTunnelResolver = FrpDefaultTunnel.resolve;
   // DDNS 动态域名解析：读取 config/ddns.json 中的持久化配置。
   serverController.ddnsConfigResolver = DdnsStore.load;
   // 崩溃分析按当前语言取规则文案：注入当前生效的 locale 代码。
@@ -94,6 +99,8 @@ Future<void> main() async {
   instanceController.addListener(() {
     _syncSshRootDir(instanceController, sshController);
   });
+  // FRP 映射隧道：多供应商隧道管理；进程仍由 serverController 独占。
+  final frpController = FrpController(server: serverController);
   runApp(
     EdgeCubeApp(
       initialThemeMode: initialThemeMode,
@@ -109,6 +116,7 @@ Future<void> main() async {
       mcpController: mcpController,
       shellController: shellController,
       sshController: sshController,
+      frpController: frpController,
     ),
   );
 }
@@ -159,6 +167,7 @@ class EdgeCubeApp extends StatefulWidget {
     required this.mcpController,
     required this.shellController,
     required this.sshController,
+    required this.frpController,
   });
 
   final ThemeMode initialThemeMode;
@@ -174,6 +183,7 @@ class EdgeCubeApp extends StatefulWidget {
   final McpController mcpController;
   final ShellController shellController;
   final SshController sshController;
+  final FrpController frpController;
 
   @override
   State<EdgeCubeApp> createState() => _EdgeCubeAppState();
@@ -263,7 +273,9 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                     controller: widget.shellController,
                     child: SshScope(
                       controller: widget.sshController,
-                      child: DynamicColorBuilder(
+                      child: FrpScope(
+                        controller: widget.frpController,
+                        child: DynamicColorBuilder(
                         builder:
                             (
                               ColorScheme? lightDynamic,
@@ -320,6 +332,7 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                                 home: const HomeShell(),
                               );
                             },
+                        ),
                       ),
                     ),
                   ),

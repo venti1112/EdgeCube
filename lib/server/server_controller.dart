@@ -166,6 +166,27 @@ class CrashData {
   }
 }
 
+/// 默认映射隧道的解析结果：已写好的 frpc 配置文件 + 显示名 + 来源隧道。
+///
+/// 由外层注入的 [ServerController.defaultTunnelResolver] 产出，
+/// ServerController 据此启动随服务端启停的自动隧道，自身不依赖 frp 模块。
+class ResolvedDefaultTunnel {
+  const ResolvedDefaultTunnel({
+    required this.configPath,
+    required this.name,
+    required this.sourceId,
+  });
+
+  /// frpc 配置文件（TOML）的绝对路径。
+  final String configPath;
+
+  /// 隧道显示名（终端提示与进程名）。
+  final String name;
+
+  /// 来源映射隧道的 localId（映射隧道页据此显示运行状态）。
+  final String sourceId;
+}
+
 /// 管理服务端进程的运行状态与日志缓冲，并把 UI 操作转发到 [ServerService]。
 ///
 /// 单活动进程模型：同一时刻只跟踪一个正在运行的服务端，[runningInstanceId]
@@ -249,6 +270,11 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
 
   /// 解析当前是否启用了 FRP 隧道。由外层（main）注入，读取配置文件。
   Future<bool> Function()? tunnelEnabledResolver;
+
+  /// 解析默认映射隧道（生成配置文件并返回路径）。由外层（main）注入。
+  /// 返回 null 表示未设置默认隧道或条目已删除；抛异常表示配置生成失败
+  /// （供应商 API 出错、未登录等），本次跳过隧道启动。
+  Future<ResolvedDefaultTunnel?> Function()? defaultTunnelResolver;
 
   /// 解析 DDNS 完整配置（是否启用、服务商、凭据等）。由外层（main）注入，
   /// 读取配置文件。
@@ -344,13 +370,23 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   // _tunnelRunning: frpc 进程是否真正进入 STATUS_RUNNING（看到 "login to server
   //   success" 日志）；用于区分"进程已拉起但未连接成功"与"已成功连接到 frps"。
   // _userStoppingTunnel: 区分用户主动停止（stop / disableTunnelNow /
-  //   applyTunnelConfig / restartTunnel）与 frpc 进程异常退出；前者静默，
+  //   restartTunnel）与 frpc 进程异常退出；前者静默，
   //   后者需要提示。
   // _tunnelCrashed: frpc 上次异常退出（非用户主动停止且退出码非 0）标志。
   //   UI 据此在主页状态芯片显示"出错"（红色）；重新启动或主动停止时复位。
   bool _tunnelRunning = false;
   bool _userStoppingTunnel = false;
   bool _tunnelCrashed = false;
+
+  // —— 独立隧道（FRP 供应商页发起，不随 MC 服务端启停）——
+  // _standaloneTunnel: 当前 frpc 进程由「映射隧道」功能手动启动，与服务端
+  //   生命周期解耦：服务端停止时不回收，服务端启动时自动隧道让位并提示。
+  bool _standaloneTunnel = false;
+  String? _standaloneTunnelName;
+
+  // 自动隧道来源：当前随服务端运行的默认映射隧道 localId；
+  // 使用旧 frpc.toml 场景已移除，自动隧道必然来自某条已保存的映射隧道。
+  String? _autoTunnelSourceId;
 
   // —— 崩溃回调：服务端意外退出时触发 ——
   /// 当服务端非正常退出（退出码不为 0 且非用户主动停止）时调用。
@@ -365,13 +401,8 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   /// UI 层可通过 [suppressUpnpTimeout] 关闭后续超时检测。
   void Function()? onUpnpTimeout;
 
-  /// frpc.toml 仍为默认模板配置、FRP 隧道启动被拒绝时触发，
-  /// 通知 UI 弹窗引导用户先修改配置。
-  void Function()? onTunnelTemplateConfig;
-
   // —— 映射结果追踪 ——
   String? _upnpExternalIp; // UPnP 映射成功后的公网 IP
-  FrpcConfig? _activeFrpcConfig; // 当前活跃的 FRP 配置
   int? _serverPort; // 从配置文件读取的服务端端口（启动时缓存）
   bool? _onlineMode; // 正版验证（online-mode / xbox-auth）是否开启（启动时缓存）
 
@@ -400,9 +431,18 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
 
   /// frpc 上次是否异常退出。UI 据此在状态芯片显示"出错"（红色）。
   bool get isTunnelCrashed => _tunnelCrashed;
+
+  /// 当前 frpc 进程是否为「映射隧道」功能手动启动的独立隧道
+  /// （与 MC 服务端生命周期解耦）。
+  bool get isStandaloneTunnel => _standaloneTunnel;
+
+  /// 独立隧道的显示名；非独立隧道时为 null。
+  String? get standaloneTunnelName => _standaloneTunnelName;
+
+  /// 随服务端运行的自动隧道来源映射隧道 localId；非自动隧道运行时为 null。
+  String? get autoTunnelSourceId => _autoTunnelSourceId;
   String? get upnpExternalIp => _upnpExternalIp;
   int? get upnpMappedPort => _upnp.mappedPort;
-  FrpcConfig? get activeFrpcConfig => _activeFrpcConfig;
 
   // —— DDNS 状态公共接口 ——
   bool get isDdnsActive => _ddnsActive;
@@ -1102,7 +1142,8 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
           _serverPort = null;
           _onlineMode = null;
           if (_upnpActive) _stopUpnp();
-          if (!_restartingTunnel) _stopTunnel();
+          // 独立隧道与服务端生命周期解耦，服务端停止时不回收。
+          if (!_restartingTunnel && !_standaloneTunnel) _stopTunnel();
           if (_ddnsActive) _stopDdns(maybeDeleteRecords: true);
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
           if (exitCode != null) {
@@ -1462,6 +1503,11 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     if (resolver == null) return;
     resolver().then((enabled) async {
       if (enabled) {
+        // 独立隧道正在占用 frpc 进程：不强抢，提示用户后跳过自动隧道。
+        if (_tunnelActive && _standaloneTunnel) {
+          _notice(tr('server.notice.tunnelOccupiedByStandalone'));
+          return;
+        }
         final runtimeId = await NetworkStore.loadFrpcRuntimeId();
         // 检查 frpc 运行时是否已安装。
         final runtimes = await const RuntimeService().installedFrpcRuntimes();
@@ -1469,62 +1515,69 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
           _notice(tr('server.notice.tunnelNoRuntime'));
           return;
         }
-        _startTunnelWithConfig(runtimeId: runtimeId);
+        // 保存的运行时 id 失效时回退到第一个已安装项。
+        final validRuntimeId = runtimes.any((r) => r.id == runtimeId)
+            ? runtimeId
+            : runtimes.first.id;
+        await _resolveAndStartTunnel(runtimeId: validRuntimeId);
       }
     });
   }
 
-  /// 从 `config/frpc.toml` 读取配置并启动 FRP 隧道。
-  void _startTunnelWithConfig({String? runtimeId}) {
-    final dir = _workingDir;
-    if (dir == null || _tunnelActive) return;
+  /// 解析默认映射隧道并启动为自动隧道（随服务端启停）。
+  ///
+  /// 未设置默认隧道 / 条目已删除 → 提示后跳过；配置生成失败（供应商 API
+  /// 出错、未登录等）→ 提示后跳过，不影响服务端运行。
+  Future<void> _resolveAndStartTunnel({String? runtimeId}) async {
+    if (_tunnelActive) return;
+    final resolver = defaultTunnelResolver;
+    if (resolver == null) return;
+    final ResolvedDefaultTunnel? resolved;
+    try {
+      resolved = await resolver();
+    } catch (e) {
+      _notice(tr('server.notice.tunnelResolveFailed', {'error': '$e'}));
+      return;
+    }
+    if (resolved == null) {
+      _notice(tr('server.notice.tunnelNoDefault'));
+      return;
+    }
+    _startTunnelWithConfig(resolved, runtimeId: runtimeId);
+  }
+
+  /// 以解析好的默认隧道配置启动 frpc（同步置位防重入，再异步拉进程）。
+  void _startTunnelWithConfig(
+    ResolvedDefaultTunnel resolved, {
+    String? runtimeId,
+  }) {
+    if (_tunnelActive) return;
     _tunnelActive = true;
     _tunnelRunning = false;
     _userStoppingTunnel = false;
     _tunnelCrashed = false;
+    _autoTunnelSourceId = resolved.sourceId;
     _tunnelLog.clear();
     _tunnel.clearLog();
-    _doStartTunnel(dir, runtimeId: runtimeId);
+    _doStartTunnel(resolved, runtimeId: runtimeId);
   }
 
   Future<void> _doStartTunnel(
-    String dir, {
+    ResolvedDefaultTunnel resolved, {
     String? runtimeId,
   }) async {
     try {
-      final file = await NetworkStore.customFrpcFile();
-      if (!await file.exists()) {
-        _notice(tr('server.notice.tunnelNoConfig'));
-        _tunnelActive = false;
-        return;
-      }
-      final raw = await file.readAsString();
-      if (raw.trim().isEmpty) {
-        _notice(tr('server.notice.tunnelConfigEmpty'));
-        _tunnelActive = false;
-        return;
-      }
-      // 拒绝启动未修改的默认模板配置：占位地址连不上任何真实 frps 服务器，
-      // 启动只会得到一次令人困惑的"连接失败→异常退出"崩溃弹窗。
-      if (NetworkStore.isTemplateFrpcConfig(raw)) {
-        _notice(tr('server.notice.tunnelTemplateConfig'));
-        _tunnelActive = false;
-        notifyListeners();
-        onTunnelTemplateConfig?.call();
-        return;
-      }
-      final path = await _tunnel.writeRawConfig(raw);
       await _tunnel.start(
-        configPath: path,
-        name: 'frpc',
+        configPath: resolved.configPath,
+        name: resolved.name,
         runtimeId: runtimeId,
       );
-      _activeFrpcConfig = null;
-      _notice(tr('server.notice.tunnelStarting'));
+      _notice(tr('server.notice.tunnelStarting', {'name': resolved.name}));
       notifyListeners();
     } catch (e) {
       _notice(tr('server.notice.tunnelStartFailed', {'error': '$e'}));
       _tunnelActive = false;
+      _autoTunnelSourceId = null;
     }
   }
 
@@ -1533,7 +1586,9 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     _tunnelActive = false;
     _tunnelRunning = false;
     _userStoppingTunnel = true; // 标记为主动停止，避免退出事件误报"异常退出"
-    _activeFrpcConfig = null;
+    _standaloneTunnel = false;
+    _standaloneTunnelName = null;
+    _autoTunnelSourceId = null;
     _tunnel.stop().then((_) {
       // 静默处理，不影响主流程。
     });
@@ -1579,7 +1634,9 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     _userStoppingTunnel = false;
     _tunnelActive = false;
     _tunnelRunning = false;
-    _activeFrpcConfig = null;
+    _standaloneTunnel = false;
+    _standaloneTunnelName = null;
+    _autoTunnelSourceId = null;
     if (userStop || !wasActive) {
       _tunnelCrashed = false; // 主动停止或非本控制器发起，清除异常标记
       return;
@@ -1673,10 +1730,11 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     return result;
   }
 
-  /// 立即启用 FRP 隧道（用户在 UI 中打开开关时调用）。
-  void enableTunnelNow([FrpcConfig? config, String? runtimeId]) {
+  /// 立即启用 FRP 隧道（用户在 UI 中打开开关时调用）：
+  /// 重新解析默认映射隧道并启动。
+  void enableTunnelNow({String? runtimeId}) {
     if (_tunnelActive || _status != ServerStatus.running) return;
-    _startTunnelWithConfig(runtimeId: runtimeId);
+    _resolveAndStartTunnel(runtimeId: runtimeId);
   }
 
   /// 立即停用 FRP 隧道（用户在 UI 中关闭开关时调用）。
@@ -1685,29 +1743,65 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     _stopTunnel();
   }
 
-  /// 重启 FRP 隧道以应用最新配置（读取 `config/frpc.toml`）。
-  Future<void> applyTunnelConfig([String? runtimeId]) async {
-    if (!_tunnelActive || _status != ServerStatus.running) return;
-    _restartingTunnel = true;
-    await _tunnel.stop();
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (_status == ServerStatus.running && _workingDir != null) {
-      _doStartTunnel(_workingDir!, runtimeId: runtimeId);
-    }
-    _restartingTunnel = false;
-  }
-
-  /// 重启 FRP 隧道以应用最新配置（读取 `config/frpc.toml`）。
+  /// 重启 FRP 隧道以应用最新配置（重新解析默认映射隧道）。
   Future<void> restartTunnel() async {
     if (!_tunnelActive || _status != ServerStatus.running) return;
     _restartingTunnel = true;
+    _tunnelActive = false;
+    _tunnelRunning = false;
+    _autoTunnelSourceId = null;
     await _tunnel.stop();
+    // 等待进程退出事件落地（_restartingTunnel 抑制"异常退出"误报）。
     await Future.delayed(const Duration(milliseconds: 300));
-    if (_status == ServerStatus.running && _workingDir != null) {
-      final runtimeId = await NetworkStore.loadFrpcRuntimeId();
-      _doStartTunnel(_workingDir!, runtimeId: runtimeId);
-    }
     _restartingTunnel = false;
+    if (_status == ServerStatus.running) {
+      final runtimeId = await NetworkStore.loadFrpcRuntimeId();
+      await _resolveAndStartTunnel(runtimeId: runtimeId);
+    }
+  }
+
+  // —— 独立隧道（映射隧道功能）——
+
+  /// 启动独立 FRP 隧道：运行 [configPath] 指向的配置，不要求 MC 服务端在
+  /// 运行，也不随服务端停止而回收。frpc 进程全局唯一：若已有隧道（无论
+  /// 自动或独立）在运行，抛出 [StateError] 由调用方提示用户。
+  Future<void> runStandaloneTunnel({
+    required String configPath,
+    required String name,
+    String? runtimeId,
+  }) async {
+    if (_tunnelActive) {
+      throw StateError(
+        _standaloneTunnel ? 'standalone-active' : 'auto-active',
+      );
+    }
+    _tunnelActive = true;
+    _tunnelRunning = false;
+    _userStoppingTunnel = false;
+    _tunnelCrashed = false;
+    _standaloneTunnel = true;
+    _standaloneTunnelName = name;
+    _tunnelLog.clear();
+    _tunnel.clearLog();
+    try {
+      await _tunnel.start(
+        configPath: configPath,
+        name: name,
+        runtimeId: runtimeId,
+      );
+      notifyListeners();
+    } catch (e) {
+      _tunnelActive = false;
+      _standaloneTunnel = false;
+      _standaloneTunnelName = null;
+      rethrow;
+    }
+  }
+
+  /// 停止独立 FRP 隧道；非独立隧道时无操作（不误伤服务端自动隧道）。
+  void stopStandaloneTunnel() {
+    if (!_standaloneTunnel) return;
+    _stopTunnel();
   }
 
   /// 追加一条纯文本日志行到缓冲（用于复制日志 / 崩溃报告 / 玩家解析），不写终端。

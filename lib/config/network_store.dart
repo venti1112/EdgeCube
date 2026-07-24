@@ -1,15 +1,11 @@
-import 'dart:io';
-
-import 'package:path/path.dart' as p;
-
-import '../i18n/i18n_service.dart';
 import '../online/online_service.dart';
 import 'config_store.dart';
 
-/// 网络映射配置（UPnP 开关、FRP 隧道开关）的本地持久化。
+/// 网络映射配置（UPnP 开关、FRP 隧道开关、默认映射隧道）的本地持久化。
 ///
-/// 全部存于 `config/network.json`。FRP 配置通过直接编辑 `config/frpc.toml`
-/// 文件完成，不再提供表单界面。
+/// 全部存于 `config/network.json`。FRP 隧道配置来自「映射隧道」功能保存的
+/// 条目（[FrpRegistryStore]），开关打开时随服务端启停的隧道由
+/// `defaultFrpTunnelId` 指定。
 ///
 /// 更新检查地址与运行环境下载地址也在此管理（从原「在线服务」迁移）。
 class NetworkStore {
@@ -21,63 +17,10 @@ class NetworkStore {
   static const String _upnpProtocolKey = 'upnpProtocol';
   static const String _tunnelKey = 'tunnelEnabled';
   static const String _frpcRuntimeIdKey = 'frpcRuntimeId';
+  static const String _defaultFrpTunnelKey = 'defaultFrpTunnelId';
   static const String _useMirrorKey = 'useMirror';
   static const String _mirrorAskedKey = 'mirrorAsked';
   static const String _qqGroupAskedKey = 'qqGroupAsked';
-
-  /// 用户可直接编辑的自定义 frpc.toml 文件路径（`config/frpc.toml`）。
-  static Future<File> customFrpcFile() async {
-    final dir = await ConfigStore.configDir();
-    return File(p.join(dir.path, 'frpc.toml'));
-  }
-
-  /// 确保自定义配置文件存在；不存在时写入默认模板。
-  /// 返回该文件。
-  static Future<File> ensureCustomFrpcFile() async {
-    final file = await customFrpcFile();
-    if (!await file.exists()) {
-      final parent = file.parent;
-      if (!await parent.exists()) {
-        await parent.create(recursive: true);
-      }
-      await file.writeAsString(_defaultTemplate(), flush: true);
-    }
-    return file;
-  }
-
-  /// 匹配模板配置中未修改的占位服务器地址行（`serverAddr = "frp.example.com"`）。
-  /// 行首允许缩进；被 `#` 注释掉的行不匹配。与 [_defaultTemplate] 保持一致。
-  static final RegExp _templateAddrPattern = RegExp(
-    r'''^\s*serverAddr\s*=\s*["']frp\.example\.com["']''',
-    multiLine: true,
-  );
-
-  /// 判断 frpc 配置内容是否仍为未修改的默认模板
-  /// （serverAddr 仍指向占位地址，连不上任何真实 frps 服务器）。
-  static bool isTemplateFrpcConfig(String content) =>
-      _templateAddrPattern.hasMatch(content);
-
-  static String _defaultTemplate() {
-    return '''${tr('network.frpcTemplateHeader')}serverAddr = "frp.example.com"
-serverPort = 7000
-# auth.token = "your_token"
-
-transport.protocol = "tcp"
-transport.tls.enable = true
-
-log.to = "console"
-log.level = "info"
-
-[[proxies]]
-name = "minecraft"
-type = "tcp"
-localIP = "127.0.0.1"
-localPort = 25565
-remotePort = 25566
-# transport.useEncryption = true
-# transport.useCompression = true
-''';
-  }
 
   /// 是否使用镜像源（MSL 开服器）下载服务端，默认关闭。
   static Future<bool> loadUseMirror() async {
@@ -178,6 +121,23 @@ remotePort = 25566
       configMap.remove(_frpcRuntimeIdKey);
     } else {
       configMap[_frpcRuntimeIdKey] = runtimeId;
+    }
+    await ConfigStore.writeConfig(_fileName, configMap);
+  }
+
+  /// 读取默认映射隧道的 localId（FRP 开关打开时随服务端启停的隧道）；
+  /// 未设置时返回 null。
+  static Future<String?> loadDefaultFrpTunnelId() async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    return configMap[_defaultFrpTunnelKey] as String?;
+  }
+
+  static Future<void> saveDefaultFrpTunnelId(String? localId) async {
+    final configMap = await ConfigStore.readConfig(_fileName);
+    if (localId == null) {
+      configMap.remove(_defaultFrpTunnelKey);
+    } else {
+      configMap[_defaultFrpTunnelKey] = localId;
     }
     await ConfigStore.writeConfig(_fileName, configMap);
   }

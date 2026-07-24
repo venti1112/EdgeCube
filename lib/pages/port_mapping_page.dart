@@ -5,12 +5,15 @@ import 'package:flutter/services.dart';
 
 import '../config/ddns_store.dart';
 import '../config/network_store.dart';
-import '../files/text_editor_page.dart';
+import '../frp/frp_models.dart';
+import '../frp/frp_provider.dart';
+import '../frp/frp_registry_store.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
 import '../server/runtime_service.dart';
 import '../server/server_scope.dart';
 import '../tunnel/tunnel_service.dart';
+import 'frp/frp_tunnel_list_page.dart';
 import 'runtime_page.dart';
 
 /// 网络映射页：UPnP 自动端口映射 + FRP 隧道，均随服务器自动启停。
@@ -47,6 +50,10 @@ class _PortMappingPageState extends State<PortMappingPage> {
   // —— frpc 运行时 ——
   List<RuntimeInfo> _frpcRuntimes = [];
   String? _selectedFrpcRuntimeId;
+
+  // —— 默认映射隧道（FRP 开关打开时随服务端启停的隧道）——
+  List<SavedFrpTunnel> _savedTunnels = [];
+  String? _defaultTunnelId;
 
   // —— 隧道运行状态 ——
   // _tunnelStatus: 非 null 表示 frpc 正在运行/连接中（preparing/starting/running）。
@@ -90,6 +97,8 @@ class _PortMappingPageState extends State<PortMappingPage> {
     final tunnel = await NetworkStore.loadTunnelEnabled();
     final runtimeId = await NetworkStore.loadFrpcRuntimeId();
     final runtimes = await const RuntimeService().installedFrpcRuntimes();
+    final savedTunnels = await FrpRegistryStore.load();
+    final defaultTunnelId = await NetworkStore.loadDefaultFrpTunnelId();
     final ddns = await DdnsStore.load();
     if (!mounted) return;
     setState(() {
@@ -111,6 +120,12 @@ class _PortMappingPageState extends State<PortMappingPage> {
       } else {
         _selectedFrpcRuntimeId = null;
       }
+      _savedTunnels = savedTunnels;
+      // 已保存的默认隧道被删除时按未设置处理（同 frpcRuntimeId 校验模式）。
+      _defaultTunnelId =
+          savedTunnels.any((t) => t.localId == defaultTunnelId)
+              ? defaultTunnelId
+              : null;
     });
   }
 
@@ -230,40 +245,46 @@ class _PortMappingPageState extends State<PortMappingPage> {
       _showFrpcRequiredDialog();
       return;
     }
-    // 配置仍为默认模板时拒绝启用：占位地址连不上任何真实 frps 服务器。
-    if (value && await _isTemplateConfig()) {
-      if (mounted) _showTemplateConfigDialog();
+    // 开启前必须有可用的映射隧道：无隧道时引导去「映射隧道」页创建。
+    if (value && _savedTunnels.isEmpty) {
+      _showTunnelRequiredDialog();
       return;
+    }
+    // 未选默认隧道时自动选第一条，保证开关打开即有明确的启动目标。
+    if (value && _defaultTunnelId == null) {
+      _defaultTunnelId = _savedTunnels.first.localId;
+      await NetworkStore.saveDefaultFrpTunnelId(_defaultTunnelId);
     }
     await NetworkStore.saveTunnelEnabled(value);
     if (!mounted) return;
     setState(() => _tunnelEnabled = value);
     final server = ServerScope.of(context);
     if (value) {
-      server.enableTunnelNow(null, _selectedFrpcRuntimeId);
+      server.enableTunnelNow(runtimeId: _selectedFrpcRuntimeId);
     } else {
       server.disableTunnelNow();
     }
   }
 
-  /// 当前 frpc.toml 是否仍为未修改的默认模板（文件不存在视为模板）。
-  Future<bool> _isTemplateConfig() async {
-    try {
-      final file = await NetworkStore.ensureCustomFrpcFile();
-      return NetworkStore.isTemplateFrpcConfig(await file.readAsString());
-    } catch (_) {
-      return false;
+  /// 保存默认隧道选择；自动隧道正在运行时立即重启换用新配置。
+  Future<void> _setDefaultTunnel(String? localId) async {
+    await NetworkStore.saveDefaultFrpTunnelId(localId);
+    if (!mounted) return;
+    setState(() => _defaultTunnelId = localId);
+    final server = ServerScope.of(context);
+    if (server.isTunnelActive && !server.isStandaloneTunnel) {
+      await server.restartTunnel();
     }
   }
 
-  /// frpc.toml 仍为默认模板，提示用户先修改配置再启用隧道。
-  Future<void> _showTemplateConfigDialog() async {
+  /// 未创建任何映射隧道，提示用户前往「映射隧道」页新增。
+  Future<void> _showTunnelRequiredDialog() async {
     final tr = LocaleScope.of(context).translations;
-    final edit = await showDialog<bool>(
+    final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(tr.get('portMapping.templateConfigTitle')),
-        content: Text(tr.get('portMapping.templateConfigMessage')),
+        title: Text(tr.get('portMapping.noTunnelTitle')),
+        content: Text(tr.get('portMapping.noTunnelMessage')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -271,18 +292,12 @@ class _PortMappingPageState extends State<PortMappingPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(tr.get('portMapping.editConfigFile')),
+            child: Text(tr.get('portMapping.manageTunnels')),
           ),
         ],
       ),
     );
-    if (edit == true && mounted) {
-      await _editFrpcConfigFile();
-      // 编辑返回后配置已修改的话，继续完成用户原本的「启用」操作。
-      if (mounted && !await _isTemplateConfig()) {
-        await _setTunnel(true);
-      }
-    }
+    if (go == true && mounted) _openTunnelManager();
   }
 
   /// 未安装 frpc 运行时，提示用户前往「运行环境」页导入。
@@ -315,26 +330,13 @@ class _PortMappingPageState extends State<PortMappingPage> {
 
   // —— 编辑配置文件 ——
 
-  /// 打开内置文本编辑器直接编辑 `config/frpc.toml`。返回后若隧道运行中则重启。
-  Future<void> _editFrpcConfigFile() async {
-    final file = await NetworkStore.ensureCustomFrpcFile();
-    if (!mounted) return;
+  /// 进入「映射隧道」子页面：登录各映射平台、管理与运行隧道。
+  /// 返回后重载，同步隧道增删对默认隧道下拉框的影响。
+  Future<void> _openTunnelManager() async {
     await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => TextEditorPage(path: file.path, name: 'frpc.toml'),
-      ),
+      MaterialPageRoute(builder: (_) => const FrpTunnelListPage()),
     );
-    if (!mounted) return;
-    // 编辑返回后，若隧道运行中，重启以应用最新内容；若启用了隧道但此前
-    // 未能启动（如模板配置被拒绝、frpc 异常退出），则重新拉起。
-    final server = ServerScope.of(context);
-    if (_tunnelEnabled && server.isRunning) {
-      if (server.isTunnelActive) {
-        await server.restartTunnel();
-      } else if (!await _isTemplateConfig()) {
-        server.enableTunnelNow(null, _selectedFrpcRuntimeId);
-      }
-    }
+    if (mounted) _loadAll();
   }
 
   // —— 隧道状态订阅 ——
@@ -810,6 +812,10 @@ class _PortMappingPageState extends State<PortMappingPage> {
             if (_tunnelEnabled) ...[
               const Divider(indent: 16, endIndent: 16),
               Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: _buildDefaultTunnelSelector(theme),
+              ),
+              Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Card(
                   color: theme.colorScheme.surfaceContainerHighest,
@@ -827,7 +833,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            context.tr('portMapping.customConfigInfo'),
+                            context.tr('portMapping.defaultTunnelInfo'),
                             style: theme.textTheme.bodySmall,
                           ),
                         ),
@@ -842,9 +848,9 @@ class _PortMappingPageState extends State<PortMappingPage> {
                 child: SizedBox(
                   width: double.infinity,
                   child: FilledButton.tonalIcon(
-                    onPressed: _editFrpcConfigFile,
-                    icon: const Icon(Icons.edit_note, size: 18),
-                    label: Text(context.tr('portMapping.editConfigFile')),
+                    onPressed: _openTunnelManager,
+                    icon: const Icon(Icons.cable, size: 18),
+                    label: Text(context.tr('portMapping.manageTunnels')),
                   ),
                 ),
               ),
@@ -921,6 +927,71 @@ class _PortMappingPageState extends State<PortMappingPage> {
           setState(() => _selectedFrpcRuntimeId = v);
           NetworkStore.saveFrpcRuntimeId(v);
         }
+      },
+    );
+  }
+
+  /// 默认映射隧道下拉框：选中的隧道随服务端自动启停。
+  Widget _buildDefaultTunnelSelector(ThemeData theme) {
+    // 开关打开后隧道被全部删掉的场景：提示去「映射隧道」页创建。
+    if (_savedTunnels.isEmpty) {
+      return Card(
+        color: theme.colorScheme.errorContainer,
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Icon(
+                Icons.warning_amber_outlined,
+                size: 18,
+                color: theme.colorScheme.onErrorContainer,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  context.tr('portMapping.noTunnelMessage'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onErrorContainer,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    String tunnelLabel(SavedFrpTunnel t) {
+      final providerName = t.provider == FrpProvider.custom
+          ? context.tr('frp.provider.custom')
+          : t.provider.displayName;
+      return '${t.name} · $providerName';
+    }
+
+    return DropdownButtonFormField<String>(
+      key: ValueKey(_defaultTunnelId),
+      isExpanded: true,
+      initialValue: _defaultTunnelId,
+      decoration: InputDecoration(
+        labelText: context.tr('portMapping.defaultTunnelLabel'),
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      items: _savedTunnels.map((t) {
+        return DropdownMenuItem(
+          value: t.localId,
+          child: Text(tunnelLabel(t)),
+        );
+      }).toList(),
+      selectedItemBuilder: (context) => _savedTunnels.map((t) {
+        return DropdownMenuItem<String>(
+          value: t.localId,
+          child: Text(tunnelLabel(t), overflow: TextOverflow.ellipsis),
+        );
+      }).toList(),
+      onChanged: (v) {
+        if (v != null) _setDefaultTunnel(v);
       },
     );
   }
