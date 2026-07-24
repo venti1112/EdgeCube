@@ -130,6 +130,8 @@
   "settings.battery.notWhitelisted": "未加入白名单，锁屏或退到后台时服务端可能被系统结束",
   "settings.wakeLock.title": "锁屏保活",
   "settings.wakeLock.subtitle": "服务器运行期间保持 CPU 运转与 Wi-Fi 连接（WakeLock + WifiLock），防止锁屏后卡顿掉线；会增加耗电",
+  "settings.keepScreenOn.title": "防息屏",
+  "settings.keepScreenOn.subtitle": "服务端运行期间保持屏幕常亮（仅 App 在前台时生效）；会增加耗电",
   "settings.overlay.title": "状态悬浮窗",
   "settings.overlay.subtitle": "服务器运行时显示状态悬浮窗，部分系统会因此降低应用被后台清理的概率，点击可快速回到应用",
   "settings.overlay.needPermission": "需要悬浮窗权限，打开开关后将跳转系统设置授予",

@@ -1,6 +1,7 @@
 package com.venti1112.edgecube.server
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -21,6 +22,7 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.venti1112.edgecube.MainActivity
+import java.lang.ref.WeakReference
 import kotlin.concurrent.thread
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -53,6 +55,7 @@ object KeepAliveManager {
     private const val KEY_OVERLAY_DOT_ONLY = "overlay_dot_only"
     private const val KEY_OVERLAY_DOT_COLOR_SOURCE = "overlay_dot_color_source"
     private const val KEY_OVERLAY_CLICK_THROUGH = "overlay_click_through"
+    private const val KEY_KEEP_SCREEN_ON = "keep_screen_on_enabled"
     // 悬浮窗位置：按「可移动范围的比例」（0..1）持久化，而非绝对像素。
     // 这样横竖屏切换（屏幕宽高互换）与不同分辨率下都能还原到等价位置，
     // 1.0 恒表示贴右/底边。
@@ -85,6 +88,9 @@ object KeepAliveManager {
     /** 服务端是否处于运行期（acquire 与 release 之间）。 */
     private var active = false
     private var instanceName: String = ""
+
+    /** 当前前台 Activity 的弱引用，用于防息屏（FLAG_KEEP_SCREEN_ON 须挂在窗口上）。 */
+    private var activityRef: WeakReference<Activity>? = null
 
     /** 悬浮窗展示与交互设置。 */
     data class OverlayOptions(
@@ -124,6 +130,10 @@ object KeepAliveManager {
     /** 锁屏保活（WakeLock + WifiLock）是否启用；默认启用。 */
     fun isWakeLockEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_WAKE_LOCK, true)
+
+    /** 防息屏是否启用；默认关闭。仅在服务端运行期间生效。 */
+    fun isKeepScreenOnEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_KEEP_SCREEN_ON, false)
 
     /** 状态悬浮窗是否启用；默认关闭（需要用户授予悬浮窗权限）。 */
     fun isOverlayEnabled(context: Context): Boolean =
@@ -178,6 +188,24 @@ object KeepAliveManager {
         if (active) applyLocks(context, enabled)
     }
 
+    /** 设置防息屏开关；服务端运行中立即生效。 */
+    @Synchronized
+    fun setKeepScreenOnEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_KEEP_SCREEN_ON, enabled).apply()
+        if (active) applyKeepScreenOn(context, enabled)
+    }
+
+    /**
+     * 绑定当前前台 Activity，用于防息屏（FLAG_KEEP_SCREEN_ON 须挂在窗口上）。
+     * 由 [MainActivity.onResume] 调用；若服务端正在运行且已启用防息屏，立即应用。
+     * Activity 销毁后弱引用自动失效，无需显式解绑。
+     */
+    @Synchronized
+    fun bindActivity(activity: Activity) {
+        activityRef = WeakReference(activity)
+        if (active && isKeepScreenOnEnabled(activity)) applyKeepScreenOn(activity, true)
+    }
+
     /** 设置状态悬浮窗开关；服务端运行中立即生效。 */
     @Synchronized
     fun setOverlayEnabled(context: Context, enabled: Boolean) {
@@ -198,6 +226,7 @@ object KeepAliveManager {
         instanceName = name
         applyLocks(context, isWakeLockEnabled(context))
         applyOverlay(context, isOverlayEnabled(context))
+        applyKeepScreenOn(context, isKeepScreenOnEnabled(context))
     }
 
     /** 服务端停止：释放全部锁并移除悬浮窗。 */
@@ -206,6 +235,7 @@ object KeepAliveManager {
         active = false
         applyLocks(context, false)
         applyOverlay(context, false)
+        applyKeepScreenOn(context, false)
     }
 
     // —— WakeLock / WifiLock ——
@@ -248,6 +278,32 @@ object KeepAliveManager {
             } catch (_: Exception) {
             }
             wifiLock = null
+        }
+    }
+
+    // —— 防息屏（FLAG_KEEP_SCREEN_ON，须挂在 Activity 窗口上）——
+
+    /**
+     * 在当前前台 Activity 的窗口上添加/移除 [WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON]。
+     * 仅在该窗口可见时生效（App 在前台时），无需额外权限。
+     * 服务端停止或开关关闭时清除标志，恢复正常息屏。
+     */
+    private fun applyKeepScreenOn(context: Context, enabled: Boolean) {
+        val activity = activityRef?.get()
+        if (activity == null) {
+            // Activity 尚未绑定（如服务端在 App 后台启动）：标志会在
+            // 下次 onResume 经 bindActivity 补上。
+            return
+        }
+        mainHandler.post {
+            try {
+                if (enabled) {
+                    activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            } catch (_: Exception) {
+            }
         }
     }
 

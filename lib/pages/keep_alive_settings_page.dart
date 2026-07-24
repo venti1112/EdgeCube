@@ -24,6 +24,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
   bool _batteryLoaded = false;
 
   bool _wakeLockEnabled = true;
+  bool _keepScreenOnEnabled = false;
   bool _overlayEnabled = false;
   bool _canDrawOverlays = false;
   bool _loaded = false;
@@ -61,6 +62,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
   Future<void> _loadAll() async {
     if (!Platform.isAndroid) return;
     final wakeLock = await PowerService.isWakeLockEnabled();
+    final keepScreenOn = await PowerService.isKeepScreenOnEnabled();
     final overlay = await PowerService.isOverlayEnabled();
     final canDraw = await PowerService.canDrawOverlays();
     final overlayOptions = await PowerService.getOverlayOptions();
@@ -69,6 +71,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
     if (!mounted) return;
     setState(() {
       _wakeLockEnabled = wakeLock;
+      _keepScreenOnEnabled = keepScreenOn;
       _overlayEnabled = overlay;
       _canDrawOverlays = canDraw;
       _overlayOptions = overlayOptions;
@@ -109,6 +112,11 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
   Future<void> _setWakeLock(bool value) async {
     setState(() => _wakeLockEnabled = value);
     await PowerService.setWakeLockEnabled(value);
+  }
+
+  Future<void> _setKeepScreenOn(bool value) async {
+    setState(() => _keepScreenOnEnabled = value);
+    await PowerService.setKeepScreenOnEnabled(value);
   }
 
   Future<void> _setOverlay(bool value) async {
@@ -166,6 +174,13 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
             subtitle: Text(context.tr('settings.wakeLock.subtitle')),
             value: _wakeLockEnabled,
             onChanged: _loaded ? _setWakeLock : null,
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.visibility_outlined),
+            title: Text(context.tr('settings.keepScreenOn.title')),
+            subtitle: Text(context.tr('settings.keepScreenOn.subtitle')),
+            value: _keepScreenOnEnabled,
+            onChanged: _loaded ? _setKeepScreenOn : null,
           ),
           const Divider(),
           _sectionHeader(

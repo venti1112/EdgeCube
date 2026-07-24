@@ -130,6 +130,8 @@
   "settings.battery.notWhitelisted": "Not whitelisted; the server may be killed by the system when locked or in the background",
   "settings.wakeLock.title": "Keep awake while locked",
   "settings.wakeLock.subtitle": "Hold CPU and Wi-Fi awake while the server is running (WakeLock + WifiLock) to prevent lag and disconnects after locking; increases battery usage",
+  "settings.keepScreenOn.title": "Keep Screen On",
+  "settings.keepScreenOn.subtitle": "Keep the screen on while the server is running (only when the app is in the foreground); increases battery usage",
   "settings.overlay.title": "Status overlay",
   "settings.overlay.subtitle": "Show a draggable status bubble while the server runs; tap to return to the app. On some systems it also makes the app less likely to be killed",
   "settings.overlay.needPermission": "Requires the overlay permission; turning this on opens system settings to grant it",

@@ -70,6 +70,14 @@ class MainActivity : FlutterActivity() {
         handleIntent(intent)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 绑定当前 Activity 供防息屏使用：服务端运行且开启防息屏时，
+        // 由 KeepAliveManager 在窗口上添加 FLAG_KEEP_SCREEN_ON。
+        // 转屏/重建后 Activity 重建，onResume 重新绑定并补上标志。
+        KeepAliveManager.bindActivity(this)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
@@ -388,6 +396,13 @@ class MainActivity : FlutterActivity() {
                 "setWakeLockEnabled" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: true
                     KeepAliveManager.setWakeLockEnabled(applicationContext, enabled)
+                    result.success(null)
+                }
+                "isKeepScreenOnEnabled" ->
+                    result.success(KeepAliveManager.isKeepScreenOnEnabled(applicationContext))
+                "setKeepScreenOnEnabled" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    KeepAliveManager.setKeepScreenOnEnabled(applicationContext, enabled)
                     result.success(null)
                 }
                 "isOverlayEnabled" ->

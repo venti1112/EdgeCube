@@ -133,6 +133,21 @@ class PowerService {
     await _channel.invokeMethod('setWakeLockEnabled', {'enabled': enabled});
   }
 
+  // —— 防息屏（服务端运行时保持屏幕常亮）——
+
+  /// 防息屏开关是否启用（默认关闭）。非 Android 平台恒为 false。
+  static Future<bool> isKeepScreenOnEnabled() async {
+    if (!Platform.isAndroid) return false;
+    final v = await _channel.invokeMethod<bool>('isKeepScreenOnEnabled');
+    return v ?? false;
+  }
+
+  /// 设置防息屏开关；服务端运行中立即生效（仅在 App 前台时阻止息屏）。
+  static Future<void> setKeepScreenOnEnabled(bool enabled) async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod('setKeepScreenOnEnabled', {'enabled': enabled});
+  }
+
   // —— 状态悬浮窗 ——
 
   /// 状态悬浮窗开关是否启用（默认关闭）。非 Android 平台恒为 false。
