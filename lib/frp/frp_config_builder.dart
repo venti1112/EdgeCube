@@ -77,18 +77,13 @@ class FrpConfigBuilder {
     );
   }
 
-  /// ME Frp：/auth/user/frpToken 为 frpc 鉴权 token。
+  /// ME Frp：直接拉取官方成品 TOML 配置（与官方前端启动流程一致）。
+  /// 返回的配置已含 serverAddr / serverPort / user / auth.token / remotePort
+  /// 等全部启动所需信息，无需再依赖 /auth/node/list 取节点地址。
   static Future<String> _buildMeFrp(SavedFrpTunnel tunnel) async {
     final token = await _requireToken(FrpProvider.meFrp);
-    final frpToken = await MeFrpApi.frpToken(token);
-    final nodes = await MeFrpApi.nodeList(token);
-    final node = _findNode(nodes, tunnel.nodeId);
-    return _standardToml(
-      serverAddr: node.hostname,
-      serverPort: node.serverPort,
-      user: null,
-      authToken: frpToken,
-      tunnel: tunnel,
+    return _ensureConsoleLog(
+      await MeFrpApi.tunnelConfig(token, tunnel.remoteTunnelId),
     );
   }
 

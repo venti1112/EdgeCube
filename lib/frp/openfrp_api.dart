@@ -115,16 +115,24 @@ class OpenFrpApi {
 
   /// 轮询远程安全登录结果：未完成返回 null；完成返回解密后的 Authorization。
   ///
-  /// pollLogin 文档标注为 GET 且携带 JSON body（request_uuid），此处按文档
-  /// 以 GET + body 发送。响应 header `x-request-public-key` 为服务端公钥
-  /// （URL-safe base64），body `data.authorization_data` 为 NaCl Box 密文
+  /// pollLogin 文档标注为 GET + JSON body（request_uuid）。但 GET 携带 body
+  /// 是非标准用法，部分 CDN/反代会忽略 GET body，导致服务端收不到
+  /// request_uuid 而始终返回非 200（表现为"已授权但一直等待"）。
+  /// 因此同时把 request_uuid 放进 query 参数与 body，双重保险。
+  ///
+  /// 响应 header `x-request-public-key` 为服务端公钥（URL-safe base64），
+  /// body `data.authorization_data` 为 NaCl Box 密文
   /// （标准 base64，格式 = nonce(24) + ciphertext）。
+  ///
+  /// 返回 null = 未完成（继续轮询）；返回 String = 成功；抛 FrpApiException =
+  /// 致命错误（响应字段缺失/解密失败等，UUID 已被消费，不应继续轮询）。
   static Future<String?> pollBrowserLogin(FrpBrowserLoginSession session) async {
     final uuid = session.state['request_uuid'] as String;
     final skBytes = session.state['private_key'] as Uint8List;
 
-    final request =
-        http.Request('GET', Uri.parse('$_accessBase/argoAccess/pollLogin'));
+    final uri = Uri.parse('$_accessBase/argoAccess/pollLogin')
+        .replace(queryParameters: {'request_uuid': uuid});
+    final request = http.Request('GET', uri);
     request.headers['Content-Type'] = 'application/json';
     request.headers['User-Agent'] = _userAgent;
     request.body = jsonEncode({'request_uuid': uuid});
@@ -133,18 +141,26 @@ class OpenFrpApi {
 
     final json =
         jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
-    final code = json['code'] as int? ?? -1;
-    // 非 200（204 未授权 / 429 限流等）视为未完成，继续轮询。
+    // code 兼容 int 与字符串形式（部分实现返回 "200"）。
+    final codeRaw = json['code'];
+    final code = codeRaw is int ? codeRaw : int.tryParse('$codeRaw') ?? -1;
+    // 非 200（204 未授权 / 400 参数错误 / 429 限流等）视为未完成，继续轮询。
     if (code != 200) return null;
 
     final data = (json['data'] as Map?)?.cast<String, dynamic>() ?? {};
     final authData = data['authorization_data'] as String?;
-    if (authData == null || authData.isEmpty) return null;
+    if (authData == null || authData.isEmpty) {
+      // code==200 但无 authorization_data：状态异常，抛错避免无限轮询。
+      throw const FrpApiException('授权响应缺少 authorization_data');
+    }
 
     final serverPkB64 = resp.headers['x-request-public-key'];
-    if (serverPkB64 == null || serverPkB64.isEmpty) return null;
+    if (serverPkB64 == null || serverPkB64.isEmpty) {
+      throw const FrpApiException('授权响应缺少 x-request-public-key 头');
+    }
 
     // 解密：authorization_data = nonce(24) + NaCl Box 密文。
+    // 解密失败会抛异常，由上层显示错误（UUID 已被消费，不应继续轮询）。
     final combined = _b64Decode(authData);
     final sk = PrivateKey(Uint8List.fromList(skBytes));
     final serverPk = PublicKey(_b64Decode(serverPkB64));

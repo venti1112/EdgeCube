@@ -56,21 +56,6 @@ class MeFrpApi {
     return json;
   }
 
-  /// 用户名 + 密码登录，返回登录 token。
-  ///
-  /// MSL 中该接口带 vaptcha 人机验证参数（需浏览器辅助获取）；此处直接
-  /// 尝试无验证登录，服务端要求验证时会返回错误信息，UI 引导改用 token 粘贴。
-  static Future<String> login(String username, String password) async {
-    final json = await _post('/public/login', {
-      'username': username,
-      'password': password,
-    });
-    final data = (json['data'] as Map?)?.cast<String, dynamic>() ?? {};
-    final token = data['token'] as String? ?? '';
-    if (token.isEmpty) throw const FrpApiException('登录响应缺少 token');
-    return token;
-  }
-
   /// 验证 token 并获取用户信息。
   static Future<FrpAccount> userInfo(String token) async {
     final json = await _get('/auth/user/info', token);
@@ -92,27 +77,43 @@ class MeFrpApi {
     return t;
   }
 
-  /// 我的隧道列表。
+  /// 我的隧道列表（同时返回节点信息，用于拼远程连接地址）。
   static Future<List<FrpRemoteTunnel>> proxyList(String token) async {
     final json = await _get('/auth/proxy/list', token);
     final data = (json['data'] as Map?)?.cast<String, dynamic>() ?? {};
-    final nodes = <String, String>{
+    // nodes 同时含 name（显示名）与 hostname（连接地址），均按 nodeId 索引。
+    final nodes = <String, Map<String, String>>{
       for (final n in (data['nodes'] as List? ?? []).whereType<Map>())
-        '${n['nodeId']}': n['name'] as String? ?? '',
+        '${n['nodeId']}': {
+          'name': n['name'] as String? ?? '',
+          'hostname': n['hostname'] as String? ?? '',
+        },
     };
     final list = data['proxies'] as List? ?? [];
     return list.whereType<Map>().map((raw) {
       final m = raw.cast<String, dynamic>();
       final nodeId = '${m['nodeId']}';
+      final node = nodes[nodeId];
+      final hostname = node?['hostname'] ?? '';
+      final type = m['proxyType'] as String? ?? 'tcp';
+      final remotePort = m['remotePort'] as int?;
+      final domain = m['domain'] as String? ?? '';
+      // tcp/udp: hostname:remotePort；http/https: 自定义 domain（可能为空）。
+      final remoteAddress = (type == 'http' || type == 'https')
+          ? domain
+          : (hostname.isNotEmpty && remotePort != null
+              ? '$hostname:$remotePort'
+              : '');
       return FrpRemoteTunnel(
         id: '${m['proxyId']}',
         name: m['proxyName'] as String? ?? '',
         nodeId: nodeId,
-        nodeName: nodes[nodeId] ?? '',
-        type: m['proxyType'] as String? ?? 'tcp',
+        nodeName: node?['name'] ?? '',
+        type: type,
         localIp: m['localIp'] as String? ?? '127.0.0.1',
         localPort: (m['localPort'] as int?) ?? 25565,
-        remotePort: m['remotePort'] as int?,
+        remotePort: remotePort,
+        remoteAddress: remoteAddress,
         online: frpParseBool(m['isOnline']),
       );
     }).toList();
@@ -131,6 +132,22 @@ class MeFrpApi {
         description: m['description'] as String? ?? '',
       );
     }).toList();
+  }
+
+  /// 获取隧道的成品 frpc 配置（TOML 文本，可直接运行）。
+  ///
+  /// ME Frp 官方前端启动隧道即调用此接口，返回的 TOML 已含 serverAddr /
+  /// serverPort / user / auth.token / remotePort 等全部启动所需信息，
+  /// 无需再单独调 /auth/node/list 取节点地址。
+  static Future<String> tunnelConfig(String token, String proxyId) async {
+    final json = await _post('/auth/proxy/config', {
+      'proxyId': int.tryParse(proxyId) ?? proxyId,
+      'format': 'toml',
+    }, token: token);
+    final data = (json['data'] as Map?)?.cast<String, dynamic>() ?? {};
+    final config = data['config'] as String? ?? '';
+    if (config.isEmpty) throw const FrpApiException('配置内容为空');
+    return config;
   }
 
   /// 创建隧道。

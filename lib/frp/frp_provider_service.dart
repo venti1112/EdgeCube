@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'frp_models.dart';
 import 'frp_provider.dart';
 import 'frp_token_store.dart';
@@ -13,21 +15,6 @@ import 'sakura_frp_api.dart';
 class FrpProviderService {
   FrpProviderService._();
 
-  /// 密码登录（仅 supportsPasswordLogin 的供应商），返回登录 token。
-  static Future<String> loginWithPassword(
-    FrpProvider provider,
-    String account,
-    String password, {
-    String? twoFactorCode,
-  }) {
-    switch (provider) {
-      case FrpProvider.meFrp:
-        return MeFrpApi.login(account, password);
-      default:
-        throw const FrpApiException('该供应商仅支持 Token 登录');
-    }
-  }
-
   /// 发起浏览器授权登录（仅 supportsBrowserLogin 的供应商）。
   /// 返回授权页 URL 与轮询所需的会话状态。
   static Future<FrpBrowserLoginSession> createBrowserLogin(
@@ -38,6 +25,8 @@ class FrpProviderService {
         return MslFrpApi.createAppLogin();
       case FrpProvider.openFrp:
         return OpenFrpApi.createBrowserLogin();
+      case FrpProvider.chmlFrp:
+        return ChmlFrpApi.createDeviceLogin();
       default:
         throw const FrpApiException('该供应商不支持浏览器登录');
     }
@@ -53,6 +42,8 @@ class FrpProviderService {
         return MslFrpApi.pollAppLogin(session);
       case FrpProvider.openFrp:
         return OpenFrpApi.pollBrowserLogin(session);
+      case FrpProvider.chmlFrp:
+        return ChmlFrpApi.pollDeviceLogin(session);
       default:
         throw const FrpApiException('该供应商不支持浏览器登录');
     }
@@ -218,7 +209,26 @@ class FrpProviderService {
   static Future<void> saveToken(FrpProvider provider, String token) =>
       FrpTokenStore.saveToken(provider, token);
 
-  /// 退出登录（清除 token）。
+  /// 读取缓存的账号信息；无则返回 null。
+  static Future<FrpAccount?> savedAccount(FrpProvider provider) async {
+    final json = await FrpTokenStore.readAccount(provider);
+    if (json == null || json.isEmpty) return null;
+    try {
+      return FrpAccount.fromJson(
+          jsonDecode(json) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 缓存账号信息（登录成功后调用，用于下次直接进入操作页）。
+  static Future<void> saveAccount(
+    FrpProvider provider,
+    FrpAccount account,
+  ) =>
+      FrpTokenStore.saveAccount(provider, account.toJson());
+
+  /// 退出登录（清除 token 与账号缓存）。
   static Future<void> logout(FrpProvider provider) =>
       FrpTokenStore.deleteToken(provider);
 }

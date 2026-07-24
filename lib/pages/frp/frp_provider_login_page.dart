@@ -11,8 +11,9 @@ import '../../i18n/locale_scope.dart';
 import '../../widgets/error_dialog.dart';
 import 'frp_provider_tunnels_page.dart';
 
-/// 供应商登录页：已存 token 自动验证进入；否则提供 token 粘贴、
-/// 邮箱/用户名 + 密码，或浏览器授权登录（视供应商支持）。
+/// 供应商登录页：已存 token 自动验证进入；否则按供应商提供浏览器授权登录
+/// 或令牌粘贴登录。MSL/OpenFrp/ChmlFrp 走浏览器登录，SakuraFrp/ME Frp
+/// 走令牌粘贴登录。
 class FrpProviderLoginPage extends StatefulWidget {
   const FrpProviderLoginPage({super.key, required this.provider});
 
@@ -24,26 +25,19 @@ class FrpProviderLoginPage extends StatefulWidget {
 
 class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
   final _tokenField = TextEditingController();
-  final _accountField = TextEditingController();
-  final _passwordField = TextEditingController();
-  final _twoFactorField = TextEditingController();
 
   bool _busy = false;
   bool _autoLoginTried = false;
-  bool _needTwoFactor = false;
-
-  /// true = 主登录方式（浏览器/密码）tab，false = token 粘贴 tab。
-  bool _usePrimary = false;
 
   // 浏览器授权登录会话状态。
   FrpBrowserLoginSession? _browserSession;
   bool _polling = false;
 
+  bool get _useBrowserLogin => widget.provider.supportsBrowserLogin;
+
   @override
   void initState() {
     super.initState();
-    _usePrimary = widget.provider.supportsPasswordLogin ||
-        widget.provider.supportsBrowserLogin;
     _tryAutoLogin();
   }
 
@@ -51,9 +45,6 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
   void dispose() {
     _polling = false;
     _tokenField.dispose();
-    _accountField.dispose();
-    _passwordField.dispose();
-    _twoFactorField.dispose();
     super.dispose();
   }
 
@@ -91,54 +82,11 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
     try {
       final account = await FrpProviderService.userInfo(widget.provider, token);
       await FrpProviderService.saveToken(widget.provider, token);
+      await FrpProviderService.saveAccount(widget.provider, account);
       if (!mounted) return;
       _enterTunnelsPage(token, account);
     } on FrpApiException catch (e) {
       if (mounted) showErrorDialog(context, e.message);
-    } catch (e) {
-      if (mounted) {
-        showErrorDialog(
-          context,
-          LocaleScope.of(context)
-              .translations
-              .get('frp.networkError', {'error': '$e'}),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _loginWithPassword() async {
-    final account = _accountField.text.trim();
-    final password = _passwordField.text;
-    if (account.isEmpty || password.isEmpty) return;
-    setState(() => _busy = true);
-    try {
-      final token = await FrpProviderService.loginWithPassword(
-        widget.provider,
-        account,
-        password,
-        twoFactorCode:
-            _needTwoFactor ? _twoFactorField.text.trim() : null,
-      );
-      final info = await FrpProviderService.userInfo(widget.provider, token);
-      await FrpProviderService.saveToken(widget.provider, token);
-      if (!mounted) return;
-      _enterTunnelsPage(token, info);
-    } on FrpApiException catch (e) {
-      if (!mounted) return;
-      if (e.needTwoFactor) {
-        setState(() => _needTwoFactor = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.tr('frp.twoFactorRequired')),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      } else {
-        showErrorDialog(context, e.message);
-      }
     } catch (e) {
       if (mounted) {
         showErrorDialog(
@@ -206,6 +154,14 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
           await _completeBrowserLogin(token);
           return;
         }
+      } on FrpApiException catch (e) {
+        // 致命错误（响应字段缺失/解密失败等）：UUID 已被消费，停止轮询并报错。
+        setState(() {
+          _polling = false;
+          _browserSession = null;
+        });
+        _showError(e);
+        return;
       } catch (_) {
         // 单次轮询失败（网络抖动等）不中断，继续等待。
       }
@@ -226,6 +182,7 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
     try {
       final account = await FrpProviderService.userInfo(widget.provider, token);
       await FrpProviderService.saveToken(widget.provider, token);
+      await FrpProviderService.saveAccount(widget.provider, account);
       if (!mounted) return;
       setState(() => _polling = false);
       _enterTunnelsPage(token, account);
@@ -336,11 +293,6 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
   }
 
   Widget _buildLoginCard(ThemeData theme) {
-    final supportsPassword = widget.provider.supportsPasswordLogin;
-    final supportsBrowser = widget.provider.supportsBrowserLogin;
-    final hasPrimary = supportsPassword || supportsBrowser;
-    final browserMode = supportsBrowser && _usePrimary;
-    final passwordMode = supportsPassword && _usePrimary;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -360,56 +312,23 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
               ],
             ),
             const SizedBox(height: 12),
-            if (hasPrimary) ...[
-              SegmentedButton<bool>(
-                segments: [
-                  ButtonSegment(
-                    value: true,
-                    label: Text(context.tr(supportsBrowser
-                        ? 'frp.loginByBrowser'
-                        : 'frp.loginByPassword')),
-                  ),
-                  ButtonSegment(
-                    value: false,
-                    label: Text(context.tr('frp.loginByToken')),
-                  ),
-                ],
-                selected: {_usePrimary},
-                onSelectionChanged: _polling
-                    ? null
-                    : (v) => setState(() => _usePrimary = v.first),
-              ),
-              const SizedBox(height: 16),
-            ],
-            if (browserMode) ...[
+            if (_useBrowserLogin) ...[
               _buildBrowserSection(theme),
-            ] else if (passwordMode) ...[
-              TextField(
-                controller: _accountField,
-                decoration: InputDecoration(
-                  labelText: context.tr('frp.username'),
-                  isDense: true,
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _passwordField,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: context.tr('frp.password'),
-                  isDense: true,
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-              if (_needTwoFactor) ...[
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _twoFactorField,
-                  decoration: InputDecoration(
-                    labelText: context.tr('frp.twoFactorCode'),
-                    isDense: true,
-                    border: const OutlineInputBorder(),
+              // 浏览器等待授权时，操作按钮在 section 内提供，隐藏底部主按钮。
+              if (!_polling) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _busy ? null : _startBrowserLogin,
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.open_in_browser, size: 18),
+                    label: Text(context.tr('frp.browserLoginStart')),
                   ),
                 ),
               ],
@@ -431,32 +350,19 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-            ],
-            // 浏览器等待授权时，操作按钮在 section 内提供，隐藏底部主按钮。
-            if (!(browserMode && _polling)) ...[
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: _busy
-                      ? null
-                      : (browserMode
-                          ? _startBrowserLogin
-                          : (passwordMode
-                              ? _loginWithPassword
-                              : _loginWithToken)),
+                  onPressed: _busy ? null : _loginWithToken,
                   icon: _busy
                       ? const SizedBox(
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : Icon(
-                          browserMode ? Icons.open_in_browser : Icons.login,
-                          size: 18,
-                        ),
-                  label: Text(context.tr(
-                      browserMode ? 'frp.browserLoginStart' : 'frp.login')),
+                      : const Icon(Icons.login, size: 18),
+                  label: Text(context.tr('frp.login')),
                 ),
               ),
             ],
@@ -494,6 +400,37 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
             ),
           ],
         ),
+        // 设备码流程（ChmlFrp）：展示用户短码，供手动输入场景使用。
+        if (_browserSession?.userCode.isNotEmpty == true) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  context.tr('frp.deviceCodeLabel'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                SelectableText(
+                  _browserSession!.userCode,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         Wrap(
           spacing: 8,

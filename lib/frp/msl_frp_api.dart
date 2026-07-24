@@ -58,7 +58,7 @@ class MslFrpApi {
     return _envelope(resp);
   }
 
-  /// 解析包络：code != 200 抛 [FrpApiException]（428 标记需 2FA）。
+  /// 解析包络：code != 200 抛 [FrpApiException]。
   static Map<String, dynamic> _envelope(http.Response resp) {
     final json =
         jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
@@ -66,7 +66,6 @@ class MslFrpApi {
     if (code != 200) {
       throw FrpApiException(
         json['msg'] as String? ?? 'HTTP ${resp.statusCode}',
-        needTwoFactor: code == 428,
       );
     }
     return json;

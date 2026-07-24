@@ -40,6 +40,24 @@ class FrpAccount {
   /// frpc 侧鉴权 token（OpenFrp 的 user token、ChmlFrp 的 usertoken、
   /// ME Frp 的 frpToken）。与登录 token 不同，用于拼装 frpc 配置。
   final String? frpToken;
+
+  /// 序列化为 JSON（用于本地缓存）。
+  Map<String, dynamic> toJson() => {
+        'username': username,
+        'group': group,
+        'usedTunnels': usedTunnels,
+        'maxTunnels': maxTunnels,
+        'frpToken': frpToken,
+      };
+
+  /// 从缓存的 JSON 反序列化。
+  factory FrpAccount.fromJson(Map<String, dynamic> json) => FrpAccount(
+        username: json['username'] as String? ?? '',
+        group: json['group'] as String? ?? '',
+        usedTunnels: json['usedTunnels'] as int?,
+        maxTunnels: json['maxTunnels'] as int?,
+        frpToken: json['frpToken'] as String?,
+      );
 }
 
 /// 供应商节点。
@@ -219,25 +237,31 @@ class SavedFrpTunnel {
 /// 浏览器授权登录会话（createBrowserLogin 返回，pollBrowserLogin 回传）。
 ///
 /// 各供应商在 [state] 中存放轮询所需的私有状态：MSL 存 ssid/csrf，
-/// OpenFrp 存 request_uuid 与 curve25519 私钥。
+/// OpenFrp 存 request_uuid 与 curve25519 私钥，ChmlFrp 存 device_code。
 class FrpBrowserLoginSession {
-  const FrpBrowserLoginSession({required this.url, required this.state});
+  const FrpBrowserLoginSession({
+    required this.url,
+    required this.state,
+    this.userCode = '',
+  });
 
   /// 用户在浏览器中打开的授权页 URL。
   final String url;
 
   /// 轮询所需的供应商特定状态。
   final Map<String, dynamic> state;
+
+  /// 设备码授权流程中用户需在浏览器输入的短码（仅 ChmlFrp 使用）；
+  /// 其他供应商为空。当 [url] 已自带短码（verification_uri_complete）时，
+  /// 此字段仅作展示备用，用户通常无需手动输入。
+  final String userCode;
 }
 
 /// FRP API 调用失败（业务码非成功或网络异常）。
 class FrpApiException implements Exception {
-  const FrpApiException(this.message, {this.needTwoFactor = false});
+  const FrpApiException(this.message);
 
   final String message;
-
-  /// MSL Frp 登录返回 428：需要两步验证码。
-  final bool needTwoFactor;
 
   @override
   String toString() => message;

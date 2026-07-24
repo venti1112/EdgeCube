@@ -28,13 +28,14 @@ enum FrpProvider {
   /// 该供应商是否需要账号登录（custom 不需要）。
   bool get requiresLogin => this != FrpProvider.custom;
 
-  /// 是否支持邮箱/用户名 + 密码登录（其余仅支持 token 粘贴）。
-  bool get supportsPasswordLogin => this == FrpProvider.meFrp;
-
   /// 是否支持浏览器授权登录（OAuth）。MSL 已下线密码登录，改走浏览器授权；
-  /// OpenFrp 已下线 Authorization 粘贴登录，改走远程安全登录（curve25519）。
+  /// OpenFrp 已下线 Authorization 粘贴登录，改走远程安全登录（curve25519）；
+  /// ChmlFrp 改走 QZhua 账号 OAuth 设备码授权。
+  /// SakuraFrp / ME Frp 保留令牌粘贴登录。
   bool get supportsBrowserLogin =>
-      this == FrpProvider.mslFrp || this == FrpProvider.openFrp;
+      this == FrpProvider.mslFrp ||
+      this == FrpProvider.openFrp ||
+      this == FrpProvider.chmlFrp;
 
   /// 标准 frpc 兼容性存疑的供应商（闭源魔改 frps，可能要求私有握手）。
   /// UI 在这些供应商的入口展示「实验性」提示，运行失败时引导查看日志。
