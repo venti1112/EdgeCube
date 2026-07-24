@@ -242,7 +242,7 @@ class InstanceController extends ChangeNotifier {
   }
 
   /// 更新指定实例的启动配置（运行环境、内存、运行环境 id、服务端入口文件、自定义 JVM 参数、
-  /// 兼容模式、proot 纯容器启动命令）。
+  /// 兼容模式、关服自动重启、proot 纯容器启动命令）。
   Future<void> updateConfig(
     String id, {
     String? runtime,
@@ -251,6 +251,7 @@ class InstanceController extends ChangeNotifier {
     String? serverFile,
     String? customJvmArgs,
     bool? compatMode,
+    bool? autoRestartOnExit,
     String? prootStartupCommand,
     bool clearCustomJvmArgs = false,
     bool clearProotStartupCommand = false,
@@ -264,6 +265,7 @@ class InstanceController extends ChangeNotifier {
       serverFile: serverFile,
       customJvmArgs: customJvmArgs,
       compatMode: compatMode,
+      autoRestartOnExit: autoRestartOnExit,
       prootStartupCommand: prootStartupCommand,
       clearCustomJvmArgs: clearCustomJvmArgs,
       clearProotStartupCommand: clearProotStartupCommand,
@@ -353,6 +355,12 @@ class InstanceController extends ChangeNotifier {
   Future<bool> compatModeFor(String id) async {
     final config = await _configFor(id);
     return config?.compatMode ?? false;
+  }
+
+  /// 解析指定实例是否启用关服自动重启（供服务端退出时按 id 查询）。
+  Future<bool> autoRestartOnExitFor(String id) async {
+    final config = await _configFor(id);
+    return config?.autoRestartOnExit ?? false;
   }
 
   /// 获取指定实例的完整配置：选中项直接复用缓存，否则从磁盘读取。

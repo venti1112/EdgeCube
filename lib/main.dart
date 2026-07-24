@@ -62,6 +62,9 @@ Future<void> main() async {
   final serverController = ServerController();
   // 让服务端状态机能查询某实例是否开启兼容模式（兼容模式跳过「启动中」标签）。
   serverController.compatModeResolver = instanceController.compatModeFor;
+  // 让服务端退出时能查询某实例是否开启关服自动重启（正常退出时自动重新拉起）。
+  serverController.autoRestartOnExitResolver =
+      instanceController.autoRestartOnExitFor;
   // UPnP 端口映射开关：读取 config/network.json 中的持久化配置。
   serverController.upnpEnabledResolver = NetworkStore.loadUpnpEnabled;
   serverController.upnpExternalPortResolver = NetworkStore.loadUpnpExternalPort;

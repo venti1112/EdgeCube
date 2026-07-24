@@ -52,6 +52,8 @@ class InstanceSummary {
 /// [customJvmArgs] 为用户自定义的 JVM 参数（以空白符/换行分隔，原样附加在内置参数之后，仅 Java 版）；
 /// [compatMode] 兼容模式：开启后「准备中」完成、服务端进程起来后直接视为「运行中」，
 /// 跳过「启动中」阶段（适配不输出 Done 标志的非标准服务端）。
+/// [autoRestartOnExit] 关服自动重启：开启后服务端正常退出（非用户主动关闭/重启、
+/// 非异常退出）时自动用相同参数重新拉起服务端。默认关闭。
 /// [prootStartupCommand] 仅用于 proot 纯容器（generic）rootfs：用户须填写完整启动命令
 /// （含主程序路径与所有参数，如 `/usr/bin/python3 /mnt/server/main.py`）。
 /// 带元数据的 rootfs（java/php/node/python）不需要此字段，启动方式由清单声明。
@@ -65,6 +67,7 @@ class Instance {
     this.serverFile,
     this.customJvmArgs,
     this.compatMode = false,
+    this.autoRestartOnExit = false,
     this.prootStartupCommand,
     this.path,
   });
@@ -84,6 +87,9 @@ class Instance {
   final String? serverFile;
   final String? customJvmArgs;
   final bool compatMode;
+
+  /// 关服自动重启：服务端正常退出（非用户主动关闭/重启、非异常退出）时自动重启。
+  final bool autoRestartOnExit;
 
   /// proot 纯容器（generic rootfs）的完整启动命令。
   /// 仅当 runtime=proot 且所选 rootfs 无元数据（或 envType=generic）时使用。
@@ -107,6 +113,7 @@ class Instance {
     String? serverFile,
     String? customJvmArgs,
     bool? compatMode,
+    bool? autoRestartOnExit,
     String? prootStartupCommand,
     String? path,
     bool clearMaxMemory = false,
@@ -126,6 +133,7 @@ class Instance {
         ? null
         : (customJvmArgs ?? this.customJvmArgs),
     compatMode: compatMode ?? this.compatMode,
+    autoRestartOnExit: autoRestartOnExit ?? this.autoRestartOnExit,
     prootStartupCommand: clearProotStartupCommand
         ? null
         : (prootStartupCommand ?? this.prootStartupCommand),
@@ -141,6 +149,7 @@ class Instance {
     if (serverFile != null) 'serverFile': serverFile,
     if (customJvmArgs != null) 'customJvmArgs': customJvmArgs,
     if (compatMode) 'compatMode': true,
+    if (autoRestartOnExit) 'autoRestartOnExit': true,
     if (prootStartupCommand != null) 'prootStartupCommand': prootStartupCommand,
     if (path != null) 'path': path,
   };
@@ -157,6 +166,7 @@ class Instance {
     serverFile: (json['serverFile'] ?? json['selectedJar']) as String?,
     customJvmArgs: json['customJvmArgs'] as String?,
     compatMode: json['compatMode'] as bool? ?? false,
+    autoRestartOnExit: json['autoRestartOnExit'] as bool? ?? false,
     prootStartupCommand: json['prootStartupCommand'] as String?,
     path: json['path'] as String?,
   );

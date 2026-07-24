@@ -441,6 +441,7 @@ Future<CallToolResult> _startInstance(
       runtimeArgs: const [],
       programArgs: [phar, '--no-wizard'],
       compatMode: instance.compatMode,
+      autoRestartOnExit: instance.autoRestartOnExit,
     );
     return _ok({
       'started': true,

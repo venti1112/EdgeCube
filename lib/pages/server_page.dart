@@ -115,6 +115,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   String _selectedJreId = 'jre21';
   String? _selectedServerFile;
   bool _compatMode = false;
+  bool _autoRestartOnExit = false;
   Future<_LaunchContext>? _ctxFuture;
 
   /// proot 模式下选中的 rootfs id（作为 runtimeId 传给原生侧）。
@@ -145,6 +146,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     }
     _selectedServerFile = widget.instance.serverFile;
     _compatMode = widget.instance.compatMode;
+    _autoRestartOnExit = widget.instance.autoRestartOnExit;
     // 设置崩溃回调：服务端意外退出时弹出报告弹窗。
     final server = ServerScope.of(context);
     server.onCrashExit = _onCrashExit;
@@ -237,6 +239,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         oldWidget.instance.runtimeEnvId != widget.instance.runtimeEnvId ||
         oldWidget.instance.runtime != widget.instance.runtime ||
         oldWidget.instance.compatMode != widget.instance.compatMode ||
+        oldWidget.instance.autoRestartOnExit !=
+            widget.instance.autoRestartOnExit ||
         oldWidget.instance.prootStartupCommand !=
             widget.instance.prootStartupCommand ||
         oldWidget.instance.path != widget.instance.path;
@@ -250,6 +254,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       }
       _selectedServerFile = widget.instance.serverFile;
       _compatMode = widget.instance.compatMode;
+      _autoRestartOnExit = widget.instance.autoRestartOnExit;
       // 同步 proot 启动命令（Survivalcraft 等场景下，实例创建初期可能为空，
       // 安装完成后 updateConfig 才会写入，此时须刷新 TextEditingController）。
       final newStartupCmd = widget.instance.prootStartupCommand ?? '';
@@ -289,6 +294,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       serverFile: _selectedServerFile,
       customJvmArgs: argsText.isEmpty ? null : argsText,
       compatMode: _compatMode,
+      autoRestartOnExit: _autoRestartOnExit,
       prootStartupCommand: _isProot ? prootCmd : null,
       clearCustomJvmArgs: argsText.isEmpty,
       clearProotStartupCommand: !_isProot || prootCmd.isEmpty,
@@ -526,6 +532,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         runtimeArgs: const [],
         programArgs: [file, '--no-wizard'],
         compatMode: _compatMode,
+        autoRestartOnExit: _autoRestartOnExit,
       );
       return;
     }
@@ -569,6 +576,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           runtimeArgs: const [],
           programArgs: [prootCmd],
           compatMode: _compatMode,
+          autoRestartOnExit: _autoRestartOnExit,
           directExecute: true,
         );
         return;
@@ -593,6 +601,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           runtimeArgs: const [],
           programArgs: [command],
           compatMode: _compatMode,
+          autoRestartOnExit: _autoRestartOnExit,
         );
       } else {
         // 带元数据的 rootfs：按清单声明的 envMainBin 启动。
@@ -629,6 +638,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           runtimeArgs: isJavaEnv ? javaJvmArgs : const [],
           programArgs: isJavaEnv ? javaProgramArgs : [file],
           compatMode: _compatMode,
+          autoRestartOnExit: _autoRestartOnExit,
         );
       }
       return;
@@ -684,6 +694,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           : jvmArgs,
       programArgs: isArgfile ? const ['nogui'] : ['-jar', file, 'nogui'],
       compatMode: _compatMode,
+      autoRestartOnExit: _autoRestartOnExit,
     );
   }
 
@@ -716,6 +727,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           : jvmArgs,
       programArgs: isArgfile ? const ['nogui'] : ['-jar', file, 'nogui'],
       compatMode: _compatMode,
+      autoRestartOnExit: _autoRestartOnExit,
     );
   }
 
@@ -1215,6 +1227,15 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                       onChanged: (v) => setDialogState(() => _compatMode = v),
                       title: Text(context.tr('server.compatModeTitle')),
                       subtitle: Text(context.tr('server.compatModeSubtitle')),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: _autoRestartOnExit,
+                      onChanged: (v) =>
+                          setDialogState(() => _autoRestartOnExit = v),
+                      title: Text(context.tr('server.autoRestartTitle')),
+                      subtitle:
+                          Text(context.tr('server.autoRestartSubtitle')),
                     ),
                   ],
                 ),

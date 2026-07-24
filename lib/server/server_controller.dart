@@ -257,6 +257,10 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   /// 用于应用被回收后原生状态回放（未经过本会话 [start]）时恢复兼容模式标志。
   Future<bool> Function(String instanceId)? compatModeResolver;
 
+  /// 异步解析指定实例是否启用关服自动重启。由外层（main）注入，读取实例配置文件。
+  /// 用于应用被回收后原生状态回放（未经过本会话 [start]）、随后服务端自行退出的场景。
+  Future<bool> Function(String instanceId)? autoRestartOnExitResolver;
+
   /// 解析当前是否启用了 UPnP 端口映射。由外层（main）注入，读取配置文件。
   Future<bool> Function()? upnpEnabledResolver;
 
@@ -335,6 +339,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   List<String> _lastRuntimeArgs = const [];
   List<String> _lastProgramArgs = const [];
   bool _lastCompatMode = false;
+  bool _lastAutoRestartOnExit = false;
   bool _lastDirectExecute = false;
 
   /// 优雅停止完成后是否自动重新启动（restart 流程中置位）。
@@ -597,6 +602,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     required List<String> runtimeArgs,
     required List<String> programArgs,
     bool compatMode = false,
+    bool autoRestartOnExit = false,
     bool directExecute = false,
   }) async {
     if (_status != ServerStatus.stopped) return;
@@ -626,6 +632,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     _lastRuntimeArgs = runtimeArgs;
     _lastProgramArgs = programArgs;
     _lastCompatMode = compatMode;
+    _lastAutoRestartOnExit = autoRestartOnExit;
     _lastDirectExecute = directExecute;
     try {
       final runtimes = await const RuntimeService().installedRuntimes();
@@ -739,8 +746,46 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
       runtimeArgs: _lastRuntimeArgs,
       programArgs: _lastProgramArgs,
       compatMode: _lastCompatMode,
+      autoRestartOnExit: _lastAutoRestartOnExit,
       directExecute: _lastDirectExecute,
     );
+  }
+
+  /// 关服自动重启：解析实例是否开启自动重启，若开启则延迟后用相同参数重新拉起。
+  ///
+  /// 仅在服务端正常退出（exitCode == 0）、非用户主动关闭/重启时由 [_onEvent]
+  /// 调用。每次都经 [autoRestartOnExitResolver] 从实例配置读取最新值，这样用户
+  /// 在服务端运行期间切换开关也能在本次退出时生效。
+  Future<void> _maybeAutoRestart(String? instanceId) async {
+    if (instanceId == null) return;
+    // 无缓存的启动参数（如应用被回收后原生状态回放、本会话未经过 start）时，
+    // 无法重新拉起，静默跳过——与手动 restart() 的限制一致，避免误报提示。
+    if (_lastInstanceId == null) return;
+    final enabled = await _resolveAutoRestartFor(instanceId);
+    if (!enabled) return;
+    // 期间用户可能已手动启动其它实例或发起新操作，仅在仍处于停止态且运行实例
+    // 未切换时才重启，避免与用户的新操作冲突。
+    if (_status != ServerStatus.stopped) return;
+    if (_instanceId != instanceId) return;
+    _notice(tr('server.notice.autoRestarting'));
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (_status == ServerStatus.stopped && _instanceId == instanceId) {
+        _relaunch();
+      }
+    });
+  }
+
+  /// 从实例配置解析是否开启关服自动重启。
+  /// 始终读取最新配置（非缓存），使运行期间切换的开关在退出时即时生效。
+  Future<bool> _resolveAutoRestartFor(String? instanceId) async {
+    if (instanceId == null) return false;
+    final resolver = autoRestartOnExitResolver;
+    if (resolver == null) return false;
+    try {
+      return await resolver(instanceId);
+    } catch (_) {
+      return false;
+    }
   }
 
   /// 程序化发送一行控制台命令（如玩家管理页的 op/kick/list；启动中、运行中、
@@ -1145,6 +1190,8 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
           // 独立隧道与服务端生命周期解耦，服务端停止时不回收。
           if (!_restartingTunnel && !_standaloneTunnel) _stopTunnel();
           if (_ddnsActive) _stopDdns(maybeDeleteRecords: true);
+          // 捕获退出时的用户操作标志，用于判断是否为主动停止/重启。
+          final userStopped = _userStopping || _userForceStopping;
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
           if (exitCode != null) {
             _notice(tr('server.notice.exited', {'code': '$exitCode'}));
@@ -1161,6 +1208,10 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
             Future.delayed(const Duration(milliseconds: 600), () {
               if (_status == ServerStatus.stopped) _relaunch();
             });
+          } else if (exitCode == 0 && !userStopped) {
+            // 关服自动重启：服务端正常退出（exitCode == 0）、非用户主动关闭/重启时，
+            // 若实例开启了自动重启则用相同参数重新拉起。异常退出不触发（走崩溃报告）。
+            _maybeAutoRestart(_instanceId);
           }
         }
         notifyListeners();
