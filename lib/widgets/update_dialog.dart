@@ -151,6 +151,27 @@ class _UpdateDialogState extends State<UpdateDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: cs.errorContainer.withAlpha(80),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 18, color: cs.error),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '如果继续使用旧版本，遇到问题我们不会受理',
+                      style: theme.textTheme.bodySmall?.copyWith(color: cs.onErrorContainer),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             Text(
               context.tr('update.latestVersion', {'version': '${info.version} (Build ${info.build})'}),
             ),
