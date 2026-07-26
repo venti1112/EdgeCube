@@ -10,6 +10,7 @@ import '../../frp/frp_registry_store.dart';
 import '../../frp/frp_scope.dart';
 import '../../i18n/locale_scope.dart';
 import '../../widgets/error_dialog.dart';
+import '../../widgets/loading_dialog.dart';
 import 'frp_provider_login_page.dart';
 
 /// 供应商隧道管理页：Tab1「我的隧道」（选择保存到本地）+ Tab2「创建隧道」。
@@ -66,13 +67,12 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
     super.dispose();
   }
 
-  /// token 失效（FrpApiException）：清除凭据，提示并替换为登录页。
+  /// token 失效（FrpApiException）：清除凭据，弹窗提示并替换为登录页。
   Future<void> _handleTokenInvalid() async {
     await FrpProviderService.logout(widget.provider);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(context.tr('frp.tokenExpired'))),
-    );
+    await showErrorDialog(context, context.tr('frp.tokenExpired'));
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => FrpProviderLoginPage(provider: widget.provider),
@@ -186,10 +186,14 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
     );
     if (confirmed != true || !mounted) return;
     try {
-      await FrpProviderService.deleteTunnel(
-        widget.provider,
-        widget.token,
-        tunnel.id,
+      await runWithLoadingDialog(
+        context,
+        trans.get('frp.deletingTunnel'),
+        () => FrpProviderService.deleteTunnel(
+          widget.provider,
+          widget.token,
+          tunnel.id,
+        ),
       );
       await _refreshTunnels();
     } catch (e) {

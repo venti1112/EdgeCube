@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import '../instance/instance.dart';
+import '../widgets/error_dialog.dart';
 import 'create_download_loader_version_page.dart';
 import 'create_download_progress_page.dart';
 import 'download_runner.dart';
@@ -314,7 +315,8 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
       } catch (e) {
         await _controller.deleteInstance(instance.id);
         if (!mounted) return;
-        _showErrorDialog(
+        showErrorDialog(
+          context,
           context.tr('instance.createContainerDirFailed', {'error': '$e'}),
         );
         return;
@@ -352,33 +354,8 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
     }
   }
 
-  Future<void> _showDuplicateDialog(String name) => showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(ctx.tr('instance.noticeTitle')),
-          content: Text(ctx.tr('instance.duplicateName', {'name': name})),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(ctx.tr('common.ok')),
-            ),
-          ],
-        ),
-      );
-
-  Future<void> _showErrorDialog(String message) => showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(ctx.tr('instance.noticeTitle')),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(ctx.tr('common.ok')),
-            ),
-          ],
-        ),
-      );
+  Future<void> _showDuplicateDialog(String name) =>
+      showErrorDialog(context, context.tr('instance.duplicateName', {'name': name}));
 
   @override
   Widget build(BuildContext context) {

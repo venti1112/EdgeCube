@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/loading_dialog.dart';
 import 'file_entry.dart';
 import 'file_search_bar.dart';
 import 'file_service.dart';
@@ -460,17 +461,22 @@ class _FileBrowserState extends State<FileBrowser> {
           : context.tr('fileBrowser.copyTo'),
       disabledPath: entry.isDirectory ? entry.path : null,
     );
-    if (dest == null) return;
+    if (dest == null || !mounted) return;
+    _showLoadingDialog(
+      context.tr(isMove ? 'common.moving' : 'common.copying'),
+    );
     try {
       if (isMove) {
         await _service.move(entry.path, Directory(dest));
       } else {
         await _service.copy(entry.path, Directory(dest));
       }
+      if (mounted) Navigator.of(context).pop();
       await _load();
       // 移动/复制可能改变根目录的 jar，通知服务器页重新扫描。
       instances.notifyInstanceFilesChanged();
     } catch (e) {
+      if (mounted) Navigator.of(context).pop();
       _showError(e);
     }
   }
@@ -539,24 +545,7 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   /// 显示不可取消的加载对话框，操作完成后由调用方 pop 关闭。
-  void _showLoadingDialog(String message) {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Row(
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(width: 20),
-              Text(message),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  void _showLoadingDialog(String message) => showLoadingDialog(context, message);
 
   /// 去掉归档文件名的全部扩展名作为解压子文件夹名。
   /// 复合扩展名（.tar.gz 等）整体去掉；单层扩展名去掉一层。
@@ -623,13 +612,16 @@ class _FileBrowserState extends State<FileBrowser> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
+    _showLoadingDialog(context.tr('common.deleting'));
     try {
       await _service.delete(entry.path);
+      if (mounted) Navigator.of(context).pop();
       await _load();
       // 删除可能移除根目录的 jar，通知服务器页重新扫描。
       instances.notifyInstanceFilesChanged();
     } catch (e) {
+      if (mounted) Navigator.of(context).pop();
       _showError(e);
     }
   }
@@ -743,7 +735,8 @@ class _FileBrowserState extends State<FileBrowser> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
+    _showLoadingDialog(context.tr('common.deleting'));
     final failed = <String>[];
     for (final entry in entries) {
       try {
@@ -752,6 +745,7 @@ class _FileBrowserState extends State<FileBrowser> {
         failed.add(entry.name);
       }
     }
+    if (mounted) Navigator.of(context).pop();
     _clearSelection();
     await _load();
     instances.notifyInstanceFilesChanged();
@@ -770,7 +764,8 @@ class _FileBrowserState extends State<FileBrowser> {
         'count': entries.length.toString(),
       }),
     );
-    if (dest == null) return;
+    if (dest == null || !mounted) return;
+    _showLoadingDialog(context.tr('common.moving'));
     final failed = <String>[];
     for (final entry in entries) {
       try {
@@ -779,6 +774,7 @@ class _FileBrowserState extends State<FileBrowser> {
         failed.add(entry.name);
       }
     }
+    if (mounted) Navigator.of(context).pop();
     _clearSelection();
     await _load();
     instances.notifyInstanceFilesChanged();
@@ -797,7 +793,8 @@ class _FileBrowserState extends State<FileBrowser> {
         'count': entries.length.toString(),
       }),
     );
-    if (dest == null) return;
+    if (dest == null || !mounted) return;
+    _showLoadingDialog(context.tr('common.copying'));
     final failed = <String>[];
     for (final entry in entries) {
       try {
@@ -806,6 +803,7 @@ class _FileBrowserState extends State<FileBrowser> {
         failed.add(entry.name);
       }
     }
+    if (mounted) Navigator.of(context).pop();
     _clearSelection();
     await _load();
     instances.notifyInstanceFilesChanged();

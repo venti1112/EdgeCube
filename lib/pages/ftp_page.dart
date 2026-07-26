@@ -6,6 +6,7 @@ import '../ftp/ftp_controller.dart';
 import '../ftp/ftp_scope.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/loading_dialog.dart';
 import '../instance/instance_scope.dart';
 import '../net/network_address.dart';
 import '../widgets/expandable_address_list.dart';
@@ -87,7 +88,11 @@ class _FtpPageState extends State<FtpPage> {
       return;
     }
     try {
-      await ftp.setEnabled(value);
+      await runWithLoadingDialog(
+        context,
+        context.tr(value ? 'common.startingService' : 'common.stoppingService'),
+        () => ftp.setEnabled(value),
+      );
     } catch (e) {
       if (!mounted) return;
       showErrorDialog(
@@ -101,11 +106,26 @@ class _FtpPageState extends State<FtpPage> {
   Future<void> _saveConfig() async {
     final ftp = FtpScope.of(context);
     final config = _buildConfig();
-    await ftp.applyConfig(config);
-    // 重新检测地址：开启 IPv6 后可即时展示稳定 IPv6 地址。
-    final ipv6 = await NetworkAddress.detectStableIPv6();
-    if (!mounted) return;
-    setState(() => _localIpv6 = ipv6);
+    try {
+      final ipv6 = await runWithLoadingDialog(
+        context,
+        context.tr('common.applyingConfig'),
+        () async {
+          await ftp.applyConfig(config);
+          // 重新检测地址：开启 IPv6 后可即时展示稳定 IPv6 地址。
+          return NetworkAddress.detectStableIPv6();
+        },
+      );
+      if (!mounted) return;
+      setState(() => _localIpv6 = ipv6);
+    } catch (e) {
+      if (!mounted) return;
+      showErrorDialog(
+        context,
+        context.tr('ftp.operationFailed', {'error': e.toString()}),
+      );
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(

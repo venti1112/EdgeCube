@@ -153,6 +153,7 @@ class LanguageSettingsPage extends StatelessWidget {
     if (dir == null || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final savedTpl = context.tr('language.exportTemplateSaved');
+    final failedTpl = context.tr('language.exportTemplateFailed');
     try {
       final json = await I18nService.exportTemplate();
       final file = File(p.join(dir, 'edgecube_translation_template.json'));
@@ -160,8 +161,11 @@ class LanguageSettingsPage extends StatelessWidget {
       messenger.showSnackBar(
         SnackBar(content: Text(savedTpl.replaceAll('{path}', file.path))),
       );
-    } catch (_) {
-      // 写入失败静默忽略（权限或路径问题）。
+    } catch (e) {
+      // 写入失败（权限或路径问题）：弹窗提示。
+      if (context.mounted) {
+        showErrorDialog(context, failedTpl.replaceAll('{error}', '$e'));
+      }
     }
   }
 

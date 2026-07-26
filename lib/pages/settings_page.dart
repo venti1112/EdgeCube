@@ -399,9 +399,14 @@ class _CustomDataFolderTileState extends State<_CustomDataFolderTile>
       instances.refreshAfterPathChange();
       await _load();
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(_resultMessage(result, isReset))),
-      );
+      // 部分文件迁移失败属于错误，用弹窗提示；全部成功用 SnackBar。
+      if (result.success) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(_resultMessage(result, isReset))),
+        );
+      } else {
+        showErrorDialog(context, _resultMessage(result, isReset));
+      }
     } catch (error) {
       if (!mounted) return;
       showErrorDialog(

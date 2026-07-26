@@ -7,6 +7,7 @@ import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/loading_dialog.dart';
 import '../net/download_format.dart';
 import '../server/ecpkg_handler.dart';
 import '../server/proot_service.dart';
@@ -222,10 +223,14 @@ class _RuntimePageState extends State<RuntimePage> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
 
     try {
-      await _service.deleteRuntime(info.id);
+      await runWithLoadingDialog(
+        context,
+        tr.get('common.deleting'),
+        () => _service.deleteRuntime(info.id),
+      );
       if (!mounted) return;
       await _load();
     } catch (e) {
@@ -452,10 +457,14 @@ class _RuntimePageState extends State<RuntimePage> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
 
     try {
-      await _prootService.deleteRootfs(info.id);
+      await runWithLoadingDialog(
+        context,
+        context.tr('common.deleting'),
+        () => _prootService.deleteRootfs(info.id),
+      );
       if (!mounted) return;
       await _load();
     } catch (e) {
@@ -487,19 +496,7 @@ class _RuntimePageState extends State<RuntimePage> {
 
     if (!mounted) return;
     // 显示加载对话框
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        content: Row(
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(width: 20),
-            Text(tr.get('runtime.update.checking')),
-          ],
-        ),
-      ),
-    );
+    showLoadingDialog(context, tr.get('runtime.update.checking'));
 
     RuntimeUpdateInfo? updateInfo;
     String? error;

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../config/mcp_store.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/loading_dialog.dart';
 import '../mcp/mcp_controller.dart';
 import '../mcp/mcp_scope.dart';
 import '../net/network_address.dart';
@@ -75,7 +76,11 @@ class _McpPageState extends State<McpPage> {
   Future<void> _toggleMcp(bool value) async {
     final mcp = McpScope.of(context);
     try {
-      await mcp.setEnabled(value);
+      await runWithLoadingDialog(
+        context,
+        context.tr(value ? 'common.startingService' : 'common.stoppingService'),
+        () => mcp.setEnabled(value),
+      );
     } catch (e) {
       if (!mounted) return;
       showErrorDialog(
@@ -97,11 +102,27 @@ class _McpPageState extends State<McpPage> {
   /// 保存配置；若 MCP 正在运行则自动重启以应用新配置。
   Future<void> _saveConfig() async {
     final mcp = McpScope.of(context);
-    await mcp.applyConfig(_buildConfig());
-    // 重新检测地址：开启 IPv6 后可即时展示稳定 IPv6 地址。
-    final ipv6 = await NetworkAddress.detectStableIPv6();
-    if (!mounted) return;
-    setState(() => _localIpv6 = ipv6);
+    final config = _buildConfig();
+    try {
+      final ipv6 = await runWithLoadingDialog(
+        context,
+        context.tr('common.applyingConfig'),
+        () async {
+          await mcp.applyConfig(config);
+          // 重新检测地址：开启 IPv6 后可即时展示稳定 IPv6 地址。
+          return NetworkAddress.detectStableIPv6();
+        },
+      );
+      if (!mounted) return;
+      setState(() => _localIpv6 = ipv6);
+    } catch (e) {
+      if (!mounted) return;
+      showErrorDialog(
+        context,
+        context.tr('mcpPage.operationFailed', {'error': '$e'}),
+      );
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(

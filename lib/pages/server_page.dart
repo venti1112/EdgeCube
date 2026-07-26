@@ -12,6 +12,7 @@ import '../config/network_store.dart';
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/loading_dialog.dart';
 import '../instance/create_instance_page.dart';
 import '../instance/forge_launch.dart';
 import '../instance/instance.dart';
@@ -1249,22 +1250,11 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                         await controller.rename(widget.instance.id, newName);
                       } on DuplicateInstanceNameException {
                         if (context.mounted) {
-                          await showDialog<void>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: Text(context.tr('server.noticeTitle')),
-                              content: Text(
-                                context.tr('server.duplicateName', {
-                                  'name': newName,
-                                }),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.of(ctx).pop(),
-                                  child: Text(context.tr('common.ok')),
-                                ),
-                              ],
-                            ),
+                          await showErrorDialog(
+                            context,
+                            context.tr('server.duplicateName', {
+                              'name': newName,
+                            }),
                           );
                         }
                         return;
@@ -1693,14 +1683,29 @@ class _InstanceListSheet extends StatelessWidget {
         ],
       ),
     );
-    if (second != true) return;
+    if (second != true || !context.mounted) return;
 
-    // 若该实例正在运行，先强制停止
-    if (running) {
-      await server.forceStop();
+    try {
+      await runWithLoadingDialog(
+        context,
+        context.tr('server.deletingInstance'),
+        () async {
+          // 若该实例正在运行，先强制停止
+          if (running) {
+            await server.forceStop();
+          }
+          await controller.deleteInstance(instance.id);
+        },
+      );
+    } catch (e) {
+      if (context.mounted) {
+        showErrorDialog(
+          context,
+          context.tr('server.deleteInstanceFailed', {'error': '$e'}),
+        );
+      }
+      return;
     }
-
-    await controller.deleteInstance(instance.id);
     if (navigator.canPop()) navigator.pop();
   }
 }

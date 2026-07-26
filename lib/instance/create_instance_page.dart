@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../files/storage_permission.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import 'create_download_edition_page.dart';
 import 'create_import_archive_page.dart';
 import 'create_import_server_page.dart';
@@ -206,37 +207,11 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   // —— 对话框 ——
 
-  Future<void> _showDuplicateDialog(String name) async {
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.noticeTitle')),
-        content: Text(ctx.tr('instance.duplicateName', {'name': name})),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(ctx.tr('common.ok')),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<void> _showDuplicateDialog(String name) =>
+      showErrorDialog(context, context.tr('instance.duplicateName', {'name': name}));
 
-  Future<void> _showNameEmptyDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.noticeTitle')),
-        content: Text(ctx.tr('instance.nameEmpty')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(ctx.tr('common.ok')),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<void> _showNameEmptyDialog() =>
+      showErrorDialog(context, context.tr('instance.nameEmpty'));
 
   // —— 导航收尾 ——
 

@@ -166,15 +166,13 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
         // 单次轮询失败（网络抖动等）不中断，继续等待。
       }
     }
-    // 超时未授权：复位并提示。
+    // 超时未授权：复位并弹窗提示。
     if (mounted && _polling) {
       setState(() {
         _polling = false;
         _browserSession = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('frp.browserLoginExpired'))),
-      );
+      showErrorDialog(context, context.tr('frp.browserLoginExpired'));
     }
   }
 

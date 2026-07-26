@@ -5,6 +5,7 @@ import '../config/ssh_store.dart';
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/loading_dialog.dart';
 import '../instance/instance_scope.dart';
 import '../net/network_address.dart';
 import '../ssh/ssh_controller.dart';
@@ -91,37 +92,49 @@ class _SshPageState extends State<SshPage> {
     final ssh = SshScope.of(context);
     if (value) {
       if (InstanceScope.of(context).selected == null) {
-        _snack(context.tr('ssh.noInstanceSelected'));
+        _showError(context.tr('ssh.noInstanceSelected'));
         return;
       }
       if (!ssh.config.hasCredentials) {
-        _snack(context.tr('ssh.credentialsRequired'));
+        _showError(context.tr('ssh.credentialsRequired'));
         return;
       }
     }
     try {
-      if (sftp) {
-        await ssh.setSftpEnabled(value);
-      } else {
-        await ssh.setShellEnabled(value);
-      }
+      await runWithLoadingDialog(
+        context,
+        context.tr(value ? 'common.startingService' : 'common.stoppingService'),
+        () => sftp ? ssh.setSftpEnabled(value) : ssh.setShellEnabled(value),
+      );
     } catch (e) {
-      _snack(tr('ssh.operationFailed', {'error': e.toString()}));
+      _showError(tr('ssh.operationFailed', {'error': e.toString()}));
     }
   }
 
   /// 保存配置；若服务正在运行则自动重启以应用新配置。
   Future<void> _saveConfig() async {
     if (_username.text.trim().isEmpty || _password.text.isEmpty) {
-      _snack(context.tr('ssh.credentialsRequiredSave'));
+      _showError(context.tr('ssh.credentialsRequiredSave'));
       return;
     }
     final ssh = SshScope.of(context);
-    await ssh.applyConfig(_buildConfig());
-    // 重新检测地址：开启 IPv6 后可即时展示稳定 IPv6 地址。
-    final ipv6 = await NetworkAddress.detectStableIPv6();
-    if (!mounted) return;
-    setState(() => _localIpv6 = ipv6);
+    final config = _buildConfig();
+    try {
+      final ipv6 = await runWithLoadingDialog(
+        context,
+        context.tr('common.applyingConfig'),
+        () async {
+          await ssh.applyConfig(config);
+          // 重新检测地址：开启 IPv6 后可即时展示稳定 IPv6 地址。
+          return NetworkAddress.detectStableIPv6();
+        },
+      );
+      if (!mounted) return;
+      setState(() => _localIpv6 = ipv6);
+    } catch (e) {
+      _showError(tr('ssh.operationFailed', {'error': e.toString()}));
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -134,7 +147,7 @@ class _SshPageState extends State<SshPage> {
     );
   }
 
-  void _snack(String msg) {
+  void _showError(String msg) {
     if (!mounted) return;
     showErrorDialog(context, msg);
   }

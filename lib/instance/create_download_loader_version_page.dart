@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/java_env_pref_store.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/error_dialog.dart';
 import '../server/java_env_resolver.dart';
 import '../server/proot_service.dart';
 import '../server/server_service.dart';
@@ -215,19 +216,8 @@ class _SelectLoaderVersionPageState extends State<SelectLoaderVersionPage> {
     }
   }
 
-  Future<void> _showDuplicateDialog(String name) => showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(ctx.tr('instance.noticeTitle')),
-          content: Text(ctx.tr('instance.duplicateName', {'name': name})),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(ctx.tr('common.ok')),
-            ),
-          ],
-        ),
-      );
+  Future<void> _showDuplicateDialog(String name) =>
+      showErrorDialog(context, context.tr('instance.duplicateName', {'name': name}));
 
   @override
   Widget build(BuildContext context) {

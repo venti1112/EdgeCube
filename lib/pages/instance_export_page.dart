@@ -12,6 +12,7 @@ import '../files/system_picker.dart';
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/loading_dialog.dart';
 import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
@@ -143,22 +144,7 @@ class _InstanceExportTile extends StatelessWidget {
       return;
     }
     if (!context.mounted) return;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Row(
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(width: 20),
-              Text(context.tr('instanceExport.compressing')),
-            ],
-          ),
-        ),
-      ),
-    );
+    showLoadingDialog(context, context.tr('instanceExport.compressing'));
     try {
       final tempDir = await getTemporaryDirectory();
       final ts = DateTime.now().millisecondsSinceEpoch;
@@ -202,22 +188,7 @@ class _InstanceExportTile extends StatelessWidget {
     );
     if (destDir == null) return;
     if (!context.mounted) return;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Row(
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(width: 20),
-              Text(context.tr('instanceExport.compressing')),
-            ],
-          ),
-        ),
-      ),
-    );
+    showLoadingDialog(context, context.tr('instanceExport.compressing'));
     try {
       const service = FileService();
       final zipPath = await service.compressMany(
