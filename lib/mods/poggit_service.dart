@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../net/download_engine.dart';
+import '../online/cloud_headers.dart';
 
 /// Poggit 插件分类。
 class PoggitCategory {
@@ -198,7 +199,6 @@ class PoggitService {
   PoggitService._();
 
   static const _baseUrl = 'https://poggit.pmmp.io';
-  static const _userAgent = 'EdgeCube';
 
   /// 内存缓存（仅最新版本列表），有效期 12 小时。
   static List<PoggitPlugin>? _cache;
@@ -219,7 +219,7 @@ class PoggitService {
 
     final url = '$_baseUrl/plugins.min.json?latest-only=true';
     final response = await http
-        .get(Uri.parse(url), headers: {'User-Agent': _userAgent})
+        .get(Uri.parse(url), headers: {'User-Agent': await CloudHeaders.userAgent})
         .timeout(const Duration(seconds: 30));
 
     if (response.statusCode != 200) {
@@ -240,7 +240,7 @@ class PoggitService {
   static Future<List<PoggitPlugin>> getPluginVersions(String name) async {
     final url = '$_baseUrl/plugins.min.json?name=${Uri.encodeComponent(name)}';
     final response = await http
-        .get(Uri.parse(url), headers: {'User-Agent': _userAgent})
+        .get(Uri.parse(url), headers: {'User-Agent': await CloudHeaders.userAgent})
         .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
@@ -283,7 +283,7 @@ class PoggitService {
         ? resourceUrl
         : '$resourceUrl.md';
     final response = await http
-        .get(Uri.parse(mdUrl), headers: {'User-Agent': _userAgent})
+        .get(Uri.parse(mdUrl), headers: {'User-Agent': await CloudHeaders.userAgent})
         .timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) return '';
     return response.body;

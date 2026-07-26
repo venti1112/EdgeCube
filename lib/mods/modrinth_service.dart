@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../net/download_engine.dart';
+import '../online/cloud_headers.dart';
 
 /// Modrinth 搜索结果项。
 class ModrinthSearchHit {
@@ -233,7 +234,6 @@ class ModrinthService {
   ModrinthService._();
 
   static const _baseUrl = 'https://api.modrinth.com/v2';
-  static const _userAgent = 'EdgeCube';
 
   /// 每页数量（与 PCL-CE 的 compPageSize 不同，移动端用较小值）。
   static const pageSize = 20;
@@ -289,7 +289,7 @@ class ModrinthService {
 
     final uri = Uri.parse('$_baseUrl/search').replace(queryParameters: params);
     final response = await http
-        .get(uri, headers: {'User-Agent': _userAgent})
+        .get(uri, headers: {'User-Agent': await CloudHeaders.userAgent})
         .timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) {
       throw Exception('HTTP ${response.statusCode}');
@@ -319,7 +319,7 @@ class ModrinthService {
   static Future<List<ModrinthVersion>> getVersions(String projectId) async {
     final uri = Uri.parse('$_baseUrl/project/$projectId/version');
     final response = await http
-        .get(uri, headers: {'User-Agent': _userAgent})
+        .get(uri, headers: {'User-Agent': await CloudHeaders.userAgent})
         .timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) {
       throw Exception('HTTP ${response.statusCode}');
@@ -341,7 +341,7 @@ class ModrinthService {
       '$_baseUrl/projects',
     ).replace(queryParameters: {'ids': jsonEncode(projectIds)});
     final response = await http
-        .get(uri, headers: {'User-Agent': _userAgent})
+        .get(uri, headers: {'User-Agent': await CloudHeaders.userAgent})
         .timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) {
       throw Exception('HTTP ${response.statusCode}');
@@ -356,7 +356,7 @@ class ModrinthService {
   static Future<List<ModrinthGameVersion>> getGameVersions() async {
     final uri = Uri.parse('$_baseUrl/tag/game_version');
     final response = await http
-        .get(uri, headers: {'User-Agent': _userAgent})
+        .get(uri, headers: {'User-Agent': await CloudHeaders.userAgent})
         .timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) {
       throw Exception('HTTP ${response.statusCode}');
@@ -381,7 +381,7 @@ class ModrinthService {
         .post(
           uri,
           headers: {
-            'User-Agent': _userAgent,
+            'User-Agent': await CloudHeaders.userAgent,
             'Content-Type': 'application/json',
           },
           body: body,
@@ -414,7 +414,7 @@ class ModrinthService {
         .post(
           uri,
           headers: {
-            'User-Agent': _userAgent,
+            'User-Agent': await CloudHeaders.userAgent,
             'Content-Type': 'application/json',
           },
           body: body,

@@ -1493,8 +1493,6 @@
   "frp.provider.chmlfrp.subtitle": "ChmlFrp 免费内网穿透",
   "frp.provider.mefrp.subtitle": "ME Frp 镜缘映射",
   "frp.provider.custom.subtitle": "手动填写或粘贴 frpc 配置，连接任意 frps 服务器",
-  "frp.experimental": "实验性",
-  "frp.experimentalHint": "该平台官方客户端为闭源修改版 frpc，EdgeCube 使用标准 frpc 尝试连接，可能无法成功。若连接失败请查看运行日志。",
   "frp.loginTitle": "账号登录",
   "frp.login": "登录",
   "frp.logout": "退出登录",

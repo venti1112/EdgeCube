@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../online/cloud_headers.dart';
+
 class VersionFetchService {
   VersionFetchService._();
 
@@ -10,7 +12,7 @@ class VersionFetchService {
       final req = await client.getUrl(
         Uri.parse('https://fill.papermc.io/v3/projects/paper'),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
@@ -37,7 +39,7 @@ class VersionFetchService {
       final req = await client.getUrl(
         Uri.parse('https://getbukkit.org/download/spigot'),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final versionRegex = RegExp(
@@ -55,7 +57,7 @@ class VersionFetchService {
       final req = await client.getUrl(
         Uri.parse('https://getbukkit.org/download/craftbukkit'),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final versionRegex = RegExp(
@@ -73,7 +75,7 @@ class VersionFetchService {
       final req = await client.getUrl(
         Uri.parse('https://api.purpurmc.org/v2/purpur'),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
@@ -98,7 +100,7 @@ class VersionFetchService {
       final req = await client.getUrl(
         Uri.parse('https://api.leafmc.one/v2/projects/leaf'),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
@@ -115,7 +117,7 @@ class VersionFetchService {
       final req = await client.getUrl(
         Uri.parse('https://api.leavesmc.org/v2/projects/leaves'),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
@@ -140,7 +142,7 @@ class VersionFetchService {
       final req = await client.getUrl(
         Uri.parse('https://fill.papermc.io/v3/projects/velocity'),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
@@ -192,7 +194,7 @@ class VersionFetchService {
     final req = await client.getUrl(
       Uri.parse('https://api.github.com/repos/AllayMC/Allay/releases'),
     );
-    req.headers.set('User-Agent', 'EdgeCube/1.0');
+    req.headers.set('User-Agent', await CloudHeaders.userAgent);
     final res = await req.close();
     if (res.statusCode != 200) {
       throw Exception('HTTP ${res.statusCode}');
@@ -212,7 +214,7 @@ class VersionFetchService {
           'https://api.github.com/repos/AllayMC/Allay/releases/tags/$tag',
         ),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       if (res.statusCode != 200) return null;
       final body = await res.transform(utf8.decoder).join();
@@ -324,7 +326,7 @@ class VersionFetchService {
           'https://gitee.com/api/v5/repos/SC-SPM/SurvivalcraftNet/releases?per_page=40',
         ),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       if (res.statusCode != 200) {
         throw Exception('HTTP ${res.statusCode}');
@@ -351,7 +353,7 @@ class VersionFetchService {
           'https://api.github.com/repos/PowerNukkitX/PowerNukkitX/releases',
         ),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as List<dynamic>;
@@ -390,7 +392,7 @@ class VersionFetchService {
           'https://api.github.com/repos/pmmp/update.pmmp.io/contents/channels',
         ),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as List<dynamic>;
@@ -445,7 +447,7 @@ class VersionFetchService {
           'https://raw.githubusercontent.com/pmmp/update.pmmp.io/master/channels/$version.json',
         ),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       if (res.statusCode != 200) return;
       final body = await res.transform(utf8.decoder).join();

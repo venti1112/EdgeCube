@@ -99,28 +99,7 @@ class _ProviderTileState extends State<_ProviderTile> {
           size: 36,
           color: _theme.colorScheme.primary,
         ),
-        title: Row(
-          children: [
-            Flexible(child: Text(name, style: const TextStyle(fontSize: 16))),
-            if (_provider.experimental) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(
-                  color: _theme.colorScheme.tertiary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  context.tr('frp.experimental'),
-                  style: _theme.textTheme.labelSmall?.copyWith(
-                    color: _theme.colorScheme.tertiary,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
+        title: Text(name, style: const TextStyle(fontSize: 16)),
         subtitle: Text(subtitle),
         trailing: _checking
             ? const SizedBox(

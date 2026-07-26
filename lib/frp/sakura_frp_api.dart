@@ -9,8 +9,6 @@ import 'frp_models.dart';
 /// GET 用 token 查询参数，POST 用 `Authorization: Bearer`。隧道列表直接
 /// 返回数组（无包络）；创建成功为 HTTP 201。
 ///
-/// 注意：SakuraFrp 官方客户端为闭源魔改 frpc；EdgeCube 用标准配置运行，
-/// 兼容性标记为实验性（见 FrpProvider.experimental）。
 class SakuraFrpApi {
   SakuraFrpApi._();
 

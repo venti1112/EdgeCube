@@ -37,8 +37,4 @@ enum FrpProvider {
       this == FrpProvider.openFrp ||
       this == FrpProvider.chmlFrp;
 
-  /// 标准 frpc 兼容性存疑的供应商（闭源魔改 frps，可能要求私有握手）。
-  /// UI 在这些供应商的入口展示「实验性」提示，运行失败时引导查看日志。
-  bool get experimental =>
-      this == FrpProvider.sakuraFrp || this == FrpProvider.meFrp;
 }

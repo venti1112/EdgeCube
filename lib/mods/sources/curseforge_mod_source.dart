@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../online/cloud_headers.dart';
 import '../../net/mod_mirror.dart';
 import 'mod_source.dart';
 
@@ -23,7 +24,6 @@ class CurseForgeModSource extends ModSource {
   const CurseForgeModSource();
 
   static const _apiBase = 'https://api.curseforge.com';
-  static const _userAgent = 'EdgeCube';
   static const _gameId = 432; // Minecraft
   static const _classIdMod = 6;
 
@@ -168,7 +168,7 @@ class CurseForgeModSource extends ModSource {
   Future<Object?> _getJson(Uri uri) async {
     final target = await ModMirror.rewriteApi(uri);
     final headers = {
-      'User-Agent': _userAgent,
+      'User-Agent': await CloudHeaders.userAgent,
       'Accept': 'application/json',
       ...await ModMirror.curseForgeHeaders(),
     };
@@ -184,7 +184,7 @@ class CurseForgeModSource extends ModSource {
   Future<Object?> _postJson(Uri uri, Map<String, dynamic> body) async {
     final target = await ModMirror.rewriteApi(uri);
     final headers = {
-      'User-Agent': _userAgent,
+      'User-Agent': await CloudHeaders.userAgent,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
       ...await ModMirror.curseForgeHeaders(),

@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../online/cloud_headers.dart';
+
 /// MSL 镜像源（MSL 开服器）服务端下载 API 封装。
 ///
 /// 文档：https://apidoc-v4.mslmc.cn/
@@ -15,7 +17,6 @@ class MslMirror {
 
   static const String baseUrl = 'https://api.mslmc.cn/v4';
   static const String officialSite = 'https://www.mslmc.cn';
-  static const String _userAgent = 'EdgeCube/1.0';
 
   /// 应用内服务端类型 → MSL 核心名（当前一一对应）。
   static const Map<String, String> _serverNameMap = {
@@ -51,7 +52,7 @@ class MslMirror {
       final req = await client.getUrl(
         Uri.parse('$baseUrl/download/server/$mslName/$version?build=$build'),
       );
-      req.headers.set('User-Agent', _userAgent);
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       if (res.statusCode != 200) return null;
       final body = await res.transform(utf8.decoder).join();

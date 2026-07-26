@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../online/cloud_headers.dart';
 import 'mod_source.dart';
 
 /// SpigotMC 插件平台实现（经 Spiget API）。
@@ -20,7 +21,6 @@ class SpigetModSource extends ModSource {
   const SpigetModSource();
 
   static const _base = 'https://api.spiget.org/v2';
-  static const _userAgent = 'EdgeCube';
 
   @override
   ModSourceType get type => ModSourceType.spiget;
@@ -117,7 +117,7 @@ class SpigetModSource extends ModSource {
 
   Future<Object?> _getJson(Uri uri) async {
     final res = await http
-        .get(uri, headers: {'User-Agent': _userAgent, 'Accept': 'application/json'})
+        .get(uri, headers: {'User-Agent': await CloudHeaders.userAgent, 'Accept': 'application/json'})
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
       throw Exception('Spiget HTTP ${res.statusCode}');

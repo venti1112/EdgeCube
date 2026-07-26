@@ -254,40 +254,10 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
             : ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  if (widget.provider.experimental) ...[
-                    _buildExperimentalHint(theme),
-                    const SizedBox(height: 12),
-                  ],
+
                   _buildLoginCard(theme),
                 ],
               ),
-      ),
-    );
-  }
-
-  Widget _buildExperimentalHint(ThemeData theme) {
-    return Card(
-      color: theme.colorScheme.surfaceContainerHighest,
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.science_outlined,
-              size: 18,
-              color: theme.colorScheme.tertiary,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                context.tr('frp.experimentalHint'),
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

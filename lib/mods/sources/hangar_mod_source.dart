@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../online/cloud_headers.dart';
 import 'mod_source.dart';
 
 /// Hangar（PaperMC 官方插件仓库）平台实现。
@@ -17,7 +18,6 @@ class HangarModSource extends ModSource {
   const HangarModSource();
 
   static const _base = 'https://hangar.papermc.io/api/v1';
-  static const _userAgent = 'EdgeCube';
 
   /// Hangar 平台名（大写），用于版本文件与筛选。
   static const _platforms = ['PAPER', 'WATERFALL', 'VELOCITY'];
@@ -110,7 +110,7 @@ class HangarModSource extends ModSource {
 
   Future<Object?> _getJson(Uri uri) async {
     final res = await http
-        .get(uri, headers: {'User-Agent': _userAgent, 'Accept': 'application/json'})
+        .get(uri, headers: {'User-Agent': await CloudHeaders.userAgent, 'Accept': 'application/json'})
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
       throw Exception('Hangar HTTP ${res.statusCode}');

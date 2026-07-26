@@ -88,7 +88,7 @@ class FrpConfigBuilder {
   }
 
   /// SakuraFrp：无公开 frpc 配置接口，以用户 token 作为 auth.token 尝试
-  /// 标准连接（实验性，可能被闭源 frps 拒绝）。
+  /// 标准连接。
   static Future<String> _buildSakuraFrp(SavedFrpTunnel tunnel) async {
     final token = await _requireToken(FrpProvider.sakuraFrp);
     final nodes = await SakuraFrpApi.nodeList(token, userLevel: 999);

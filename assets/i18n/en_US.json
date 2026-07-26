@@ -1493,8 +1493,6 @@
   "frp.provider.chmlfrp.subtitle": "ChmlFrp free tunneling",
   "frp.provider.mefrp.subtitle": "ME Frp (Mirror Edge)",
   "frp.provider.custom.subtitle": "Fill in or paste a frpc config to connect to any frps server",
-  "frp.experimental": "Experimental",
-  "frp.experimentalHint": "This provider's official client is a closed-source modified frpc. EdgeCube connects with standard frpc, which may fail. Check the run log if the connection fails.",
   "frp.loginTitle": "Sign in",
   "frp.login": "Sign in",
   "frp.logout": "Sign out",

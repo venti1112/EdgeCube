@@ -9,8 +9,6 @@ import 'frp_models.dart';
 /// 鉴权 `Authorization: Bearer <token>`；包络 `{code, message, data}`，
 /// code == 200 为成功。`/auth/user/frpToken` 返回 frpc 鉴权 token。
 ///
-/// 注意：ME Frp 官方客户端为闭源魔改 frpc；EdgeCube 用标准配置运行，
-/// 兼容性标记为实验性（见 FrpProvider.experimental）。
 class MeFrpApi {
   MeFrpApi._();
 

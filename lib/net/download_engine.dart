@@ -77,7 +77,7 @@ class DownloadEngine {
     try {
       headers = await CloudHeaders.base();
     } catch (_) {
-      headers = const {'User-Agent': 'EdgeCube'};
+      headers = {'User-Agent': 'EdgeCube'};
     }
 
     _manager = await createDownloadX(

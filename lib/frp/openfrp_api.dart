@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:pinenacl/x25519.dart';
 
+import '../online/cloud_headers.dart';
 import 'frp_models.dart';
 
 /// OpenFrp（api.openfrp.net）API 客户端。
@@ -22,18 +23,16 @@ class OpenFrpApi {
   static const Duration _timeout = Duration(seconds: 15);
 
   /// OpenFrp 要求请求携带应用程序 UA，否则可能被防火墙拦截。
-  static const String _userAgent = 'EdgeCube';
-
-  static Map<String, String> _headers(String? token) => {
+  static Future<Map<String, String>> _headers(String? token) async => {
         'Content-Type': 'application/json',
-        'User-Agent': _userAgent,
+        'User-Agent': await CloudHeaders.userAgent,
         if (token != null && token.isNotEmpty) 'Authorization': token,
       };
 
   static Future<Map<String, dynamic>> _post(String path, String token) async {
     final resp = await http.post(
       Uri.parse('$_base$path'),
-      headers: _headers(token),
+      headers: await _headers(token),
       body: '{}',
     ).timeout(_timeout);
     return _envelope(resp);
@@ -46,7 +45,7 @@ class OpenFrpApi {
   ) async {
     final resp = await http.post(
       Uri.parse('$_base$path'),
-      headers: _headers(token),
+      headers: await _headers(token),
       body: jsonEncode(body),
     ).timeout(_timeout);
     return _envelope(resp);
@@ -92,7 +91,7 @@ class OpenFrpApi {
     final resp = await http
         .post(
           Uri.parse('$_accessBase/argoAccess/requestLogin'),
-          headers: _headers(null),
+          headers: await _headers(null),
           body: jsonEncode({'public_key': publicKey}),
         )
         .timeout(_timeout);
@@ -134,7 +133,7 @@ class OpenFrpApi {
         .replace(queryParameters: {'request_uuid': uuid});
     final request = http.Request('GET', uri);
     request.headers['Content-Type'] = 'application/json';
-    request.headers['User-Agent'] = _userAgent;
+    request.headers['User-Agent'] = await CloudHeaders.userAgent;
     request.body = jsonEncode({'request_uuid': uuid});
     final streamed = await request.send().timeout(_timeout);
     final resp = await http.Response.fromStream(streamed);

@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/ddns_store.dart';
 import '../net/network_address.dart';
+import '../online/cloud_headers.dart';
 import '../online/online_service.dart';
 
 /// DDNS 更新过程中的业务错误（配置不完整、凭据无效、服务商拒绝等）。
@@ -507,7 +508,7 @@ class DdnsService {
           Uri.parse('https://dnsapi.cn/$action'),
           headers: {
             // DNSPod 要求 UA 携带程序名与联系方式，否则可能被限制。
-            'User-Agent': 'EdgeCube-DDNS/1.0 (support@edgecubemc.com)',
+            'User-Agent': 'EdgeCube-DDNS/${(await CloudHeaders.userAgent).split('/').last} (support@edgecubemc.com)',
           },
           body: params,
         )

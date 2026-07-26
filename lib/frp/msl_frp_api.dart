@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:http/http.dart' as http;
 
+import '../online/cloud_headers.dart';
 import 'frp_models.dart';
 
 /// MSL Frp（user.mslmc.net）API 客户端。
@@ -18,15 +19,12 @@ class MslFrpApi {
   static const String _base = 'https://user.mslmc.net/api';
   static const Duration _timeout = Duration(seconds: 15);
 
-  /// OAuth 应用标识（沿用 MSL 官方客户端 appid；EdgeCube 无独立注册）。
-  static const String _appId = 'eixl7BLlidSZ7POjdhZsAGTXKyu';
+  /// OAuth 应用标识。
+  static const String _appId = '3JAza1AwWgOQeBj2C2j7OODOPOv';
 
-  /// 与上游一致的 UA（部分接口按前缀识别客户端）。
-  static const String _userAgent = 'MSLTeam-MSL/EdgeCube';
-
-  static Map<String, String> _headers(String? token) => {
+  static Future<Map<String, String>> _headers(String? token) async => {
         'Content-Type': 'application/json',
-        'User-Agent': _userAgent,
+        'User-Agent': await CloudHeaders.userAgent,
         if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
       };
 
@@ -38,7 +36,7 @@ class MslFrpApi {
 
   static Future<Map<String, dynamic>> _get(String path, String token) async {
     final resp = await http
-        .get(Uri.parse('$_base$path'), headers: _headers(token))
+        .get(Uri.parse('$_base$path'), headers: await _headers(token))
         .timeout(_timeout);
     return _envelope(resp);
   }
@@ -51,7 +49,7 @@ class MslFrpApi {
     final resp = await http
         .post(
           Uri.parse('$_base$path'),
-          headers: _headers(token),
+          headers: await _headers(token),
           body: jsonEncode(body),
         )
         .timeout(_timeout);
@@ -78,9 +76,9 @@ class MslFrpApi {
     final resp = await http
         .post(
           Uri.parse('$_base/oauth/createAppLogin'),
-          headers: const {
+          headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': _userAgent,
+            'User-Agent': await CloudHeaders.userAgent,
           },
           body: {'csrf': csrf, 'appid': _appId},
         )
@@ -105,7 +103,7 @@ class MslFrpApi {
     final resp = await http
         .get(
           Uri.parse('$_base/oauth/appLogin?ssid=$ssid&csrf=$csrf'),
-          headers: const {'User-Agent': _userAgent},
+          headers: {'User-Agent': await CloudHeaders.userAgent},
         )
         .timeout(_timeout);
     final json = _envelope(resp);

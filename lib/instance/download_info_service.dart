@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../online/cloud_headers.dart';
 import 'download_info.dart';
 
 class DownloadInfoService {
@@ -78,7 +79,7 @@ class DownloadInfoService {
       final req = await client.getUrl(
         Uri.parse('https://api.purpurmc.org/v2/purpur/$version'),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
@@ -166,7 +167,7 @@ class DownloadInfoService {
           'https://ci.md-5.net/job/BungeeCord/lastSuccessfulBuild/api/json',
         ),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
@@ -189,7 +190,7 @@ class DownloadInfoService {
           'https://api.github.com/repos/PowerNukkitX/PowerNukkitX/releases/tags/$version',
         ),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
@@ -221,7 +222,7 @@ class DownloadInfoService {
           'https://raw.githubusercontent.com/pmmp/update.pmmp.io/master/channels/$version.json',
         ),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       if (res.statusCode != 200) {
         throw Exception('HTTP ${res.statusCode}');
@@ -246,7 +247,7 @@ class DownloadInfoService {
           'https://api.github.com/repos/AllayMC/Allay/releases/tags/$version',
         ),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       if (res.statusCode != 200) {
         throw Exception('HTTP ${res.statusCode}');
@@ -293,7 +294,7 @@ class DownloadInfoService {
           'https://gitee.com/api/v5/repos/SC-SPM/SurvivalcraftNet/releases/tags/$tag',
         ),
       );
-      req.headers.set('User-Agent', 'EdgeCube/1.0');
+      req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       if (res.statusCode != 200) {
         throw Exception('HTTP ${res.statusCode}');
