@@ -1971,6 +1971,10 @@ class _ConnectionCardState extends State<_ConnectionCard> {
     final ddnsSucceeded = widget.server.isDdnsSucceeded;
     final ddnsError = widget.server.ddnsError;
     final ddnsDomain = widget.server.ddnsDomain;
+    final stunActive = widget.server.isStunActive;
+    final stunRunning = widget.server.isStunRunning;
+    final stunFailed = widget.server.isStunFailed;
+    final stunAddress = widget.server.stunPublicAddress;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -2074,6 +2078,17 @@ class _ConnectionCardState extends State<_ConnectionCard> {
                       success: ddnsSucceeded,
                       error: ddnsError != null,
                     ),
+                  // STUN 芯片同理：仅在启用（或已确定失败）时显示。
+                  if (stunActive || stunFailed)
+                    _statusChip(
+                      context,
+                      theme,
+                      icon: Icons.hub_outlined,
+                      label: 'STUN',
+                      active: stunActive,
+                      success: stunRunning,
+                      error: stunFailed,
+                    ),
                 ],
               ),
 
@@ -2082,7 +2097,8 @@ class _ConnectionCardState extends State<_ConnectionCard> {
               // 映射进行中或失败时该提示保持显示，直到真正映射成功。
               if (!(upnpActive && upnpIp != null) &&
                   !(tunnelActive && tunnelRunning) &&
-                  !(ddnsActive && ddnsSucceeded))
+                  !(ddnsActive && ddnsSucceeded) &&
+                  !(stunActive && stunRunning))
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: Row(
@@ -2098,7 +2114,11 @@ class _ConnectionCardState extends State<_ConnectionCard> {
                         child: Text(
                           // 已启用映射但尚未成功（映射中/出错）：提示"映射未
                           // 完成"；完全未启用：提示"开启端口映射"。
-                          upnpActive || tunnelActive || ddnsActive || tunnelCrashed
+                          upnpActive ||
+                                  tunnelActive ||
+                                  ddnsActive ||
+                                  stunActive ||
+                                  tunnelCrashed
                               ? context.tr('server.lanOnlyMappingPendingHint')
                               : context.tr('server.lanOnlyHint'),
                           style: theme.textTheme.bodySmall?.copyWith(
@@ -2135,6 +2155,21 @@ class _ConnectionCardState extends State<_ConnectionCard> {
                     icon: Icons.dns_outlined,
                     label: context.tr('server.ddnsAddress'),
                     value: '$ddnsDomain:${upnpPort ?? serverPort ?? 25565}',
+                    canCopy: true,
+                  ),
+                ),
+
+              // STUN 隧道公网直连地址（打洞成功时显示）。地址已含端口，
+              // 且该端口由 NAT 分配，与服务端端口无关。
+              if (stunRunning && stunAddress != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: _infoRow(
+                    context,
+                    theme,
+                    icon: Icons.hub_outlined,
+                    label: context.tr('server.stunAddress'),
+                    value: stunAddress,
                     canCopy: true,
                   ),
                 ),

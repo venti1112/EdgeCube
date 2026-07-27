@@ -17,7 +17,9 @@ import 'server_service.dart';
 import 'upnp_service.dart';
 import '../config/ddns_store.dart';
 import '../config/network_store.dart';
+import '../config/stun_store.dart';
 import '../config/terminal_store.dart';
+import '../stun/stun_tunnel_service.dart';
 import '../tunnel/tunnel_service.dart';
 import 'runtime_service.dart';
 import '../widgets/terminal_keys_bar.dart';
@@ -197,12 +199,15 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     UpnpService? upnp,
     TunnelService? tunnel,
     DdnsService? ddns,
+    StunTunnelService? stun,
   }) : _service = service ?? ServerService(),
        _upnp = upnp ?? UpnpService(),
        _tunnel = tunnel ?? TunnelService(),
-       _ddns = ddns ?? DdnsService() {
+       _ddns = ddns ?? DdnsService(),
+       _stun = stun ?? StunTunnelService.instance {
     _sub = _service.events().listen(_onEvent);
     _tunnelSub = _tunnel.events().listen(_onTunnelEvent);
+    _stun.addListener(_onStunChanged);
     terminal.onOutput = _onTerminalOutput;
     terminal.onResize = _onTerminalResize;
   }
@@ -211,6 +216,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   final UpnpService _upnp;
   final TunnelService _tunnel;
   final DdnsService _ddns;
+  final StunTunnelService _stun;
   late final StreamSubscription<ServerEvent> _sub;
   late final StreamSubscription<TunnelEvent> _tunnelSub;
 
@@ -283,6 +289,10 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   /// 解析 DDNS 完整配置（是否启用、服务商、凭据等）。由外层（main）注入，
   /// 读取配置文件。
   Future<DdnsConfig> Function()? ddnsConfigResolver;
+
+  /// 解析 STUN 隧道配置（是否启用、本地端口、并发上限等）。由外层（main）注入，
+  /// 读取配置文件。
+  Future<StunConfig> Function()? stunConfigResolver;
 
   /// 解析当前生效的 locale 代码（如 `zh_CN`）。由外层（main）注入。
   /// 崩溃分析据此从规则文件选取对应语言的错误信息与建议。
@@ -370,6 +380,15 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   Timer? _ddnsTimer;
   bool _ddnsUpdating = false;
   int _ddnsEpoch = 0;
+
+  // —— STUN 隧道状态 ——
+  // 隧道本身由 StunTunnelService 单例持有，这里只缓存「上一次透出给 UI 的」
+  // 状态快照：服务内部每秒都会因流量统计 notifyListeners，若无条件转发会让
+  // 整个服务器页每秒重建一次，故仅在状态/地址真正变化时才向上通知。
+  bool _stunActive = false;
+  StunTunnelStatus _stunStatus = StunTunnelStatus.stopped;
+  String? _stunPublicAddress;
+  String? _stunError;
 
   // —— FRP 隧道进程状态追踪 ——
   // _tunnelRunning: frpc 进程是否真正进入 STATUS_RUNNING（看到 "login to server
@@ -460,6 +479,23 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
 
   /// DDNS 解析的完整域名（如 `mc.example.com`），激活后可用。
   String? get ddnsDomain => _ddnsDomain;
+
+  // —— STUN 隧道状态公共接口 ——
+
+  /// STUN 隧道是否已激活（含探测中）。
+  bool get isStunActive => _stunActive;
+
+  /// STUN 隧道是否已就绪并可转发。
+  bool get isStunRunning => _stunStatus == StunTunnelStatus.running;
+
+  /// STUN 隧道是否已确定失败（NAT 类型不支持等）。
+  bool get isStunFailed => _stunStatus == StunTunnelStatus.failed;
+
+  /// STUN 隧道的公网直连地址（`ip:port`）；未就绪时为 null。
+  String? get stunPublicAddress => _stunPublicAddress;
+
+  /// STUN 隧道最近一次失败原因；正常时为 null。
+  String? get stunError => _stunError;
 
   /// 服务端实际监听端口（启动时从配置文件读取并缓存）。
   int? get serverPort => _serverPort;
@@ -679,6 +715,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
           _triggerUpnp();
           _triggerTunnel();
           _triggerDdns();
+          _triggerStun();
         }
         notifyListeners();
       }
@@ -1179,6 +1216,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
             if (!_upnpActive) _triggerUpnp();
             if (!_tunnelActive) _triggerTunnel();
             if (!_ddnsActive) _triggerDdns();
+            if (!_stunActive) _triggerStun();
           }
         } else {
           _status = ServerStatus.stopped;
@@ -1190,6 +1228,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
           // 独立隧道与服务端生命周期解耦，服务端停止时不回收。
           if (!_restartingTunnel && !_standaloneTunnel) _stopTunnel();
           if (_ddnsActive) _stopDdns(maybeDeleteRecords: true);
+          if (_stunActive) _stopStun();
           // 捕获退出时的用户操作标志，用于判断是否为主动停止/重启。
           final userStopped = _userStopping || _userForceStopping;
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
@@ -1327,6 +1366,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
       if (!_upnpActive) _triggerUpnp();
       if (!_tunnelActive) _triggerTunnel();
       if (!_ddnsActive) _triggerDdns();
+      if (!_stunActive) _triggerStun();
     }
     notifyListeners();
   }
@@ -1546,6 +1586,88 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
         _notice(tr('server.notice.ddnsDeleteFailed', {'error': '$e'}));
       }
     });
+  }
+
+  // ── STUN 隧道 ──────────────────────────────────────────────
+
+  /// 触发 STUN 隧道（服务端进入运行态时调用）。
+  void _triggerStun() {
+    final resolver = stunConfigResolver;
+    if (resolver == null) return;
+    resolver().then((config) {
+      if (config.enabled) _startStun(config);
+    });
+  }
+
+  /// 启动 STUN 隧道。目标端口优先取配置中的自定义值，否则跟随服务端实际端口。
+  void _startStun(StunConfig config) {
+    if (_stunActive) return;
+    _stunActive = true;
+    notifyListeners();
+    readServerPort().then((port) {
+      // 期间隧道可能已被停用，避免异步回来后又把它拉起来。
+      if (!_stunActive) return;
+      final target = config.localPort ?? port ?? 25565;
+      _stun.start(config, targetPort: target);
+    });
+  }
+
+  /// 停止 STUN 隧道。
+  ///
+  /// 失败态（[StunTunnelStatus.failed]）下 `_stunActive` 已被置否，但服务侧仍
+  /// 保留着失败状态与错误信息，故这里不能只看 `_stunActive` 就提前返回，
+  /// 否则关闭开关后失败提示会一直残留。
+  void _stopStun() {
+    if (!_stunActive && _stunStatus == StunTunnelStatus.stopped) return;
+    _stunActive = false;
+    _stunPublicAddress = null;
+    _stunError = null;
+    _stunStatus = StunTunnelStatus.stopped;
+    _stun.stop();
+    notifyListeners();
+  }
+
+  /// STUN 隧道服务状态变化：仅在状态/地址真正改变时上抛，避免每秒流量刷新
+  /// 引起整页重建；重要节点同时写一条终端提示。
+  void _onStunChanged() {
+    final status = _stun.status;
+    final address = _stun.publicAddress?.toString();
+    final error = _stun.lastError;
+    if (status == _stunStatus &&
+        address == _stunPublicAddress &&
+        error == _stunError) {
+      return;
+    }
+    final wasRunning = _stunStatus == StunTunnelStatus.running;
+    _stunStatus = status;
+    _stunError = error;
+    _stunPublicAddress = address;
+
+    if (status == StunTunnelStatus.running && address != null) {
+      _notice(tr('server.notice.stunReady', {'address': address}));
+    } else if (status == StunTunnelStatus.failed) {
+      _stunActive = false;
+      _notice(tr('server.notice.stunFailed', {'error': error ?? ''}));
+    } else if (wasRunning && status == StunTunnelStatus.probing) {
+      _notice(tr('server.notice.stunRebuilding'));
+    }
+    notifyListeners();
+  }
+
+  /// 立即启用 STUN 隧道（用户在 UI 中打开开关时调用）。
+  void enableStunNow() {
+    if (_stunActive || _status != ServerStatus.running) return;
+    _triggerStun();
+  }
+
+  /// 立即停用 STUN 隧道（用户在 UI 中关闭开关时调用）。
+  void disableStunNow() => _stopStun();
+
+  /// 重启 STUN 隧道以应用最新配置（保存配置后调用）；未激活时无操作。
+  void applyStunConfig() {
+    if (!_stunActive || _status != ServerStatus.running) return;
+    _stopStun();
+    _triggerStun();
   }
 
   /// 启动 FRP 隧道（服务端进入运行态时调用）。
@@ -1935,6 +2057,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     _sub.cancel();
     _tunnelSub.cancel();
     _ddnsTimer?.cancel();
+    _stun.removeListener(_onStunChanged);
     _closeLogFile();
     super.dispose();
   }

@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'config/ddns_store.dart';
 import 'config/network_store.dart';
+import 'config/stun_store.dart';
 import 'config/version_store.dart';
 import 'server/runtime_migration.dart';
 import 'route_observer.dart';
@@ -75,6 +76,8 @@ Future<void> main() async {
   serverController.defaultTunnelResolver = FrpDefaultTunnel.resolve;
   // DDNS 动态域名解析：读取 config/ddns.json 中的持久化配置。
   serverController.ddnsConfigResolver = DdnsStore.load;
+  // STUN 隧道（NAT1 打洞）：读取 config/stun.json 中的持久化配置。
+  serverController.stunConfigResolver = StunStore.load;
   // 崩溃分析按当前语言取规则文案：注入当前生效的 locale 代码。
   serverController.localeResolver = () => localeController.activeLocaleCode;
   final systemMonitorController = SystemMonitorController();

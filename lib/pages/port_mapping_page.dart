@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../config/ddns_store.dart';
 import '../config/network_store.dart';
+import '../config/stun_store.dart';
 import '../frp/frp_models.dart';
 import '../frp/frp_provider.dart';
 import '../frp/frp_registry_store.dart';
@@ -12,6 +13,7 @@ import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
 import '../server/runtime_service.dart';
 import '../server/server_scope.dart';
+import '../stun/stun_tunnel_service.dart';
 import '../tunnel/tunnel_service.dart';
 import 'frp/frp_tunnel_list_page.dart';
 import 'runtime_page.dart';
@@ -28,6 +30,7 @@ class PortMappingPage extends StatefulWidget {
 
 class _PortMappingPageState extends State<PortMappingPage> {
   final _tunnel = TunnelService();
+  final _stun = StunTunnelService.instance;
 
   // —— UPnP / FRP 开关状态 ——
   bool _upnpEnabled = false;
@@ -65,19 +68,32 @@ class _PortMappingPageState extends State<PortMappingPage> {
   final _logScroll = ScrollController();
   StreamSubscription<TunnelEvent>? _sub;
 
+  // —— STUN 隧道配置与日志 ——
+  StunConfig _stunConfig = const StunConfig();
+  final _stunLocalPort = TextEditingController();
+  final _stunMaxConnections = TextEditingController();
+  final _stunKeepAlive = TextEditingController();
+  final List<String> _stunLogs = [];
+  final _stunLogScroll = ScrollController();
+  StreamSubscription<String>? _stunLogSub;
+
   @override
   void initState() {
     super.initState();
     _loadAll();
     _subscribe();
     RuntimeService.refreshSignal.addListener(_onRuntimesChanged);
+    _stun.addListener(_onStunChanged);
   }
 
   @override
   void dispose() {
     RuntimeService.refreshSignal.removeListener(_onRuntimesChanged);
+    _stun.removeListener(_onStunChanged);
     _sub?.cancel();
+    _stunLogSub?.cancel();
     _logScroll.dispose();
+    _stunLogScroll.dispose();
     _upnpExternalPort.dispose();
     _ddnsDomain.dispose();
     _ddnsHost.dispose();
@@ -85,7 +101,15 @@ class _PortMappingPageState extends State<PortMappingPage> {
     _ddnsToken.dispose();
     _ddnsCustomUrl.dispose();
     _ddnsInterval.dispose();
+    _stunLocalPort.dispose();
+    _stunMaxConnections.dispose();
+    _stunKeepAlive.dispose();
     super.dispose();
+  }
+
+  /// 隧道服务状态/流量变化时刷新卡片（服务每秒推送一次流量统计）。
+  void _onStunChanged() {
+    if (mounted) setState(() {});
   }
 
   // —— 加载 ——
@@ -100,8 +124,14 @@ class _PortMappingPageState extends State<PortMappingPage> {
     final savedTunnels = await FrpRegistryStore.load();
     final defaultTunnelId = await NetworkStore.loadDefaultFrpTunnelId();
     final ddns = await DdnsStore.load();
+    final stun = await StunStore.load();
     if (!mounted) return;
+    if (stun.enabled) _subscribeStunLog();
     setState(() {
+      _stunConfig = stun;
+      _stunLocalPort.text = stun.localPort?.toString() ?? '';
+      _stunMaxConnections.text = stun.maxConnections.toString();
+      _stunKeepAlive.text = stun.keepAliveSeconds.toString();
       _upnpEnabled = upnp;
       _upnpExternalPort.text = extPort?.toString() ?? '';
       _upnpProtocol = protocol;
@@ -238,6 +268,106 @@ class _PortMappingPageState extends State<PortMappingPage> {
     } finally {
       if (mounted) setState(() => _ddnsUpdating = false);
     }
+  }
+
+  // —— STUN 隧道保存 + 即时生效 ——
+
+  /// 从表单收集当前 STUN 配置（enabled 沿用现值，除非显式传入）。
+  StunConfig _collectStunConfig({bool? enabled}) {
+    final port = int.tryParse(_stunLocalPort.text.trim());
+    final maxConn = int.tryParse(_stunMaxConnections.text.trim());
+    final keepAlive = int.tryParse(_stunKeepAlive.text.trim());
+    return _stunConfig.copyWith(
+      enabled: enabled,
+      // 端口留空表示跟随服务端实际监听端口。
+      localPort: (port != null && port > 0 && port < 65536) ? port : null,
+      clearLocalPort: port == null || port <= 0 || port >= 65536,
+      maxConnections: (maxConn == null || maxConn < 1) ? 128 : maxConn,
+      keepAliveSeconds:
+          (keepAlive == null || keepAlive < 5) ? 20 : keepAlive,
+    );
+  }
+
+  Future<void> _setStun(bool value) async {
+    final config = _collectStunConfig(enabled: value);
+    await StunStore.save(config);
+    if (!mounted) return;
+    setState(() => _stunConfig = config);
+    if (value) {
+      _subscribeStunLog();
+    } else {
+      _stunLogSub?.cancel();
+      _stunLogSub = null;
+    }
+    final server = ServerScope.of(context);
+    if (value) {
+      server.enableStunNow();
+    } else {
+      server.disableStunNow();
+    }
+  }
+
+  Future<void> _saveStunSettings() async {
+    final config = _collectStunConfig();
+    await StunStore.save(config);
+    if (!mounted) return;
+    setState(() {
+      _stunConfig = config;
+      // 归一化后的值回填输入框（越界/非法输入会被夹到合法区间）。
+      _stunMaxConnections.text = config.maxConnections.toString();
+      _stunKeepAlive.text = config.keepAliveSeconds.toString();
+    });
+    // 运行中则重建隧道以应用新配置（公网端口会变化）。
+    ServerScope.of(context).applyStunConfig();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(context.tr('portMapping.saved')),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _subscribeStunLog() {
+    if (_stunLogSub != null) return;
+    // 订阅时会先回放历史日志，先清空本地副本避免开关来回切换后重复堆积。
+    _stunLogs.clear();
+    _stunLogSub = _stun.logs().listen((line) {
+      if (!mounted) return;
+      setState(() {
+        _stunLogs.add(line);
+        if (_stunLogs.length > 500) {
+          _stunLogs.removeRange(0, _stunLogs.length - 500);
+        }
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_stunLogScroll.hasClients) {
+          _stunLogScroll.jumpTo(_stunLogScroll.position.maxScrollExtent);
+        }
+      });
+    });
+  }
+
+  /// 复制公网直连地址到剪贴板。
+  Future<void> _copyStunAddress() async {
+    final address = _stun.publicAddress?.toString();
+    final messenger = ScaffoldMessenger.of(context);
+    final trans = LocaleScope.of(context).translations;
+    if (address == null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(trans.get('portMapping.stunNoAddress')),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: address));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(trans.get('portMapping.stunCopied')),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _setTunnel(bool value) async {
@@ -392,12 +522,397 @@ class _PortMappingPageState extends State<PortMappingPage> {
               _buildLogSection(theme),
             ],
             const SizedBox(height: 16),
+            _buildStunCard(theme),
+            const SizedBox(height: 16),
             _buildUpnpCard(theme),
             const SizedBox(height: 16),
             _buildDdnsCard(theme),
           ],
         ),
       ),
+    );
+  }
+
+  // —— STUN 隧道卡片 ——
+
+  Widget _buildStunCard(ThemeData theme) {
+    final status = _stun.status;
+    final running = status == StunTunnelStatus.running;
+    final address = _stun.publicAddress?.toString();
+    final serverRunning = ServerScope.of(context).isRunning;
+
+    final (String statusText, Color statusColor) = switch (status) {
+      StunTunnelStatus.running => (
+          context.tr('portMapping.stunRunning'),
+          theme.colorScheme.primary,
+        ),
+      StunTunnelStatus.probing => (
+          context.tr('portMapping.stunProbing'),
+          theme.colorScheme.tertiary,
+        ),
+      StunTunnelStatus.failed => (
+          context.tr('portMapping.stunFailed'),
+          theme.colorScheme.error,
+        ),
+      StunTunnelStatus.stopped => (
+          context.tr('portMapping.stunNotStarted'),
+          theme.colorScheme.outline,
+        ),
+    };
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.hub_outlined,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      context.tr('portMapping.stunCardTitle'),
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  if (_stunConfig.enabled)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        statusText,
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: statusColor),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            SwitchListTile(
+              title: Text(context.tr('portMapping.enableStun')),
+              subtitle: Text(context.tr('portMapping.enableStunSubtitle')),
+              value: _stunConfig.enabled,
+              onChanged: _setStun,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            if (_stunConfig.enabled) ...[
+              // 公网直连地址 + 复制。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Card(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  margin: EdgeInsets.zero,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.public, size: 18, color: statusColor),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                context.tr('portMapping.stunPublicAddress'),
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              SelectableText(
+                                address ??
+                                    (!serverRunning
+                                        ? context.tr(
+                                            'portMapping.stunServerNotRunning')
+                                        : statusText),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontFamily:
+                                      address != null ? 'monospace' : null,
+                                  color: statusColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.copy, size: 18),
+                          tooltip: context.tr('portMapping.stunCopyAddress'),
+                          onPressed: address == null ? null : _copyStunAddress,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              // 建立失败时展示具体原因。
+              if (status == StunTunnelStatus.failed && _stun.lastError != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Card(
+                    color: theme.colorScheme.errorContainer,
+                    margin: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_outlined,
+                            size: 18,
+                            color: theme.colorScheme.onErrorContainer,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _stun.lastError!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              // 运行时的连接数与流量统计。
+              if (running)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _stunStat(
+                        theme,
+                        Icons.people_outline,
+                        context.tr('portMapping.stunConnections', {
+                          'current': '${_stun.activeConnections}',
+                          'max': '${_stun.maxConnections}',
+                        }),
+                      ),
+                      const SizedBox(height: 4),
+                      _stunStat(
+                        theme,
+                        Icons.speed_outlined,
+                        context.tr('portMapping.stunSpeed', {
+                          'up': StunTunnelService.formatBytes(
+                            _stun.uploadSpeed,
+                          ),
+                          'down': StunTunnelService.formatBytes(
+                            _stun.downloadSpeed,
+                          ),
+                        }),
+                      ),
+                      const SizedBox(height: 4),
+                      _stunStat(
+                        theme,
+                        Icons.data_usage_outlined,
+                        context.tr('portMapping.stunTraffic', {
+                          'up': StunTunnelService.formatBytes(
+                            _stun.totalUpload,
+                          ),
+                          'down': StunTunnelService.formatBytes(
+                            _stun.totalDownload,
+                          ),
+                        }),
+                      ),
+                    ],
+                  ),
+                ),
+              // 端口与并发配置。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _field(
+                        _stunLocalPort,
+                        context.tr('portMapping.stunLocalPort'),
+                        hint: context.tr('portMapping.stunLocalPortHint'),
+                        number: true,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _field(
+                        _stunMaxConnections,
+                        context.tr('portMapping.stunMaxConnections'),
+                        hint: '128',
+                        number: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: _field(
+                  _stunKeepAlive,
+                  context.tr('portMapping.stunKeepAlive'),
+                  hint: '20',
+                  number: true,
+                ),
+              ),
+              SwitchListTile(
+                title: Text(context.tr('portMapping.stunProxyProtocol')),
+                subtitle: Text(
+                  context.tr('portMapping.stunProxyProtocolSubtitle'),
+                ),
+                value: _stunConfig.proxyProtocol,
+                onChanged: (v) => setState(() {
+                  _stunConfig = _stunConfig.copyWith(proxyProtocol: v);
+                }),
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              SwitchListTile(
+                title: Text(context.tr('portMapping.stunShowConnLog')),
+                subtitle: Text(
+                  context.tr('portMapping.stunShowConnLogSubtitle'),
+                ),
+                value: _stunConfig.showConnectionLog,
+                onChanged: (v) => setState(() {
+                  _stunConfig = _stunConfig.copyWith(showConnectionLog: v);
+                }),
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _saveStunSettings,
+                    icon: const Icon(Icons.save, size: 18),
+                    label: Text(context.tr('portMapping.saveStunConfig')),
+                  ),
+                ),
+              ),
+              // NAT 类型限制说明。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Card(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  margin: EdgeInsets.zero,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 18,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            context.tr('portMapping.stunHint'),
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: _buildStunLogSection(theme),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _stunStat(ThemeData theme, IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStunLogSection(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              context.tr('portMapping.stunLog'),
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+              tooltip: context.tr('portMapping.clearLog'),
+              onPressed: () {
+                _stun.clearLog();
+                setState(() => _stunLogs.clear());
+              },
+            ),
+          ],
+        ),
+        Container(
+          height: 180,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          padding: const EdgeInsets.all(8),
+          child: _stunLogs.isEmpty
+              ? Center(
+                  child: Text(
+                    context.tr('portMapping.noLogs'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  controller: _stunLogScroll,
+                  itemCount: _stunLogs.length,
+                  itemBuilder: (_, i) => Text(
+                    _stunLogs[i],
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+        ),
+      ],
     );
   }
 

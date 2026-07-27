@@ -23,8 +23,8 @@ class ChmlFrpApi {
   /// QZhua 统一认证发行者。
   static const String _oauthIssuer = 'https://account-api.qzhua.net';
 
-  /// 复用 ChmlFrp 官方启动器的 Public Client（无需 client_secret）。
-  static const String _clientId = '019d4334b34972ca9fd41513e5703dfd';
+  /// Client ID
+  static const String _clientId = '019f997e3360710b931fcd6d81aad92a';
 
   /// scope：profile/email 标准 OIDC，offline_access 取 refresh_token，
   /// chmlfrp_api 是 ChmlFrp 自定义 scope（不可省略，否则后端不认）。
