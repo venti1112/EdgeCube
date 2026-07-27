@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.venti1112.edgecube.MainActivity
 import com.venti1112.edgecube.R
+import com.venti1112.edgecube.keepalive.KeepAliveManager
 
 /**
  * 前台保活 Service：把服务端 JVM 进程“挂”在前台优先级下，显著降低被系统回收的概率。

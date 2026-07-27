@@ -5,8 +5,8 @@ import android.os.Handler
 import android.os.Looper
 import android.system.Os
 import android.system.OsConstants
+import com.venti1112.edgecube.proot.ProotCommandBuilder
 import com.venti1112.edgecube.server.EcPty
-import com.venti1112.edgecube.server.ProotEnvironment
 import io.flutter.plugin.common.EventChannel
 import java.io.File
 import java.io.FileInputStream
@@ -125,7 +125,7 @@ class ShellProcessManager private constructor(private val appContext: Context) {
             val rootfsId = shellId!!.removePrefix("proot:")
             // proot 的 cwd 是容器内路径，不能复用 host 的 workDir
             val guestCwd = cwd?.takeIf { it.isNotBlank() } ?: "/root"
-            val prootCmd = ProotEnvironment.buildShellCommand(appContext, rootfsId, guestCwd)
+            val prootCmd = ProotCommandBuilder.buildShellCommand(appContext, rootfsId, guestCwd)
             cmd = prootCmd.cmd
             argv = ArrayList(prootCmd.argv)
             env = prootCmd.env

@@ -2,7 +2,7 @@ package com.venti1112.edgecube.shell
 
 import android.content.Context
 import android.os.Environment
-import com.venti1112.edgecube.server.ProotEnvironment
+import com.venti1112.edgecube.proot.RootfsStore
 
 /**
  * 一个可执行 shell 的解析结果。
@@ -66,13 +66,13 @@ object ShellResolver {
      * 当前可用的 shell 条目（结构化）。
      *
      * 顺序：系统 sh 在前，proot rootfs 在后（按 rootfs id 字典序）。
-     * proot 条目仅在 [ProotEnvironment] 已安装至少一个 rootfs 时出现。
+     * proot 条目仅在 [RootfsStore] 已安装至少一个 rootfs 时出现。
      */
     fun availableOptions(context: Context): List<ShellOption> {
         val result = mutableListOf<ShellOption>()
         result.add(ShellOption(SYSTEM_SH_ID, SYSTEM_SH_LABEL, "system"))
         try {
-            val rootfsList = ProotEnvironment.installedRootfs(context)
+            val rootfsList = RootfsStore.installedRootfs(context)
             for (rootfs in rootfsList) {
                 val id = "proot:${rootfs.id}"
                 val label = "proot: ${rootfs.id}"
