@@ -121,6 +121,7 @@ class FrpProviderService {
     required String localIp,
     required int localPort,
     required int remotePort,
+    String? bindDomain,
   }) {
     final nodeIdInt = int.tryParse(node.id) ?? 0;
     switch (provider) {
@@ -133,6 +134,7 @@ class FrpProviderService {
           localIp: localIp,
           localPort: localPort,
           remotePort: remotePort,
+          bindDomain: bindDomain,
         );
       case FrpProvider.openFrp:
         return OpenFrpApi.newProxy(
@@ -198,6 +200,16 @@ class FrpProviderService {
         return MeFrpApi.deleteProxy(token, tunnelId);
       case FrpProvider.custom:
         throw const FrpApiException('custom 无远端删除');
+    }
+  }
+
+  /// 重置 Frp 系统用户 Token（仅 MSL Frp）。
+  static Future<void> resetToken(FrpProvider provider, String token) {
+    switch (provider) {
+      case FrpProvider.mslFrp:
+        return MslFrpApi.resetToken(token);
+      default:
+        throw const FrpApiException('该供应商不支持重置 Token');
     }
   }
 

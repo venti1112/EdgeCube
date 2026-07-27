@@ -188,6 +188,7 @@ class MslFrpApi {
     required String localIp,
     required int localPort,
     required int remotePort,
+    String? bindDomain,
   }) async {
     await _post('/frp/addTunnel', {
       'id': nodeId,
@@ -198,6 +199,8 @@ class MslFrpApi {
       'local_port': localPort,
       'remote_port': remotePort,
       'use_kcp': false,
+      if (bindDomain != null && bindDomain.isNotEmpty)
+        'bind_domain': bindDomain,
     }, token: token);
   }
 
@@ -208,9 +211,22 @@ class MslFrpApi {
     }, token: token);
   }
 
+  /// 重置 Frp 系统用户 Token。
+  static Future<void> resetToken(String token) async {
+    await _get('/frp/resetToken', token);
+  }
+
   /// 获取隧道的成品 frpc 配置（TOML 文本，可直接运行）。
-  static Future<String> tunnelConfig(String token, String tunnelId) async {
-    final json = await _get('/frp/getTunnelConfig?id=$tunnelId&format=toml', token);
+  static Future<String> tunnelConfig(
+    String token,
+    String tunnelId, {
+    String? userToken,
+  }) async {
+    final params = StringBuffer('/frp/getTunnelConfig?id=$tunnelId&format=toml');
+    if (userToken != null && userToken.isNotEmpty) {
+      params.write('&userToken=$userToken');
+    }
+    final json = await _get(params.toString(), token);
     final config = json['data'] as String? ?? '';
     if (config.isEmpty) throw const FrpApiException('配置内容为空');
     return config;
