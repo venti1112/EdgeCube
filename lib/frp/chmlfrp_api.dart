@@ -108,10 +108,11 @@ class ChmlFrpApi {
     final json = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
     final error = json['error'] as String?;
     if (error != null) {
-      // authorization_pending / slow_down：继续轮询。
-      if (error == 'authorization_pending' || error == 'slow_down') {
-        // slow_down 时服务端要求放慢，这里返回 null 让上层按 interval 等待；
-        // 上层固定 5s 间隔，与 QZhua 默认 interval 一致，足够保守。
+      if (error == 'authorization_pending') {
+        return null;
+      }
+      if (error == 'slow_down') {
+        session.state['interval'] = (session.state['interval'] as int? ?? 5) + 5;
         return null;
       }
       // expired_token / access_denied / invalid_grant 等：致命，停止轮询。
@@ -307,6 +308,7 @@ class ChmlFrpApi {
     required String localIp,
     required int localPort,
     required int remotePort,
+    String? banddomain,
   }) async {
     final accessToken = await _resolveAccessToken(encodedToken);
     final resp = await http
@@ -326,6 +328,7 @@ class ChmlFrpApi {
             'compression': false,
             'extraparams': '',
             'remoteport': remotePort,
+            if (banddomain != null && banddomain.isNotEmpty) 'banddomain': banddomain,
           }),
         )
         .timeout(_timeout);
@@ -334,7 +337,17 @@ class ChmlFrpApi {
 
   /// 删除隧道。
   static Future<void> deleteTunnel(String encodedToken, String tunnelId) async {
-    await _get('/delete_tunnel?tunnelId=$tunnelId', encodedToken);
+    final accessToken = await _resolveAccessToken(encodedToken);
+    final resp = await http
+        .get(
+          Uri.parse('$_base/delete_tunnel?tunnelid=$tunnelId'),
+          headers: {
+            'Authorization': 'Bearer $accessToken',
+            'Content-Type': 'application/json',
+          },
+        )
+        .timeout(_timeout);
+    _envelope(resp);
   }
 
   /// 获取隧道的成品 frpc 配置（ini 文本，可直接运行——上游 frpc 兼容 ini）。

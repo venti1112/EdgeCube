@@ -133,15 +133,15 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
     }
   }
 
-  /// 每 5s 轮询一次授权结果，最多约 300s（会话/UUID 有效期）。
-  /// OpenFrp 远程登录推荐 1 次/5s，MSL 会话同样为 5 分钟，故统一取 5s。
   Future<void> _pollBrowserLogin() async {
-    const interval = Duration(seconds: 5);
     const maxAttempts = 60;
     final session = _browserSession;
     if (session == null) return;
     var attempts = 0;
     while (mounted && _polling && attempts < maxAttempts) {
+      final interval = Duration(
+        seconds: (session.state['interval'] as int?) ?? 5,
+      );
       await Future.delayed(interval);
       if (!mounted || !_polling) return;
       attempts++;
