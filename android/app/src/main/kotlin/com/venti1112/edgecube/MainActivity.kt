@@ -44,17 +44,39 @@ class MainActivity : FlutterActivity() {
         ecpkgChannel.handleIntent(intent)
     }
 
+    /** 引擎是否已恢复（onResume 后为 true，onPause 后为 false）。 */
+    private var isEngineResumed = false
+
+    /** App 在后台时收到 onNewIntent，引擎尚未恢复，暂存等 onResume 后处理。 */
+    private var pendingNewIntent: Intent? = null
+
     override fun onResume() {
         super.onResume()
         // 绑定当前 Activity 供防息屏使用：服务端运行且开启防息屏时，
         // 由 KeepAliveManager 在窗口上添加 FLAG_KEEP_SCREEN_ON。
         // 转屏/重建后 Activity 重建，onResume 重新绑定并补上标志。
         KeepAliveManager.bindActivity(this)
+        isEngineResumed = true
+        pendingNewIntent?.let {
+            pendingNewIntent = null
+            ecpkgChannel.handleIntent(it)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isEngineResumed = false
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        ecpkgChannel.handleIntent(intent)
+        if (isEngineResumed) {
+            // App 已在前台，引擎运行中，直接处理。
+            ecpkgChannel.handleIntent(intent)
+        } else {
+            // App 在后台，引擎尚未恢复，暂存等 onResume 后处理。
+            pendingNewIntent = intent
+        }
     }
 
     override fun onRequestPermissionsResult(

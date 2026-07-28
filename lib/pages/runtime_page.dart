@@ -56,7 +56,6 @@ class _RuntimePageState extends State<RuntimePage> {
   void dispose() {
     RuntimeService.refreshSignal.removeListener(_onRuntimesChanged);
     ProotService.refreshSignal.removeListener(_onRuntimesChanged);
-    EcpkgHandler.onOpenEcpkg = null;
     super.dispose();
   }
 
