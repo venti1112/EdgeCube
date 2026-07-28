@@ -117,6 +117,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   String? _selectedServerFile;
   bool _compatMode = false;
   bool _autoRestartOnExit = false;
+  String _lineEnding = kLineEndingLf;
   Future<_LaunchContext>? _ctxFuture;
 
   /// proot 模式下选中的 rootfs id（作为 runtimeId 传给原生侧）。
@@ -148,6 +149,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     _selectedServerFile = widget.instance.serverFile;
     _compatMode = widget.instance.compatMode;
     _autoRestartOnExit = widget.instance.autoRestartOnExit;
+    _lineEnding = widget.instance.lineEnding;
     // 设置崩溃回调：服务端意外退出时弹出报告弹窗。
     final server = ServerScope.of(context);
     server.onCrashExit = _onCrashExit;
@@ -244,7 +246,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
             widget.instance.autoRestartOnExit ||
         oldWidget.instance.prootStartupCommand !=
             widget.instance.prootStartupCommand ||
-        oldWidget.instance.path != widget.instance.path;
+        oldWidget.instance.path != widget.instance.path ||
+        oldWidget.instance.lineEnding != widget.instance.lineEnding;
     if (configChanged) {
       _runtime = widget.instance.runtime;
       if (_isProot && widget.instance.runtimeEnvId != null) {
@@ -256,6 +259,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       _selectedServerFile = widget.instance.serverFile;
       _compatMode = widget.instance.compatMode;
       _autoRestartOnExit = widget.instance.autoRestartOnExit;
+      _lineEnding = widget.instance.lineEnding;
       // 同步 proot 启动命令（Survivalcraft 等场景下，实例创建初期可能为空，
       // 安装完成后 updateConfig 才会写入，此时须刷新 TextEditingController）。
       final newStartupCmd = widget.instance.prootStartupCommand ?? '';
@@ -299,6 +303,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       prootStartupCommand: _isProot ? prootCmd : null,
       clearCustomJvmArgs: argsText.isEmpty,
       clearProotStartupCommand: !_isProot || prootCmd.isEmpty,
+      lineEnding: _lineEnding,
     );
   }
 
@@ -534,6 +539,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         programArgs: [file, '--no-wizard'],
         compatMode: _compatMode,
         autoRestartOnExit: _autoRestartOnExit,
+        lineEnding: _lineEnding,
       );
       return;
     }
@@ -579,6 +585,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           compatMode: _compatMode,
           autoRestartOnExit: _autoRestartOnExit,
           directExecute: true,
+          lineEnding: _lineEnding,
         );
         return;
       }
@@ -603,6 +610,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           programArgs: [command],
           compatMode: _compatMode,
           autoRestartOnExit: _autoRestartOnExit,
+          lineEnding: _lineEnding,
         );
       } else {
         // 带元数据的 rootfs：按清单声明的 envMainBin 启动。
@@ -640,6 +648,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           programArgs: isJavaEnv ? javaProgramArgs : [file],
           compatMode: _compatMode,
           autoRestartOnExit: _autoRestartOnExit,
+          lineEnding: _lineEnding,
         );
       }
       return;
@@ -696,6 +705,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       programArgs: isArgfile ? const ['nogui'] : ['-jar', file, 'nogui'],
       compatMode: _compatMode,
       autoRestartOnExit: _autoRestartOnExit,
+      lineEnding: _lineEnding,
     );
   }
 
@@ -729,6 +739,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       programArgs: isArgfile ? const ['nogui'] : ['-jar', file, 'nogui'],
       compatMode: _compatMode,
       autoRestartOnExit: _autoRestartOnExit,
+      lineEnding: _lineEnding,
     );
   }
 
@@ -1237,6 +1248,34 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                       title: Text(context.tr('server.autoRestartTitle')),
                       subtitle:
                           Text(context.tr('server.autoRestartSubtitle')),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: _lineEnding,
+                      decoration: InputDecoration(
+                        labelText: context.tr('server.lineEndingLabel'),
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      items: [
+                        DropdownMenuItem(
+                          value: kLineEndingLf,
+                          child: Text(context.tr('server.lineEndingLinux')),
+                        ),
+                        DropdownMenuItem(
+                          value: kLineEndingCrlf,
+                          child: Text(context.tr('server.lineEndingWindows')),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) {
+                          setDialogState(() => _lineEnding = v);
+                        }
+                      },
                     ),
                   ],
                 ),

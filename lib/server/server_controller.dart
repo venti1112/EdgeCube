@@ -351,6 +351,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   bool _lastCompatMode = false;
   bool _lastAutoRestartOnExit = false;
   bool _lastDirectExecute = false;
+  String _lastLineEnding = '\n';
 
   /// 优雅停止完成后是否自动重新启动（restart 流程中置位）。
   bool _pendingRestart = false;
@@ -640,6 +641,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     bool compatMode = false,
     bool autoRestartOnExit = false,
     bool directExecute = false,
+    String lineEnding = '\n',
   }) async {
     if (_status != ServerStatus.stopped) return;
     // directExecute（如 Survivalcraft 直接运行容器内二进制）的程序使用
@@ -670,6 +672,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     _lastCompatMode = compatMode;
     _lastAutoRestartOnExit = autoRestartOnExit;
     _lastDirectExecute = directExecute;
+    _lastLineEnding = lineEnding;
     try {
       final runtimes = await const RuntimeService().installedRuntimes();
       for (final rt in runtimes) {
@@ -700,6 +703,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
         runtimeArgs: runtimeArgs,
         programArgs: programArgs,
         directExecute: directExecute,
+        lineEnding: lineEnding,
       );
       // 兜底：若 state 事件尚未把状态推进到 starting/running。
       // 兼容模式下跳过「启动中」，直接视为「运行中」。
@@ -785,6 +789,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
       compatMode: _lastCompatMode,
       autoRestartOnExit: _lastAutoRestartOnExit,
       directExecute: _lastDirectExecute,
+      lineEnding: _lastLineEnding,
     );
   }
 

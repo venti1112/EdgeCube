@@ -99,6 +99,8 @@ class ServerProcessManager private constructor(private val appContext: Context) 
     @Volatile private var runningIsProot: Boolean = false
     /** 本次启动解析到的 JVM 最大堆（-Xmx，MB）；未配置为 -1。 */
     @Volatile private var runningMaxHeapMb: Long = -1
+    /** 命令尾换行符，默认 Linux 风格 "\n"；Windows 风格为 "\r\n"。 */
+    @Volatile private var lineEnding: String = "\n"
 
     // —— 最近一次由界面上报的终端尺寸；新进程沿用，避免一闪一变。 ——
     @Volatile private var lastRows = DEFAULT_ROWS
@@ -169,11 +171,14 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         runtimeArgs: List<String>,
         programArgs: List<String>,
         directExecute: Boolean = false,
+        lineEnding: String = "\n",
     ) {
         if (isRunning) throw IllegalStateException("已有服务端正在运行，请先停止")
 
         // 重置上一次运行的 proot 标记（防止误读旧值）
         runningIsProot = false
+        // 存储命令尾换行符。
+        this.lineEnding = lineEnding
         // 解析 -Xmx（如 -Xmx2048M / -Xmx2G），供服务端内存占用率计算。
         runningMaxHeapMb = ServerLauncher.parseXmxMb(runtimeArgs)
 
@@ -284,9 +289,9 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         }
     }
 
-    /** 向服务端 PTY 写入一行命令（自动补换行）。供程序化发送（如 stop）使用。 */
+    /** 向服务端 PTY 写入一行命令（自动补 lineEnding 换行）。供程序化发送（如 stop）使用。 */
     fun sendCommand(line: String) {
-        writeInput((line + "\n").toByteArray(StandardCharsets.UTF_8))
+        writeInput((line + lineEnding).toByteArray(StandardCharsets.UTF_8))
     }
 
     /** 界面终端尺寸变化时调用，同步 PTY 窗口大小，连接的程序会据此重排。 */

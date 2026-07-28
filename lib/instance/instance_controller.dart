@@ -242,7 +242,7 @@ class InstanceController extends ChangeNotifier {
   }
 
   /// 更新指定实例的启动配置（运行环境、内存、运行环境 id、服务端入口文件、自定义 JVM 参数、
-  /// 兼容模式、关服自动重启、proot 纯容器启动命令）。
+  /// 兼容模式、关服自动重启、proot 纯容器启动命令、命令尾换行符）。
   Future<void> updateConfig(
     String id, {
     String? runtime,
@@ -253,6 +253,7 @@ class InstanceController extends ChangeNotifier {
     bool? compatMode,
     bool? autoRestartOnExit,
     String? prootStartupCommand,
+    String? lineEnding,
     bool clearCustomJvmArgs = false,
     bool clearProotStartupCommand = false,
   }) async {
@@ -267,6 +268,7 @@ class InstanceController extends ChangeNotifier {
       compatMode: compatMode,
       autoRestartOnExit: autoRestartOnExit,
       prootStartupCommand: prootStartupCommand,
+      lineEnding: lineEnding,
       clearCustomJvmArgs: clearCustomJvmArgs,
       clearProotStartupCommand: clearProotStartupCommand,
     );

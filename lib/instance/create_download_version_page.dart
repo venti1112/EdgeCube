@@ -338,6 +338,7 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
         runtimeEnvId: _session.selectedProotRootfsId,
         prootStartupCommand: startupCommand,
         compatMode: true,
+        lineEnding: kLineEndingCrlf,
       );
 
       if (!mounted) return;

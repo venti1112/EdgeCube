@@ -4,6 +4,10 @@ const String kRuntimeJava = 'java';
 const String kRuntimePhp = 'php';
 const String kRuntimeProot = 'proot';
 
+/// 命令尾换行符风格：Linux（\n）与 Windows（\r\n）。
+const String kLineEndingLf = '\n';
+const String kLineEndingCrlf = '\r\n';
+
 /// 实例索引项：仅包含选择列表所需的 [id]、[name] 与可选的 [path]。
 ///
 /// 实例选择列表只读取索引（`config/instances.json`），无需加载每个实例
@@ -57,6 +61,8 @@ class InstanceSummary {
 /// [prootStartupCommand] 仅用于 proot 纯容器（generic）rootfs：用户须填写完整启动命令
 /// （含主程序路径与所有参数，如 `/usr/bin/python3 /mnt/server/main.py`）。
 /// 带元数据的 rootfs（java/php/node/python）不需要此字段，启动方式由清单声明。
+/// [lineEnding] 命令尾换行符，Linux 风格 [kLineEndingLf]（"\n"，默认）或
+/// Windows 风格 [kLineEndingCrlf]（"\r\n"）。创建生存战争服务端实例时自动配置为 Windows 风格。
 class Instance {
   const Instance({
     required this.id,
@@ -70,6 +76,7 @@ class Instance {
     this.autoRestartOnExit = false,
     this.prootStartupCommand,
     this.path,
+    this.lineEnding = kLineEndingLf,
   });
 
   final String id;
@@ -102,6 +109,11 @@ class Instance {
   /// （如 `<filesDir>/proot_rootfs/<rootfsId>/opt/<id>`）。
   final String? path;
 
+  /// 命令尾换行符，[kLineEndingLf]（"\n"）或 [kLineEndingCrlf]（"\r\n"）。
+  /// 发送控制台命令时追加到命令尾部。默认为 Linux 风格。
+  /// 创建生存战争（Survivalcraft）服务端实例时自动配置为 Windows 风格。
+  final String lineEnding;
+
   /// 是否为 PHP（PocketMine）运行环境。
   bool get isPhp => runtime == kRuntimePhp;
 
@@ -116,6 +128,7 @@ class Instance {
     bool? autoRestartOnExit,
     String? prootStartupCommand,
     String? path,
+    String? lineEnding,
     bool clearMaxMemory = false,
     bool clearRuntimeEnvId = false,
     bool clearServerFile = false,
@@ -138,6 +151,7 @@ class Instance {
         ? null
         : (prootStartupCommand ?? this.prootStartupCommand),
     path: clearPath ? null : (path ?? this.path),
+    lineEnding: lineEnding ?? this.lineEnding,
   );
 
   Map<String, dynamic> toJson() => {
@@ -152,6 +166,7 @@ class Instance {
     if (autoRestartOnExit) 'autoRestartOnExit': true,
     if (prootStartupCommand != null) 'prootStartupCommand': prootStartupCommand,
     if (path != null) 'path': path,
+    if (lineEnding != kLineEndingLf) 'lineEnding': lineEnding,
   };
 
   factory Instance.fromJson(Map<String, dynamic> json) => Instance(
@@ -169,5 +184,6 @@ class Instance {
     autoRestartOnExit: json['autoRestartOnExit'] as bool? ?? false,
     prootStartupCommand: json['prootStartupCommand'] as String?,
     path: json['path'] as String?,
+    lineEnding: json['lineEnding'] as String? ?? kLineEndingLf,
   );
 }

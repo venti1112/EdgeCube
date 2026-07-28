@@ -46,6 +46,7 @@ class ServerService {
       _method.invokeMethod<String>('activeInstanceId');
 
   /// 启动服务端。含首次运行时解压，可能耗时数秒到数十秒。
+  /// [lineEnding] 命令尾换行符，默认为 Linux 风格 "\n"。
   Future<void> start({
     required String instanceId,
     required String instanceName,
@@ -55,6 +56,7 @@ class ServerService {
     required List<String> runtimeArgs,
     required List<String> programArgs,
     bool directExecute = false,
+    String lineEnding = '\n',
   }) {
     return _method.invokeMethod('start', {
       'instanceId': instanceId,
@@ -65,6 +67,7 @@ class ServerService {
       'runtimeArgs': runtimeArgs,
       'programArgs': programArgs,
       'directExecute': directExecute,
+      'lineEnding': lineEnding,
     });
   }
 

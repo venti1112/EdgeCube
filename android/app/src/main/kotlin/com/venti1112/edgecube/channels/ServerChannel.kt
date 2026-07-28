@@ -48,6 +48,7 @@ internal object ServerChannel {
                     val runtimeArgs = call.argument<List<String>>("runtimeArgs") ?: emptyList()
                     val programArgs = call.argument<List<String>>("programArgs") ?: emptyList()
                     val directExecute = call.argument<Boolean>("directExecute") ?: false
+                    val lineEnding = call.argument<String>("lineEnding") ?: "\n"
                     if (instanceId == null || workingDir == null || runtimeId == null) {
                         result.error("BAD_ARGS", "缺少 instanceId/workingDir/runtimeId", null)
                     } else {
@@ -56,7 +57,7 @@ internal object ServerChannel {
                         ChannelIo.runAsync(result, "START_FAILED") {
                             serverManager.start(
                                 instanceId, instanceName, workingDir, runtimeId,
-                                runtime, runtimeArgs, programArgs, directExecute,
+                                runtime, runtimeArgs, programArgs, directExecute, lineEnding,
                             )
                             true
                         }
