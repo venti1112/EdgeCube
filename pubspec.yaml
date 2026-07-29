@@ -35,6 +35,7 @@ dependencies:
   re_highlight: ^0.0.3
   flutter_svg: ^2.3.0
   pinenacl: ^0.6.0
+  flutter_miuix: ^1.0.9
 
 dev_dependencies:
   flutter_test:

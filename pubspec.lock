@@ -211,6 +211,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.12"
+  flutter_miuix:
+    dependency: "direct main"
+    description:
+      name: flutter_miuix
+      sha256: "1170402c4c6cf8bbfd99b553493ff9edbb47ed5aab838b31ebb20ff10d412f95"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.9"
   flutter_secure_storage:
     dependency: "direct main"
     description:
@@ -867,5 +875,5 @@ packages:
     source: hosted
     version: "0.0.6"
 sdks:
-  dart: ">=3.12.1 <4.0.0"
+  dart: ">=3.12.2 <4.0.0"
   flutter: ">=3.44.0"

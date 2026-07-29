@@ -44,7 +44,7 @@ app.*.map.json
 
 # Vibe Coding
 /.trae
-/.claude
+/.claude/settings.local.json
 /.opencode
 /.codex
 /.deepseek
