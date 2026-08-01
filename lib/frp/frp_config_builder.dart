@@ -10,10 +10,11 @@ import 'sakura_frp_api.dart';
 /// 把「已保存隧道」变成可交给上游 frpc 运行的配置文本。
 ///
 /// 策略（方案A）：
-///  - MSL Frp / ChmlFrp：API 直接返回成品配置（toml / ini），原样使用；
-///  - OpenFrp / ME Frp / SakuraFrp：官方客户端闭源，用节点地址 + frpc 用户
-///    token + 隧道端口拼标准 TOML（`user` + `auth.token`，代理名为
-///    `user.name` 由 frps 端补全）；
+///  - MSL Frp / ChmlFrp / ME Frp / SakuraFrp：API 直接返回成品配置
+///    （toml / ini / text），原样使用；
+///  - OpenFrp：官方客户端闭源，用节点地址 + frpc 用户 token + 隧道端口拼
+///    标准 TOML（`user` + `auth.token`，代理名为 `user.name` 由 frps 端
+///    补全）；
 ///  - custom：用户保存的 TOML 原样使用。
 ///
 /// 统一追加 `log.to = "console"`，确保日志进原生侧的 stdout 读取线程。
@@ -87,18 +88,15 @@ class FrpConfigBuilder {
     );
   }
 
-  /// SakuraFrp：无公开 frpc 配置接口，以用户 token 作为 auth.token 尝试
-  /// 标准连接。
+  /// SakuraFrp：直接拉取官方成品配置（`POST /tunnel/config`，v4 API），
+  /// 返回可被上游 frpc 直接加载的 TOML。
   static Future<String> _buildSakuraFrp(SavedFrpTunnel tunnel) async {
     final token = await _requireToken(FrpProvider.sakuraFrp);
-    final nodes = await SakuraFrpApi.nodeList(token, userLevel: 999);
-    final node = _findNode(nodes, tunnel.nodeId);
-    return _standardToml(
-      serverAddr: node.hostname,
-      serverPort: node.serverPort,
-      user: null,
-      authToken: '$token:${tunnel.remoteTunnelId}',
-      tunnel: tunnel,
+    if (tunnel.remoteTunnelId.isEmpty) {
+      throw const FrpApiException('该隧道未关联远端隧道 ID，无法拉取配置');
+    }
+    return _ensureConsoleLog(
+      await SakuraFrpApi.tunnelConfig(token, tunnel.remoteTunnelId),
     );
   }
 

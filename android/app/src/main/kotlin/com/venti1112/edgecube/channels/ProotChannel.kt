@@ -5,6 +5,7 @@ import com.venti1112.edgecube.proot.ProotDns
 import com.venti1112.edgecube.proot.ProotRootfs
 import com.venti1112.edgecube.proot.RootfsManifest
 import com.venti1112.edgecube.proot.RootfsStore
+import com.venti1112.edgecube.security.PackageSignatureVerifier
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
@@ -77,6 +78,22 @@ internal object ProotChannel {
                     ChannelIo.runAsync(result, "DNS_UPDATE_FAILED") {
                         ProotDns.updateAllRootfsDns(context)
                         null
+                    }
+                }
+
+                "verifyRootfsSignature" -> {
+                    val path = call.argument<String>("path")
+                    if (path == null) {
+                        result.error("BAD_ARGS", "缺少 path", null)
+                    } else {
+                        ChannelIo.runAsync(result, "SIGNATURE_VERIFY_FAILED") {
+                            if (PackageSignatureVerifier.isZipFile(path)) {
+                                PackageSignatureVerifier.verifyZip(context, path).toMap()
+                            } else {
+                                // 旧格式裸 tar 包（非 ZIP），无内嵌签名。
+                                mapOf("hasSignature" to false, "valid" to false)
+                            }
+                        }
                     }
                 }
 

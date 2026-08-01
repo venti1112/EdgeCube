@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config/developer_options_store.dart';
 import '../ecpkg/ecpkg_catalog_service.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
@@ -10,6 +11,7 @@ import '../net/download_engine.dart';
 import '../net/download_format.dart';
 import '../server/runtime_service.dart';
 import '../server/runtime_update_service.dart';
+import '../server/signature_verify_result.dart';
 
 class EcpkgDownloadPage extends StatefulWidget {
   const EcpkgDownloadPage({super.key});
@@ -561,6 +563,14 @@ class _InstallDialogState extends State<_InstallDialog> {
       if (!mounted) return;
 
       setState(() { _stage = tr('runtime.update.installing'); _progress = null; });
+
+      // 安装前验证签名
+      final sigResult = await _service.verifyEcpkgSignature(path);
+      if (!await _confirmSignature(sigResult)) {
+        // 用户拒绝或严格模式下拒绝，中止安装
+        return;
+      }
+
       await _service.importPackage(path, force: true);
       if (!mounted) return;
 
@@ -575,6 +585,53 @@ class _InstallDialogState extends State<_InstallDialog> {
       if (!mounted) return;
       setState(() { _error = '$e'; });
     }
+  }
+
+  /// 验证包签名，根据验证模式和开发者选项决定是否允许安装。
+  ///
+  /// 返回 `true` 表示可以继续安装（签名有效，或警告模式下用户确认继续）；
+  /// 返回 `false` 表示应中止安装（严格模式拒绝，或用户取消）。
+  Future<bool> _confirmSignature(SignatureVerifyResult result) async {
+    if (result.isTrusted) return true;
+
+    final tr = context.tr;
+    final devMode = await DeveloperOptionsStore.loadEnabled();
+
+    if (!devMode) {
+      // 严格模式：拒绝安装
+      if (!mounted) return false;
+      setState(() {
+        _error = result.hasSignature
+            ? tr('runtime.signature.invalid')
+            : tr('runtime.signature.noSignature');
+      });
+      return false;
+    }
+
+    // 警告模式：提示用户选择
+    if (!mounted) return false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('runtime.signature.warningTitle')),
+        content: Text(
+          result.hasSignature
+              ? tr('runtime.signature.warningInvalid')
+              : tr('runtime.signature.warningNoSig'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(tr('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(tr('runtime.signature.continueAnyway')),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
   }
 
   @override

@@ -1,9 +1,13 @@
 package com.venti1112.edgecube.proot
 
 import android.content.Context
+import com.venti1112.edgecube.security.PackageSignatureVerifier
 import java.io.BufferedReader
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStreamReader
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 
 /**
  * rootfs 的发现、导入与删除。
@@ -73,80 +77,91 @@ object RootfsStore {
             .replace(Regex("[^A-Za-z0-9._-]"), "_")
             .takeIf { it.isNotBlank() } ?: throw IllegalArgumentException("无法推导 rootfs id")
 
-        ProotBootstrap.ensureBootstrap(context)
+        // 新格式 ZIP 包：提取内层 tar.zst 到临时文件；旧格式裸 tar 包直接使用原路径。
+        val isZip = PackageSignatureVerifier.isZipFile(tarballPath)
+        val innerTarball = if (isZip) extractInnerTarball(context, tarball) else tarball
 
-        val target = rootfsDir(context, rootfsId)
-        if (target.exists()) throw IllegalStateException("ROOTFS_EXISTS")
-
-        val tmpDir = File(rootfsBaseDir(context), ".$rootfsId.tmp")
-        tmpDir.deleteRecursively()
-        tmpDir.mkdirs()
-
-        val bootstrapBin = File(ProotBootstrap.bootstrapDir(context), "bin")
-        val prootBin = File(bootstrapBin, "proot")
-        val tarBin = File(bootstrapBin, "tar")
-
-        // proot 包住 tar：--link2symlink 把硬链接转为符号链接（Android fs 不支持硬链接），
-        // --delay-directory-restore + --preserve-permissions 保证权限位正确。
-        val cmd = listOf(
-            prootBin.absolutePath,
-            "--link2symlink",
-            tarBin.absolutePath,
-            "-xf", tarball.absolutePath,
-            "-C", tmpDir.absolutePath,
-            "--delay-directory-restore",
-            "--preserve-permissions",
-        )
-
-        val env = ProotBootstrap.baseHostEnv(context)
-        val pb = ProcessBuilder(cmd)
-        pb.redirectErrorStream(true)
-        pb.environment().clear()
-        pb.environment().putAll(env)
-        val proc = pb.start()
-
-        // tar 输出多为进度/警告；逐行读取避免缓冲区满死锁。可解出的字节数由文件大小近似。
-        val totalBytes = tarball.length()
-        var lastReported = 0L
         try {
-            BufferedReader(InputStreamReader(proc.inputStream, Charsets.UTF_8)).use { reader ->
-                while (true) {
-                    val line = reader.readLine() ?: break
-                    // tar -v 模式未启用，这里基本只有警告；偶发触发进度回调。
-                    if (onProgress != null && System.nanoTime() - lastReported > 500_000_000L) {
-                        onProgress(-1L, totalBytes)
-                        lastReported = System.nanoTime()
+            ProotBootstrap.ensureBootstrap(context)
+
+            val target = rootfsDir(context, rootfsId)
+            if (target.exists()) throw IllegalStateException("ROOTFS_EXISTS")
+
+            val tmpDir = File(rootfsBaseDir(context), ".$rootfsId.tmp")
+            tmpDir.deleteRecursively()
+            tmpDir.mkdirs()
+
+            val bootstrapBin = File(ProotBootstrap.bootstrapDir(context), "bin")
+            val prootBin = File(bootstrapBin, "proot")
+            val tarBin = File(bootstrapBin, "tar")
+
+            // proot 包住 tar：--link2symlink 把硬链接转为符号链接（Android fs 不支持硬链接），
+            // --delay-directory-restore + --preserve-permissions 保证权限位正确。
+            val cmd = listOf(
+                prootBin.absolutePath,
+                "--link2symlink",
+                tarBin.absolutePath,
+                "-xf", innerTarball.absolutePath,
+                "-C", tmpDir.absolutePath,
+                "--delay-directory-restore",
+                "--preserve-permissions",
+            )
+
+            val env = ProotBootstrap.baseHostEnv(context)
+            val pb = ProcessBuilder(cmd)
+            pb.redirectErrorStream(true)
+            pb.environment().clear()
+            pb.environment().putAll(env)
+            val proc = pb.start()
+
+            // tar 输出多为进度/警告；逐行读取避免缓冲区满死锁。可解出的字节数由文件大小近似。
+            val totalBytes = innerTarball.length()
+            var lastReported = 0L
+            try {
+                BufferedReader(InputStreamReader(proc.inputStream, Charsets.UTF_8)).use { reader ->
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        // tar -v 模式未启用，这里基本只有警告；偶发触发进度回调。
+                        if (onProgress != null && System.nanoTime() - lastReported > 500_000_000L) {
+                            onProgress(-1L, totalBytes)
+                            lastReported = System.nanoTime()
+                        }
+                        // 丢弃行内容，避免占用内存；真实错误由 exitCode 捕获。
+                        @Suppress("UNUSED_VARIABLE") val ignored = line
                     }
-                    // 丢弃行内容，避免占用内存；真实错误由 exitCode 捕获。
-                    @Suppress("UNUSED_VARIABLE") val ignored = line
                 }
+            } finally {
+                // 进度收尾
+                onProgress?.invoke(totalBytes, totalBytes)
             }
+
+            val code = proc.waitFor()
+            if (code != 0) {
+                tmpDir.deleteRecursively()
+                throw IllegalStateException("解压失败（退出码 $code），请确认文件是有效的 rootfs.tar.zst")
+            }
+
+            // 修补 passwd/shadow/group/gshadow：移除 aid_* 条目并加入当前 app 身份
+            // （来自 proot-distro 的做法，保证容器内 id 命令与文件归属正常）。
+            fixPasswdForAndroid(tmpDir)
+            // 写入 DNS 解析配置：proot 不自动继承 Android DNS，必须显式提供，
+            // 否则容器内 apt/Minecraft 等所有域名解析都会失败。
+            ProotDns.ensureResolvConf(context, tmpDir)
+
+            // 原子替换
+            if (!tmpDir.renameTo(target)) {
+                tmpDir.deleteRecursively()
+                throw IllegalStateException("无法重命名临时目录到目标目录")
+            }
+
+            return installedRootfs(context, rootfsId)
+                ?: throw IllegalStateException("导入后未检测到有效 rootfs")
         } finally {
-            // 进度收尾
-            onProgress?.invoke(totalBytes, totalBytes)
+            // 清理从 ZIP 提取的临时 tar 文件（旧格式裸 tar 不需要清理）。
+            if (innerTarball !== tarball) {
+                innerTarball.delete()
+            }
         }
-
-        val code = proc.waitFor()
-        if (code != 0) {
-            tmpDir.deleteRecursively()
-            throw IllegalStateException("解压失败（退出码 $code），请确认文件是有效的 rootfs.tar.zst")
-        }
-
-        // 修补 passwd/shadow/group/gshadow：移除 aid_* 条目并加入当前 app 身份
-        // （来自 proot-distro 的做法，保证容器内 id 命令与文件归属正常）。
-        fixPasswdForAndroid(tmpDir)
-        // 写入 DNS 解析配置：proot 不自动继承 Android DNS，必须显式提供，
-        // 否则容器内 apt/Minecraft 等所有域名解析都会失败。
-        ProotDns.ensureResolvConf(context, tmpDir)
-
-        // 原子替换
-        if (!tmpDir.renameTo(target)) {
-            tmpDir.deleteRecursively()
-            throw IllegalStateException("无法重命名临时目录到目标目录")
-        }
-
-        return installedRootfs(context, rootfsId)
-            ?: throw IllegalStateException("导入后未检测到有效 rootfs")
     }
 
     /** 删除指定 rootfs。 */
@@ -185,5 +200,44 @@ object RootfsStore {
                 // 修补失败不阻断导入——容器仍可运行，仅 id 命令异常
             }
         }
+    }
+
+    /**
+     * 从 ZIP 包装的 rootfs 包中提取内层 tar 压缩包到临时文件。
+     *
+     * 新格式 `rootfs.zip` 内含 `rootfs.tar.zst`（或唯一非 `META-INF/` 条目）；
+     * 本方法将其提取到 cacheDir 下的临时文件，供后续 proot tar 解压使用。
+     */
+    private fun extractInnerTarball(context: Context, zipFile: File): File {
+        val tempFile = File(
+            context.cacheDir,
+            ".rootfs-import-${System.currentTimeMillis()}.tar.zst",
+        )
+        ZipFile(zipFile).use { zf ->
+            val entries = zf.entries()
+            var targetEntry: ZipEntry? = null
+            var fallbackEntry: ZipEntry? = null
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                if (entry.isDirectory) continue
+                if (entry.name.startsWith("META-INF/")) continue
+                if (entry.name == "rootfs.tar.zst") {
+                    targetEntry = entry
+                    break
+                }
+                if (fallbackEntry == null) {
+                    fallbackEntry = entry
+                }
+            }
+            val entry = targetEntry ?: fallbackEntry
+                ?: throw IllegalArgumentException("ZIP 中未找到 rootfs tar 压缩包条目")
+
+            zf.getInputStream(entry).use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+        return tempFile
     }
 }

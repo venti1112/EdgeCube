@@ -25,6 +25,7 @@ class _LogViewerPageState extends State<LogViewerPage> {
   String _content = '';
   bool _loading = true;
   bool _exporting = false;
+  int _loadSeq = 0; // 递增序号，用于丢弃过期的读取响应
 
   @override
   void initState() {
@@ -35,6 +36,8 @@ class _LogViewerPageState extends State<LogViewerPage> {
   /// 重新加载日志文件列表并读取当前选中文件内容。
   Future<void> _loadFiles() async {
     if (!mounted) return;
+    // 使任何在途的旧读取请求失效
+    _loadSeq++;
     setState(() => _loading = true);
     final files = await LogService.instance.getLogFiles();
     if (!mounted) return;
@@ -50,6 +53,9 @@ class _LogViewerPageState extends State<LogViewerPage> {
   }
 
   /// 读取当前选中日志文件的内容。
+  ///
+  /// 通过 [_loadSeq] 校验响应是否过期：期间用户切换了日期或刷新了列表，
+  /// 则丢弃本次结果，避免旧内容覆盖新选择。
   Future<void> _loadContent() async {
     if (!mounted) return;
     if (_files.isEmpty) {
@@ -59,18 +65,19 @@ class _LogViewerPageState extends State<LogViewerPage> {
       });
       return;
     }
+    final seq = _loadSeq;
     setState(() => _loading = true);
     try {
       final content = await LogService.instance.readLogFile(
         _files[_selectedIndex],
       );
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _content = content;
         _loading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _content = '';
         _loading = false;

@@ -42,6 +42,9 @@ class LogService {
   String? _currentDate; // YYYY-MM-DD
   Directory? _logDir;
 
+  /// 串行写入链：日志行按入队顺序依次写入，避免并发竞态与乱序。
+  Future<void> _writeChain = Future.value();
+
   /// 初始化：读取设置、应用配置、清理过期日志。
   ///
   /// 在 `main()` 中 `WidgetsFlutterBinding.ensureInitialized()` 之后调用。
@@ -100,8 +103,10 @@ class LogService {
       stackTrace: r.stackTrace,
       time: r.time,
     );
-    // 写入文件（异步，不阻塞调用方）
-    _writeLine(_formatLine(r));
+    // 写入文件（排队串行执行，不阻塞调用方）
+    _writeChain = _writeChain
+        .then((_) => _writeLine(_formatLine(r)))
+        .catchError((_) {});
   }
 
   /// 格式化一条日志记录为单行文本。
@@ -126,11 +131,13 @@ class LogService {
   }
 
   /// 将一行日志写入当天文件；日期变化时自动轮转。
+  ///
+  /// 仅在 [_writeChain] 内被调用，保证同一时刻最多一个写入在途。
   Future<void> _writeLine(String line) async {
     try {
       final today = _todayKey();
       if (_currentDate != today) {
-        _closeSink();
+        await _closeSink();
         _currentDate = today;
         final file = await _fileForDate(today);
         _sink = file.openWrite(mode: FileMode.append);
@@ -142,10 +149,18 @@ class LogService {
     }
   }
 
-  void _closeSink() {
-    _sink?.flush().then((_) => _sink?.close());
+  /// 关闭当前写入流（若存在），返回其 flush/close 全部完成的 Future。
+  ///
+  /// 用局部变量捕获被关闭的 sink：异步 flush/close 只作用于该旧 sink，
+  /// 不会误关此间新打开的写入流。
+  Future<void> _closeSink() {
+    final sink = _sink;
     _sink = null;
     _currentDate = null;
+    if (sink == null) return Future.value();
+    return sink.flush().then((_) => sink.close()).catchError((_) {
+      // 关闭失败不应影响应用运行
+    });
   }
 
   // ── 内部：日期与文件路径 ────────────────────────────────────
@@ -218,7 +233,11 @@ class LogService {
         final dt = DateTime.tryParse(dateKey);
         if (dt == null) continue;
         if (dt.isBefore(DateTime(cutoff.year, cutoff.month, cutoff.day))) {
-          await entity.delete();
+          try {
+            await entity.delete();
+          } catch (_) {
+            // 单个文件删除失败（如被占用）不影响其余文件
+          }
         }
       }
     } catch (_) {
@@ -252,19 +271,28 @@ class LogService {
     return file.readAsString();
   }
 
-  /// 清除所有日志文件。关闭当前写入流后删除目录下全部日志文件。
+  /// 清除所有日志文件。先等待在途写入与关闭完成，再删除目录下全部日志文件。
   Future<void> clearAllLogs() async {
-    _closeSink();
-    final dir = await _logDirectory();
-    if (!await dir.exists()) return;
-    await for (final entity in dir.list()) {
-      if (entity is File) {
-        final name = p.basename(entity.path);
-        if (name.startsWith(_kLogFilePrefix) &&
-            name.endsWith(_kLogFileSuffix)) {
-          await entity.delete();
+    try {
+      await _writeChain;
+      await _closeSink();
+      final dir = await _logDirectory();
+      if (!await dir.exists()) return;
+      await for (final entity in dir.list()) {
+        if (entity is File) {
+          final name = p.basename(entity.path);
+          if (name.startsWith(_kLogFilePrefix) &&
+              name.endsWith(_kLogFileSuffix)) {
+            try {
+              await entity.delete();
+            } catch (_) {
+              // 单个文件删除失败（如被占用）不影响其余文件
+            }
+          }
         }
       }
+    } catch (_) {
+      // 清除失败不影响应用运行
     }
   }
 }

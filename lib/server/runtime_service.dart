@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../i18n/i18n_service.dart';
+import 'signature_verify_result.dart';
 
 /// 已安装运行时的信息模型。
 class RuntimeInfo {
@@ -127,5 +128,17 @@ class RuntimeService {
     final path = await _method.invokeMethod<String>('getDownloadDir');
     if (path == null) throw Exception(tr('runtime.getDownloadDirFailed'));
     return path;
+  }
+
+  /// 验证 `.ecpkg` 文件的内嵌签名是否与当前 APK 签名一致。
+  ///
+  /// 返回 [SignatureVerifyResult]；调用方据 [SignatureVerifyResult.isTrusted]
+  /// 判断是否允许导入（严格模式拒绝，警告模式提示用户选择）。
+  Future<SignatureVerifyResult> verifyEcpkgSignature(String path) async {
+    final map = await _method.invokeMethod<Map<dynamic, dynamic>>(
+      'verifyEcpkgSignature',
+      {'path': path},
+    );
+    return SignatureVerifyResult.fromMap(map ?? {});
   }
 }

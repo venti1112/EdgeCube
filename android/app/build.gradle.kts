@@ -55,12 +55,18 @@ android {
                 "proguard-rules.pro",
             )
         }
+        debug {
+            signingConfig = signingConfigs.getByName("release")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
     }
 
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            // 强制使用指定 CMake 版本,不允许 SDK Manager 默认版本。
             version = "4.1.2"
         }
     }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:downloadx/downloadx.dart';
+import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -58,6 +59,9 @@ class DownloadEngine {
 
   /// 全局单例。
   static final DownloadEngine instance = DownloadEngine._();
+
+  /// 软件日志（文件 + logcat），记录下载开始/完成/失败。
+  static final Logger _log = Logger('DownloadEngine');
 
   DownloadX? _manager;
   Future<void>? _initFuture;
@@ -143,6 +147,7 @@ class DownloadEngine {
     final root = _cacheRoot!;
 
     if (isCancelled?.call() == true) throw const DownloadCancelled();
+    _log.info('Download start: $url -> $destPath');
 
     final id = _nextId();
     final producedName = '$id.out';
@@ -259,7 +264,14 @@ class DownloadEngine {
       }
 
       await _moveTo(producedPath, destPath);
-    } catch (_) {
+      try {
+        _log.info(
+          'Download complete: $url -> $destPath '
+          '(${await File(destPath).length()} bytes)',
+        );
+      } catch (_) {}
+    } catch (e) {
+      _log.warning('Download failed: $url -> $destPath', e);
       cleanup();
       await _safeDelete(producedPath);
       rethrow;
@@ -305,6 +317,7 @@ class DownloadEngine {
       } on DownloadCancelled {
         rethrow;
       } catch (e) {
+        _log.warning('Source failed, trying next: $url', e);
         lastError = e;
       }
     }

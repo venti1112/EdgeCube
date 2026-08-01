@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config/developer_options_store.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
@@ -13,6 +14,7 @@ import '../server/ecpkg_handler.dart';
 import '../server/proot_service.dart';
 import '../server/runtime_service.dart';
 import '../server/runtime_update_service.dart';
+import '../server/signature_verify_result.dart';
 import 'container_files_page.dart';
 import 'ecpkg_download_page.dart';
 
@@ -135,11 +137,74 @@ class _RuntimePageState extends State<RuntimePage> {
     await _doImport(path);
   }
 
+  /// 验证包签名，根据验证模式和开发者选项决定是否允许导入。
+  ///
+  /// 返回 `true` 表示可以继续导入（签名有效，或警告模式下用户确认继续）；
+  /// 返回 `false` 表示应中止导入（严格模式下签名无效/无签名，或用户取消）。
+  Future<bool> _checkSignature(SignatureVerifyResult result) async {
+    if (result.isTrusted) return true;
+
+    final tr = LocaleScope.of(context).translations;
+    final devMode = await DeveloperOptionsStore.loadEnabled();
+
+    if (!devMode) {
+      // 严格模式：拒绝导入
+      if (!mounted) return false;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(tr.get('runtime.signature.warningTitle')),
+          content: Text(
+            result.hasSignature
+                ? tr.get('runtime.signature.invalid')
+                : tr.get('runtime.signature.noSignature'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(tr.get('common.close')),
+            ),
+          ],
+        ),
+      );
+      return false;
+    }
+
+    // 警告模式：提示用户选择
+    if (!mounted) return false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr.get('runtime.signature.warningTitle')),
+        content: Text(
+          result.hasSignature
+              ? tr.get('runtime.signature.warningInvalid')
+              : tr.get('runtime.signature.warningNoSig'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(tr.get('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(tr.get('runtime.signature.continueAnyway')),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
   Future<void> _doImport(String path, {bool force = false}) async {
     final messenger = ScaffoldMessenger.of(context);
     final tr = LocaleScope.of(context).translations;
     setState(() => _importing = true);
     try {
+      // 导入前验证签名
+      final sigResult = await _service.verifyEcpkgSignature(path);
+      if (!await _checkSignature(sigResult)) return;
+
       await _service.importPackage(path, force: force);
       if (!mounted) return;
       await _load();
@@ -279,7 +344,7 @@ class _RuntimePageState extends State<RuntimePage> {
     final path = await pickFromSystem(
       context,
       mode: SystemPickMode.file,
-      allowedExtensions: const ['.tar.zst', '.tar.xz', '.tar.gz', '.tgz'],
+      allowedExtensions: const ['.zip', '.tar.zst', '.tar.xz', '.tar.gz', '.tgz'],
     );
     if (path == null) return;
     if (!mounted) return;
@@ -298,7 +363,7 @@ class _RuntimePageState extends State<RuntimePage> {
   /// 从文件路径推导 rootfs 名称：取 basename 并剥离已知压缩包扩展名。
   String _rootfsNameFromPath(String path) {
     var name = p.basename(path);
-    const exts = ['.tar.zst', '.tar.xz', '.tar.gz', '.tgz', '.tar'];
+    const exts = ['.tar.zst', '.tar.xz', '.tar.gz', '.tgz', '.tar', '.zip'];
     for (final ext in exts) {
       if (name.toLowerCase().endsWith(ext)) {
         name = name.substring(0, name.length - ext.length);
@@ -312,6 +377,10 @@ class _RuntimePageState extends State<RuntimePage> {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _importingRootfs = true);
     try {
+      // 导入前验证签名
+      final sigResult = await _prootService.verifyRootfsSignature(path);
+      if (!await _checkSignature(sigResult)) return;
+
       await _prootService.importRootfs(path, id: id);
       if (!mounted) return;
       await _load();

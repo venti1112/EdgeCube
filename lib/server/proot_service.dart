@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'signature_verify_result.dart';
+
 /// 已安装的 proot rootfs 信息。
 ///
 /// rootfs 可携带内嵌清单 `edgecube-rootfs.json`（formatVersion=2），声明环境类型、
@@ -149,5 +151,18 @@ class ProotService {
   /// 用户在「网络设置」页保存 DNS 后立即调用，无需重启实例即可生效。
   Future<void> updateProotDns() async {
     await _method.invokeMethod('updateProotDns');
+  }
+
+  /// 验证 rootfs 包的内嵌签名是否与当前 APK 签名一致。
+  ///
+  /// 新格式 `rootfs.zip`（ZIP 包装）验证内嵌签名；旧格式裸 tar 包无签名，
+  /// 返回 `hasSignature=false`。调用方据 [SignatureVerifyResult.isTrusted]
+  /// 判断是否允许导入。
+  Future<SignatureVerifyResult> verifyRootfsSignature(String path) async {
+    final map = await _method.invokeMethod<Map<dynamic, dynamic>>(
+      'verifyRootfsSignature',
+      {'path': path},
+    );
+    return SignatureVerifyResult.fromMap(map ?? {});
   }
 }

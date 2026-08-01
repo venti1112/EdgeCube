@@ -3,6 +3,7 @@ package com.venti1112.edgecube.channels
 import android.content.Context
 import android.os.Build
 import android.os.Environment
+import com.venti1112.edgecube.security.PackageSignatureVerifier
 import com.venti1112.edgecube.server.EcManifest
 import com.venti1112.edgecube.server.RuntimeInstaller
 import com.venti1112.edgecube.server.ServerProcessManager
@@ -89,6 +90,17 @@ internal object RuntimeChannel {
                     val dir = File(base, "Download/EdgeCube")
                     if (!dir.exists()) dir.mkdirs()
                     result.success(dir.absolutePath)
+                }
+
+                "verifyEcpkgSignature" -> {
+                    val path = call.argument<String>("path")
+                    if (path == null) {
+                        result.error("BAD_ARGS", "缺少 path", null)
+                    } else {
+                        ChannelIo.runAsync(result, "SIGNATURE_VERIFY_FAILED") {
+                            PackageSignatureVerifier.verifyZip(context, path).toMap()
+                        }
+                    }
                 }
 
                 else -> result.notImplemented()

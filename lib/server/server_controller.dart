@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:port_forwarder/port_forwarder.dart';
@@ -194,6 +195,9 @@ class ResolvedDefaultTunnel {
 /// 单活动进程模型：同一时刻只跟踪一个正在运行的服务端，[runningInstanceId]
 /// 标识它属于哪个实例。日志为所有页面共享，故本控制器置于全局 Scope。
 class ServerController extends ChangeNotifier implements TerminalKeysController {
+  /// 软件日志（文件 + logcat），记录服务端启停与崩溃等关键事件。
+  static final Logger _logger = Logger('ServerController');
+
   ServerController({
     ServerService? service,
     UpnpService? upnp,
@@ -644,6 +648,10 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     String lineEnding = '\n',
   }) async {
     if (_status != ServerStatus.stopped) return;
+    _logger.info(
+      'Server start requested: $instanceName ($instanceId), '
+      'runtime=$runtime($runtimeId), args=$programArgs',
+    );
     // directExecute（如 Survivalcraft 直接运行容器内二进制）的程序使用
     // 原始终端交互，命令行编辑模式会导致无法操作、控制台闪烁。启动前先
     // 切到原始终端模式，PTY 建立后回显即为原始模式所需的开回显状态。
@@ -724,6 +732,10 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
         notifyListeners();
       }
     } catch (e) {
+      _logger.severe(
+        'Server start failed: $instanceName ($instanceId)',
+        e,
+      );
       _notice(tr('server.notice.startFailed', {'error': '$e'}));
       _status = ServerStatus.stopped;
       _instanceId = null;
@@ -737,6 +749,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   /// 优雅停止（向服务端发送 stop 命令）。
   Future<void> stop() async {
     if (_status != ServerStatus.running) return;
+    _logger.info('Server stop requested: $_instanceName ($_instanceId)');
     _userStopping = true;
     _status = ServerStatus.stopping;
     _notice(tr('server.notice.stopping'));
@@ -747,6 +760,9 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
   /// 强制结束进程。
   Future<void> forceStop() async {
     if (_status == ServerStatus.stopped) return;
+    _logger.warning(
+      'Server force stop requested: $_instanceName ($_instanceId)',
+    );
     _userForceStopping = true;
     _notice(tr('server.notice.forceStopping'));
     await _service.forceStop();
@@ -764,6 +780,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
       return;
     }
     if (_status != ServerStatus.running) return; // 忙碌中不处理
+    _logger.info('Server restart requested: $_instanceName ($_instanceId)');
     _pendingRestart = true;
     _notice(tr('server.notice.restarting'));
     await stop();
@@ -809,6 +826,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     // 未切换时才重启，避免与用户的新操作冲突。
     if (_status != ServerStatus.stopped) return;
     if (_instanceId != instanceId) return;
+    _logger.info('Auto restart on exit: $_instanceName ($_instanceId)');
     _notice(tr('server.notice.autoRestarting'));
     Future.delayed(const Duration(milliseconds: 600), () {
       if (_status == ServerStatus.stopped && _instanceId == instanceId) {
@@ -1238,6 +1256,9 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
           final userStopped = _userStopping || _userForceStopping;
           // exitCode 为空表示这是回放的“当前无运行”状态，并非真正退出，不打日志。
           if (exitCode != null) {
+            _logger.info(
+              'Server exited: $_instanceName ($_instanceId) code=$exitCode',
+            );
             _notice(tr('server.notice.exited', {'code': '$exitCode'}));
             // 崩溃检测：退出码不为 0 且非用户主动停止/强制停止。
             if (exitCode != 0 && !_userStopping && !_userForceStopping) {
@@ -1714,6 +1735,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     try {
       resolved = await resolver();
     } catch (e) {
+      _logger.warning('Default tunnel resolve failed', e);
       _notice(tr('server.notice.tunnelResolveFailed', {'error': '$e'}));
       return;
     }
@@ -1753,6 +1775,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
       _notice(tr('server.notice.tunnelStarting', {'name': resolved.name}));
       notifyListeners();
     } catch (e) {
+      _logger.warning('Tunnel start failed: ${resolved.name}', e);
       _notice(tr('server.notice.tunnelStartFailed', {'error': '$e'}));
       _tunnelActive = false;
       _autoTunnelSourceId = null;
@@ -1820,6 +1843,9 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
       return;
     }
     if (code != 0) {
+      _logger.severe(
+        'FRP tunnel crashed: $_instanceName ($_instanceId) code=$code',
+      );
       _tunnelCrashed = true; // 标记异常退出，UI 显示"出错"
       _notice(tr('server.notice.tunnelExitedAbnormal', {'code': '$code'}));
       notifyListeners();
@@ -1969,6 +1995,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
       );
       notifyListeners();
     } catch (e) {
+      _logger.warning('Standalone tunnel start failed: $name', e);
       _tunnelActive = false;
       _standaloneTunnel = false;
       _standaloneTunnelName = null;
@@ -2001,6 +2028,9 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
 
   /// 服务端意外退出时生成崩溃数据并触发回调。
   Future<void> _handleCrash(int exitCode) async {
+    _logger.severe(
+      'Server crashed: $_instanceName ($_instanceId) code=$exitCode',
+    );
     final callback = onCrashExit;
     if (callback == null) return;
     // 复制当前日志快照，避免后续新启动覆盖。
