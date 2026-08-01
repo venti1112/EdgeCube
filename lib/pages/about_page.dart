@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config/developer_options_store.dart';
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
 import '../online/update_service.dart';
@@ -23,10 +26,23 @@ class _AboutPageState extends State<AboutPage> {
   String _buildNumber = '';
   bool _checking = false;
 
+  // ── 开发者模式解锁：连续点击版本号 5 次 ──
+  static const int _kDevModeTapCount = 5;
+  int _devModeTaps = 0;
+  Timer? _devModeTapTimer;
+  bool _devModeEnabled = false;
+
   @override
   void initState() {
     super.initState();
     _loadInfo();
+    _loadDevMode();
+  }
+
+  @override
+  void dispose() {
+    _devModeTapTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadInfo() async {
@@ -36,6 +52,48 @@ class _AboutPageState extends State<AboutPage> {
       _version = info.version;
       _buildNumber = info.buildNumber;
     });
+  }
+
+  Future<void> _loadDevMode() async {
+    final enabled = await DeveloperOptionsStore.loadEnabled();
+    if (mounted) setState(() => _devModeEnabled = enabled);
+  }
+
+  /// 处理版本号点击事件。
+  ///
+  /// 连续点击 5 次解锁开发者模式；点击间隔超过 1.5 秒则重新计数。
+  /// 已解锁时点击不再响应。
+  void _onVersionTap() {
+    if (_devModeEnabled) return;
+    _devModeTapTimer?.cancel();
+    _devModeTaps++;
+    final remaining = _kDevModeTapCount - _devModeTaps;
+    if (remaining <= 0) {
+      _devModeTaps = 0;
+      DeveloperOptionsStore.saveEnabled(true);
+      setState(() => _devModeEnabled = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('about.devModeEnabled'))),
+      );
+    } else if (remaining <= 2) {
+      // 最后 2 次点击时给出提示
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.tr('about.devModeTapHint', {'count': '$remaining'}),
+          ),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+      _devModeTapTimer = Timer(const Duration(milliseconds: 1500), () {
+        _devModeTaps = 0;
+      });
+    } else {
+      // 前 2 次点击静默，但设置超时重置
+      _devModeTapTimer = Timer(const Duration(milliseconds: 1500), () {
+        _devModeTaps = 0;
+      });
+    }
   }
 
   /// 手动检查更新。检查失败时提示出错；无更新时提示已是最新。
@@ -109,17 +167,21 @@ class _AboutPageState extends State<AboutPage> {
 
           const SizedBox(height: 6),
 
-          // ── 版本号 ──
+          // ── 版本号（连续点击 5 次解锁开发者模式）──
           Center(
-            child: Text(
-              _version.isEmpty
-                  ? context.tr('common.loading')
-                  : context.tr('about.version', {
-                      'version': _version,
-                      'build': _buildNumber,
-                    }),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: cs.onSurfaceVariant,
+            child: GestureDetector(
+              onTap: _onVersionTap,
+              behavior: HitTestBehavior.opaque,
+              child: Text(
+                _version.isEmpty
+                    ? context.tr('common.loading')
+                    : context.tr('about.version', {
+                        'version': _version,
+                        'build': _buildNumber,
+                      }),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
               ),
             ),
           ),

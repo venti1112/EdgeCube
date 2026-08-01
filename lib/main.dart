@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:ui';
+
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:logging/logging.dart';
 
 import 'config/ddns_store.dart';
 import 'config/network_store.dart';
@@ -38,11 +43,45 @@ import 'theme/precipitation_effect_mode.dart';
 import 'widgets/precipitation_overlay.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  // 初始化 .ecpkg 文件关联处理器
-  EcpkgHandler.init();
-  // 初始化软件日志系统（默认关闭，按设置中配置生效）
-  await LogService.instance.init();
+  await runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    // 初始化 .ecpkg 文件关联处理器
+    EcpkgHandler.init();
+    // 初始化软件日志系统（默认关闭，按设置中配置生效）
+    await LogService.instance.init();
+    // 安装全局异常捕获：Flutter 框架错误 + 平台异步错误
+    _setupGlobalErrorHandlers();
+    await _bootstrap();
+  }, (error, stack) {
+    // Zone 末梢兜底：捕获上述处理器未能拦截的异步错误
+    Logger('ZoneGuard').severe('Uncaught async error', error, stack);
+  });
+}
+
+/// 安装全局异常捕获处理器。
+///
+/// - [FlutterError.onError]：捕获 Flutter 框架在构建/布局/渲染阶段抛出的错误。
+/// - [PlatformDispatcher.instance.onError]：捕获未被 try/catch 拦截的异步错误
+///   以及其他 Isolate 抛出的错误。
+void _setupGlobalErrorHandlers() {
+  // Flutter 框架错误（widget 构建、布局异常等）
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    Logger('FlutterError').severe(
+      details.exceptionAsString(),
+      details.exception,
+      details.stack,
+    );
+  };
+  // 平台层未捕获的异步错误 / Isolate 错误
+  PlatformDispatcher.instance.onError = (error, stack) {
+    Logger('Platform').severe('Uncaught platform error', error, stack);
+    return true; // true 表示已处理，避免应用崩溃退出
+  };
+}
+
+/// 应用启动主体：在 runZonedGuarded 内执行，确保任何未捕获异常均被记录。
+Future<void> _bootstrap() async {
   final lastVersion = await VersionStore.loadLastVersion();
   // 旧版内置于 assets 的运行时与新版 .ecpkg 管理系统冲突，
   // 升级时清除旧 runtimes 目录，让用户重新导入所需运行时。
