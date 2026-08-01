@@ -39,7 +39,12 @@ class _SshPageState extends State<SshPage> {
   @override
   void initState() {
     super.initState();
-    _loadAll();
+    // _loadAll 内会调用 SshScope.of(context)，依赖 inherited widget，
+    // 不能在 initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadAll();
+    });
   }
 
   @override

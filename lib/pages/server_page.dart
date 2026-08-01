@@ -123,6 +123,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   /// proot 模式下选中的 rootfs id（作为 runtimeId 传给原生侧）。
   String _prootRootfsId = '';
 
+  /// 标记 ServerScope 回调是否已注册，避免在 didChangeDependencies 中重复设置。
+  bool _serverCallbacksBound = false;
+
   bool get _isPhp => _runtime == kRuntimePhp;
   bool get _isProot => _runtime == kRuntimeProot;
 
@@ -150,22 +153,18 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     _compatMode = widget.instance.compatMode;
     _autoRestartOnExit = widget.instance.autoRestartOnExit;
     _lineEnding = widget.instance.lineEnding;
-    // 设置崩溃回调：服务端意外退出时弹出报告弹窗。
-    final server = ServerScope.of(context);
-    server.onCrashExit = _onCrashExit;
-    // FRP 隧道异常退出时复用同一崩溃弹窗（导出/上传日志）。
-    server.onTunnelCrashExit = _onTunnelCrashExit;
-    // UPnP 超时提示。
-    server.onUpnpTimeout = _onUpnpTimeout;
     // 监听运行时导入/删除，自动刷新可用运行时列表。
     RuntimeService.refreshSignal.addListener(_onRuntimesChanged);
     ProotService.refreshSignal.addListener(_onRuntimesChanged);
+    // 注意：ServerScope.of(context) 不能在 initState 中调用
+    // （dependOnInheritedWidgetOfExactType 未就绪），相关回调注册移至
+    // didChangeDependencies。
   }
 
   /// 运行时列表变化时重新加载上下文。
   void _onRuntimesChanged() {
     if (mounted) {
-      setState(() => _ctxFuture = _loadContext());
+      setState(() { _ctxFuture = _loadContext(); });
     }
   }
 
@@ -229,7 +228,19 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     super.didChangeDependencies();
     // key 绑定实例 id，State 在实例不变期间复用，故只加载一次。
     _ctxFuture ??= _loadContext();
-
+    // ServerScope.of(context) 必须在 didChangeDependencies 中调用
+    // （initState 中 dependOnInheritedWidgetOfExactType 尚未就绪）。
+    // 用标志位保证回调只注册一次。
+    if (!_serverCallbacksBound) {
+      _serverCallbacksBound = true;
+      final server = ServerScope.of(context);
+      // 设置崩溃回调：服务端意外退出时弹出报告弹窗。
+      server.onCrashExit = _onCrashExit;
+      // FRP 隧道异常退出时复用同一崩溃弹窗（导出/上传日志）。
+      server.onTunnelCrashExit = _onTunnelCrashExit;
+      // UPnP 超时提示。
+      server.onUpnpTimeout = _onUpnpTimeout;
+    }
   }
 
   @override
@@ -502,7 +513,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
             _selectedRootfsEnvType(ctx) != 'generic');
     if (file == null && needsServerFile) {
       final future = _loadContext();
-      setState(() => _ctxFuture = future);
+      setState(() { _ctxFuture = future; });
       try {
         ctx = await future;
       } catch (_) {
@@ -946,20 +957,20 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     _LaunchContext? initialCtx,
   ) async {
     final future = _loadContext();
-    setState(() => _ctxFuture = future);
+    setState(() { _ctxFuture = future; });
     _LaunchContext? scanned;
     try {
       scanned = await future;
     } catch (_) {
       // 重新扫描失败时沿用已有快照，弹窗仍可正常打开。
     }
-    if (!context.mounted) return;
+    if (!mounted) return;
     final ctx = scanned ?? initialCtx;
     if (ctx == null) return;
     final nameController = TextEditingController(text: widget.instance.name);
-    final controller = InstanceScope.of(context);
+    final controller = InstanceScope.of(this.context);
     await showDialog<void>(
-      context: context,
+      context: this.context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (ctx2, setDialogState) {
@@ -1251,7 +1262,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      value: _lineEnding,
+                      initialValue: _lineEnding,
                       decoration: InputDecoration(
                         labelText: context.tr('server.lineEndingLabel'),
                         border: const OutlineInputBorder(),

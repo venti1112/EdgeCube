@@ -344,7 +344,11 @@ class _DownloadOnlyDialogState extends State<_DownloadOnlyDialog> {
   @override
   void initState() {
     super.initState();
-    _start();
+    // _start() 内会调用 context.tr（经 LocaleScope.of 依赖 inherited widget），
+    // 不能在 initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误，导致下载流程未启动、
+    // 对话框卡死无进度。改用 post-frame 回调延迟到 initState 完成后再启动。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _start());
   }
 
   Future<void> _start() async {
@@ -527,7 +531,11 @@ class _InstallDialogState extends State<_InstallDialog> {
   @override
   void initState() {
     super.initState();
-    _start();
+    // _start() 内会调用 context.tr（经 LocaleScope.of 依赖 inherited widget），
+    // 不能在 initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误，导致下载流程未启动、
+    // 对话框卡死无进度。改用 post-frame 回调延迟到 initState 完成后再启动。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _start());
   }
 
   Future<void> _start() async {

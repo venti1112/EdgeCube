@@ -40,9 +40,23 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   late InstanceController _instanceController;
 
+  /// 标记 [didChangeDependencies] 中的初始化是否已完成。
+  /// [InstanceScope.of] / [context.tr] 依赖 inherited widget，不能在 initState 中调用。
+  bool _initialized = false;
+
   @override
   void initState() {
     super.initState();
+    // 默认名称与 InstanceController 的获取移至 didChangeDependencies：
+    // 它们依赖 inherited widget（LocaleScope / InstanceScope），
+    // initState 中调用会触发 dependOnInheritedWidgetOfExactType 报错。
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
     _instanceController = InstanceScope.of(context);
     _nameController.text = context.tr('instance.defaultName');
   }

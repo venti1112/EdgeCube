@@ -613,7 +613,12 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    // _load 内会调用 InstanceScope.of(context) / context.tr，依赖 inherited widget，
+    // 不能在 initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load() async {

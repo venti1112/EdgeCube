@@ -2,15 +2,18 @@ import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/data_folder_store.dart';
 import '../config/java_env_pref_store.dart';
+import '../config/log_store.dart';
 import '../config/terminal_store.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
+import '../logging/log_service.dart';
 import '../widgets/error_dialog.dart';
 import '../instance/data_folder_migration.dart';
 import '../instance/instance_scope.dart';
@@ -20,6 +23,7 @@ import 'about_page.dart';
 import 'appearance_settings_page.dart';
 import 'keep_alive_settings_page.dart';
 import 'language_settings_page.dart';
+import 'log_viewer_page.dart';
 import 'network_settings_page.dart';
 import 'storage_management_page.dart';
 
@@ -33,12 +37,15 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   bool _autoClearLogOnStart = true;
   JavaEnvPriority _javaEnvPriority = JavaEnvPriority.proot;
+  bool _logEnabled = false;
+  Level _logLevel = Level.INFO;
 
   @override
   void initState() {
     super.initState();
     _loadAutoClearLogOnStart();
     _loadJavaEnvPriority();
+    _loadLogSettings();
   }
 
   Future<void> _loadJavaEnvPriority() async {
@@ -100,6 +107,57 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _saveAutoClearLogOnStart(bool value) async {
     setState(() => _autoClearLogOnStart = value);
     await TerminalStore.saveAutoClearLogOnStart(value);
+  }
+
+  // ── 日志设置 ──────────────────────────────────────────────
+
+  Future<void> _loadLogSettings() async {
+    final enabled = await LogStore.loadEnabled();
+    final level = await LogStore.loadLevel();
+    if (mounted) {
+      setState(() {
+        _logEnabled = enabled;
+        _logLevel = level;
+      });
+    }
+  }
+
+  Future<void> _saveLogEnabled(bool value) async {
+    setState(() => _logEnabled = value);
+    await LogService.instance.setEnabled(value);
+  }
+
+  String _logLevelLabel(BuildContext context, Level level) {
+    return context.tr('settings.logging.level.${level.name}');
+  }
+
+  /// 弹出日志等级选择对话框。
+  Future<void> _pickLogLevel() async {
+    final selected = await showDialog<Level>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(ctx.tr('settings.logging.levelDialogTitle')),
+        children: [
+          for (final level in kSelectableLogLevels)
+            ListTile(
+              leading: Icon(
+                level == _logLevel
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                color: level == _logLevel
+                    ? Theme.of(ctx).colorScheme.primary
+                    : null,
+              ),
+              title: Text(_logLevelLabel(ctx, level)),
+              onTap: () => Navigator.of(ctx).pop(level),
+            ),
+        ],
+      ),
+    );
+    if (selected != null && selected != _logLevel) {
+      setState(() => _logLevel = selected);
+      await LogService.instance.setLevel(selected);
+    }
   }
 
   String _themeModeLabel(BuildContext context, ThemeMode mode) {
@@ -218,6 +276,38 @@ class _SettingsPageState extends State<SettingsPage> {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const NetworkSettingsPage()),
+              );
+            },
+          ),
+          const Divider(),
+          _sectionHeader(theme, context.tr('settings.section.logging')),
+          SwitchListTile(
+            secondary: const Icon(Icons.article_outlined),
+            title: Text(context.tr('settings.logging.enable')),
+            subtitle: Text(context.tr('settings.logging.enableDesc')),
+            value: _logEnabled,
+            onChanged: _saveLogEnabled,
+          ),
+          ListTile(
+            leading: const Icon(Icons.filter_list),
+            title: Text(context.tr('settings.logging.level')),
+            subtitle: Text(
+              context.tr('settings.logging.levelSubtitle', {
+                'value': _logLevelLabel(context, _logLevel),
+              }),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            enabled: _logEnabled,
+            onTap: _pickLogLevel,
+          ),
+          ListTile(
+            leading: const Icon(Icons.file_open_outlined),
+            title: Text(context.tr('settings.logging.viewer')),
+            subtitle: Text(context.tr('settings.logging.viewerSubtitle')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const LogViewerPage()),
               );
             },
           ),

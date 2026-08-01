@@ -1249,16 +1249,19 @@ Future<String?> _promptText(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
-          child: Text(context.tr('common.cancel')),
+          child: Text(dialogContext.tr('common.cancel')),
         ),
         TextButton(
           onPressed: () =>
               Navigator.of(dialogContext).pop(controller.text.trim()),
-          child: Text(context.tr('common.ok')),
+          child: Text(dialogContext.tr('common.ok')),
         ),
       ],
     ),
   );
-  controller.dispose();
+  // 延后到下一帧再 dispose：showDialog 的 Future 在 Navigator.pop 时即完成，
+  // 此时弹窗 widget 树可能仍在当前帧内拆解，TextField 仍持有对 controller 的
+  // 依赖。立即 dispose 会触发 "_dependents.isEmpty is not true" 断言。
+  WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
   return result;
 }

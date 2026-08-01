@@ -17,6 +17,7 @@ import 'home_shell.dart';
 import 'i18n/locale_controller.dart';
 import 'i18n/locale_scope.dart';
 import 'instance/instance_controller.dart';
+import 'logging/log_service.dart';
 import 'instance/instance_scope.dart';
 import 'mcp/mcp_controller.dart';
 import 'mcp/mcp_scope.dart';
@@ -40,6 +41,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 初始化 .ecpkg 文件关联处理器
   EcpkgHandler.init();
+  // 初始化软件日志系统（默认关闭，按设置中配置生效）
+  await LogService.instance.init();
   final lastVersion = await VersionStore.loadLastVersion();
   // 旧版内置于 assets 的运行时与新版 .ecpkg 管理系统冲突，
   // 升级时清除旧 runtimes 目录，让用户重新导入所需运行时。

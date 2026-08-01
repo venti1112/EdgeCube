@@ -36,6 +36,7 @@ dependencies:
   flutter_svg: ^2.3.0
   pinenacl: ^0.6.0
   flutter_miuix: ^1.0.9
+  logging: ^1.3.0
 
 dev_dependencies:
   flutter_test:

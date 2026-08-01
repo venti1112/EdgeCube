@@ -87,7 +87,10 @@ class _OnlineTabState extends State<_OnlineTab> {
   @override
   void initState() {
     super.initState();
-    _loadContextSets();
+    // _loadContextSets 内会调用 InstanceScope.of(context)，依赖 inherited widget，
+    // 不能在 initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadContextSets());
   }
 
   Future<void> _loadContextSets() async {
@@ -409,11 +412,15 @@ class _WhitelistTab extends StatefulWidget {
 
 class _WhitelistTabState extends State<_WhitelistTab> {
   Future<List<_NamedEntry>>? _future;
-
   @override
   void initState() {
     super.initState();
-    _future = _loadWhitelist();
+    // _loadWhitelist 内会调用 InstanceScope.of(context)，依赖 inherited widget，
+    // 不能在 initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() { _future = _loadWhitelist(); });
+    });
   }
 
   Future<List<_NamedEntry>> _loadWhitelist() async {
@@ -571,11 +578,15 @@ class _BansTab extends StatefulWidget {
 
 class _BansTabState extends State<_BansTab> {
   Future<List<_BanEntry>>? _future;
-
   @override
   void initState() {
     super.initState();
-    _future = _loadBans();
+    // _loadBans 内会调用 InstanceScope.of(context)，依赖 inherited widget，
+    // 不能在 initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() { _future = _loadBans(); });
+    });
   }
 
   Future<List<_BanEntry>> _loadBans() async {
@@ -765,11 +776,15 @@ class _BanIpsTab extends StatefulWidget {
 
 class _BanIpsTabState extends State<_BanIpsTab> {
   Future<List<_IpBanEntry>>? _future;
-
   @override
   void initState() {
     super.initState();
-    _future = _loadBanIps();
+    // _loadBanIps 内会调用 InstanceScope.of(context)，依赖 inherited widget，
+    // 不能在 initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() { _future = _loadBanIps(); });
+    });
   }
 
   Future<List<_IpBanEntry>> _loadBanIps() async {
@@ -935,11 +950,15 @@ class _OpsTab extends StatefulWidget {
 
 class _OpsTabState extends State<_OpsTab> {
   Future<List<_NamedEntry>>? _future;
-
   @override
   void initState() {
     super.initState();
-    _future = _loadOps();
+    // _loadOps 内会调用 InstanceScope.of(context)，依赖 inherited widget，
+    // 不能在 initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() { _future = _loadOps(); });
+    });
   }
 
   Future<List<_NamedEntry>> _loadOps() async {
