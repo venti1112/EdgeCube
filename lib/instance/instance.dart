@@ -24,12 +24,15 @@ class InstanceSummary {
   /// null 表示使用默认路径 `<instances-root>/<id>`。
   final String? path;
 
-  InstanceSummary copyWith({String? name, String? path, bool clearPath = false}) =>
-      InstanceSummary(
-        id: id,
-        name: name ?? this.name,
-        path: clearPath ? null : (path ?? this.path),
-      );
+  InstanceSummary copyWith({
+    String? name,
+    String? path,
+    bool clearPath = false,
+  }) => InstanceSummary(
+    id: id,
+    name: name ?? this.name,
+    path: clearPath ? null : (path ?? this.path),
+  );
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -140,7 +143,9 @@ class Instance {
     name: name ?? this.name,
     runtime: runtime ?? this.runtime,
     maxMemory: clearMaxMemory ? null : (maxMemory ?? this.maxMemory),
-    runtimeEnvId: clearRuntimeEnvId ? null : (runtimeEnvId ?? this.runtimeEnvId),
+    runtimeEnvId: clearRuntimeEnvId
+        ? null
+        : (runtimeEnvId ?? this.runtimeEnvId),
     serverFile: clearServerFile ? null : (serverFile ?? this.serverFile),
     customJvmArgs: clearCustomJvmArgs
         ? null
@@ -176,8 +181,7 @@ class Instance {
     maxMemory: json['maxMemory'] as int?,
     // 新 key 优先，读不到时回退历史 key（javaVersion / selectedJar），
     // 保证旧版本写出的实例配置可直接加载。
-    runtimeEnvId:
-        (json['runtimeEnvId'] ?? json['javaVersion']) as String?,
+    runtimeEnvId: (json['runtimeEnvId'] ?? json['javaVersion']) as String?,
     serverFile: (json['serverFile'] ?? json['selectedJar']) as String?,
     customJvmArgs: json['customJvmArgs'] as String?,
     compatMode: json['compatMode'] as bool? ?? false,

@@ -56,7 +56,8 @@ class AppUpdateInfo {
   List<DownloadLink> get directLinks =>
       downloadLinks.where((l) => l.isDirect).toList();
 
-  DownloadLink? get firstDirectLink => directLinks.isEmpty ? null : directLinks.first;
+  DownloadLink? get firstDirectLink =>
+      directLinks.isEmpty ? null : directLinks.first;
 
   factory AppUpdateInfo.fromJson(Map<String, dynamic> json) => AppUpdateInfo(
     version: json['version'] as String,
@@ -70,10 +71,7 @@ class AppUpdateInfo {
 }
 
 class UpdateCheckResult {
-  const UpdateCheckResult({
-    required this.stable,
-    this.beta,
-  });
+  const UpdateCheckResult({required this.stable, this.beta});
 
   final AppUpdateInfo stable;
   final AppUpdateInfo? beta;
@@ -100,21 +98,19 @@ class UpdateService {
       headers['X-App-Version'] = info.version;
       headers['X-App-Build'] = info.buildNumber;
 
-      return OnlineService.fetchFirstValid<UpdateCheckResult>(
-        urls,
-        (url) async {
-          final response = await http
-              .get(Uri.parse(url), headers: headers)
-              .timeout(const Duration(seconds: 15));
-          if (response.statusCode != 200) {
-            throw Exception('HTTP ${response.statusCode}');
-          }
-          final body = utf8.decode(response.bodyBytes);
-          final json = jsonDecode(body) as Map<String, dynamic>;
-          return UpdateCheckResult.fromJson(json);
-        },
-        (result) => result.stable.version.isNotEmpty,
-      );
+      return OnlineService.fetchFirstValid<UpdateCheckResult>(urls, (
+        url,
+      ) async {
+        final response = await http
+            .get(Uri.parse(url), headers: headers)
+            .timeout(const Duration(seconds: 15));
+        if (response.statusCode != 200) {
+          throw Exception('HTTP ${response.statusCode}');
+        }
+        final body = utf8.decode(response.bodyBytes);
+        final json = jsonDecode(body) as Map<String, dynamic>;
+        return UpdateCheckResult.fromJson(json);
+      }, (result) => result.stable.version.isNotEmpty);
     } catch (_) {
       return null;
     }
@@ -139,7 +135,9 @@ class UpdateService {
     if (hasUpdate(result.stable, currentBuild)) {
       best = result.stable;
     }
-    if (enableBeta && result.beta != null && hasUpdate(result.beta!, currentBuild)) {
+    if (enableBeta &&
+        result.beta != null &&
+        hasUpdate(result.beta!, currentBuild)) {
       if (best == null || result.beta!.build > best.build) {
         best = result.beta;
       }
@@ -175,7 +173,10 @@ class UpdateService {
     return filePath;
   }
 
-  static Future<bool> verifySha256(String filePath, String expectedSha256) async {
+  static Future<bool> verifySha256(
+    String filePath,
+    String expectedSha256,
+  ) async {
     try {
       if (expectedSha256.isEmpty) return true;
       final file = File(filePath);
@@ -189,10 +190,9 @@ class UpdateService {
 
   static Future<bool> verifyApkSignature(String apkPath) async {
     try {
-      final result = await _channel.invokeMethod<bool>(
-        'verifySignature',
-        {'apkPath': apkPath},
-      );
+      final result = await _channel.invokeMethod<bool>('verifySignature', {
+        'apkPath': apkPath,
+      });
       return result ?? false;
     } catch (_) {
       return false;
@@ -208,8 +208,7 @@ class UpdateService {
       final uri = Uri.parse(url);
       final name = uri.pathSegments.last;
       if (name.isNotEmpty && name.toLowerCase().endsWith('.apk')) return name;
-    } catch (_) {
-    }
+    } catch (_) {}
     return 'edgecube_update.apk';
   }
 }

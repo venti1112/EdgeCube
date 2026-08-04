@@ -1,10 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/ec_text_field.dart';
+import '../widgets/miuix_dialog.dart';
 import 'file_entry.dart';
 import 'file_search_bar.dart';
 import 'file_service.dart';
@@ -18,8 +21,9 @@ Future<String?> pickFolder(
   required String title,
   String? disabledPath,
 }) {
-  return showDialog<String>(
+  return showMiuixDialog<String>(
     context: context,
+    title: title,
     builder: (_) => _FolderPickerDialog(
       rootDir: rootDir,
       title: title,
@@ -163,22 +167,33 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
   /// 副标题显示相对当前目录的路径。
   Widget _buildFolderTile(
     FileEntry folder,
-    ThemeData theme, {
+    MiuixThemeData theme, {
     bool inSearch = false,
   }) {
     final disabled =
         widget.disabledPath != null &&
         p.equals(folder.path, widget.disabledPath!);
     final rel = p.relative(folder.path, from: _current.path);
-    return ListTile(
-      leading: Icon(folder.isLink ? Icons.link : Icons.folder),
-      title: Text(folder.name),
-      subtitle: inSearch && rel.contains(p.separator)
-          ? Text(rel, style: theme.textTheme.bodySmall)
-          : null,
+    return MiuixBasicComponent(
+      startAction: Padding(
+        padding: const EdgeInsets.only(right: 16),
+        child: Icon(folder.isLink ? Icons.link : Icons.folder),
+      ),
+      content: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(folder.name),
+            ?inSearch && rel.contains(p.separator)
+                ? Text(rel, style: theme.textStyles.footnote1)
+                : null,
+          ],
+        ),
+      ],
+      endActions: [const Icon(Icons.chevron_right)],
       enabled: !disabled,
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () {
+      onClick: () {
         if (inSearch) {
           _exitSearch();
           _enter(folder.path);
@@ -190,7 +205,7 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
   }
 
   /// 搜索结果区（只含目录）。
-  Widget _buildSearchBody(ThemeData theme) {
+  Widget _buildSearchBody(MiuixThemeData theme) {
     if (_searching) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -198,8 +213,8 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
       return Center(
         child: Text(
           context.tr('fileSearch.prompt'),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+          style: theme.textStyles.body2.copyWith(
+            color: theme.colors.onSurfaceVariantSummary,
           ),
         ),
       );
@@ -208,8 +223,8 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
       return Center(
         child: Text(
           context.tr('fileSearch.noResults'),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+          style: theme.textStyles.body2.copyWith(
+            color: theme.colors.onSurfaceVariantSummary,
           ),
         ),
       );
@@ -223,7 +238,7 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     return PopScope(
       // 搜索/未到根目录时拦截系统返回键：先退出搜索，其次回上一级；根目录才关闭。
       canPop: _atRoot && !_searchMode,
@@ -235,81 +250,96 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
         }
         _goUp();
       },
-      child: AlertDialog(
-        title: Text(widget.title),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_searchMode)
-                FileSearchBar(
-                  controller: _searchController,
-                  recursive: _searchRecursive,
-                  onRecursiveChanged: _toggleSearchRecursive,
-                  onClose: _exitSearch,
-                )
-              else
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_upward),
-                      tooltip: context.tr('folderPicker.upOneLevel'),
-                      onPressed: _atRoot ? null : _goUp,
-                    ),
-                    Expanded(
-                      child: Text(
-                        _relativeLabel(context),
-                        style: theme.textTheme.bodyMedium,
-                        overflow: TextOverflow.ellipsis,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: MiuixText(
+              widget.title,
+              textAlign: TextAlign.center,
+              style: MiuixTheme.of(context).textStyles.title4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_searchMode)
+                  FileSearchBar(
+                    controller: _searchController,
+                    recursive: _searchRecursive,
+                    onRecursiveChanged: _toggleSearchRecursive,
+                    onClose: _exitSearch,
+                  )
+                else
+                  Row(
+                    children: [
+                      MiuixIconButton(
+                        onPressed: _atRoot ? null : _goUp,
+                        child: MiuixIcon(icon: Icons.arrow_upward),
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.search),
-                      tooltip: context.tr('fileSearch.search'),
-                      onPressed: _enterSearch,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.create_new_folder_outlined),
-                      tooltip: context.tr('folderPicker.newFolder'),
-                      onPressed: _createFolder,
-                    ),
-                  ],
-                ),
-              const Divider(height: 1),
-              SizedBox(
-                height: 240,
-                child: _searchMode
-                    ? _buildSearchBody(theme)
-                    : _loading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _folders.isEmpty
-                    ? Center(
+                      Expanded(
                         child: Text(
-                          context.tr('folderPicker.noSubfolders'),
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
+                          _relativeLabel(context),
+                          style: theme.textStyles.body2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      )
-                    : ListView.builder(
-                        itemCount: _folders.length,
-                        itemBuilder: (_, i) =>
-                            _buildFolderTile(_folders[i], theme),
                       ),
+                      MiuixIconButton(
+                        onPressed: _enterSearch,
+                        child: MiuixIcon(icon: Icons.search),
+                      ),
+                      MiuixIconButton(
+                        onPressed: _createFolder,
+                        child: MiuixIcon(
+                          icon: Icons.create_new_folder_outlined,
+                        ),
+                      ),
+                    ],
+                  ),
+                const MiuixHorizontalDivider(),
+                SizedBox(
+                  height: 240,
+                  child: _searchMode
+                      ? _buildSearchBody(theme)
+                      : _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _folders.isEmpty
+                      ? Center(
+                          child: Text(
+                            context.tr('folderPicker.noSubfolders'),
+                            style: theme.textStyles.body2.copyWith(
+                              color: theme.colors.onSurfaceVariantSummary,
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: _folders.length,
+                          itemBuilder: (_, i) =>
+                              _buildFolderTile(_folders[i], theme),
+                        ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                context.tr('common.cancel'),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              MiuixButton(
+                onPressed: () => Navigator.of(context).pop(_current.path),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(context.tr('folderPicker.moveHere')),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(context.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(_current.path),
-            child: Text(context.tr('folderPicker.moveHere')),
           ),
         ],
       ),
@@ -319,27 +349,40 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
 
 Future<String?> _promptFolderName(BuildContext context) async {
   final controller = TextEditingController();
-  final result = await showDialog<String>(
+  final result = await showMiuixDialog<String>(
     context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(context.tr('folderPicker.newFolder')),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        decoration: InputDecoration(
-          labelText: context.tr('folderPicker.folderName'),
+    builder: (dialogContext) => Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: MiuixText(
+            context.tr('folderPicker.newFolder'),
+            textAlign: TextAlign.center,
+            style: MiuixTheme.of(context).textStyles.title4,
+          ),
         ),
-        onSubmitted: (v) => Navigator.of(dialogContext).pop(v.trim()),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          child: Text(context.tr('common.cancel')),
+        const SizedBox(height: 12),
+        EcTextField(
+          controller: controller,
+          label: context.tr('folderPicker.folderName'),
+          onSubmitted: (v) => Navigator.of(dialogContext).pop(v.trim()),
+          autofocus: true,
         ),
-        TextButton(
-          onPressed: () =>
-              Navigator.of(dialogContext).pop(controller.text.trim()),
-          child: Text(context.tr('common.ok')),
+        const SizedBox(height: 20),
+        MiuixDialogActions(
+          children: [
+            MiuixTextButton(
+              context.tr('common.cancel'),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+            ),
+            MiuixTextButton(
+              context.tr('common.ok'),
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+            ),
+          ],
         ),
       ],
     ),

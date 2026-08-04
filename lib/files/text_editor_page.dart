@@ -2,12 +2,16 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/styles/github-dark.dart';
 import 'package:re_highlight/styles/github.dart';
 
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_snackbar.dart';
+import '../widgets/miuix_dialog.dart';
 import 'code_find_panel.dart';
 import 'editor_language.dart';
 import 'file_service.dart';
@@ -155,7 +159,6 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   Future<void> _save() async {
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _saving = true);
     try {
       final text = _controller.text;
@@ -167,9 +170,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
         _dirty = false;
         _saving = false;
       });
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('textEditor.saved'))),
-      );
+      showMiuixSnackbar(context.tr('textEditor.saved'));
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -184,23 +185,31 @@ class _TextEditorPageState extends State<TextEditorPage> {
   /// 返回 true 表示允许退出，false 表示取消退出。
   Future<bool> _confirmDiscard() async {
     if (!_dirty) return true;
-    final choice = await showDialog<int>(
+    final choice = await showMiuixDialog<int>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.tr('textEditor.saveChangesTitle')),
-        content: Text(context.tr('textEditor.saveChangesContent')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 0),
-            child: Text(context.tr('textEditor.discard')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 1),
-            child: Text(context.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, 2),
-            child: Text(context.tr('common.save')),
+      title: context.tr('textEditor.saveChangesTitle'),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(context.tr('textEditor.saveChangesContent')),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                context.tr('textEditor.discard'),
+                onPressed: () => Navigator.pop(ctx, 0),
+              ),
+              MiuixTextButton(
+                context.tr('common.cancel'),
+                onPressed: () => Navigator.pop(ctx, 1),
+              ),
+              MiuixButton(
+                onPressed: () => Navigator.pop(ctx, 2),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(context.tr('common.save')),
+              ),
+            ],
           ),
         ],
       ),
@@ -225,27 +234,22 @@ class _TextEditorPageState extends State<TextEditorPage> {
         final discard = await _confirmDiscard();
         if (discard && context.mounted) Navigator.of(context).pop();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            _dirty ? '${widget.name} •' : widget.name,
-            overflow: TextOverflow.ellipsis,
-          ),
+      child: MiuixScaffold(
+        topBar: MiuixSmallTopAppBar(
+          title: _dirty ? '${widget.name} •' : widget.name,
+          navigationIcon: const EcBackButton(),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.undo),
-              tooltip: context.tr('common.undo'),
+            MiuixIconButton(
               onPressed: _canUndo ? _controller.undo : null,
+              child: MiuixIcon(icon: Icons.undo),
             ),
-            IconButton(
-              icon: const Icon(Icons.redo),
-              tooltip: context.tr('common.redo'),
+            MiuixIconButton(
               onPressed: _canRedo ? _controller.redo : null,
+              child: MiuixIcon(icon: Icons.redo),
             ),
-            IconButton(
-              icon: const Icon(Icons.search),
-              tooltip: context.tr('textEditor.find'),
+            MiuixIconButton(
               onPressed: _loading ? null : _findController.findMode,
+              child: MiuixIcon(icon: Icons.search),
             ),
             if (_saving)
               const Padding(
@@ -253,20 +257,20 @@ class _TextEditorPageState extends State<TextEditorPage> {
                 child: SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: MiuixInfiniteProgressIndicator(size: 20),
                 ),
               )
             else
-              IconButton(
-                icon: const Icon(Icons.save_outlined),
-                tooltip: context.tr('common.save'),
+              MiuixIconButton(
                 onPressed: (_loading || _error != null || !_dirty)
                     ? null
                     : _save,
+                child: MiuixIcon(icon: Icons.save_outlined),
               ),
           ],
         ),
-        body: _buildBody(context),
+        content: (padding) =>
+            Padding(padding: padding, child: _buildBody(context)),
       ),
     );
   }
@@ -296,18 +300,25 @@ class _TextEditorPageState extends State<TextEditorPage> {
               ),
               const SizedBox(height: 16),
               // 高亮「取消」为主操作：任何错误都显示，引导用户放弃打开。
-              FilledButton(
+              MiuixButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: Text(context.tr('common.cancel')),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(context.tr('common.cancel')),
               ),
               // 「强制打开」仅在编码错误时提供（用 latin1 强读），且弱化为次要按钮，
               // 避免用户误以为只能强开而破坏文件。
               if (isEncoding) ...[
                 const SizedBox(height: 8),
-                OutlinedButton.icon(
+                MiuixButton(
                   onPressed: _forceOpen,
-                  icon: const Icon(Icons.warning_amber),
-                  label: Text(context.tr('textEditor.forceOpen')),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      MiuixIcon(icon: Icons.warning_amber),
+                      const SizedBox(width: 8),
+                      MiuixText(context.tr('textEditor.forceOpen')),
+                    ],
+                  ),
                 ),
               ],
             ],
@@ -320,7 +331,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     final highlightTheme = isDark ? githubDarkTheme : githubTheme;
     final bgColor =
         highlightTheme['root']?.backgroundColor ??
-        Theme.of(context).colorScheme.surface;
+        MiuixTheme.of(context).colors.surface;
 
     // 构建语法高亮配置：语言名 → CodeHighlightThemeMode。
     final lang = _language;
@@ -398,7 +409,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
                 ],
               );
             },
-        leadingDivider: Container(width: 1, color: Theme.of(context).dividerColor),
+        leadingDivider: Container(
+          width: 1,
+          color: Theme.of(context).dividerColor,
+        ),
         style: CodeEditorStyle(
           fontFamily: 'monospace',
           fontSize: 13,

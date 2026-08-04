@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 /// 通用占位页面内容
 class PlaceholderPage extends StatelessWidget {
@@ -15,23 +16,22 @@ class PlaceholderPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 72, color: theme.colorScheme.primary),
+          MiuixIcon(icon: icon, size: 72, tint: theme.colors.primary),
           const SizedBox(height: 16),
-          Text(title, style: theme.textTheme.headlineSmall),
+          MiuixText(title, style: theme.textStyles.title3),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
+            child: MiuixText(
               description,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: theme.textStyles.body2,
+              color: theme.colors.onSurfaceVariantSummary,
             ),
           ),
         ],

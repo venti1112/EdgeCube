@@ -440,11 +440,11 @@ class DdnsService {
     DdnsConfig c,
     String type,
   ) async {
-    final listJson = await _dnspodCall('Record.List', {
-      ..._dnspodCommon(c),
-      'sub_domain': _subDomain(c),
-      'record_type': type,
-    }, allowCodes: const {'10'});
+    final listJson = await _dnspodCall(
+      'Record.List',
+      {..._dnspodCommon(c), 'sub_domain': _subDomain(c), 'record_type': type},
+      allowCodes: const {'10'},
+    );
     return (listJson['records'] as List<dynamic>? ?? const [])
         .cast<Map<String, dynamic>>();
   }
@@ -508,7 +508,8 @@ class DdnsService {
           Uri.parse('https://dnsapi.cn/$action'),
           headers: {
             // DNSPod 要求 UA 携带程序名与联系方式，否则可能被限制。
-            'User-Agent': 'EdgeCube-DDNS/${(await CloudHeaders.userAgent).split('/').last} (support@edgecubemc.com)',
+            'User-Agent':
+                'EdgeCube-DDNS/${(await CloudHeaders.userAgent).split('/').last} (support@edgecubemc.com)',
           },
           body: params,
         )
@@ -652,7 +653,10 @@ class DdnsService {
           (b >= 0x41 && b <= 0x5A) || // A-Z
           (b >= 0x61 && b <= 0x7A) || // a-z
           (b >= 0x30 && b <= 0x39) || // 0-9
-          b == 0x2D || b == 0x2E || b == 0x5F || b == 0x7E; // - . _ ~
+          b == 0x2D ||
+          b == 0x2E ||
+          b == 0x5F ||
+          b == 0x7E; // - . _ ~
       if (unreserved) {
         sb.writeCharCode(b);
       } else {
@@ -678,7 +682,15 @@ class DdnsService {
     }
     final body = resp.body.trim();
     final lower = body.toLowerCase();
-    const badWords = ['badauth', 'nohost', 'abuse', 'notfqdn', 'badagent', '911', 'ko'];
+    const badWords = [
+      'badauth',
+      'nohost',
+      'abuse',
+      'notfqdn',
+      'badagent',
+      '911',
+      'ko',
+    ];
     if (badWords.any((w) => lower == w || lower.startsWith('$w '))) {
       throw DdnsException(body.length > 120 ? body.substring(0, 120) : body);
     }

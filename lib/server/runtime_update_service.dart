@@ -48,8 +48,9 @@ class RuntimeUpdatePackage {
         .map((u) => u['url'] as String? ?? '')
         .where((u) => u.isNotEmpty)
         .toList();
-    final fallback =
-        entries.isNotEmpty ? (entries.first['url'] as String? ?? '') : '';
+    final fallback = entries.isNotEmpty
+        ? (entries.first['url'] as String? ?? '')
+        : '';
     final sources = directUrls.isNotEmpty
         ? directUrls
         : (fallback.isNotEmpty ? [fallback] : const <String>[]);
@@ -147,8 +148,12 @@ class RuntimeUpdateService {
     final json = jsonDecode(response.body) as Map<String, dynamic>;
     final info = RuntimeUpdateInfo.fromJson(json);
     if (info.id != runtime.id) {
-      throw StateError(tr('runtimeUpdate.idMismatch',
-          {'infoId': info.id, 'runtimeId': runtime.id}));
+      throw StateError(
+        tr('runtimeUpdate.idMismatch', {
+          'infoId': info.id,
+          'runtimeId': runtime.id,
+        }),
+      );
     }
     return info;
   }
@@ -252,6 +257,8 @@ class HashMismatchException implements Exception {
   final String expected;
   final String actual;
   @override
-  String toString() =>
-      tr('runtimeUpdate.hashMismatch', {'expected': expected, 'actual': actual});
+  String toString() => tr('runtimeUpdate.hashMismatch', {
+    'expected': expected,
+    'actual': actual,
+  });
 }

@@ -24,17 +24,19 @@ class OpenFrpApi {
 
   /// OpenFrp 要求请求携带应用程序 UA，否则可能被防火墙拦截。
   static Future<Map<String, String>> _headers(String? token) async => {
-        'Content-Type': 'application/json',
-        'User-Agent': await CloudHeaders.userAgent,
-        if (token != null && token.isNotEmpty) 'Authorization': token,
-      };
+    'Content-Type': 'application/json',
+    'User-Agent': await CloudHeaders.userAgent,
+    if (token != null && token.isNotEmpty) 'Authorization': token,
+  };
 
   static Future<Map<String, dynamic>> _post(String path, String token) async {
-    final resp = await http.post(
-      Uri.parse('$_base$path'),
-      headers: await _headers(token),
-      body: '{}',
-    ).timeout(_timeout);
+    final resp = await http
+        .post(
+          Uri.parse('$_base$path'),
+          headers: await _headers(token),
+          body: '{}',
+        )
+        .timeout(_timeout);
     return _envelope(resp);
   }
 
@@ -43,11 +45,13 @@ class OpenFrpApi {
     String token,
     Map<String, dynamic> body,
   ) async {
-    final resp = await http.post(
-      Uri.parse('$_base$path'),
-      headers: await _headers(token),
-      body: jsonEncode(body),
-    ).timeout(_timeout);
+    final resp = await http
+        .post(
+          Uri.parse('$_base$path'),
+          headers: await _headers(token),
+          body: jsonEncode(body),
+        )
+        .timeout(_timeout);
     return _envelope(resp);
   }
 
@@ -55,7 +59,9 @@ class OpenFrpApi {
     final json =
         jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
     if (json['flag'] != true) {
-      throw FrpApiException(json['msg'] as String? ?? 'HTTP ${resp.statusCode}');
+      throw FrpApiException(
+        json['msg'] as String? ?? 'HTTP ${resp.statusCode}',
+      );
     }
     return json;
   }
@@ -67,7 +73,9 @@ class OpenFrpApi {
         jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
     final code = json['code'] as int? ?? -1;
     if (code != 200) {
-      throw FrpApiException(json['msg'] as String? ?? 'HTTP ${resp.statusCode}');
+      throw FrpApiException(
+        json['msg'] as String? ?? 'HTTP ${resp.statusCode}',
+      );
     }
     return json;
   }
@@ -125,12 +133,15 @@ class OpenFrpApi {
   ///
   /// 返回 null = 未完成（继续轮询）；返回 String = 成功；抛 FrpApiException =
   /// 致命错误（响应字段缺失/解密失败等，UUID 已被消费，不应继续轮询）。
-  static Future<String?> pollBrowserLogin(FrpBrowserLoginSession session) async {
+  static Future<String?> pollBrowserLogin(
+    FrpBrowserLoginSession session,
+  ) async {
     final uuid = session.state['request_uuid'] as String;
     final skBytes = session.state['private_key'] as Uint8List;
 
-    final uri = Uri.parse('$_accessBase/argoAccess/pollLogin')
-        .replace(queryParameters: {'request_uuid': uuid});
+    final uri = Uri.parse(
+      '$_accessBase/argoAccess/pollLogin',
+    ).replace(queryParameters: {'request_uuid': uuid});
     final request = http.Request('GET', uri);
     request.headers['Content-Type'] = 'application/json';
     request.headers['User-Agent'] = await CloudHeaders.userAgent;

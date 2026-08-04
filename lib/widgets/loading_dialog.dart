@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
+
+import 'miuix_dialog.dart';
 
 /// 通用加载对话框：与压缩/导出等长任务一致的「转圈 + 文案」模态样式。
 ///
@@ -6,19 +9,19 @@ import 'package:flutter/material.dart';
 /// `Navigator.of(context).pop()` 关闭，或直接使用 [runWithLoadingDialog]
 /// 自动管理弹出与关闭。
 void showLoadingDialog(BuildContext context, String message) {
-  showDialog<void>(
+  showMiuixDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => PopScope(
+    builder: (ctx) => PopScope(
+      // 拦截返回键。程序化的 Navigator.pop（runWithLoadingDialog 的关闭路径）
+      // 不走 maybePop，不受此限制，正是所需语义。
       canPop: false,
-      child: AlertDialog(
-        content: Row(
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(width: 20),
-            Expanded(child: Text(message)),
-          ],
-        ),
+      child: Row(
+        children: [
+          const MiuixInfiniteProgressIndicator(),
+          const SizedBox(width: 20),
+          Expanded(child: MiuixText(message)),
+        ],
       ),
     ),
   );

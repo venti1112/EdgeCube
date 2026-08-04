@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -17,6 +18,9 @@ import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
 import '../widgets/placeholder_page.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/miuix_snackbar.dart';
 
 /// 实例导出页：把指定实例目录下的全部文件压缩为 zip 压缩包并导出。
 ///
@@ -30,39 +34,45 @@ class InstanceExportPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = InstanceScope.of(context);
     final instances = controller.instances;
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('instanceExport.title'))),
-      body: SafeArea(
-        child: instances.isEmpty
-            ? PlaceholderPage(
-                icon: Icons.archive_outlined,
-                title: context.tr('instanceExport.emptyTitle'),
-                description: context.tr('instanceExport.emptyDescription'),
-              )
-            : ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(
-                      context.tr('instanceExport.intro'),
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('instanceExport.title'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: instances.isEmpty
+              ? PlaceholderPage(
+                  icon: Icons.archive_outlined,
+                  title: context.tr('instanceExport.emptyTitle'),
+                  description: context.tr('instanceExport.emptyDescription'),
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        context.tr('instanceExport.intro'),
+                        style: theme.textStyles.body2.copyWith(
+                          color: theme.colors.onSurfaceVariantSummary,
+                        ),
                       ),
                     ),
-                  ),
-                  for (final instance in instances) ...[
-                    _InstanceExportTile(
-                      controller: controller,
-                      instance: instance,
-                      selected: instance.id == controller.selected?.id,
-                    ),
-                    const SizedBox(height: 12),
+                    for (final instance in instances) ...[
+                      _InstanceExportTile(
+                        controller: controller,
+                        instance: instance,
+                        selected: instance.id == controller.selected?.id,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                   ],
-                ],
-              ),
+                ),
+        ),
       ),
     );
   }
@@ -82,44 +92,40 @@ class _InstanceExportTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.dns_outlined,
-              color: selected ? theme.colorScheme.primary : null,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(instance.name, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 2),
-                  Text(
-                    instance.id,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+    final theme = MiuixTheme.of(context);
+    return MiuixCard(
+      insideMargin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Icon(
+            selected ? Icons.radio_button_checked : Icons.dns_outlined,
+            color: selected ? theme.colors.primary : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(instance.name, style: theme.textStyles.title4),
+                const SizedBox(height: 2),
+                Text(
+                  instance.id,
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: theme.colors.onSurfaceVariantSummary,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            IconButton(
-              tooltip: context.tr('instanceExport.shareTooltip'),
-              icon: const Icon(Icons.share_outlined),
-              onPressed: () => _share(context),
-            ),
-            IconButton(
-              tooltip: context.tr('instanceExport.saveTooltip'),
-              icon: const Icon(Icons.folder_copy_outlined),
-              onPressed: () => _saveToFolder(context),
-            ),
-          ],
-        ),
+          ),
+          MiuixIconButton(
+            onPressed: () => _share(context),
+            child: MiuixIcon(icon: Icons.share_outlined),
+          ),
+          MiuixIconButton(
+            onPressed: () => _saveToFolder(context),
+            child: MiuixIcon(icon: Icons.folder_copy_outlined),
+          ),
+        ],
       ),
     );
   }
@@ -170,7 +176,6 @@ class _InstanceExportTile extends StatelessWidget {
 
   /// 压缩实例目录到用户选择的外部文件夹。
   Future<void> _saveToFolder(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
     final dirNotExistMsg = context.tr('instanceExport.dirNotExist', {
       'name': instance.name,
     });
@@ -197,11 +202,7 @@ class _InstanceExportTile extends StatelessWidget {
         '${_sanitizeName(instance.name)}.zip',
       );
       if (context.mounted) Navigator.of(context).pop();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(tr('instanceExport.savedTo', {'path': zipPath})),
-        ),
-      );
+      showMiuixSnackbar(tr('instanceExport.savedTo', {'path': zipPath}));
     } catch (e) {
       if (context.mounted) {
         Navigator.of(context).pop();
@@ -217,22 +218,12 @@ class _InstanceExportTile extends StatelessWidget {
   Future<bool> _ensurePermission(BuildContext context) async {
     if (await StoragePermission.isGranted()) return true;
     if (!context.mounted) return false;
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(context.tr('instanceExport.permissionTitle')),
-        content: Text(context.tr('instanceExport.permissionContent')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(context.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(context.tr('instanceExport.grantPermission')),
-          ),
-        ],
-      ),
+    final go = await showMiuixConfirm(
+      context,
+      title: context.tr('instanceExport.permissionTitle'),
+      message: context.tr('instanceExport.permissionContent'),
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('instanceExport.grantPermission'),
     );
     if (go == true) {
       await StoragePermission.request();

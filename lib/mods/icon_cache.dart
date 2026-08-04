@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -169,7 +170,7 @@ class _CachedModIconState extends State<CachedModIcon> {
       width: widget.size,
       height: widget.size,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: MiuixTheme.of(context).colors.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Icon(Icons.extension, size: widget.size * 0.6),

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -9,6 +10,9 @@ import '../../frp/frp_provider.dart';
 import '../../frp/frp_provider_service.dart';
 import '../../i18n/locale_scope.dart';
 import '../../widgets/error_dialog.dart';
+import '../../widgets/ec_preference.dart';
+import '../../widgets/ec_text_field.dart';
+import '../../widgets/miuix_snackbar.dart';
 import 'frp_provider_tunnels_page.dart';
 
 /// 供应商登录页：已存 token 自动验证进入；否则按供应商提供浏览器授权登录
@@ -91,9 +95,9 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
       if (mounted) {
         showErrorDialog(
           context,
-          LocaleScope.of(context)
-              .translations
-              .get('frp.networkError', {'error': '$e'}),
+          LocaleScope.of(
+            context,
+          ).translations.get('frp.networkError', {'error': '$e'}),
         );
       }
     } finally {
@@ -105,8 +109,9 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
   Future<void> _startBrowserLogin() async {
     setState(() => _busy = true);
     try {
-      final session =
-          await FrpProviderService.createBrowserLogin(widget.provider);
+      final session = await FrpProviderService.createBrowserLogin(
+        widget.provider,
+      );
       if (!mounted) return;
       setState(() {
         _browserSession = session;
@@ -209,9 +214,7 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
     if (url == null) return;
     await Clipboard.setData(ClipboardData(text: url));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('frp.browserLoginLinkCopied'))),
-      );
+      showMiuixSnackbar(context.tr('frp.browserLoginLinkCopied'));
     }
   }
 
@@ -222,9 +225,9 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
     } else {
       showErrorDialog(
         context,
-        LocaleScope.of(context)
-            .translations
-            .get('frp.networkError', {'error': '$e'}),
+        LocaleScope.of(
+          context,
+        ).translations.get('frp.networkError', {'error': '$e'}),
       );
     }
   }
@@ -243,109 +246,118 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.provider.displayName)),
-      body: SafeArea(
-        child: !_autoLoginTried
-            ? const Center(child: CircularProgressIndicator())
-            : ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-
-                  _buildLoginCard(theme),
-                ],
-              ),
+    final theme = MiuixTheme.of(context);
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: widget.provider.displayName,
+        navigationIcon: const EcBackButton(),
       ),
-    );
-  }
-
-  Widget _buildLoginCard(ThemeData theme) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.login, size: 20, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Text(
-                  context.tr('frp.loginTitle'),
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                  ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: !_autoLoginTried
+              ? const Center(child: MiuixInfiniteProgressIndicator())
+              : ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [_buildLoginCard(theme)],
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_useBrowserLogin) ...[
-              _buildBrowserSection(theme),
-              // 浏览器等待授权时，操作按钮在 section 内提供，隐藏底部主按钮。
-              if (!_polling) ...[
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _busy ? null : _startBrowserLogin,
-                    icon: _busy
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.open_in_browser, size: 18),
-                    label: Text(context.tr('frp.browserLoginStart')),
-                  ),
-                ),
-              ],
-            ] else ...[
-              TextField(
-                controller: _tokenField,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: context.tr('frp.accessToken'),
-                  hintText: context.tr('frp.accessTokenHint'),
-                  isDense: true,
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                context.tr('frp.tokenHelp.${widget.provider.key}'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : _loginWithToken,
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.login, size: 18),
-                  label: Text(context.tr('frp.login')),
-                ),
-              ),
-            ],
-          ],
         ),
       ),
     );
   }
 
-  Widget _buildBrowserSection(ThemeData theme) {
+  Widget _buildLoginCard(MiuixThemeData theme) {
+    return MiuixCard(
+      insideMargin: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.login, size: 20, color: theme.colors.primary),
+              const SizedBox(width: 8),
+              Text(
+                context.tr('frp.loginTitle'),
+                style: theme.textStyles.subtitle.copyWith(
+                  color: theme.colors.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_useBrowserLogin) ...[
+            _buildBrowserSection(theme),
+            // 浏览器等待授权时，操作按钮在 section 内提供，隐藏底部主按钮。
+            if (!_polling) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: MiuixButton(
+                  onPressed: _busy ? null : _startBrowserLogin,
+                  colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _busy
+                          ? const MiuixInfiniteProgressIndicator(size: 18)
+                          : const MiuixIcon(
+                              icon: Icons.open_in_browser,
+                              size: 18,
+                            ),
+                      const SizedBox(width: 8),
+                      MiuixText(context.tr('frp.browserLoginStart')),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ] else ...[
+            EcTextField(
+              controller: _tokenField,
+              label: context.tr('frp.accessToken'),
+              hint: context.tr('frp.accessTokenHint'),
+              obscureText: true,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              context.tr('frp.tokenHelp.${widget.provider.key}'),
+              style: theme.textStyles.footnote1.copyWith(
+                color: theme.colors.onSurfaceVariantSummary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: MiuixButton(
+                onPressed: _busy ? null : _loginWithToken,
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _busy
+                        ? const MiuixInfiniteProgressIndicator(size: 18)
+                        : const MiuixIcon(
+                            icon: Icons.open_in_browser,
+                            size: 18,
+                          ),
+                    const SizedBox(width: 8),
+                    MiuixText(context.tr('frp.login')),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBrowserSection(MiuixThemeData theme) {
     if (!_polling) {
       return Text(
         context.tr('frp.browserLoginHint'),
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+        style: theme.textStyles.footnote1.copyWith(
+          color: theme.colors.onSurfaceVariantSummary,
         ),
       );
     }
@@ -357,13 +369,13 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
             const SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: MiuixInfiniteProgressIndicator(size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 context.tr('frp.browserLoginWaiting'),
-                style: theme.textTheme.bodyMedium,
+                style: theme.textStyles.body2,
               ),
             ),
           ],
@@ -375,7 +387,7 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
+              color: theme.colors.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(
@@ -383,14 +395,14 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
               children: [
                 Text(
                   context.tr('frp.deviceCodeLabel'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: theme.colors.onSurfaceVariantSummary,
                   ),
                 ),
                 const SizedBox(height: 4),
                 SelectableText(
                   _browserSession!.userCode,
-                  style: theme.textTheme.headlineSmall?.copyWith(
+                  style: theme.textStyles.title2.copyWith(
                     fontWeight: FontWeight.bold,
                     letterSpacing: 2,
                   ),
@@ -404,20 +416,38 @@ class _FrpProviderLoginPageState extends State<FrpProviderLoginPage> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            OutlinedButton.icon(
+            MiuixButton(
               onPressed: _reopenAuthLink,
-              icon: const Icon(Icons.open_in_browser, size: 18),
-              label: Text(context.tr('frp.browserLoginReopen')),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  MiuixIcon(icon: Icons.open_in_browser, size: 18),
+                  const SizedBox(width: 8),
+                  MiuixText(context.tr('frp.browserLoginReopen')),
+                ],
+              ),
             ),
-            OutlinedButton.icon(
+            MiuixButton(
               onPressed: _copyAuthLink,
-              icon: const Icon(Icons.copy, size: 18),
-              label: Text(context.tr('frp.browserLoginCopyLink')),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  MiuixIcon(icon: Icons.copy, size: 18),
+                  const SizedBox(width: 8),
+                  MiuixText(context.tr('frp.browserLoginCopyLink')),
+                ],
+              ),
             ),
-            TextButton.icon(
+            MiuixButton(
               onPressed: _cancelBrowserLogin,
-              icon: const Icon(Icons.close, size: 18),
-              label: Text(context.tr('frp.browserLoginCancel')),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  MiuixIcon(icon: Icons.close, size: 18),
+                  const SizedBox(width: 8),
+                  MiuixText(context.tr('frp.browserLoginCancel')),
+                ],
+              ),
             ),
           ],
         ),

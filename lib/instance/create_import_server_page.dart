@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../files/file_service.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_dialog.dart';
 import 'create_instance_page.dart';
 import 'instance.dart';
 import 'instance_controller.dart';
@@ -101,42 +104,38 @@ class _ImportServerPageState extends State<ImportServerPage> {
   }
 
   Future<bool?> _showImportPermissionDialog() {
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.storagePermissionTitle')),
-        content: Text(ctx.tr('instance.importStoragePermissionMessage')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('instance.goGrant')),
-          ),
-        ],
-      ),
+    return showMiuixConfirm(
+      context,
+      title: context.tr('instance.storagePermissionTitle'),
+      message: context.tr('instance.importStoragePermissionMessage'),
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('instance.goGrant'),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('instance.titleImportServer'))),
-      body: SafeArea(
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 24),
-              Text(
-                context.tr('instance.selectJarPrompt'),
-                style: theme.textTheme.titleMedium,
-              ),
-            ],
+    final theme = MiuixTheme.of(context);
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('instance.titleImportServer'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const MiuixInfiniteProgressIndicator(),
+                const SizedBox(height: 24),
+                Text(
+                  context.tr('instance.selectJarPrompt'),
+                  style: theme.textStyles.title4,
+                ),
+              ],
+            ),
           ),
         ),
       ),

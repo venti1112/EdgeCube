@@ -229,24 +229,22 @@ class EcpkgCatalogService {
     final headers = await CloudHeaders.base();
 
     // 1. 拉取 list.json（顶层数组），取第一个有效响应。
-    final rawList = await OnlineService.fetchFirstValid<List<dynamic>>(
-      urls,
-      (url) async {
-        final uri = Uri.parse(url);
-        final response = await http
-            .get(uri, headers: headers)
-            .timeout(const Duration(seconds: 20));
-        if (response.statusCode != 200) {
-          throw Exception('HTTP ${response.statusCode}');
-        }
-        final body = jsonDecode(response.body);
-        if (body is! List) {
-          throw Exception(tr('ecpkg.expectTopLevelArray'));
-        }
-        return body;
-      },
-      (list) => list.isNotEmpty,
-    );
+    final rawList = await OnlineService.fetchFirstValid<List<dynamic>>(urls, (
+      url,
+    ) async {
+      final uri = Uri.parse(url);
+      final response = await http
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+      final body = jsonDecode(response.body);
+      if (body is! List) {
+        throw Exception(tr('ecpkg.expectTopLevelArray'));
+      }
+      return body;
+    }, (list) => list.isNotEmpty);
 
     // 2. 解析分类壳 + 包 metadata URL 列表。
     final shells = <_CategoryShell>[];
@@ -256,26 +254,30 @@ class EcpkgCatalogService {
           .whereType<String>()
           .where((u) => u.isNotEmpty)
           .toList();
-      shells.add(_CategoryShell(
-        type: obj['type'] as String? ?? '',
-        nameKey: obj['nameKey'] as String? ?? obj['type'] as String? ?? '',
-        icon: obj['icon'] as String?,
-        description: obj['description'] as String?,
-        packageUrls: pkgUrls,
-      ));
+      shells.add(
+        _CategoryShell(
+          type: obj['type'] as String? ?? '',
+          nameKey: obj['nameKey'] as String? ?? obj['type'] as String? ?? '',
+          icon: obj['icon'] as String?,
+          description: obj['description'] as String?,
+          packageUrls: pkgUrls,
+        ),
+      );
     }
 
     // 3. 并行拉取每个包的 metadata，组装 catalog。
     final categories = <EcpkgCategory>[];
     for (final shell in shells) {
       final pkgs = await _fetchPackages(shell.packageUrls, headers);
-      categories.add(EcpkgCategory(
-        type: shell.type,
-        nameKey: shell.nameKey,
-        icon: shell.icon,
-        description: shell.description,
-        packages: pkgs,
-      ));
+      categories.add(
+        EcpkgCategory(
+          type: shell.type,
+          nameKey: shell.nameKey,
+          icon: shell.icon,
+          description: shell.description,
+          packages: pkgs,
+        ),
+      );
     }
 
     return EcpkgCatalog(categories: categories);
@@ -286,9 +288,7 @@ class EcpkgCatalogService {
     List<String> urls,
     Map<String, String> headers,
   ) async {
-    final results = await Future.wait(
-      urls.map((u) => _fetchOne(u, headers)),
-    );
+    final results = await Future.wait(urls.map((u) => _fetchOne(u, headers)));
     return results.whereType<EcpkgCatalogPackage>().toList();
   }
 

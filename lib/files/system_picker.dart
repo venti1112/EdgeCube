@@ -1,10 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/ec_text_field.dart';
+import '../widgets/miuix_dialog.dart';
 import 'file_entry.dart';
 import 'file_search_bar.dart';
 import 'file_service.dart';
@@ -206,17 +210,17 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
   }
 
   /// 顶部类型过滤提示条：告知用户当前仅显示哪些扩展名的文件。
-  Widget _buildFilterHint(ThemeData theme) {
+  Widget _buildFilterHint(MiuixThemeData theme) {
     return Container(
       width: double.infinity,
-      color: theme.colorScheme.surfaceContainerHighest,
+      color: theme.colors.surfaceContainerHighest,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           Icon(
             Icons.filter_alt_outlined,
             size: 16,
-            color: theme.colorScheme.onSurfaceVariant,
+            color: theme.colors.onSurfaceVariantSummary,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -224,8 +228,8 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
               context.tr('picker.filterHint', {
                 'types': widget.allowedExtensions!.join(' '),
               }),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              style: theme.textStyles.footnote1.copyWith(
+                color: theme.colors.onSurfaceVariantSummary,
               ),
             ),
           ),
@@ -236,7 +240,7 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final pickingDir = widget.mode == SystemPickMode.directory;
     return PopScope(
       // 搜索/未到根目录时拦截系统返回键：先退出搜索，其次回上一级；根目录才退出。
@@ -249,76 +253,87 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
         }
         _goUp();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            pickingDir
-                ? context.tr('picker.selectTargetFolder')
-                : context.tr('picker.selectFileToImport'),
-          ),
+      child: MiuixScaffold(
+        topBar: MiuixSmallTopAppBar(
+          title: pickingDir
+              ? context.tr('picker.selectTargetFolder')
+              : context.tr('picker.selectFileToImport'),
+          navigationIcon: const EcBackButton(),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.search),
-              tooltip: context.tr('fileSearch.search'),
+            MiuixIconButton(
               onPressed: _enterSearch,
+              child: MiuixIcon(icon: Icons.search),
             ),
             if (pickingDir) ...[
-              IconButton(
-                icon: const Icon(Icons.create_new_folder_outlined),
-                tooltip: context.tr('picker.newFolder'),
+              MiuixIconButton(
                 onPressed: _createFolder,
+                child: MiuixIcon(icon: Icons.create_new_folder_outlined),
               ),
               Padding(
                 padding: const EdgeInsets.only(left: 4, right: 8),
-                child: FilledButton(
+                child: MiuixButton(
                   onPressed: () => Navigator.of(context).pop(_current.path),
-                  child: Text(context.tr('picker.selectHere')),
+                  colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                  child: MiuixText(context.tr('picker.selectHere')),
                 ),
               ),
             ],
           ],
         ),
-        body: _searchMode
-            ? Column(
-                children: [
-                  FileSearchBar(
-                    controller: _searchController,
-                    recursive: _searchRecursive,
-                    onRecursiveChanged: _toggleSearchRecursive,
-                    onClose: _exitSearch,
-                  ),
-                  const Divider(height: 1),
-                  if (_hasFilter) _buildFilterHint(theme),
-                  Expanded(child: _buildSearchBody(theme)),
-                ],
-              )
-            : Column(
-                children: [
-                  ListTile(
-                    leading: IconButton(
-                      icon: const Icon(Icons.arrow_upward),
-                      tooltip: context.tr('picker.upOneLevel'),
-                      onPressed: _canGoUp ? _goUp : null,
+        content: (padding) => Padding(
+          padding: padding,
+          child: _searchMode
+              ? Column(
+                  children: [
+                    FileSearchBar(
+                      controller: _searchController,
+                      recursive: _searchRecursive,
+                      onRecursiveChanged: _toggleSearchRecursive,
+                      onClose: _exitSearch,
                     ),
-                    title: Text(
-                      _atRoot
-                          ? context.tr('picker.internalStorage')
-                          : _current.path,
-                      style: theme.textTheme.bodySmall,
-                      overflow: TextOverflow.ellipsis,
+                    const MiuixHorizontalDivider(),
+                    if (_hasFilter) _buildFilterHint(theme),
+                    Expanded(child: _buildSearchBody(theme)),
+                  ],
+                )
+              : Column(
+                  children: [
+                    MiuixBasicComponent(
+                      startAction: Padding(
+                        padding: const EdgeInsets.only(right: 16),
+                        child: MiuixIconButton(
+                          onPressed: _canGoUp ? _goUp : null,
+                          child: MiuixIcon(icon: Icons.arrow_upward),
+                        ),
+                      ),
+                      content: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _atRoot
+                                  ? context.tr('picker.internalStorage')
+                                  : _current.path,
+                              style: theme.textStyles.footnote1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ),
-                  const Divider(height: 1),
-                  if (_hasFilter) _buildFilterHint(theme),
-                  Expanded(child: _buildBody(theme)),
-                ],
-              ),
+                    const MiuixHorizontalDivider(),
+                    if (_hasFilter) _buildFilterHint(theme),
+                    Expanded(child: _buildBody(theme)),
+                  ],
+                ),
+        ),
       ),
     );
   }
 
   /// 搜索结果区，复用条目点击逻辑（目录进入、文件选择）。
-  Widget _buildSearchBody(ThemeData theme) {
+  Widget _buildSearchBody(MiuixThemeData theme) {
     if (_searching) return const Center(child: CircularProgressIndicator());
     if (_searchController.text.trim().isEmpty) {
       return Center(
@@ -327,8 +342,8 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
           child: Text(
             context.tr('fileSearch.prompt'),
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: theme.textStyles.body2.copyWith(
+              color: theme.colors.onSurfaceVariantSummary,
             ),
           ),
         ),
@@ -341,8 +356,8 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
           child: Text(
             context.tr('fileSearch.noResults'),
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: theme.textStyles.body2.copyWith(
+              color: theme.colors.onSurfaceVariantSummary,
             ),
           ),
         ),
@@ -357,24 +372,34 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
   /// 单个条目列表项。[inSearch] 为 true 时点击目录会进入该目录并退出搜索，
   /// 副标题显示相对当前目录的路径。
   Widget _buildEntryTile(FileEntry entry, {bool inSearch = false}) {
-    final theme = Theme.of(context);
-    final selectableFile =
-        widget.mode == SystemPickMode.file && entry.isFile;
+    final theme = MiuixTheme.of(context);
+    final selectableFile = widget.mode == SystemPickMode.file && entry.isFile;
     final rel = p.relative(entry.path, from: _current.path);
-    return ListTile(
-      leading: Icon(
-        entry.isLink
-            ? Icons.link
-            : entry.isDirectory
-            ? Icons.folder
-            : Icons.insert_drive_file_outlined,
+    return MiuixBasicComponent(
+      startAction: Padding(
+        padding: const EdgeInsets.only(right: 16),
+        child: Icon(
+          entry.isLink
+              ? Icons.link
+              : entry.isDirectory
+              ? Icons.folder
+              : Icons.insert_drive_file_outlined,
+        ),
       ),
-      title: Text(entry.name),
-      subtitle: inSearch && rel.contains(p.separator)
-          ? Text(rel, style: theme.textTheme.bodySmall)
-          : null,
-      trailing: entry.isDirectory ? const Icon(Icons.chevron_right) : null,
-      onTap: entry.isDirectory
+      content: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(entry.name),
+            ?inSearch && rel.contains(p.separator)
+                ? Text(rel, style: theme.textStyles.footnote1)
+                : null,
+          ],
+        ),
+      ],
+      endActions: [?entry.isDirectory ? const Icon(Icons.chevron_right) : null],
+      onClick: entry.isDirectory
           ? () {
               if (inSearch) _exitSearch();
               _enter(entry);
@@ -385,7 +410,7 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
     );
   }
 
-  Widget _buildBody(ThemeData theme) {
+  Widget _buildBody(MiuixThemeData theme) {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
@@ -409,8 +434,8 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
                   })
                 : context.tr('picker.emptyFolder'),
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: theme.textStyles.body2.copyWith(
+              color: theme.colors.onSurfaceVariantSummary,
             ),
           ),
         ),
@@ -426,25 +451,40 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
 /// 弹出输入框让用户输入新文件夹名称；取消或留空返回 null。
 Future<String?> _promptFolderName(BuildContext context) async {
   final controller = TextEditingController();
-  final result = await showDialog<String>(
+  final result = await showMiuixDialog<String>(
     context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(context.tr('picker.newFolder')),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        decoration: InputDecoration(labelText: context.tr('picker.folderName')),
-        onSubmitted: (v) => Navigator.of(dialogContext).pop(v.trim()),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          child: Text(context.tr('common.cancel')),
+    builder: (dialogContext) => Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: MiuixText(
+            context.tr('picker.newFolder'),
+            textAlign: TextAlign.center,
+            style: MiuixTheme.of(context).textStyles.title4,
+          ),
         ),
-        TextButton(
-          onPressed: () =>
-              Navigator.of(dialogContext).pop(controller.text.trim()),
-          child: Text(context.tr('common.ok')),
+        const SizedBox(height: 12),
+        EcTextField(
+          controller: controller,
+          label: context.tr('picker.folderName'),
+          onSubmitted: (v) => Navigator.of(dialogContext).pop(v.trim()),
+          autofocus: true,
+        ),
+        const SizedBox(height: 20),
+        MiuixDialogActions(
+          children: [
+            MiuixTextButton(
+              context.tr('common.cancel'),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+            ),
+            MiuixTextButton(
+              context.tr('common.ok'),
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+            ),
+          ],
         ),
       ],
     ),

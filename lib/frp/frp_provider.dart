@@ -20,10 +20,8 @@ enum FrpProvider {
   /// 展示名（custom 用 i18n 文案，此处留空）。
   final String displayName;
 
-  static FrpProvider fromKey(String? key) => values.firstWhere(
-        (p) => p.key == key,
-        orElse: () => FrpProvider.custom,
-      );
+  static FrpProvider fromKey(String? key) =>
+      values.firstWhere((p) => p.key == key, orElse: () => FrpProvider.custom);
 
   /// 该供应商是否需要账号登录（custom 不需要）。
   bool get requiresLogin => this != FrpProvider.custom;
@@ -36,5 +34,4 @@ enum FrpProvider {
       this == FrpProvider.mslFrp ||
       this == FrpProvider.openFrp ||
       this == FrpProvider.chmlFrp;
-
 }

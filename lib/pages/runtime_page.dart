@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
@@ -15,6 +16,10 @@ import '../server/proot_service.dart';
 import '../server/runtime_service.dart';
 import '../server/runtime_update_service.dart';
 import '../server/signature_verify_result.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/ec_text_field.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/miuix_snackbar.dart';
 import 'container_files_page.dart';
 import 'ecpkg_download_page.dart';
 
@@ -97,22 +102,12 @@ class _RuntimePageState extends State<RuntimePage> {
   Future<void> _import() async {
     if (!await StoragePermission.isGranted()) {
       if (!mounted) return;
-      final go = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(ctx.tr('fileBrowser.permissionTitle')),
-          content: Text(ctx.tr('fileBrowser.permissionContent')),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(ctx.tr('common.cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(ctx.tr('fileBrowser.grantPermission')),
-            ),
-          ],
-        ),
+      final go = await showMiuixConfirm(
+        context,
+        title: context.tr('fileBrowser.permissionTitle'),
+        message: context.tr('fileBrowser.permissionContent'),
+        cancelLabel: context.tr('common.cancel'),
+        confirmLabel: context.tr('fileBrowser.grantPermission'),
       );
       if (go != true) return;
       await StoragePermission.request();
@@ -150,19 +145,26 @@ class _RuntimePageState extends State<RuntimePage> {
     if (!devMode) {
       // 严格模式：拒绝导入
       if (!mounted) return false;
-      await showDialog<void>(
+      await showMiuixDialog<void>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(tr.get('runtime.signature.warningTitle')),
-          content: Text(
-            result.hasSignature
-                ? tr.get('runtime.signature.invalid')
-                : tr.get('runtime.signature.noSignature'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(tr.get('common.close')),
+        title: tr.get('runtime.signature.warningTitle'),
+        builder: (ctx) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              result.hasSignature
+                  ? tr.get('runtime.signature.invalid')
+                  : tr.get('runtime.signature.noSignature'),
+            ),
+            const SizedBox(height: 20),
+            MiuixDialogActions(
+              children: [
+                MiuixTextButton(
+                  tr.get('common.close'),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                ),
+              ],
             ),
           ],
         ),
@@ -172,32 +174,19 @@ class _RuntimePageState extends State<RuntimePage> {
 
     // 警告模式：提示用户选择
     if (!mounted) return false;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr.get('runtime.signature.warningTitle')),
-        content: Text(
-          result.hasSignature
-              ? tr.get('runtime.signature.warningInvalid')
-              : tr.get('runtime.signature.warningNoSig'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(tr.get('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(tr.get('runtime.signature.continueAnyway')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: tr.get('runtime.signature.warningTitle'),
+      message: result.hasSignature
+          ? tr.get('runtime.signature.warningInvalid')
+          : tr.get('runtime.signature.warningNoSig'),
+      cancelLabel: tr.get('common.cancel'),
+      confirmLabel: tr.get('runtime.signature.continueAnyway'),
     );
     return confirmed == true;
   }
 
   Future<void> _doImport(String path, {bool force = false}) async {
-    final messenger = ScaffoldMessenger.of(context);
     final tr = LocaleScope.of(context).translations;
     setState(() => _importing = true);
     try {
@@ -209,30 +198,18 @@ class _RuntimePageState extends State<RuntimePage> {
       if (!mounted) return;
       await _load();
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(tr.get('runtime.importSuccess'))),
-      );
+      showMiuixSnackbar(tr.get('runtime.importSuccess'));
     } on PlatformException catch (e) {
       if (!mounted) return;
       if (e.code == 'IMPORT_FAILED' &&
           e.message?.contains('RUNTIME_EXISTS') == true &&
           !force) {
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text(tr.get('runtime.importConfirmTitle')),
-            content: Text(tr.get('runtime.importConfirmContent')),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text(tr.get('common.cancel')),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: Text(tr.get('common.replace')),
-              ),
-            ],
-          ),
+        final confirmed = await showMiuixConfirm(
+          context,
+          title: tr.get('runtime.importConfirmTitle'),
+          message: tr.get('runtime.importConfirmContent'),
+          cancelLabel: tr.get('common.cancel'),
+          confirmLabel: tr.get('common.replace'),
         );
         if (confirmed == true) {
           await _doImport(path, force: true);
@@ -245,17 +222,13 @@ class _RuntimePageState extends State<RuntimePage> {
       );
     } catch (e) {
       if (!mounted) return;
-      showErrorDialog(
-        context,
-        tr.get('runtime.importFailed', {'error': '$e'}),
-      );
+      showErrorDialog(context, tr.get('runtime.importFailed', {'error': '$e'}));
     } finally {
       if (mounted) setState(() => _importing = false);
     }
   }
 
   Future<void> _delete(RuntimeInfo info) async {
-    final theme = Theme.of(context);
     final tr = LocaleScope.of(context).translations;
     final runtimeRunning = await _service.isRuntimeRunning(info.id);
     if (runtimeRunning) {
@@ -265,27 +238,12 @@ class _RuntimePageState extends State<RuntimePage> {
     }
 
     if (!mounted) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr.get('runtime.deleteConfirmTitle')),
-        content: Text(
-          tr.get('runtime.deleteConfirmContent', {'name': info.name}),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(tr.get('common.cancel')),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: theme.colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(tr.get('common.delete')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: tr.get('runtime.deleteConfirmTitle'),
+      message: tr.get('runtime.deleteConfirmContent', {'name': info.name}),
+      cancelLabel: tr.get('common.cancel'),
+      confirmLabel: tr.get('common.delete'),
     );
     if (confirmed != true || !mounted) return;
 
@@ -299,10 +257,7 @@ class _RuntimePageState extends State<RuntimePage> {
       await _load();
     } catch (e) {
       if (!mounted) return;
-      showErrorDialog(
-        context,
-        tr.get('runtime.deleteFailed', {'error': '$e'}),
-      );
+      showErrorDialog(context, tr.get('runtime.deleteFailed', {'error': '$e'}));
     }
   }
 
@@ -317,22 +272,12 @@ class _RuntimePageState extends State<RuntimePage> {
 
     if (!await StoragePermission.isGranted()) {
       if (!mounted) return;
-      final go = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(ctx.tr('fileBrowser.permissionTitle')),
-          content: Text(ctx.tr('fileBrowser.permissionContent')),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(ctx.tr('common.cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(ctx.tr('fileBrowser.grantPermission')),
-            ),
-          ],
-        ),
+      final go = await showMiuixConfirm(
+        context,
+        title: context.tr('fileBrowser.permissionTitle'),
+        message: context.tr('fileBrowser.permissionContent'),
+        cancelLabel: context.tr('common.cancel'),
+        confirmLabel: context.tr('fileBrowser.grantPermission'),
       );
       if (go != true) return;
       await StoragePermission.request();
@@ -344,7 +289,13 @@ class _RuntimePageState extends State<RuntimePage> {
     final path = await pickFromSystem(
       context,
       mode: SystemPickMode.file,
-      allowedExtensions: const ['.zip', '.tar.zst', '.tar.xz', '.tar.gz', '.tgz'],
+      allowedExtensions: const [
+        '.zip',
+        '.tar.zst',
+        '.tar.xz',
+        '.tar.gz',
+        '.tgz',
+      ],
     );
     if (path == null) return;
     if (!mounted) return;
@@ -374,7 +325,6 @@ class _RuntimePageState extends State<RuntimePage> {
   }
 
   Future<void> _doImportRootfs(String path, {required String id}) async {
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _importingRootfs = true);
     try {
       // 导入前验证签名
@@ -385,9 +335,7 @@ class _RuntimePageState extends State<RuntimePage> {
       if (!mounted) return;
       await _load();
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(context.tr('runtime.proot.importRootfsSuccess'))),
-      );
+      showMiuixSnackbar(context.tr('runtime.proot.importRootfsSuccess'));
     } on PlatformException catch (e) {
       if (!mounted) return;
       if (e.code == 'ROOTFS_EXISTS') {
@@ -395,7 +343,9 @@ class _RuntimePageState extends State<RuntimePage> {
         // 方便用户在其基础上修改（如加后缀）。
         final newId = await _promptForRootfsId(
           title: context.tr('runtime.proot.rootfsExistsTitle'),
-          message: context.tr('runtime.proot.rootfsExistsMessage', {'error': e.message ?? 'ROOTFS_EXISTS'}),
+          message: context.tr('runtime.proot.rootfsExistsMessage', {
+            'error': e.message ?? 'ROOTFS_EXISTS',
+          }),
           defaultName: id,
         );
         if (newId != null && newId.isNotEmpty && mounted) {
@@ -405,7 +355,9 @@ class _RuntimePageState extends State<RuntimePage> {
       }
       showErrorDialog(
         context,
-        context.tr('runtime.proot.importRootfsFailed', {'error': e.message ?? ''}),
+        context.tr('runtime.proot.importRootfsFailed', {
+          'error': e.message ?? '',
+        }),
       );
     } catch (e) {
       if (!mounted) return;
@@ -434,69 +386,76 @@ class _RuntimePageState extends State<RuntimePage> {
     final controller = TextEditingController(text: defaultName ?? '');
     // 输入错误提示；用 ValueNotifier 让对话框内可局部刷新。
     final errorNotifier = ValueNotifier<String?>(null);
-    return showDialog<String>(
+    return showMiuixDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(message),
-            const SizedBox(height: 8),
-            TextField(
-              controller: controller,
-              decoration: InputDecoration(
-                hintText: ctx.tr('runtime.proot.rootfsNameHint'),
+      title: title,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(message),
+              const SizedBox(height: 8),
+              EcTextField(
+                controller: controller,
+                hint: ctx.tr('runtime.proot.rootfsNameHint'),
                 helperText: ctx.tr('runtime.proot.rootfsNameHelper'),
-                border: const OutlineInputBorder(),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9._-]')),
+                ],
+                onChanged: (_) {
+                  if (errorNotifier.value != null) {
+                    errorNotifier.value = null;
+                  }
+                },
+                autofocus: true,
               ),
-              autofocus: true,
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9._-]')),
-              ],
-              onChanged: (_) {
-                if (errorNotifier.value != null) {
-                  errorNotifier.value = null;
-                }
-              },
-            ),
-            ValueListenableBuilder<String?>(
-              valueListenable: errorNotifier,
-              builder: (_, err, _) => err == null
-                  ? const SizedBox.shrink()
-                  : Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        err,
-                        style: TextStyle(
-                          color: Theme.of(ctx).colorScheme.error,
-                          fontSize: 12,
+              ValueListenableBuilder<String?>(
+                valueListenable: errorNotifier,
+                builder: (_, err, _) => err == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          err,
+                          style: TextStyle(
+                            color: Theme.of(ctx).colorScheme.error,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
-                    ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(null),
-            child: Text(ctx.tr('common.cancel')),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () {
-              final name = controller.text.trim();
-              if (name.isEmpty) {
-                errorNotifier.value = ctx.tr('runtime.proot.nameEmpty');
-                return;
-              }
-              if (name.startsWith('.')) {
-                errorNotifier.value = ctx.tr('runtime.proot.nameStartsWithDot');
-                return;
-              }
-              Navigator.of(ctx).pop(name);
-            },
-            child: Text(ctx.tr('common.ok')),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                ctx.tr('common.cancel'),
+                onPressed: () => Navigator.of(ctx).pop(null),
+              ),
+              MiuixButton(
+                onPressed: () {
+                  final name = controller.text.trim();
+                  if (name.isEmpty) {
+                    errorNotifier.value = ctx.tr('runtime.proot.nameEmpty');
+                    return;
+                  }
+                  if (name.startsWith('.')) {
+                    errorNotifier.value = ctx.tr(
+                      'runtime.proot.nameStartsWithDot',
+                    );
+                    return;
+                  }
+                  Navigator.of(ctx).pop(name);
+                },
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(ctx.tr('common.ok')),
+              ),
+            ],
           ),
         ],
       ),
@@ -504,26 +463,12 @@ class _RuntimePageState extends State<RuntimePage> {
   }
 
   Future<void> _deleteRootfs(ProotRootfsInfo info) async {
-    final theme = Theme.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.tr('runtime.proot.deleteRootfsTitle')),
-        content: Text(context.tr('runtime.proot.deleteRootfsContent', {'id': info.id})),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(context.tr('common.cancel')),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: theme.colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(context.tr('common.delete')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: context.tr('runtime.proot.deleteRootfsTitle'),
+      message: context.tr('runtime.proot.deleteRootfsContent', {'id': info.id}),
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('common.delete'),
     );
     if (confirmed != true || !mounted) return;
 
@@ -547,7 +492,6 @@ class _RuntimePageState extends State<RuntimePage> {
   /// 检查单个运行时更新。
   Future<void> _checkUpdate(RuntimeInfo info) async {
     final tr = LocaleScope.of(context).translations;
-    final messenger = ScaffoldMessenger.of(context);
 
     if (!info.canCheckUpdate) {
       showErrorDialog(context, tr.get('runtime.update.noUpdateUrl'));
@@ -585,9 +529,7 @@ class _RuntimePageState extends State<RuntimePage> {
     }
 
     if (!RuntimeUpdateService.hasUpdate(info, updateInfo)) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(tr.get('runtime.update.alreadyLatest'))),
-      );
+      showMiuixSnackbar(tr.get('runtime.update.alreadyLatest'));
       return;
     }
 
@@ -602,57 +544,65 @@ class _RuntimePageState extends State<RuntimePage> {
   ) async {
     final tr = LocaleScope.of(context).translations;
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showMiuixDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr.get('runtime.update.availableTitle')),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                tr.get('runtime.update.versionRow', {
-                  'current': tr.get('runtime.versionWithBuild', {
-                    'version': runtime.displayVersion,
-                    'build': runtime.version.toString(),
-                  }),
-                  'latest': tr.get('runtime.versionWithBuild', {
-                    'version': info.displayVersion,
-                    'build': info.version.toString(),
-                  }),
-                }),
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              if (info.publishedAt != null) ...[
-                const SizedBox(height: 8),
+      title: tr.get('runtime.update.availableTitle'),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  tr.get('runtime.update.publishedAt', {
-                    'date': info.publishedAt!,
+                  tr.get('runtime.update.versionRow', {
+                    'current': tr.get('runtime.versionWithBuild', {
+                      'version': runtime.displayVersion,
+                      'build': runtime.version.toString(),
+                    }),
+                    'latest': tr.get('runtime.versionWithBuild', {
+                      'version': info.displayVersion,
+                      'build': info.version.toString(),
+                    }),
                   }),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                if (info.publishedAt != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    tr.get('runtime.update.publishedAt', {
+                      'date': info.publishedAt!,
+                    }),
+                  ),
+                ],
+                if (info.releaseNotes != null &&
+                    info.releaseNotes!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(info.releaseNotes!),
+                ],
+                const SizedBox(height: 12),
+                MiuixText(
+                  tr.get('runtime.update.noteOverwrite'),
+                  style: MiuixTheme.of(ctx).textStyles.footnote1,
                 ),
               ],
-              if (info.releaseNotes != null &&
-                  info.releaseNotes!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(info.releaseNotes!),
-              ],
-              const SizedBox(height: 12),
-              Text(
-                tr.get('runtime.update.noteOverwrite'),
-                style: Theme.of(ctx).textTheme.bodySmall,
+            ),
+          ),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                tr.get('common.cancel'),
+                onPressed: () => Navigator.of(ctx).pop(false),
+              ),
+              MiuixButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(tr.get('runtime.update.download')),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(tr.get('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(tr.get('runtime.update.download')),
           ),
         ],
       ),
@@ -680,7 +630,6 @@ class _RuntimePageState extends State<RuntimePage> {
     RuntimeUpdatePackage pkg,
   ) async {
     final tr = LocaleScope.of(context).translations;
-    final messenger = ScaffoldMessenger.of(context);
 
     final progressNotifier = ValueNotifier<_DownloadProgress>(
       _DownloadProgress(
@@ -692,7 +641,7 @@ class _RuntimePageState extends State<RuntimePage> {
     var cancelled = false;
 
     // 进度对话框（用户可取消下载）
-    final dialogFuture = showDialog<void>(
+    final dialogFuture = showMiuixDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _UpdateProgressDialog(
@@ -761,9 +710,7 @@ class _RuntimePageState extends State<RuntimePage> {
       await dialogFuture;
       progressNotifier.dispose();
       if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text(tr.get('runtime.update.cancelled'))),
-        );
+        showMiuixSnackbar(tr.get('runtime.update.cancelled'));
       }
       return;
     }
@@ -791,9 +738,7 @@ class _RuntimePageState extends State<RuntimePage> {
       progressNotifier.dispose();
       await _load();
       if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text(tr.get('runtime.update.success'))),
-        );
+        showMiuixSnackbar(tr.get('runtime.update.success'));
       }
     } catch (e) {
       if (!mounted) {
@@ -828,241 +773,310 @@ class _RuntimePageState extends State<RuntimePage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final showProotSection = _prootAvailable || _prootRootfs.isNotEmpty;
-    return Scaffold(
-      appBar: AppBar(
-  title: Text(context.tr('runtime.title')),
-  actions: [
-    IconButton(
-      icon: const Icon(Icons.cloud_download_outlined),
-      tooltip: context.tr('ecpkgDownload.browse'),
-      onPressed: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const EcpkgDownloadPage()),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('runtime.title'),
+        navigationIcon: const EcBackButton(),
+        actions: [
+          MiuixIconButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const EcpkgDownloadPage()),
+            ),
+            child: MiuixIcon(icon: Icons.cloud_download_outlined),
+          ),
+        ],
       ),
-    ),
-  ],
-),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // —— 原生运行时区（直接在 Android 上运行，区别于 proot 容器）——
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.extension_outlined, size: 18),
-                      const SizedBox(width: 8),
-                      Text(
-                        context.tr('runtime.nativeRuntimeSection'),
-                        style: theme.textTheme.titleSmall,
-                      ),
-                      const Spacer(),
-                      if (_runtimes.isNotEmpty)
+      content: (padding) => Padding(
+        padding: padding,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  // —— 原生运行时区（直接在 Android 上运行，区别于 proot 容器）——
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.extension_outlined, size: 18),
+                        const SizedBox(width: 8),
                         Text(
-                          context.tr('runtime.count', {'count': '${_runtimes.length}'}),
-                          style: theme.textTheme.bodySmall,
+                          context.tr('runtime.nativeRuntimeSection'),
+                          style: theme.textStyles.subtitle,
                         ),
-                    ],
+                        const Spacer(),
+                        if (_runtimes.isNotEmpty)
+                          Text(
+                            context.tr('runtime.count', {
+                              'count': '${_runtimes.length}',
+                            }),
+                            style: theme.textStyles.footnote1,
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-                for (final rt in _runtimes)
-                  Card(
-                      child: ListTile(
-                        leading: Icon(switch (rt.type) {
-                          'jre' => Icons.coffee,
-                          'php' => Icons.code,
-                          'frpc' => Icons.network_check,
-                          _ => Icons.memory,
-                        }, size: 32),
-                        title: Text(rt.name),
-                        subtitle: Text(
-                          '${_typeLabel(rt.type)} · ${context.tr('runtime.versionWithBuild', {
-                            'version': rt.displayVersion,
-                            'build': rt.version.toString(),
-                          })}',
-                          style: theme.textTheme.bodySmall,
+                  for (final rt in _runtimes)
+                    MiuixCard(
+                      child: MiuixBasicComponent(
+                        startAction: Padding(
+                          padding: const EdgeInsets.only(right: 16),
+                          child: Icon(switch (rt.type) {
+                            'jre' => Icons.coffee,
+                            'php' => Icons.code,
+                            'frpc' => Icons.network_check,
+                            _ => Icons.memory,
+                          }, size: 32),
                         ),
-                        trailing: Row(
+                        content: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(rt.name),
+                              Text(
+                                '${_typeLabel(rt.type)} · ${context.tr('runtime.versionWithBuild', {'version': rt.displayVersion, 'build': rt.version.toString()})}',
+                                style: theme.textStyles.footnote1,
+                              ),
+                            ],
+                          ),
+                        ],
+                        endActions: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              MiuixIconButton(
+                                onPressed: rt.canCheckUpdate
+                                    ? () => _checkUpdate(rt)
+                                    : null,
+                                child: MiuixIcon(icon: Icons.system_update_alt),
+                              ),
+                              MiuixIconButton(
+                                onPressed: () => _delete(rt),
+                                child: MiuixIcon(icon: Icons.delete_outline),
+                              ),
+                              MiuixOverlayIconDropdownMenu(
+                                entry: MiuixDropdownEntry(
+                                  items: [
+                                    if (rt.homepage != null &&
+                                        rt.homepage!.isNotEmpty)
+                                      MiuixDropdownItem(
+                                        text: context.tr(
+                                          'runtime.openHomepage',
+                                        ),
+                                        onClick: () => launchUrl(
+                                          Uri.parse(rt.homepage!),
+                                          mode: LaunchMode.externalApplication,
+                                        ),
+                                      ),
+                                    if (rt.repository != null &&
+                                        rt.repository!.isNotEmpty)
+                                      MiuixDropdownItem(
+                                        text: context.tr(
+                                          'runtime.openRepository',
+                                        ),
+                                        onClick: () => launchUrl(
+                                          Uri.parse(rt.repository!),
+                                          mode: LaunchMode.externalApplication,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                child: const MiuixIcon(icon: Icons.more_vert),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  MiuixCard(
+                    child: MiuixBasicComponent(
+                      startAction: Padding(
+                        padding: const EdgeInsets.only(right: 16),
+                        child: _importing
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: MiuixInfiniteProgressIndicator(size: 20),
+                              )
+                            : const Icon(Icons.add),
+                      ),
+                      content: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.system_update_alt),
-                              tooltip: context.tr('runtime.update.tooltip'),
-                              onPressed: rt.canCheckUpdate
-                                  ? () => _checkUpdate(rt)
-                                  : null,
+                            Text(
+                              _importing
+                                  ? context.tr('runtime.importing')
+                                  : context.tr('runtime.import'),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => _delete(rt),
+                            Text(
+                              context.tr('runtime.importDescription'),
+                              style: theme.textStyles.footnote1,
                             ),
-                            PopupMenuButton<String>(
-                              tooltip: context.tr('runtime.more'),
-                              icon: const Icon(Icons.more_vert),
-                              onSelected: (action) {
-                                if (action == 'homepage') {
-                                  launchUrl(Uri.parse(rt.homepage!),
-                                      mode: LaunchMode.externalApplication);
-                                } else if (action == 'repository') {
-                                  launchUrl(Uri.parse(rt.repository!),
-                                      mode: LaunchMode.externalApplication);
-                                }
-                              },
-                              itemBuilder: (ctx) => [
-                                if (rt.homepage != null && rt.homepage!.isNotEmpty)
-                                  PopupMenuItem(
-                                    value: 'homepage',
-                                    child: ListTile(
-                                      leading: const Icon(Icons.home_outlined),
-                                      title: Text(ctx.tr('runtime.openHomepage')),
-                                      contentPadding: EdgeInsets.zero,
-                                      visualDensity: VisualDensity.compact,
+                          ],
+                        ),
+                      ],
+                      onClick: _importing ? null : _import,
+                    ),
+                  ),
+                  // —— proot rootfs 区 ——
+                  if (showProotSection) ...[
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.dns_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            context.tr('runtime.proot.rootfsSection'),
+                            style: theme.textStyles.subtitle,
+                          ),
+                          const Spacer(),
+                          if (_prootRootfs.isNotEmpty)
+                            Text(
+                              context.tr('runtime.count', {
+                                'count': '${_prootRootfs.length}',
+                              }),
+                              style: theme.textStyles.footnote1,
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (!_prootAvailable)
+                      MiuixCard(
+                        insideMargin: const EdgeInsets.all(12),
+                        colors: MiuixCardColors(
+                          color: theme.colors.errorContainer.withValues(
+                            alpha: 0.3,
+                          ),
+                          contentColor: MiuixTheme.of(context).colors.onSurface,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.warning_amber,
+                              color: theme.colors.error,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                context.tr('runtime.proot.notAvailableShort'),
+                                style: theme.textStyles.footnote1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    for (final rootfs in _prootRootfs)
+                      MiuixCard(
+                        child: MiuixBasicComponent(
+                          startAction: Padding(
+                            padding: const EdgeInsets.only(right: 16),
+                            child: const Icon(Icons.terminal, size: 32),
+                          ),
+                          content: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  rootfs.envName.isNotEmpty
+                                      ? '${rootfs.envName} (${rootfs.id})'
+                                      : rootfs.id,
+                                ),
+                                Text(
+                                  rootfs.isGeneric
+                                      ? context.tr(
+                                          'runtime.proot.genericContainer',
+                                        )
+                                      : '${context.tr('runtime.proot.rootfsSubtitle', {'type': rootfs.envType, 'bin': rootfs.envMainBin})}'
+                                            '${rootfs.envVersionName.isNotEmpty ? ' (${rootfs.envVersionName})' : ''}',
+                                  style: theme.textStyles.footnote1.copyWith(
+                                    color: rootfs.isGeneric
+                                        ? theme.colors.primary
+                                        : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          endActions: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                MiuixIconButton(
+                                  onPressed: () => Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          ContainerFilesPage(rootfs: rootfs),
                                     ),
                                   ),
-                                if (rt.repository != null &&
-                                    rt.repository!.isNotEmpty)
-                                  PopupMenuItem(
-                                    value: 'repository',
-                                    child: ListTile(
-                                      leading: const Icon(Icons.code),
-                                      title:
-                                          Text(ctx.tr('runtime.openRepository')),
-                                      contentPadding: EdgeInsets.zero,
-                                      visualDensity: VisualDensity.compact,
-                                    ),
+                                  child: MiuixIcon(
+                                    icon: Icons.folder_open_outlined,
                                   ),
+                                ),
+                                MiuixIconButton(
+                                  onPressed: () => _deleteRootfs(rootfs),
+                                  child: MiuixIcon(icon: Icons.delete_outline),
+                                ),
                               ],
                             ),
                           ],
                         ),
                       ),
-                    ),
-                Card(
-                  child: ListTile(
-                    leading: _importing
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.add),
-                    title: Text(_importing ? context.tr('runtime.importing') : context.tr('runtime.import')),
-                    subtitle: Text(
-                      context.tr('runtime.importDescription'),
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    onTap: _importing ? null : _import,
-                  ),
-                ),
-                // —— proot rootfs 区 ——
-                if (showProotSection) ...[
-                  const SizedBox(height: 8),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.dns_outlined, size: 18),
-                        const SizedBox(width: 8),
-                        Text(
-                          context.tr('runtime.proot.rootfsSection'),
-                          style: theme.textTheme.titleSmall,
-                        ),
-                        const Spacer(),
-                        if (_prootRootfs.isNotEmpty)
-                          Text(
-                            context.tr('runtime.count', {'count': '${_prootRootfs.length}'}),
-                            style: theme.textTheme.bodySmall,
+                    if (_prootAvailable)
+                      MiuixCard(
+                        child: MiuixBasicComponent(
+                          startAction: Padding(
+                            padding: const EdgeInsets.only(right: 16),
+                            child: _importingRootfs
+                                ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: MiuixInfiniteProgressIndicator(
+                                      size: 20,
+                                    ),
+                                  )
+                                : const Icon(Icons.add),
                           ),
-                      ],
-                    ),
-                  ),
-                  if (!_prootAvailable)
-                    Card(
-                      color: theme.colorScheme.errorContainer.withValues(alpha: 0.3),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          children: [
-                            Icon(Icons.warning_amber,
-                                color: theme.colorScheme.error),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                context.tr('runtime.proot.notAvailableShort'),
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  for (final rootfs in _prootRootfs)
-                    Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.terminal, size: 32),
-                        title: Text(
-                          rootfs.envName.isNotEmpty
-                              ? '${rootfs.envName} (${rootfs.id})'
-                              : rootfs.id,
-                        ),
-                        subtitle: Text(
-                          rootfs.isGeneric
-                              ? context.tr('runtime.proot.genericContainer')
-                              : '${context.tr('runtime.proot.rootfsSubtitle', {'type': rootfs.envType, 'bin': rootfs.envMainBin})}'
-                                  '${rootfs.envVersionName.isNotEmpty ? ' (${rootfs.envVersionName})' : ''}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: rootfs.isGeneric
-                                ? theme.colorScheme.primary
-                                : null,
-                          ),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.folder_open_outlined),
-                              tooltip: context.tr('containerFiles.open'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      ContainerFilesPage(rootfs: rootfs),
+                          content: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _importingRootfs
+                                      ? context.tr('runtime.importing')
+                                      : context.tr(
+                                          'runtime.proot.importRootfs',
+                                        ),
                                 ),
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => _deleteRootfs(rootfs),
+                                Text(
+                                  context.tr(
+                                    'runtime.proot.importRootfsDescription',
+                                  ),
+                                  style: theme.textStyles.footnote1,
+                                ),
+                              ],
                             ),
                           ],
+                          onClick: _importingRootfs ? null : _importRootfs,
                         ),
                       ),
-                    ),
-                  if (_prootAvailable)
-                    Card(
-                      child: ListTile(
-                        leading: _importingRootfs
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.add),
-                        title: Text(
-                          _importingRootfs ? context.tr('runtime.importing') : context.tr('runtime.proot.importRootfs'),
-                        ),
-                        subtitle: Text(
-                          context.tr('runtime.proot.importRootfsDescription'),
-                          style: theme.textTheme.bodySmall,
-                        ),
-                        onTap: _importingRootfs ? null : _importRootfs,
-                      ),
-                    ),
+                  ],
                 ],
-              ],
-            ),
+              ),
+      ),
     );
   }
 }
@@ -1163,83 +1177,95 @@ class _UpdateProgressDialog extends StatelessWidget {
             break;
         }
 
+        final theme = MiuixTheme.of(ctx);
         return PopScope(
           canPop: false,
-          child: AlertDialog(
-            title: Text(title),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (stage == _DownloadStage.downloading ||
-                    stage == _DownloadStage.installing) ...[
-                  progress.percent != null
-                      ? TweenAnimationBuilder<double>(
-                          tween: Tween(
-                            begin: progress.percent! / 100.0,
-                            end: progress.percent! / 100.0,
-                          ),
-                          duration: const Duration(milliseconds: 500),
-                          curve: Curves.linear,
-                          builder: (context, value, _) =>
-                              LinearProgressIndicator(value: value),
-                        )
-                      : const LinearProgressIndicator(),
-                  const SizedBox(height: 12),
-                  if (stage == _DownloadStage.downloading) ...[
-                    TweenAnimationBuilder<double>(
-                      tween: Tween(
-                        begin: progress.received.toDouble(),
-                        end: progress.received.toDouble(),
-                      ),
-                      duration: const Duration(milliseconds: 500),
-                      curve: Curves.linear,
-                      builder: (context, received, _) {
-                        if (progress.percent != null) {
-                          final pct = (received / progress.total! * 100).toStringAsFixed(1);
-                          return Text(
-                            '$pct% · ${_formatBytes(received.round())} / ${progress.total != null ? _formatBytes(progress.total!) : '?'}',
-                            style: Theme.of(ctx).textTheme.bodySmall,
-                          );
-                        }
-                        return Text(
-                          _formatBytes(received.round()),
-                          style: Theme.of(ctx).textTheme.bodySmall,
-                        );
-                      },
+          // 标题随下载阶段变化，不能提到 showMiuixDialog 的静态 title 参数，
+          // 故与内容一起放在内容体里自绘。
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: MiuixText(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: theme.textStyles.title4,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (stage == _DownloadStage.downloading ||
+                  stage == _DownloadStage.installing) ...[
+                progress.percent != null
+                    ? TweenAnimationBuilder<double>(
+                        tween: Tween(
+                          begin: progress.percent! / 100.0,
+                          end: progress.percent! / 100.0,
+                        ),
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.linear,
+                        builder: (context, value, _) =>
+                            MiuixLinearProgressIndicator(progress: value),
+                      )
+                    : const MiuixLinearProgressIndicator(),
+                const SizedBox(height: 12),
+                if (stage == _DownloadStage.downloading) ...[
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(
+                      begin: progress.received.toDouble(),
+                      end: progress.received.toDouble(),
                     ),
-                    if (progress.speedBytesPerSec > 0) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        _speedEta(progress),
-                        style: Theme.of(ctx).textTheme.bodySmall,
-                      ),
-                    ],
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.linear,
+                    builder: (context, received, _) {
+                      if (progress.percent != null) {
+                        final pct = (received / progress.total! * 100)
+                            .toStringAsFixed(1);
+                        return Text(
+                          '$pct% · ${_formatBytes(received.round())} / ${progress.total != null ? _formatBytes(progress.total!) : '?'}',
+                          style: theme.textStyles.footnote1,
+                        );
+                      }
+                      return Text(
+                        _formatBytes(received.round()),
+                        style: theme.textStyles.footnote1,
+                      );
+                    },
+                  ),
+                  if (progress.speedBytesPerSec > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _speedEta(progress),
+                      style: theme.textStyles.footnote1,
+                    ),
                   ],
                 ],
-                if (message != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    message,
-                    style: TextStyle(
-                      color: Theme.of(ctx).colorScheme.error,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
               ],
-            ),
-            actions: [
-              if (canCancel)
-                TextButton(
-                  onPressed: onCancel,
-                  child: Text(tr.get('common.cancel')),
+              if (message != null) ...[
+                const SizedBox(height: 8),
+                MiuixText(message, color: theme.colors.error, fontSize: 13),
+              ],
+              if (canCancel || isTerminal) ...[
+                const SizedBox(height: 20),
+                MiuixDialogActions(
+                  children: [
+                    if (canCancel)
+                      MiuixTextButton(
+                        tr.get('common.cancel'),
+                        onPressed: onCancel,
+                      ),
+                    if (isTerminal)
+                      MiuixButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        colors: MiuixButtonDefaults.buttonColorsPrimary(
+                          context,
+                        ),
+                        child: MiuixText(tr.get('common.close')),
+                      ),
+                  ],
                 ),
-              if (isTerminal)
-                FilledButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: Text(tr.get('common.close')),
-                ),
+              ],
             ],
           ),
         );

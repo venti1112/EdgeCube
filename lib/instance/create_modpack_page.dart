@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../files/archive_service.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
 import '../mods/modpack_service.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_dialog.dart';
 import 'create_download_install_loader_page.dart';
 import 'create_instance_page.dart';
 import 'download_info.dart';
@@ -189,9 +192,12 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
     if (fabricLoader != null) {
       await _modpackDownloadJar(
         serverType: 'fabric',
-        info: await DownloadRunner.tryMirrorDownloadInfo('fabric', mcVersion) ??
+        info:
+            await DownloadRunner.tryMirrorDownloadInfo('fabric', mcVersion) ??
             await DownloadRunner.fetchFabricDownloadInfo(
-                mcVersion, fabricLoader),
+              mcVersion,
+              fabricLoader,
+            ),
         selectedMcVersion: mcVersion,
       );
     } else if (forge != null) {
@@ -210,9 +216,12 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
       // Quilt 无独立服务端下载流程：Fabric 兼容，下载 Fabric 服务端。
       await _modpackDownloadJar(
         serverType: 'fabric',
-        info: await DownloadRunner.tryMirrorDownloadInfo('fabric', mcVersion) ??
+        info:
+            await DownloadRunner.tryMirrorDownloadInfo('fabric', mcVersion) ??
             await DownloadRunner.fetchFabricDownloadInfo(
-                mcVersion, quiltLoader),
+              mcVersion,
+              quiltLoader,
+            ),
         selectedMcVersion: mcVersion,
       );
     } else {
@@ -231,9 +240,12 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
       }
       await _modpackDownloadJar(
         serverType: 'vanilla',
-        info: await DownloadRunner.tryMirrorDownloadInfo('vanilla', mcVersion) ??
+        info:
+            await DownloadRunner.tryMirrorDownloadInfo('vanilla', mcVersion) ??
             await DownloadRunner.fetchVanillaDownloadInfo(
-                mcVersion, _vanillaVersionUrls),
+              mcVersion,
+              _vanillaVersionUrls,
+            ),
         selectedVersion: mcVersion,
       );
     }
@@ -301,29 +313,17 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
     final mc = modpack.dependencies['minecraft'] ?? '-';
     final loader = _modpackLoaderLabel(modpack);
     final modCount = modpack.serverFiles.length;
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.modpackConfirmTitle')),
-        content: Text(
-          ctx.tr('instance.modpackSummary', {
-            'name': modpack.name ?? '-',
-            'mc': mc,
-            'loader': loader,
-            'count': '$modCount',
-          }),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('common.ok')),
-          ),
-        ],
-      ),
+    return showMiuixConfirm(
+      context,
+      title: context.tr('instance.modpackConfirmTitle'),
+      message: context.tr('instance.modpackSummary', {
+        'name': modpack.name ?? '-',
+        'mc': mc,
+        'loader': loader,
+        'count': '$modCount',
+      }),
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('common.ok'),
     );
   }
 
@@ -340,22 +340,12 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
   }
 
   Future<bool?> _showImportPermissionDialog() {
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.storagePermissionTitle')),
-        content: Text(ctx.tr('instance.importStoragePermissionMessage')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('instance.goGrant')),
-          ),
-        ],
-      ),
+    return showMiuixConfirm(
+      context,
+      title: context.tr('instance.storagePermissionTitle'),
+      message: context.tr('instance.importStoragePermissionMessage'),
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('instance.goGrant'),
     );
   }
 
@@ -370,16 +360,22 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('instance.titleModpackImport'))),
-      body: SafeArea(
-        child: ModpackImportStep(
-          phase: _modpackPhase,
-          current: _modpackCurrent,
-          total: _modpackTotal,
-          currentFile: _modpackCurrentFile,
-          error: _modpackError,
-          onCancel: _cancel,
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('instance.titleModpackImport'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: ModpackImportStep(
+            phase: _modpackPhase,
+            current: _modpackCurrent,
+            total: _modpackTotal,
+            currentFile: _modpackCurrentFile,
+            error: _modpackError,
+            onCancel: _cancel,
+          ),
         ),
       ),
     );

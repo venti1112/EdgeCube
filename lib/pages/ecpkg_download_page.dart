@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/developer_options_store.dart';
@@ -12,6 +13,8 @@ import '../net/download_format.dart';
 import '../server/runtime_service.dart';
 import '../server/runtime_update_service.dart';
 import '../server/signature_verify_result.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/ec_preference.dart';
 
 class EcpkgDownloadPage extends StatefulWidget {
   const EcpkgDownloadPage({super.key});
@@ -28,6 +31,9 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
   bool _loading = true;
   String? _error;
   TabController? _tabCtrl;
+
+  /// MiuixTabRow 是受控组件，需自持选中项；滑动 TabBarView 时反向同步。
+  int _tabIndex = 0;
   String _deviceArch = '';
 
   @override
@@ -52,9 +58,15 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
       final deviceArch = await _service.getDeviceArch();
       if (!mounted) return;
       _tabCtrl?.dispose();
+      _tabIndex = 0;
       _tabCtrl = catalog.categories.length > 1
           ? TabController(length: catalog.categories.length, vsync: this)
           : null;
+      _tabCtrl?.addListener(() {
+        if (_tabCtrl != null && _tabCtrl!.index != _tabIndex && mounted) {
+          setState(() => _tabIndex = _tabCtrl!.index);
+        }
+      });
       setState(() {
         _catalog = catalog;
         _deviceArch = deviceArch;
@@ -120,7 +132,7 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
       return;
     }
 
-    await showDialog<void>(
+    await showMiuixDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (_) => _InstallDialog(
@@ -139,39 +151,59 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
     final entries = detail.packageEntries;
     if (entries.isEmpty) return;
 
-    final selected = await showDialog<MapEntry<String, EcpkgDownloadEntry>>(
+    final selected = await showMiuixDialog<MapEntry<String, EcpkgDownloadEntry>>(
       context: context,
       builder: (ctx) {
         final keys = entries.keys.toList();
-        return AlertDialog(
-          title: Text(context.tr('ecpkgDownload.selectArch')),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final key in keys) ...[
-                if (keys.indexOf(key) > 0) const Divider(height: 1),
-                ListTile(
-                  title: Text(switch (key) {
-                    'multi' => context.tr('ecpkgDownload.entryMulti'),
-                    _ => key,
-                  }),
-                  subtitle: Text(
-                    '${entries[key]!.arch.join(', ')} · ${_formatSize(entries[key]!.size)}',
-                    style: Theme.of(ctx).textTheme.bodySmall,
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: MiuixText(
+                context.tr('ecpkgDownload.selectArch'),
+                textAlign: TextAlign.center,
+                style: MiuixTheme.of(context).textStyles.title4,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final key in keys) ...[
+                  if (keys.indexOf(key) > 0) const MiuixHorizontalDivider(),
+                  MiuixBasicComponent(
+                    content: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(switch (key) {
+                            'multi' => context.tr('ecpkgDownload.entryMulti'),
+                            _ => key,
+                          }),
+                          Text(
+                            '${entries[key]!.arch.join(', ')} · ${_formatSize(entries[key]!.size)}',
+                            style: Theme.of(ctx).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ],
+                    onClick: () =>
+                        Navigator.of(ctx).pop(MapEntry(key, entries[key]!)),
                   ),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  onTap: () => Navigator.of(ctx).pop(
-                    MapEntry(key, entries[key]!),
-                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 20),
+            MiuixDialogActions(
+              children: [
+                MiuixTextButton(
+                  context.tr('common.cancel'),
+                  onPressed: () => Navigator.of(ctx).pop(),
                 ),
               ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(context.tr('common.cancel')),
             ),
           ],
         );
@@ -185,7 +217,10 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
 
     // web 类型：交给系统浏览器打开，不写入本地
     if (dlUrl.isWebPage) {
-      await launchUrl(Uri.parse(dlUrl.url), mode: LaunchMode.externalApplication);
+      await launchUrl(
+        Uri.parse(dlUrl.url),
+        mode: LaunchMode.externalApplication,
+      );
       return;
     }
 
@@ -209,7 +244,7 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
     final targetPath = '${dir.path}/$fileName';
 
     if (!mounted) return;
-    await showDialog<void>(
+    await showMiuixDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (_) => _DownloadOnlyDialog(
@@ -236,53 +271,51 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
     final defaultIndex = urls.indexWhere((u) => u.isDirect);
     final preselect = defaultIndex >= 0 ? defaultIndex : 0;
 
-    return showDialog<EcpkgDownloadUrl>(
+    return showMiuixDialog<EcpkgDownloadUrl>(
       context: context,
-      builder: (ctx) => _DownloadSourceDialog(
-        urls: urls,
-        initialIndex: preselect,
-      ),
+      builder: (ctx) =>
+          _DownloadSourceDialog(urls: urls, initialIndex: preselect),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(context.tr('ecpkgDownload.title')),
-        bottom: _tabCtrl == null || _catalog == null
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('ecpkgDownload.title'),
+        navigationIcon: const EcBackButton(),
+        // 只换有 Material 观感的标签条；TabController + TabBarView 保留。
+        bottomContent: _tabCtrl == null || _catalog == null
             ? null
-            : TabBar(
-                controller: _tabCtrl,
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                tabs: [
-                  for (final cat in _catalog!.categories)
-                    Tab(text: cat.nameKey),
-                ],
+            : Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: MiuixTabRow(
+                  tabs: [for (final cat in _catalog!.categories) cat.nameKey],
+                  selectedTabIndex: _tabIndex,
+                  onTabSelected: (i) {
+                    setState(() => _tabIndex = i);
+                    _tabCtrl?.animateTo(i);
+                  },
+                ),
               ),
       ),
-      body: _buildBody(theme),
+      content: (padding) => Padding(padding: padding, child: _buildBody(theme)),
     );
   }
 
-  Widget _buildBody(ThemeData theme) {
+  Widget _buildBody(MiuixThemeData theme) {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error != null) {
-      return _ErrorBody(
-        error: _error!,
-        onRetry: _loadCatalog,
-      );
+      return _ErrorBody(error: _error!, onRetry: _loadCatalog);
     }
     final catalog = _catalog;
-    if (catalog == null || catalog.categories.every((c) => c.packages.isEmpty)) {
-      return Center(
-        child: Text(context.tr('ecpkgDownload.noPackages')),
-      );
+    if (catalog == null ||
+        catalog.categories.every((c) => c.packages.isEmpty)) {
+      return Center(child: Text(context.tr('ecpkgDownload.noPackages')));
     }
 
     if (_tabCtrl != null) {
@@ -356,7 +389,10 @@ class _DownloadOnlyDialogState extends State<_DownloadOnlyDialog> {
   Future<void> _start() async {
     final tr = context.tr;
 
-    setState(() { _stage = tr('runtime.update.downloading'); _progress = null; });
+    setState(() {
+      _stage = tr('runtime.update.downloading');
+      _progress = null;
+    });
 
     try {
       final tempPath = await RuntimeUpdateService.downloadPackage(
@@ -373,125 +409,153 @@ class _DownloadOnlyDialogState extends State<_DownloadOnlyDialog> {
       );
       if (!mounted) return;
 
-      setState(() { _stage = tr('ecpkgDownload.copying'); _progress = null; });
+      setState(() {
+        _stage = tr('ecpkgDownload.copying');
+        _progress = null;
+      });
       await File(tempPath).copy(widget.targetPath);
       try {
         await File(tempPath).delete();
       } catch (_) {}
       if (!mounted) return;
 
-      setState(() { _done = true; _stage = ''; });
+      setState(() {
+        _done = true;
+        _stage = '';
+      });
     } on HashMismatchException {
       if (!mounted) return;
-      setState(() { _error = context.tr('update.sha256Mismatch'); });
+      setState(() {
+        _error = context.tr('update.sha256Mismatch');
+      });
     } on CancellationException {
       if (!mounted) return;
-      setState(() { _error = context.tr('runtime.update.cancelled'); });
+      setState(() {
+        _error = context.tr('runtime.update.cancelled');
+      });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = '$e'; });
+      setState(() {
+        _error = '$e';
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final theme = MiuixTheme.of(context);
+    final cs = theme.colors;
 
-    return AlertDialog(
-      title: Row(
-        children: [
-          Expanded(child: Text(_done
-            ? context.tr('ecpkgDownload.downloadSuccess')
-            : _error != null
-              ? context.tr('runtime.update.failedTitle')
-              : context.tr('ecpkgDownload.downloadingTitle'))),
-          if (_done)
-            Icon(Icons.check_circle, color: cs.primary, size: 24),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('${widget.pkgName} ${widget.pkgVersion}'),
-          if (_done) ...[
-            const SizedBox(height: 8),
-            Text(
-              widget.targetPath,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: cs.onSurfaceVariant,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _done
+                    ? context.tr('ecpkgDownload.downloadSuccess')
+                    : _error != null
+                    ? context.tr('runtime.update.failedTitle')
+                    : context.tr('ecpkgDownload.downloadingTitle'),
               ),
             ),
+            if (_done) Icon(Icons.check_circle, color: cs.primary, size: 24),
           ],
-          if (_progress != null && _stage.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _progress!.hasTotal
-                ? TweenAnimationBuilder<double>(
-                    tween: Tween(begin: _progress!.fraction, end: _progress!.fraction),
-                    duration: const Duration(milliseconds: 500),
-                    curve: Curves.linear,
-                    builder: (context, value, _) =>
-                        LinearProgressIndicator(value: value),
-                  )
-                : const LinearProgressIndicator(),
-            TweenAnimationBuilder<double>(
-              tween: Tween(
-                begin: _progress!.receivedBytes.toDouble(),
-                end: _progress!.receivedBytes.toDouble(),
-              ),
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.linear,
-              builder: (context, bytes, _) {
-                if (_progress!.hasTotal) {
-                  final frac = bytes / _progress!.totalBytes!;
-                  final pct = (frac * 100).toStringAsFixed(1);
-                  return Text(
-                    '$pct% · ${formatBytes(bytes.round())} / ${formatBytes(_progress!.totalBytes!)}',
-                    style: theme.textTheme.bodySmall,
-                  );
-                }
-                return Text(
-                  formatBytes(bytes.round()),
-                  style: theme.textTheme.bodySmall,
-                );
-              },
-            ),
-            if (_progress!.speedBytesPerSec > 0) ...[
-              const SizedBox(height: 2),
+        ),
+        const SizedBox(height: 12),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${widget.pkgName} ${widget.pkgVersion}'),
+            if (_done) ...[
+              const SizedBox(height: 8),
               Text(
-                _speedLine(_progress!),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: cs.onSurfaceVariant,
+                widget.targetPath,
+                style: theme.textStyles.footnote1.copyWith(
+                  color: cs.onSurfaceVariantSummary,
                 ),
               ),
             ],
-          ],
-          if (_stage.isNotEmpty && _progress == null) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                SizedBox(
-                  width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+            if (_progress != null && _stage.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _progress!.hasTotal
+                  ? TweenAnimationBuilder<double>(
+                      tween: Tween(
+                        begin: _progress!.fraction,
+                        end: _progress!.fraction,
+                      ),
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.linear,
+                      builder: (context, value, _) =>
+                          LinearProgressIndicator(value: value),
+                    )
+                  : const LinearProgressIndicator(),
+              TweenAnimationBuilder<double>(
+                tween: Tween(
+                  begin: _progress!.receivedBytes.toDouble(),
+                  end: _progress!.receivedBytes.toDouble(),
                 ),
-                const SizedBox(width: 12),
-                Text(_stage),
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.linear,
+                builder: (context, bytes, _) {
+                  if (_progress!.hasTotal) {
+                    final frac = bytes / _progress!.totalBytes!;
+                    final pct = (frac * 100).toStringAsFixed(1);
+                    return Text(
+                      '$pct% · ${formatBytes(bytes.round())} / ${formatBytes(_progress!.totalBytes!)}',
+                      style: theme.textStyles.footnote1,
+                    );
+                  }
+                  return Text(
+                    formatBytes(bytes.round()),
+                    style: theme.textStyles.footnote1,
+                  );
+                },
+              ),
+              if (_progress!.speedBytesPerSec > 0) ...[
+                const SizedBox(height: 2),
+                Text(
+                  _speedLine(_progress!),
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: cs.onSurfaceVariantSummary,
+                  ),
+                ),
               ],
-            ),
+            ],
+            if (_stage.isNotEmpty && _progress == null) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: MiuixInfiniteProgressIndicator(size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(_stage),
+                ],
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: TextStyle(color: cs.error)),
+            ],
           ],
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(color: cs.error)),
+        ),
+        const SizedBox(height: 20),
+        MiuixDialogActions(
+          children: [
+            if (_done || _error != null)
+              MiuixButton(
+                onPressed: () => Navigator.of(context).pop(),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(context.tr('common.close')),
+              ),
           ],
-        ],
-      ),
-      actions: [
-        if (_done || _error != null)
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(context.tr('common.close')),
-          ),
+        ),
       ],
     );
   }
@@ -543,7 +607,10 @@ class _InstallDialogState extends State<_InstallDialog> {
   Future<void> _start() async {
     final tr = context.tr;
 
-    setState(() { _stage = tr('runtime.update.downloading'); _progress = null; });
+    setState(() {
+      _stage = tr('runtime.update.downloading');
+      _progress = null;
+    });
 
     try {
       final dlPkg = RuntimeUpdatePackage(
@@ -562,7 +629,10 @@ class _InstallDialogState extends State<_InstallDialog> {
       );
       if (!mounted) return;
 
-      setState(() { _stage = tr('runtime.update.installing'); _progress = null; });
+      setState(() {
+        _stage = tr('runtime.update.installing');
+        _progress = null;
+      });
 
       // 安装前验证签名
       final sigResult = await _service.verifyEcpkgSignature(path);
@@ -574,16 +644,25 @@ class _InstallDialogState extends State<_InstallDialog> {
       await _service.importPackage(path, force: true);
       if (!mounted) return;
 
-      setState(() { _done = true; _stage = ''; });
+      setState(() {
+        _done = true;
+        _stage = '';
+      });
     } on HashMismatchException {
       if (!mounted) return;
-      setState(() { _error = tr('update.sha256Mismatch'); });
+      setState(() {
+        _error = tr('update.sha256Mismatch');
+      });
     } on CancellationException {
       if (!mounted) return;
-      setState(() { _error = tr('runtime.update.cancelled'); });
+      setState(() {
+        _error = tr('runtime.update.cancelled');
+      });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = '$e'; });
+      setState(() {
+        _error = '$e';
+      });
     }
   }
 
@@ -610,120 +689,124 @@ class _InstallDialogState extends State<_InstallDialog> {
 
     // 警告模式：提示用户选择
     if (!mounted) return false;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr('runtime.signature.warningTitle')),
-        content: Text(
-          result.hasSignature
-              ? tr('runtime.signature.warningInvalid')
-              : tr('runtime.signature.warningNoSig'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(tr('runtime.signature.continueAnyway')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: tr('runtime.signature.warningTitle'),
+      message: result.hasSignature
+          ? tr('runtime.signature.warningInvalid')
+          : tr('runtime.signature.warningNoSig'),
+      cancelLabel: tr('common.cancel'),
+      confirmLabel: tr('runtime.signature.continueAnyway'),
     );
     return confirmed == true;
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final theme = MiuixTheme.of(context);
+    final cs = theme.colors;
 
-    return AlertDialog(
-      title: Row(
-        children: [
-          Expanded(child: Text(_done
-            ? context.tr('ecpkgDownload.installSuccess')
-            : _error != null
-              ? context.tr('runtime.update.failedTitle')
-              : context.tr('ecpkgDownload.confirmTitle'))),
-          if (_done)
-            Icon(Icons.check_circle, color: cs.primary, size: 24),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('${widget.pkgName} ${widget.pkgVersion}'),
-          if (_progress != null && _stage.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _progress!.hasTotal
-                ? TweenAnimationBuilder<double>(
-                    tween: Tween(begin: _progress!.fraction, end: _progress!.fraction),
-                    duration: const Duration(milliseconds: 500),
-                    curve: Curves.linear,
-                    builder: (context, value, _) =>
-                        LinearProgressIndicator(value: value),
-                  )
-                : const LinearProgressIndicator(),
-            TweenAnimationBuilder<double>(
-              tween: Tween(
-                begin: _progress!.receivedBytes.toDouble(),
-                end: _progress!.receivedBytes.toDouble(),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _done
+                    ? context.tr('ecpkgDownload.installSuccess')
+                    : _error != null
+                    ? context.tr('runtime.update.failedTitle')
+                    : context.tr('ecpkgDownload.confirmTitle'),
               ),
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.linear,
-              builder: (context, bytes, _) {
-                if (_progress!.hasTotal) {
-                  final frac = bytes / _progress!.totalBytes!;
-                  final pct = (frac * 100).toStringAsFixed(1);
-                  return Text(
-                    '$pct% · ${formatBytes(bytes.round())} / ${formatBytes(_progress!.totalBytes!)}',
-                    style: theme.textTheme.bodySmall,
-                  );
-                }
-                return Text(
-                  formatBytes(bytes.round()),
-                  style: theme.textTheme.bodySmall,
-                );
-              },
             ),
-            if (_progress!.speedBytesPerSec > 0) ...[
-              const SizedBox(height: 2),
-              Text(
-                _speedLine(_progress!),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: cs.onSurfaceVariant,
+            if (_done) Icon(Icons.check_circle, color: cs.primary, size: 24),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${widget.pkgName} ${widget.pkgVersion}'),
+            if (_progress != null && _stage.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _progress!.hasTotal
+                  ? TweenAnimationBuilder<double>(
+                      tween: Tween(
+                        begin: _progress!.fraction,
+                        end: _progress!.fraction,
+                      ),
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.linear,
+                      builder: (context, value, _) =>
+                          LinearProgressIndicator(value: value),
+                    )
+                  : const LinearProgressIndicator(),
+              TweenAnimationBuilder<double>(
+                tween: Tween(
+                  begin: _progress!.receivedBytes.toDouble(),
+                  end: _progress!.receivedBytes.toDouble(),
                 ),
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.linear,
+                builder: (context, bytes, _) {
+                  if (_progress!.hasTotal) {
+                    final frac = bytes / _progress!.totalBytes!;
+                    final pct = (frac * 100).toStringAsFixed(1);
+                    return Text(
+                      '$pct% · ${formatBytes(bytes.round())} / ${formatBytes(_progress!.totalBytes!)}',
+                      style: theme.textStyles.footnote1,
+                    );
+                  }
+                  return Text(
+                    formatBytes(bytes.round()),
+                    style: theme.textStyles.footnote1,
+                  );
+                },
+              ),
+              if (_progress!.speedBytesPerSec > 0) ...[
+                const SizedBox(height: 2),
+                Text(
+                  _speedLine(_progress!),
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: cs.onSurfaceVariantSummary,
+                  ),
+                ),
+              ],
+            ],
+            if (_stage.isNotEmpty && _progress == null) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: MiuixInfiniteProgressIndicator(size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(_stage),
+                ],
               ),
             ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: TextStyle(color: cs.error)),
+            ],
           ],
-          if (_stage.isNotEmpty && _progress == null) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                SizedBox(
-                  width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 12),
-                Text(_stage),
-              ],
-            ),
+        ),
+        const SizedBox(height: 20),
+        MiuixDialogActions(
+          children: [
+            if (_done || _error != null)
+              MiuixButton(
+                onPressed: () => Navigator.of(context).pop(),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(context.tr('common.close')),
+              ),
           ],
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(color: cs.error)),
-          ],
-        ],
-      ),
-      actions: [
-        if (_done || _error != null)
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(context.tr('common.close')),
-          ),
+        ),
       ],
     );
   }
@@ -739,10 +822,7 @@ class _InstallDialogState extends State<_InstallDialog> {
 // ── 下载源选择对话框 ──────────────────────────────────────────────────
 
 class _DownloadSourceDialog extends StatefulWidget {
-  const _DownloadSourceDialog({
-    required this.urls,
-    required this.initialIndex,
-  });
+  const _DownloadSourceDialog({required this.urls, required this.initialIndex});
 
   final List<EcpkgDownloadUrl> urls;
   final int initialIndex;
@@ -756,54 +836,72 @@ class _DownloadSourceDialogState extends State<_DownloadSourceDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final tr = context.tr;
 
-    return AlertDialog(
-      title: Text(tr('ecpkgDownload.selectSource')),
-      content: RadioGroup<int>(
-        groupValue: _selected,
-        onChanged: (v) {
-          if (v != null) setState(() => _selected = v);
-        },
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < widget.urls.length; i++) ...[
-              if (i > 0) const Divider(height: 1),
-              RadioListTile<int>(
-                value: i,
-                title: Text(widget.urls[i].name.isEmpty
-                    ? widget.urls[i].url
-                    : widget.urls[i].name),
-                subtitle: widget.urls[i].extra.isEmpty
-                    ? null
-                    : Text(
-                        widget.urls[i].extra,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                secondary: Icon(
-                  widget.urls[i].isDirect
-                      ? Icons.cloud_download
-                      : Icons.open_in_browser,
-                  size: 22,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: MiuixText(
+            tr('ecpkgDownload.selectSource'),
+            textAlign: TextAlign.center,
+            style: MiuixTheme.of(context).textStyles.title4,
+          ),
+        ),
+        const SizedBox(height: 12),
+        RadioGroup<int>(
+          groupValue: _selected,
+          onChanged: (v) {
+            if (v != null) setState(() => _selected = v);
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < widget.urls.length; i++) ...[
+                if (i > 0) const MiuixHorizontalDivider(),
+                RadioListTile<int>(
+                  value: i,
+                  title: Text(
+                    widget.urls[i].name.isEmpty
+                        ? widget.urls[i].url
+                        : widget.urls[i].name,
+                  ),
+                  subtitle: widget.urls[i].extra.isEmpty
+                      ? null
+                      : Text(
+                          widget.urls[i].extra,
+                          style: theme.textStyles.footnote1,
+                        ),
+                  secondary: Icon(
+                    widget.urls[i].isDirect
+                        ? Icons.cloud_download
+                        : Icons.open_in_browser,
+                    size: 22,
+                  ),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
                 ),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-              ),
+              ],
             ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        MiuixDialogActions(
+          children: [
+            MiuixTextButton(
+              tr('common.cancel'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            MiuixButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(widget.urls[_selected]),
+              colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+              child: MiuixText(tr('ecpkgDownload.download')),
+            ),
           ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(tr('common.cancel')),
-        ),
-        FilledButton(
-          onPressed: () =>
-              Navigator.of(context).pop(widget.urls[_selected]),
-          child: Text(tr('ecpkgDownload.download')),
         ),
       ],
     );
@@ -825,14 +923,12 @@ class _CategoryView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final tr = context.tr;
     final packages = category.packages;
 
     if (packages.isEmpty) {
-      return Center(
-        child: Text(tr('ecpkgDownload.noPackages')),
-      );
+      return Center(child: Text(tr('ecpkgDownload.noPackages')));
     }
 
     return ListView.builder(
@@ -845,10 +941,10 @@ class _CategoryView extends StatelessWidget {
           'build': pkg.detail.buildVersion.toString(),
         });
 
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: MiuixCard(
+            insideMargin: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -862,13 +958,13 @@ class _CategoryView extends StatelessWidget {
                         children: [
                           Text(
                             pkg.name,
-                            style: theme.textTheme.titleMedium,
+                            style: theme.textStyles.title4,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
                             versionStr,
-                            style: theme.textTheme.bodySmall,
+                            style: theme.textStyles.footnote1,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -884,7 +980,7 @@ class _CategoryView extends StatelessWidget {
                       pkg.description!,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
+                      style: theme.textStyles.footnote1,
                     ),
                   ),
                 if (pkg.author != null && pkg.author!.isNotEmpty)
@@ -892,66 +988,59 @@ class _CategoryView extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       tr('ecpkgDownload.author', {'author': pkg.author!}),
-                      style: theme.textTheme.bodySmall,
+                      style: theme.textStyles.footnote1,
                     ),
                   ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
-                      child: FilledButton.icon(
+                      child: MiuixButton(
                         onPressed: () => onDownloadAndInstall(pkg),
-                        icon: const Icon(Icons.download_for_offline, size: 18),
-                        label: Text(tr('ecpkgDownload.downloadAndInstall')),
+                        colors: MiuixButtonDefaults.buttonColorsPrimary(
+                          context,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            MiuixIcon(
+                              icon: Icons.download_for_offline,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            MiuixText(tr('ecpkgDownload.downloadAndInstall')),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
-                    PopupMenuButton<String>(
-                      tooltip: tr('runtime.more'),
-                      icon: const Icon(Icons.more_vert),
-                      onSelected: (action) {
-                        if (action == 'downloadOnly') {
-                          onDownloadOnly(pkg);
-                        } else if (action == 'homepage') {
-                          launchUrl(Uri.parse(pkg.homepage!),
-                              mode: LaunchMode.externalApplication);
-                        } else if (action == 'repository') {
-                          launchUrl(Uri.parse(pkg.repository!),
-                              mode: LaunchMode.externalApplication);
-                        }
-                      },
-                      itemBuilder: (ctx) => [
-                        PopupMenuItem(
-                          value: 'downloadOnly',
-                          child: ListTile(
-                            leading: const Icon(Icons.download, size: 22),
-                            title: Text(ctx.tr('ecpkgDownload.downloadOnly')),
-                            contentPadding: EdgeInsets.zero,
-                            visualDensity: VisualDensity.compact,
+                    MiuixOverlayIconDropdownMenu(
+                      entry: MiuixDropdownEntry(
+                        items: [
+                          MiuixDropdownItem(
+                            text: tr('ecpkgDownload.downloadOnly'),
+                            onClick: () => onDownloadOnly(pkg),
                           ),
-                        ),
-                        if (pkg.homepage != null && pkg.homepage!.isNotEmpty)
-                          PopupMenuItem(
-                            value: 'homepage',
-                            child: ListTile(
-                              leading: const Icon(Icons.home_outlined),
-                              title: Text(ctx.tr('runtime.openHomepage')),
-                              contentPadding: EdgeInsets.zero,
-                              visualDensity: VisualDensity.compact,
+                          if (pkg.homepage != null && pkg.homepage!.isNotEmpty)
+                            MiuixDropdownItem(
+                              text: tr('runtime.openHomepage'),
+                              onClick: () => launchUrl(
+                                Uri.parse(pkg.homepage!),
+                                mode: LaunchMode.externalApplication,
+                              ),
                             ),
-                          ),
-                        if (pkg.repository != null &&
-                            pkg.repository!.isNotEmpty)
-                          PopupMenuItem(
-                            value: 'repository',
-                            child: ListTile(
-                              leading: const Icon(Icons.code),
-                              title: Text(ctx.tr('runtime.openRepository')),
-                              contentPadding: EdgeInsets.zero,
-                              visualDensity: VisualDensity.compact,
+                          if (pkg.repository != null &&
+                              pkg.repository!.isNotEmpty)
+                            MiuixDropdownItem(
+                              text: tr('runtime.openRepository'),
+                              onClick: () => launchUrl(
+                                Uri.parse(pkg.repository!),
+                                mode: LaunchMode.externalApplication,
+                              ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
+                      child: const MiuixIcon(icon: Icons.more_vert),
                     ),
                   ],
                 ),
@@ -962,7 +1051,6 @@ class _CategoryView extends StatelessWidget {
       },
     );
   }
-
 }
 
 class _ErrorBody extends StatelessWidget {
@@ -972,7 +1060,7 @@ class _ErrorBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -982,26 +1070,33 @@ class _ErrorBody extends StatelessWidget {
             Icon(
               Icons.cloud_off,
               size: 48,
-              color: theme.colorScheme.onSurfaceVariant,
+              color: theme.colors.onSurfaceVariantSummary,
             ),
             const SizedBox(height: 12),
             Text(
               context.tr('ecpkgDownload.loadFailed'),
-              style: theme.textTheme.titleMedium,
+              style: theme.textStyles.title4,
             ),
             const SizedBox(height: 8),
             Text(
               error,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              style: theme.textStyles.footnote1.copyWith(
+                color: theme.colors.onSurfaceVariantSummary,
               ),
             ),
             const SizedBox(height: 24),
-            FilledButton.icon(
+            MiuixButton(
               onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: Text(context.tr('common.retry')),
+              colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  MiuixIcon(icon: Icons.refresh),
+                  const SizedBox(width: 8),
+                  MiuixText(context.tr('common.retry')),
+                ],
+              ),
             ),
           ],
         ),

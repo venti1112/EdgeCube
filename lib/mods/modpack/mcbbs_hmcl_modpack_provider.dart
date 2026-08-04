@@ -43,7 +43,8 @@ class McbbsModpackProvider extends ModpackProvider {
     Archive archive, {
     required String baseFolder,
   }) async {
-    final entry = ModpackUtils.findEntry(archive, _packmeta) ??
+    final entry =
+        ModpackUtils.findEntry(archive, _packmeta) ??
         ModpackUtils.findEntry(archive, _manifest);
     if (entry == null) {
       throw ModpackParseException(tr('modpack.manifestNotFound'));
@@ -62,8 +63,8 @@ class McbbsModpackProvider extends ModpackProvider {
     }
 
     final deps = <String, String>{};
-    for (final a in (data['addons'] as List? ?? [])
-        .whereType<Map<String, dynamic>>()) {
+    for (final a
+        in (data['addons'] as List? ?? []).whereType<Map<String, dynamic>>()) {
       final id = a['id'] as String?;
       final version = a['version'] as String?;
       if (id == null || version == null) continue;

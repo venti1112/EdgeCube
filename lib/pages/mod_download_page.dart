@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
@@ -11,6 +12,10 @@ import '../mods/sources/mod_source.dart';
 import '../mods/sources/mod_source_registry.dart';
 import '../net/download_format.dart';
 import '../net/mod_mirror.dart';
+import '../widgets/ec_text_field.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/miuix_snackbar.dart';
+import '../widgets/ec_preference.dart';
 
 /// 模组/插件下载页：跨平台搜索并下载到指定目录。
 ///
@@ -85,7 +90,9 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
   /// 初始化可用平台列表（按 isAvailable 过滤，如 CF 无 Key 且未开镜像则剔除）。
   Future<void> _initSources() async {
     final all = ModSourceRegistry.sourcesFor(widget.projectType);
-    final sources = await ModSourceRegistry.availableSources(widget.projectType);
+    final sources = await ModSourceRegistry.availableSources(
+      widget.projectType,
+    );
     if (!mounted) return;
     setState(() {
       _sources = sources;
@@ -106,7 +113,9 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
       _source = source;
       // 加载器随平台变化，清掉不适用的选择。
       if (_selectedLoader != null &&
-          !source.supportedLoaders(widget.projectType).contains(_selectedLoader)) {
+          !source
+              .supportedLoaders(widget.projectType)
+              .contains(_selectedLoader)) {
         _selectedLoader = null;
       }
       if (!source.supportsGameVersionFilter) _selectedGameVersion = null;
@@ -230,43 +239,39 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
       // sheet 关闭后，用父页面稳定的 context 显示 SnackBar，
       // 避免 sheet 的 context 失效导致 SnackBar 永不消失或"查看队列"按钮无效。
       if (downloaded == true && mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(context.tr('modsPlugins.downloadQueued')),
-              duration: const Duration(seconds: 4),
-              action: SnackBarAction(
-                label: context.tr('modsPlugins.viewQueue'),
-                onPressed: () => showDownloadQueueSheet(context),
-              ),
-            ),
-          );
+        showMiuixSnackbar(context.tr('modsPlugins.downloadQueued'));
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: widget.embedded
+    final theme = MiuixTheme.of(context);
+    return MiuixScaffold(
+      // 内嵌在「模组与插件」标签页中时不显示自己的顶栏。
+      topBar: widget.embedded
           ? null
-          : AppBar(title: Text(context.tr(widget.titleKey))),
-      body: Column(
-        children: [
-          if (_sources.length > 1) _buildSourceBar(theme),
-          _buildSearchBar(theme),
-          _buildFilterBar(theme),
-          const DownloadQueueBanner(),
-          Expanded(child: _buildBody(theme)),
-        ],
+          : MiuixSmallTopAppBar(
+              title: context.tr(widget.titleKey),
+              navigationIcon: const EcBackButton(),
+            ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: Column(
+          children: [
+            if (_sources.length > 1) _buildSourceBar(theme),
+            _buildSearchBar(theme),
+            _buildFilterBar(theme),
+            const DownloadQueueBanner(),
+            Expanded(child: _buildBody(theme)),
+          ],
+        ),
       ),
     );
   }
 
   /// 平台切换条（仅当可用平台 > 1 时显示）。
-  Widget _buildSourceBar(ThemeData theme) {
+  Widget _buildSourceBar(MiuixThemeData theme) {
     return SizedBox(
       height: 44,
       child: ListView(
@@ -287,47 +292,40 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
     );
   }
 
-  Widget _buildSearchBar(ThemeData theme) {
+  Widget _buildSearchBar(MiuixThemeData theme) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
         children: [
           Expanded(
-            child: TextField(
+            child: EcTextField(
               controller: _controller,
-              decoration: InputDecoration(
-                hintText: context.tr('modsPlugins.searchHint'),
-                prefixIcon: const Icon(Icons.search, size: 20),
-                border: const OutlineInputBorder(),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                isDense: true,
-                suffixIcon: _controller.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () {
-                          _controller.clear();
-                          _search();
-                        },
-                      )
-                    : null,
-              ),
+              hint: context.tr('modsPlugins.searchHint'),
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _controller.text.isNotEmpty
+                  ? MiuixIconButton(
+                      onPressed: () {
+                        _controller.clear();
+                        _search();
+                      },
+                      child: MiuixIcon(icon: Icons.clear, size: 18),
+                    )
+                  : null,
               onSubmitted: (_) => _search(),
             ),
           ),
           const SizedBox(width: 8),
-          FilledButton(
+          MiuixButton(
             onPressed: _loading ? null : _search,
-            child: Text(context.tr('modsPlugins.search')),
+            colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+            child: MiuixText(context.tr('modsPlugins.search')),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFilterBar(ThemeData theme) {
+  Widget _buildFilterBar(MiuixThemeData theme) {
     return SizedBox(
       height: 44,
       child: ListView(
@@ -378,7 +376,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
   }
 
   Widget _filterChip(
-    ThemeData theme, {
+    MiuixThemeData theme, {
     required String label,
     required String value,
     required IconData icon,
@@ -394,73 +392,37 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
     );
   }
 
-  void _showSortPicker(ThemeData theme) {
-    final options = ModSortType.values;
-    showDialog(
+  Future<void> _showSortPicker(MiuixThemeData theme) async {
+    final selected = await showMiuixSingleChoice<ModSortType>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(context.tr('modsPlugins.sortLabel')),
-        children: options
-            .map(
-              (s) => SimpleDialogOption(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  setState(() => _sort = s);
-                  _search();
-                },
-                child: Row(
-                  children: [
-                    if (_sort == s)
-                      Icon(Icons.check, color: theme.colorScheme.primary)
-                    else
-                      const SizedBox(width: 24),
-                    const SizedBox(width: 8),
-                    Text(context.tr('modsPlugins.sort.${s.name}')),
-                  ],
-                ),
-              ),
-            )
-            .toList(),
-      ),
+      title: context.tr('modsPlugins.sortLabel'),
+      options: ModSortType.values,
+      selected: _sort,
+      labelOf: (ctx, s) => ctx.tr('modsPlugins.sort.${s.name}'),
     );
+    if (selected == null || !mounted) return;
+    setState(() => _sort = selected);
+    _search();
   }
 
-  void _showLoaderPicker(ThemeData theme) {
+  Future<void> _showLoaderPicker(MiuixThemeData theme) async {
     final items = <String?>[null, ..._loaders];
-    showDialog(
+    // 按**下标**而非值选择：首项「任意」的值就是 null，而取消时
+    // showMiuixSingleChoice 同样返回 null，用值无法区分二者。
+    final picked = await showMiuixSingleChoice<int>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(context.tr('modsPlugins.loader')),
-        children: items
-            .map(
-              (l) => SimpleDialogOption(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  setState(() => _selectedLoader = l);
-                  _search();
-                },
-                child: Row(
-                  children: [
-                    if (_selectedLoader == l)
-                      Icon(Icons.check, color: theme.colorScheme.primary)
-                    else
-                      const SizedBox(width: 24),
-                    const SizedBox(width: 8),
-                    Text(
-                      l == null
-                          ? context.tr('modsPlugins.any')
-                          : _capitalize(l),
-                    ),
-                  ],
-                ),
-              ),
-            )
-            .toList(),
-      ),
+      title: context.tr('modsPlugins.loader'),
+      options: List.generate(items.length, (i) => i),
+      selected: items.indexOf(_selectedLoader),
+      labelOf: (ctx, i) =>
+          items[i] == null ? ctx.tr('modsPlugins.any') : _capitalize(items[i]!),
     );
+    if (picked == null || !mounted) return;
+    setState(() => _selectedLoader = items[picked]);
+    _search();
   }
 
-  void _showVersionPicker(ThemeData theme) {
+  Future<void> _showVersionPicker(MiuixThemeData theme) async {
     final releases = _gameVersions
         .where((v) => v.versionType == 'release')
         .toList();
@@ -468,49 +430,27 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
         .where((v) => v.versionType != 'release')
         .toList();
     final items = <ModrinthGameVersion?>[null, ...releases, ...others];
-    showDialog(
+    final picked = await showMiuixSingleChoice<int>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(context.tr('modsPlugins.gameVersion')),
-        children: items
-            .map(
-              (v) => SimpleDialogOption(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  setState(() => _selectedGameVersion = v?.version);
-                  _search();
-                },
-                child: Row(
-                  children: [
-                    if (_selectedGameVersion == v?.version)
-                      Icon(Icons.check, color: theme.colorScheme.primary)
-                    else
-                      const SizedBox(width: 24),
-                    const SizedBox(width: 8),
-                    Text(v == null ? context.tr('modsPlugins.any') : v.version),
-                    if (v != null && v.versionType != 'release')
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: Text(
-                          v.versionType,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            )
-            .toList(),
-      ),
+      title: context.tr('modsPlugins.gameVersion'),
+      options: List.generate(items.length, (i) => i),
+      selected: items.indexWhere((v) => v?.version == _selectedGameVersion),
+      labelOf: (ctx, i) =>
+          items[i] == null ? ctx.tr('modsPlugins.any') : items[i]!.version,
+      summaryOf: (ctx, i) {
+        final v = items[i];
+        return (v != null && v.versionType != 'release') ? v.versionType : '';
+      },
     );
+    if (picked == null || !mounted) return;
+    setState(() => _selectedGameVersion = items[picked]?.version);
+    _search();
   }
 
   String _capitalize(String s) =>
       s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
 
-  Widget _buildBody(ThemeData theme) {
+  Widget _buildBody(MiuixThemeData theme) {
     if (_initializingSources) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -555,7 +495,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
                 child: SizedBox(
                   width: 24,
                   height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: MiuixInfiniteProgressIndicator(size: 20),
                 ),
               ),
             );
@@ -566,8 +506,8 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
               child: Center(
                 child: Text(
                   context.tr('modsPlugins.noMore', {'count': '$_totalHits'}),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: theme.colors.onSurfaceVariantSummary,
                   ),
                 ),
               ),
@@ -576,53 +516,68 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
           return const SizedBox(height: 16);
         }
         final hit = _results[i];
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: ListTile(
-            leading: _ModIcon(url: hit.iconUrl),
-            title: Text(
-              hit.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Text(
-              hit.description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall,
-            ),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Row(
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: MiuixCard(
+            child: MiuixBasicComponent(
+              startAction: Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: _ModIcon(url: hit.iconUrl),
+              ),
+              content: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.download_outlined,
-                      size: 14,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 2),
                     Text(
-                      _formatDownloads(hit.downloads),
-                      style: theme.textTheme.bodySmall,
+                      hit.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      hit.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textStyles.footnote1,
                     ),
                   ],
                 ),
-                if (hit.categories.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      hit.categories.take(2).join(', '),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
               ],
+              endActions: [
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.download_outlined,
+                          size: 14,
+                          color: theme.colors.onSurfaceVariantSummary,
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          _formatDownloads(hit.downloads),
+                          style: theme.textStyles.footnote1,
+                        ),
+                      ],
+                    ),
+                    if (hit.categories.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          hit.categories.take(2).join(', '),
+                          style: theme.textStyles.footnote2.copyWith(
+                            color: theme.colors.onSurfaceVariantSummary,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+              onClick: () => _openVersions(hit),
             ),
-            onTap: () => _openVersions(hit),
           ),
         );
       },
@@ -707,7 +662,7 @@ class _VersionSheetState extends State<_VersionSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final tr = LocaleScope.of(context).translations;
     return DraggableScrollableSheet(
       initialChildSize: 0.6,
@@ -724,19 +679,19 @@ class _VersionSheetState extends State<_VersionSheet> {
                   Expanded(
                     child: Text(
                       widget.title,
-                      style: theme.textTheme.titleMedium,
+                      style: theme.textStyles.title4,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
+                  MiuixIconButton(
                     onPressed: () => Navigator.of(ctx).pop(false),
+                    child: MiuixIcon(icon: Icons.close),
                   ),
                 ],
               ),
             ),
-            const Divider(height: 1),
+            const MiuixHorizontalDivider(),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -756,37 +711,49 @@ class _VersionSheetState extends State<_VersionSheet> {
                         final depCount = v.dependencies
                             .where((d) => d.projectId != null)
                             .length;
-                        return ListTile(
-                          title: Text(
-                            v.name.isEmpty ? v.versionNumber : v.name,
-                          ),
-                          subtitle: Wrap(
-                            spacing: 6,
-                            children: [
-                              if (v.gameVersions.isNotEmpty)
-                                _chip(theme, v.gameVersions.take(3).join(', ')),
-                              if (v.loaders.isNotEmpty)
-                                _chip(theme, v.loaders.join(', ')),
-                              _chip(
-                                theme,
-                                tr.get(
-                                  'modsPlugins.releaseType.'
-                                  '${v.versionType}',
+                        return MiuixBasicComponent(
+                          content: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(v.name.isEmpty ? v.versionNumber : v.name),
+                                Wrap(
+                                  spacing: 6,
+                                  children: [
+                                    if (v.gameVersions.isNotEmpty)
+                                      _chip(
+                                        theme,
+                                        v.gameVersions.take(3).join(', '),
+                                      ),
+                                    if (v.loaders.isNotEmpty)
+                                      _chip(theme, v.loaders.join(', ')),
+                                    _chip(
+                                      theme,
+                                      tr.get(
+                                        'modsPlugins.releaseType.'
+                                        '${v.versionType}',
+                                      ),
+                                    ),
+                                    if (v.primaryFile != null)
+                                      _chip(
+                                        theme,
+                                        _formatSize(v.primaryFile!.size),
+                                      ),
+                                    if (depCount > 0)
+                                      _chip(
+                                        theme,
+                                        tr.get('modsPlugins.dependencyCount', {
+                                          'count': '$depCount',
+                                        }),
+                                      ),
+                                  ],
                                 ),
-                              ),
-                              if (v.primaryFile != null)
-                                _chip(theme, _formatSize(v.primaryFile!.size)),
-                              if (depCount > 0)
-                                _chip(
-                                  theme,
-                                  tr.get('modsPlugins.dependencyCount', {
-                                    'count': '$depCount',
-                                  }),
-                                ),
-                            ],
-                          ),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _showVersionDetail(v),
+                              ],
+                            ),
+                          ],
+                          endActions: [const Icon(Icons.chevron_right)],
+                          onClick: () => _showVersionDetail(v),
                         );
                       },
                     ),
@@ -913,17 +880,30 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
 
   Future<void> _showExternalDialog() async {
     final pageUrl = widget.version.primaryFile?.url;
-    await showDialog<void>(
+    await showMiuixDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('modsPlugins.externalTitle')),
-        content: Text(
-          ctx.tr('modsPlugins.externalMessage', {'url': pageUrl ?? '-'}),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(ctx.tr('common.ok')),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: MiuixText(
+              ctx.tr('modsPlugins.externalTitle'),
+              textAlign: TextAlign.center,
+              style: MiuixTheme.of(context).textStyles.title4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(ctx.tr('modsPlugins.externalMessage', {'url': pageUrl ?? '-'})),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                ctx.tr('common.ok'),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ],
           ),
         ],
       ),
@@ -941,7 +921,7 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final tr = LocaleScope.of(context).translations;
     final v = widget.version;
     final file = v.primaryFile;
@@ -952,10 +932,13 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
         .where((d) => d.isIncompatible)
         .toList();
 
-    return Scaffold(
-      appBar: AppBar(title: Text(tr.get('modsPlugins.versionDetail'))),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: tr.get('modsPlugins.versionDetail'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => ListView(
+        padding: padding + const EdgeInsets.all(16),
         children: [
           // 模组标题
           Row(
@@ -968,14 +951,14 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
                   children: [
                     Text(
                       widget.title,
-                      style: theme.textTheme.titleMedium,
+                      style: theme.textStyles.title4,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       v.name.isEmpty ? v.versionNumber : v.name,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                      style: theme.textStyles.body2.copyWith(
+                        color: theme.colors.onSurfaceVariantSummary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1029,34 +1012,32 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
           // 文件信息
           if (file != null) ...[
             _sectionTitle(theme, tr.get('modsPlugins.fileInfo')),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _infoRow(
-                      theme,
-                      tr.get('modsPlugins.fileName'),
-                      file.filename,
-                    ),
+            MiuixCard(
+              insideMargin: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _infoRow(
+                    theme,
+                    tr.get('modsPlugins.fileName'),
+                    file.filename,
+                  ),
+                  const SizedBox(height: 6),
+                  _infoRow(
+                    theme,
+                    tr.get('modsPlugins.fileSize'),
+                    _formatSize(file.size),
+                  ),
+                  if (file.sha1 != null) ...[
                     const SizedBox(height: 6),
                     _infoRow(
                       theme,
-                      tr.get('modsPlugins.fileSize'),
-                      _formatSize(file.size),
+                      tr.get('modsPlugins.sha1'),
+                      file.sha1!,
+                      mono: true,
                     ),
-                    if (file.sha1 != null) ...[
-                      const SizedBox(height: 6),
-                      _infoRow(
-                        theme,
-                        tr.get('modsPlugins.sha1'),
-                        file.sha1!,
-                        mono: true,
-                      ),
-                    ],
                   ],
-                ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
@@ -1070,14 +1051,14 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
                 child: SizedBox(
                   width: 24,
                   height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: MiuixInfiniteProgressIndicator(size: 20),
                 ),
               ),
             )
           else ...[
             if (requiredDeps.isNotEmpty) ...[
               _sectionTitle(theme, tr.get('modsPlugins.dependencies')),
-              Card(
+              MiuixCard(
                 child: Column(
                   children: requiredDeps
                       .map((d) => _depTile(theme, d, required: true))
@@ -1088,7 +1069,7 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
             ],
             if (optionalDeps.isNotEmpty) ...[
               _sectionTitle(theme, tr.get('modsPlugins.optionalDependencies')),
-              Card(
+              MiuixCard(
                 child: Column(
                   children: optionalDeps
                       .map((d) => _depTile(theme, d, required: false))
@@ -1099,7 +1080,7 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
             ],
             if (incompatibleDeps.isNotEmpty) ...[
               _sectionTitle(theme, tr.get('modsPlugins.incompatible')),
-              Card(
+              MiuixCard(
                 child: Column(
                   children: incompatibleDeps
                       .map(
@@ -1128,51 +1109,61 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
           const SizedBox(height: 24),
 
           // 下载按钮
-          FilledButton.icon(
+          MiuixButton(
             onPressed: _enqueueDownload,
-            icon: const Icon(Icons.download),
-            label: Text(tr.get('modsPlugins.downloadVersion')),
+            colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                MiuixIcon(icon: Icons.download),
+                const SizedBox(width: 8),
+                MiuixText(tr.get('modsPlugins.downloadVersion')),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _sectionTitle(ThemeData theme, String title) {
+  Widget _sectionTitle(MiuixThemeData theme, String title) {
     return Padding(
       padding: const EdgeInsets.only(top: 4, bottom: 6),
       child: Text(
         title,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
-        ),
+        style: theme.textStyles.subtitle.copyWith(color: theme.colors.primary),
       ),
     );
   }
 
   Widget _sectionCard(
-    ThemeData theme,
+    MiuixThemeData theme,
     String label,
     String? value, {
     bool isChip = false,
   }) {
-    return Card(
-      child: ListTile(
-        dense: true,
-        title: Text(label, style: theme.textTheme.bodySmall),
-        trailing: isChip
-            ? Chip(
-                label: Text(value ?? ''),
-                visualDensity: VisualDensity.compact,
-              )
-            : value == null
-            ? null
-            : Text(value, style: theme.textTheme.bodyMedium),
+    return MiuixCard(
+      child: MiuixBasicComponent(
+        content: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [Text(label, style: theme.textStyles.footnote1)],
+          ),
+        ],
+        endActions: [
+          // 原本作为可空参数（trailing）传入，放进非空列表需用空感知元素。
+          ?(isChip
+              ? EcStatusChip(value ?? '')
+              : value == null
+              ? null
+              : MiuixText(value, style: theme.textStyles.body2)),
+        ],
       ),
     );
   }
 
-  Widget _chipWrap(ThemeData theme, List<String> items) {
+  Widget _chipWrap(MiuixThemeData theme, List<String> items) {
     return Wrap(
       spacing: 6,
       runSpacing: 6,
@@ -1181,10 +1172,10 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
             (item) => Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
+                color: theme.colors.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Text(item, style: theme.textTheme.labelMedium),
+              child: Text(item, style: theme.textStyles.footnote1),
             ),
           )
           .toList(),
@@ -1192,7 +1183,7 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
   }
 
   Widget _infoRow(
-    ThemeData theme,
+    MiuixThemeData theme,
     String label,
     String value, {
     bool mono = false,
@@ -1204,8 +1195,8 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
           width: 80,
           child: Text(
             label,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: theme.textStyles.footnote1.copyWith(
+              color: theme.colors.onSurfaceVariantSummary,
             ),
           ),
         ),
@@ -1213,11 +1204,11 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
           child: SelectableText(
             value,
             style: mono
-                ? theme.textTheme.bodySmall?.copyWith(
+                ? theme.textStyles.footnote1.copyWith(
                     fontFamily: 'monospace',
                     fontSize: 11,
                   )
-                : theme.textTheme.bodySmall,
+                : theme.textStyles.footnote1,
           ),
         ),
       ],
@@ -1225,7 +1216,7 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
   }
 
   Widget _depTile(
-    ThemeData theme,
+    MiuixThemeData theme,
     ModVersionDependency dep, {
     required bool required,
     bool incompatible = false,
@@ -1233,40 +1224,52 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
     final label = _dependencyLabel(dep);
     final canNavigate = dep.projectId != null && dep.projectId!.isNotEmpty;
     final project = canNavigate ? _depProjects[dep.projectId] : null;
-    return ListTile(
-      dense: true,
-      leading: Icon(
-        incompatible
-            ? Icons.block
-            : required
-            ? Icons.priority_high
-            : Icons.low_priority,
-        size: 20,
-        color: incompatible
-            ? theme.colorScheme.error
-            : required
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurfaceVariant,
+    return MiuixBasicComponent(
+      startAction: Padding(
+        padding: const EdgeInsets.only(right: 16),
+        child: Icon(
+          incompatible
+              ? Icons.block
+              : required
+              ? Icons.priority_high
+              : Icons.low_priority,
+          size: 20,
+          color: incompatible
+              ? theme.colors.error
+              : required
+              ? theme.colors.primary
+              : theme.colors.onSurfaceVariantSummary,
+        ),
       ),
-      title: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: dep.projectId != null
-          ? Text(
-              dep.projectId!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            )
-          : null,
-      trailing: canNavigate
-          ? Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: theme.colorScheme.onSurfaceVariant,
-            )
-          : null,
-      onTap: canNavigate
+      content: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ?dep.projectId != null
+                ? Text(
+                    dep.projectId!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textStyles.footnote2.copyWith(
+                      color: theme.colors.onSurfaceVariantSummary,
+                    ),
+                  )
+                : null,
+          ],
+        ),
+      ],
+      endActions: [
+        ?canNavigate
+            ? Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: theme.colors.onSurfaceVariantSummary,
+              )
+            : null,
+      ],
+      onClick: canNavigate
           ? () => _openDependency(
               projectId: dep.projectId!,
               title: label,
@@ -1302,18 +1305,7 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
       // 避免 sheet 的 context 失效导致 SnackBar 永不消失或"查看队列"按钮无效。
       if (downloaded == true && mounted) {
         final tr = LocaleScope.of(context).translations;
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(tr.get('modsPlugins.downloadQueued')),
-              duration: const Duration(seconds: 4),
-              action: SnackBarAction(
-                label: tr.get('modsPlugins.viewQueue'),
-                onPressed: () => showDownloadQueueSheet(context),
-              ),
-            ),
-          );
+        showMiuixSnackbar(tr.get('modsPlugins.downloadQueued'));
       }
     });
   }
@@ -1336,32 +1328,32 @@ class _ModIcon extends StatelessWidget {
   }
 }
 
-Widget _chip(ThemeData theme, String label) {
+Widget _chip(MiuixThemeData theme, String label) {
   return Container(
     margin: const EdgeInsets.only(top: 4),
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
     decoration: BoxDecoration(
-      color: theme.colorScheme.surfaceContainerHighest,
+      color: theme.colors.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(4),
     ),
-    child: Text(label, style: theme.textTheme.labelSmall),
+    child: Text(label, style: theme.textStyles.footnote2),
   );
 }
 
-Widget _centerMessage(ThemeData theme, IconData icon, String text) {
+Widget _centerMessage(MiuixThemeData theme, IconData icon, String text) {
   return Center(
     child: Padding(
       padding: const EdgeInsets.all(32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 48, color: theme.colorScheme.onSurfaceVariant),
+          Icon(icon, size: 48, color: theme.colors.onSurfaceVariantSummary),
           const SizedBox(height: 12),
           Text(
             text,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: theme.textStyles.body2.copyWith(
+              color: theme.colors.onSurfaceVariantSummary,
             ),
           ),
         ],
@@ -1423,7 +1415,7 @@ class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
     // 没有任何任务时不显示
     if (queue.tasks.isEmpty) return const SizedBox.shrink();
 
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final current = queue.current;
     final pending = queue.pendingCount;
     final completed = queue.completedCount;
@@ -1432,7 +1424,7 @@ class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer,
+        color: theme.colors.primaryContainer,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Material(
@@ -1451,19 +1443,25 @@ class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
                     height: 18,
                     child: current.progress >= 0
                         ? TweenAnimationBuilder<double>(
-                            tween: Tween(begin: current.progress, end: current.progress),
+                            tween: Tween(
+                              begin: current.progress,
+                              end: current.progress,
+                            ),
                             duration: const Duration(milliseconds: 500),
                             curve: Curves.linear,
                             builder: (context, value, _) =>
-                                CircularProgressIndicator(value: value, strokeWidth: 2),
+                                CircularProgressIndicator(
+                                  value: value,
+                                  strokeWidth: 2,
+                                ),
                           )
-                        : const CircularProgressIndicator(strokeWidth: 2),
+                        : const MiuixInfiniteProgressIndicator(size: 20),
                   )
                 else
                   Icon(
                     Icons.download_done,
                     size: 18,
-                    color: theme.colorScheme.primary,
+                    color: theme.colors.primary,
                   ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -1478,7 +1476,7 @@ class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
                           '${current.speedBytesPerSec > 0 ? ' · ${formatSpeed(current.speedBytesPerSec)}' : ''}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                          style: theme.textStyles.body2.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         )
@@ -1486,7 +1484,7 @@ class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
                         Text(
                           context.tr('modsPlugins.queueEmpty'),
                           maxLines: 1,
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                          style: theme.textStyles.body2.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -1508,8 +1506,8 @@ class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
                           ].join(' · '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                          style: theme.textStyles.footnote2.copyWith(
+                            color: theme.colors.onSurfaceVariantSummary,
                           ),
                         ),
                     ],
@@ -1518,7 +1516,7 @@ class _DownloadQueueBannerState extends State<DownloadQueueBanner> {
                 Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: theme.colors.onSurfaceVariantSummary,
                 ),
               ],
             ),
@@ -1565,7 +1563,7 @@ class _QueueSheetState extends State<_QueueSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final tr = LocaleScope.of(context).translations;
     final queue = DownloadQueue.instance;
     final tasks = queue.tasks.reversed.toList(); // 最新的在上
@@ -1585,13 +1583,13 @@ class _QueueSheetState extends State<_QueueSheet> {
                   Expanded(
                     child: Text(
                       tr.get('modsPlugins.downloadQueue'),
-                      style: theme.textTheme.titleMedium,
+                      style: theme.textStyles.title4,
                     ),
                   ),
                   if (queue.hasActiveTasks)
-                    TextButton(
+                    MiuixTextButton(
+                      tr.get('modsPlugins.cancelAll'),
                       onPressed: () => DownloadQueue.instance.cancelAll(),
-                      child: Text(tr.get('modsPlugins.cancelAll')),
                     ),
                   if (queue.tasks.any(
                     (t) =>
@@ -1599,18 +1597,18 @@ class _QueueSheetState extends State<_QueueSheet> {
                         t.status == DownloadTaskStatus.failed ||
                         t.status == DownloadTaskStatus.cancelled,
                   ))
-                    TextButton(
+                    MiuixTextButton(
+                      tr.get('modsPlugins.clearFinished'),
                       onPressed: () => DownloadQueue.instance.removeFinished(),
-                      child: Text(tr.get('modsPlugins.clearFinished')),
                     ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
+                  MiuixIconButton(
                     onPressed: () => Navigator.of(ctx).pop(),
+                    child: MiuixIcon(icon: Icons.close),
                   ),
                 ],
               ),
             ),
-            const Divider(height: 1),
+            const MiuixHorizontalDivider(),
             Expanded(
               child: tasks.isEmpty
                   ? Center(child: Text(tr.get('modsPlugins.queueEmpty')))
@@ -1636,109 +1634,122 @@ class _QueueTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final tr = LocaleScope.of(context).translations;
+    final theme = MiuixTheme.of(context);
 
     IconData statusIcon;
     Color? statusColor;
     switch (task.status) {
       case DownloadTaskStatus.downloading:
         statusIcon = Icons.downloading;
-        statusColor = theme.colorScheme.primary;
+        statusColor = theme.colors.primary;
         break;
       case DownloadTaskStatus.pending:
         statusIcon = Icons.schedule;
-        statusColor = theme.colorScheme.onSurfaceVariant;
+        statusColor = theme.colors.onSurfaceVariantSummary;
         break;
       case DownloadTaskStatus.completed:
         statusIcon = Icons.check_circle;
-        statusColor = theme.colorScheme.primary;
+        statusColor = theme.colors.primary;
         break;
       case DownloadTaskStatus.failed:
         statusIcon = Icons.error_outline;
-        statusColor = theme.colorScheme.error;
+        statusColor = theme.colors.error;
         break;
       case DownloadTaskStatus.cancelled:
         statusIcon = Icons.cancel;
-        statusColor = theme.colorScheme.onSurfaceVariant;
+        statusColor = theme.colors.onSurfaceVariantSummary;
         break;
     }
 
-    return ListTile(
-      leading: _ModIcon(url: task.iconUrl),
-      title: Text(
-        task.projectTitle,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+    return MiuixBasicComponent(
+      startAction: Padding(
+        padding: const EdgeInsets.only(right: 16),
+        child: _ModIcon(url: task.iconUrl),
       ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            task.versionName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall,
-          ),
-          if (task.status == DownloadTaskStatus.downloading)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: task.progress >= 0
-                  ? TweenAnimationBuilder<double>(
-                      tween: Tween(begin: task.progress, end: task.progress),
-                      duration: const Duration(milliseconds: 500),
-                      curve: Curves.linear,
-                      builder: (context, value, _) =>
-                          LinearProgressIndicator(value: value),
-                    )
-                  : const LinearProgressIndicator(),
-            )
-          else if (task.status == DownloadTaskStatus.failed &&
-              task.error != null)
+      content: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Text(
-              task.error!,
+              task.projectTitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.error,
-              ),
             ),
-          if (task.status == DownloadTaskStatus.downloading &&
-              task.progress >= 0 &&
-              task.speedBytesPerSec > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                _formatRateEta(task),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  task.versionName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textStyles.footnote1,
                 ),
+                if (task.status == DownloadTaskStatus.downloading)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: task.progress >= 0
+                        ? TweenAnimationBuilder<double>(
+                            tween: Tween(
+                              begin: task.progress,
+                              end: task.progress,
+                            ),
+                            duration: const Duration(milliseconds: 500),
+                            curve: Curves.linear,
+                            builder: (context, value, _) =>
+                                LinearProgressIndicator(value: value),
+                          )
+                        : const LinearProgressIndicator(),
+                  )
+                else if (task.status == DownloadTaskStatus.failed &&
+                    task.error != null)
+                  Text(
+                    task.error!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textStyles.footnote2.copyWith(
+                      color: theme.colors.error,
+                    ),
+                  ),
+                if (task.status == DownloadTaskStatus.downloading &&
+                    task.progress >= 0 &&
+                    task.speedBytesPerSec > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      _formatRateEta(task),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textStyles.footnote2.copyWith(
+                        color: theme.colors.onSurfaceVariantSummary,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ],
+      endActions: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(statusIcon, size: 20, color: statusColor),
+            if (task.status == DownloadTaskStatus.downloading ||
+                task.status == DownloadTaskStatus.pending)
+              MiuixIconButton(
+                onPressed: () => DownloadQueue.instance.cancel(task.id),
+                child: MiuixIcon(icon: Icons.close, size: 18),
+              )
+            else
+              MiuixIconButton(
+                onPressed: () => DownloadQueue.instance.remove(task.id),
+                child: MiuixIcon(icon: Icons.delete_outline, size: 18),
               ),
-            ),
-        ],
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(statusIcon, size: 20, color: statusColor),
-          if (task.status == DownloadTaskStatus.downloading ||
-              task.status == DownloadTaskStatus.pending)
-            IconButton(
-              icon: const Icon(Icons.close, size: 18),
-              tooltip: tr.get('common.cancel'),
-              onPressed: () => DownloadQueue.instance.cancel(task.id),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.delete_outline, size: 18),
-              tooltip: tr.get('common.delete'),
-              onPressed: () => DownloadQueue.instance.remove(task.id),
-            ),
-        ],
-      ),
+          ],
+        ),
+      ],
     );
   }
 }

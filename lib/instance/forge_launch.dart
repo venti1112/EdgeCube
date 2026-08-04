@@ -54,7 +54,9 @@ class ForgeLaunch {
       return null;
     }
     // 匹配 `@libraries/....../unix_args.txt`（run.sh 中以 @ 引用的 argfile）。
-    final match = RegExp(r'@(libraries/\S*?unix_args\.txt)').firstMatch(content);
+    final match = RegExp(
+      r'@(libraries/\S*?unix_args\.txt)',
+    ).firstMatch(content);
     if (match == null) return null;
     final rel = match.group(1)!;
     // 确认文件确实存在，避免记录一个无效路径。
@@ -67,7 +69,10 @@ class ForgeLaunch {
     final libraries = Directory(p.join(dir.path, 'libraries'));
     if (!libraries.existsSync()) return null;
     try {
-      for (final entry in libraries.listSync(recursive: true, followLinks: false)) {
+      for (final entry in libraries.listSync(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (entry is File && p.basename(entry.path) == 'unix_args.txt') {
           return p.relative(entry.path, from: dir.path).replaceAll('\\', '/');
         }

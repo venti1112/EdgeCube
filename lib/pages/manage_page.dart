@@ -1,11 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
+import '../widgets/ec_preference.dart';
 import 'allay_properties_page.dart';
 import 'instance_export_page.dart';
 import 'mods_plugins_page.dart';
@@ -26,95 +28,101 @@ class ManagePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('manage.title'))),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _ManageEntryTile(
-              icon: Icons.people_outline,
-              title: context.tr('manage.players.title'),
-              subtitle: context.tr('manage.players.subtitle'),
-              onTap: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const PlayersPage())),
-            ),
-            const SizedBox(height: 12),
-            _ServerConfigTile(),
-            const SizedBox(height: 12),
-            _ManageEntryTile(
-              icon: Icons.extension_outlined,
-              title: context.tr('manage.modsPlugins.title'),
-              subtitle: context.tr('manage.modsPlugins.subtitle'),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ModsPluginsPage()),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('manage.title'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _ManageEntryTile(
+                icon: Icons.people_outline,
+                title: context.tr('manage.players.title'),
+                subtitle: context.tr('manage.players.subtitle'),
+                onTap: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const PlayersPage())),
               ),
-            ),
-            const SizedBox(height: 12),
-            _ManageEntryTile(
-              icon: Icons.lan_outlined,
-              title: context.tr('manage.network.title'),
-              subtitle: context.tr('manage.network.subtitle'),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PortMappingPage()),
+              const SizedBox(height: 12),
+              _ServerConfigTile(),
+              const SizedBox(height: 12),
+              _ManageEntryTile(
+                icon: Icons.extension_outlined,
+                title: context.tr('manage.modsPlugins.title'),
+                subtitle: context.tr('manage.modsPlugins.subtitle'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ModsPluginsPage()),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            _ManageEntryTile(
-              icon: Icons.folder_shared_outlined,
-              title: context.tr('manage.ftp.title'),
-              subtitle: context.tr('manage.ftp.subtitle'),
-              onTap: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const FtpPage())),
-            ),
-            const SizedBox(height: 12),
-            _ManageEntryTile(
-              icon: Icons.dns_outlined,
-              title: context.tr('manage.ssh.title'),
-              subtitle: context.tr('manage.ssh.subtitle'),
-              onTap: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const SshPage())),
-            ),
-            const SizedBox(height: 12),
-            _ManageEntryTile(
-              icon: Icons.hub_outlined,
-              title: context.tr('manage.mcp.title'),
-              subtitle: context.tr('manage.mcp.subtitle'),
-              onTap: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const McpPage())),
-            ),
-            const SizedBox(height: 12),
-            _ManageEntryTile(
-              icon: Icons.memory,
-              title: context.tr('manage.runtime.title'),
-              subtitle: context.tr('manage.runtime.subtitle'),
-              onTap: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const RuntimePage())),
-            ),
-            const SizedBox(height: 12),
-            _ManageEntryTile(
-              icon: Icons.terminal,
-              title: context.tr('manage.shell.title'),
-              subtitle: context.tr('manage.shell.subtitle'),
-              onTap: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const ShellPage())),
-            ),
-            const SizedBox(height: 12),
-            _ManageEntryTile(
-              icon: Icons.archive_outlined,
-              title: context.tr('manage.export.title'),
-              subtitle: context.tr('manage.export.subtitle'),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const InstanceExportPage()),
+              const SizedBox(height: 12),
+              _ManageEntryTile(
+                icon: Icons.lan_outlined,
+                title: context.tr('manage.network.title'),
+                subtitle: context.tr('manage.network.subtitle'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const PortMappingPage()),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              _ManageEntryTile(
+                icon: Icons.folder_shared_outlined,
+                title: context.tr('manage.ftp.title'),
+                subtitle: context.tr('manage.ftp.subtitle'),
+                onTap: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const FtpPage())),
+              ),
+              const SizedBox(height: 12),
+              _ManageEntryTile(
+                icon: Icons.dns_outlined,
+                title: context.tr('manage.ssh.title'),
+                subtitle: context.tr('manage.ssh.subtitle'),
+                onTap: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const SshPage())),
+              ),
+              const SizedBox(height: 12),
+              _ManageEntryTile(
+                icon: Icons.hub_outlined,
+                title: context.tr('manage.mcp.title'),
+                subtitle: context.tr('manage.mcp.subtitle'),
+                onTap: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const McpPage())),
+              ),
+              const SizedBox(height: 12),
+              _ManageEntryTile(
+                icon: Icons.memory,
+                title: context.tr('manage.runtime.title'),
+                subtitle: context.tr('manage.runtime.subtitle'),
+                onTap: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const RuntimePage())),
+              ),
+              const SizedBox(height: 12),
+              _ManageEntryTile(
+                icon: Icons.terminal,
+                title: context.tr('manage.shell.title'),
+                subtitle: context.tr('manage.shell.subtitle'),
+                onTap: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const ShellPage())),
+              ),
+              const SizedBox(height: 12),
+              _ManageEntryTile(
+                icon: Icons.archive_outlined,
+                title: context.tr('manage.export.title'),
+                subtitle: context.tr('manage.export.subtitle'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const InstanceExportPage()),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -188,8 +196,9 @@ class _ServerConfigTileState extends State<_ServerConfigTile> {
     final subtitle = switch (kind) {
       _ServerConfigKind.pnx => context.tr('manage.pnxProperties.subtitle'),
       _ServerConfigKind.allay => context.tr('manage.allayProperties.subtitle'),
-      _ServerConfigKind.vanilla =>
-        context.tr('manage.serverProperties.subtitle'),
+      _ServerConfigKind.vanilla => context.tr(
+        'manage.serverProperties.subtitle',
+      ),
       null => context.tr('manage.serverProperties.subtitle'),
     };
     return _ManageEntryTile(
@@ -226,14 +235,24 @@ class _ManageEntryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        leading: Icon(icon, size: 36),
-        title: Text(title, style: const TextStyle(fontSize: 16)),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        onTap: onTap,
+    return MiuixCard(
+      child: MiuixBasicComponent(
+        startAction: Padding(
+          padding: const EdgeInsets.only(right: 16),
+          child: Icon(icon, size: 36),
+        ),
+        content: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(title, style: const TextStyle(fontSize: 16)),
+              Text(subtitle),
+            ],
+          ),
+        ],
+        endActions: [const Icon(Icons.chevron_right)],
+        onClick: onTap,
       ),
     );
   }

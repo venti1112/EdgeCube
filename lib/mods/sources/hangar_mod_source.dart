@@ -32,8 +32,11 @@ class HangarModSource extends ModSource {
   bool supportsProjectType(String projectType) => projectType == 'plugin';
 
   @override
-  List<String> supportedLoaders(String projectType) =>
-      const ['paper', 'waterfall', 'velocity'];
+  List<String> supportedLoaders(String projectType) => const [
+    'paper',
+    'waterfall',
+    'velocity',
+  ];
 
   @override
   bool get supportsGameVersionFilter => false;
@@ -67,9 +70,7 @@ class HangarModSource extends ModSource {
       params['platform'] = loader.toUpperCase();
     }
 
-    final uri = Uri.parse(
-      '$_base/projects',
-    ).replace(queryParameters: params);
+    final uri = Uri.parse('$_base/projects').replace(queryParameters: params);
     final json = await _getJson(uri) as Map<String, dynamic>;
 
     final result = (json['result'] as List? ?? []);
@@ -93,9 +94,9 @@ class HangarModSource extends ModSource {
     String projectType = 'mod',
   }) async {
     // projectId 对 Hangar 即 slug。
-    final uri = Uri.parse('$_base/projects/$projectId/versions').replace(
-      queryParameters: {'limit': '25', 'offset': '0'},
-    );
+    final uri = Uri.parse(
+      '$_base/projects/$projectId/versions',
+    ).replace(queryParameters: {'limit': '25', 'offset': '0'});
     final json = await _getJson(uri) as Map<String, dynamic>;
     final result = (json['result'] as List? ?? []);
     final versions = result
@@ -110,7 +111,13 @@ class HangarModSource extends ModSource {
 
   Future<Object?> _getJson(Uri uri) async {
     final res = await http
-        .get(uri, headers: {'User-Agent': await CloudHeaders.userAgent, 'Accept': 'application/json'})
+        .get(
+          uri,
+          headers: {
+            'User-Agent': await CloudHeaders.userAgent,
+            'Accept': 'application/json',
+          },
+        )
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
       throw Exception('Hangar HTTP ${res.statusCode}');
@@ -138,9 +145,7 @@ class HangarModSource extends ModSource {
       follows: (stats?['stars'] as num?)?.toInt() ?? 0,
       categories: category == null ? const [] : [category],
       author: owner,
-      pageUrl: owner == null
-          ? null
-          : 'https://hangar.papermc.io/$owner/$ns',
+      pageUrl: owner == null ? null : 'https://hangar.papermc.io/$owner/$ns',
     );
   }
 
@@ -148,7 +153,8 @@ class HangarModSource extends ModSource {
     final name = j['name'] as String? ?? '';
     // downloads: {PAPER: {fileInfo, externalUrl, downloadUrl}, ...}
     final downloadsMap = j['downloads'] as Map<String, dynamic>? ?? {};
-    final platformVersions = j['platformDependencies'] as Map<String, dynamic>? ?? {};
+    final platformVersions =
+        j['platformDependencies'] as Map<String, dynamic>? ?? {};
 
     final files = <ModVersionFile>[];
     final loaders = <String>[];
@@ -157,8 +163,8 @@ class HangarModSource extends ModSource {
       final entry = downloadsMap[platform] as Map<String, dynamic>?;
       if (entry == null) continue;
       loaders.add(platform.toLowerCase());
-      for (final gv in (platformVersions[platform] as List? ?? [])
-          .whereType<String>()) {
+      for (final gv
+          in (platformVersions[platform] as List? ?? []).whereType<String>()) {
         gameVersions.add(gv);
       }
       final fileInfo = entry['fileInfo'] as Map<String, dynamic>?;
@@ -174,8 +180,7 @@ class HangarModSource extends ModSource {
           ),
         );
       } else {
-        final url =
-            '$_base/projects/$slug/versions/$name/$platform/download';
+        final url = '$_base/projects/$slug/versions/$name/$platform/download';
         files.add(
           ModVersionFile(
             downloads: [url],

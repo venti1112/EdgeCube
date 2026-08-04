@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -12,6 +13,9 @@ import '../i18n/locale_scope.dart';
 import '../online/update_service.dart';
 import '../widgets/error_dialog.dart';
 import '../widgets/update_dialog.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/miuix_snackbar.dart';
 
 /// 「关于」页面：展示应用版本、简介、开源许可等信息。
 class AboutPage extends StatefulWidget {
@@ -72,18 +76,11 @@ class _AboutPageState extends State<AboutPage> {
       _devModeTaps = 0;
       DeveloperOptionsStore.saveEnabled(true);
       setState(() => _devModeEnabled = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('about.devModeEnabled'))),
-      );
+      showMiuixSnackbar(context.tr('about.devModeEnabled'));
     } else if (remaining <= 2) {
       // 最后 2 次点击时给出提示
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            context.tr('about.devModeTapHint', {'count': '$remaining'}),
-          ),
-          duration: const Duration(seconds: 1),
-        ),
+      showMiuixSnackbar(
+        context.tr('about.devModeTapHint', {'count': '$remaining'}),
       );
       _devModeTapTimer = Timer(const Duration(milliseconds: 1500), () {
         _devModeTaps = 0;
@@ -112,9 +109,7 @@ class _AboutPageState extends State<AboutPage> {
       if (updateInfo != null) {
         _showUpdateDialog(updateInfo);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('about.alreadyLatest'))),
-        );
+        showMiuixSnackbar(context.tr('about.alreadyLatest'));
       }
     } finally {
       if (mounted) setState(() => _checking = false);
@@ -123,232 +118,203 @@ class _AboutPageState extends State<AboutPage> {
 
   /// 展示更新提示对话框。
   void _showUpdateDialog(AppUpdateInfo updateInfo) {
-    showDialog<void>(
+    showMiuixDialog<void>(
       context: context,
       barrierDismissible: false,
+      title: context.tr('update.newVersionFound'),
       builder: (ctx) => UpdateDialog(updateInfo: updateInfo),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final theme = MiuixTheme.of(context);
+    final c = theme.colors;
 
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('about.title'))),
-      body: ListView(
-        children: [
-          const SizedBox(height: 32),
+    return EcSettingsPage(
+      title: context.tr('about.title'),
+      children: [
+        const SizedBox(height: 32),
 
-          // ── 应用图标 ──
-          Center(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: Image.asset(
-                'assets/images/app_logo.png',
-                width: 96,
-                height: 96,
-              ),
+        // ── 应用图标 ──
+        Center(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Image.asset(
+              'assets/images/app_logo.png',
+              width: 96,
+              height: 96,
             ),
           ),
-
-          const SizedBox(height: 20),
-
-          // ── 应用名称 ──
-          Center(
-            child: Text(
-              'EdgeCube',
-              style: theme.textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 6),
-
-          // ── 版本号（连续点击 5 次解锁开发者模式）──
-          Center(
-            child: GestureDetector(
-              onTap: _onVersionTap,
-              behavior: HitTestBehavior.opaque,
-              child: Text(
-                _version.isEmpty
-                    ? context.tr('common.loading')
-                    : context.tr('about.version', {
-                        'version': _version,
-                        'build': _buildNumber,
-                      }),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: cs.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // ── 检查更新 ──
-          Center(
-            child: OutlinedButton.icon(
-              onPressed: _checking ? null : _checkUpdates,
-              icon: _checking
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.system_update, size: 18),
-              label: Text(
-                _checking
-                    ? context.tr('about.checking')
-                    : context.tr('about.checkUpdate'),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 28),
-
-          // ── 简介 ──
-          Center(
-            child: Text(
-              context.tr('about.description'),
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: cs.onSurfaceVariant,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // ── 官网 ──
-          _sectionHeader(theme, context.tr('about.website')),
-          ListTile(
-            leading: const Icon(Icons.language),
-            title: const Text('EdgeCube'),
-            subtitle: const Text('edgecubemc.com'),
-            trailing: const Icon(Icons.open_in_new, size: 18),
-            onTap: () => launchUrl(
-              Uri.parse('https://edgecubemc.com/'),
-              mode: LaunchMode.externalApplication,
-            ),
-          ),
-
-          // ── GitHub ──
-          _sectionHeader(theme, context.tr('about.openSourceRepo')),
-          ListTile(
-            leading: const Icon(Icons.code),
-            title: const Text('GitHub'),
-            subtitle: const Text('github.com/venti1112/EdgeCube'),
-            trailing: const Icon(Icons.open_in_new, size: 18),
-            onTap: () => launchUrl(
-              Uri.parse('https://github.com/venti1112/EdgeCube'),
-              mode: LaunchMode.externalApplication,
-            ),
-          ),
-
-          const Divider(),
-
-          // ── 用户协议 ──
-          _sectionHeader(theme, context.tr('about.userAgreementSection')),
-          ListTile(
-            leading: const Icon(Icons.description_outlined),
-            title: Text(context.tr('about.userAgreement')),
-            subtitle: Text(context.tr('about.userAgreementDesc')),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const _UserAgreementViewerPage(),
-                ),
-              );
-            },
-          ),
-
-          // ── 开源许可 ──
-          _sectionHeader(theme, context.tr('about.openSourceLicense')),
-          ListTile(
-            leading: const Icon(Icons.balance),
-            title: const Text('GNU General Public License v3.0'),
-            subtitle: Text(context.tr('about.gplNotice')),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const _LicenseViewerPage()),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.description_outlined),
-            title: Text(context.tr('about.thirdPartyLicenses')),
-            subtitle: Text(context.tr('about.thirdPartyLicensesDesc')),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => showLicensePage(
-              context: context,
-              applicationName: 'EdgeCube',
-              applicationVersion: _version.isEmpty
-                  ? ''
-                  : '$_version (Build $_buildNumber)',
-              applicationIcon: Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Image.asset(
-                    'assets/images/app_logo.png',
-                    width: 64,
-                    height: 64,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // ── 底部版权 ──
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Column(
-                children: [
-                  Text(
-                    context.tr('about.disclaimer'),
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      height: 1.6,
-                      fontSize: 11,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    context.tr('about.copyright'),
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      height: 1.6,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 32),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionHeader(ThemeData theme, String text) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        text,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
         ),
-      ),
+
+        const SizedBox(height: 20),
+
+        // ── 应用名称 ──
+        Center(child: MiuixText('EdgeCube', style: theme.textStyles.title1)),
+
+        const SizedBox(height: 6),
+
+        // ── 版本号（连续点击 5 次解锁开发者模式）──
+        Center(
+          child: GestureDetector(
+            onTap: _onVersionTap,
+            behavior: HitTestBehavior.opaque,
+            child: MiuixText(
+              _version.isEmpty
+                  ? context.tr('common.loading')
+                  : context.tr('about.version', {
+                      'version': _version,
+                      'build': _buildNumber,
+                    }),
+              style: theme.textStyles.body2,
+              color: c.onSurfaceVariantSummary,
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // ── 检查更新 ──
+        Center(
+          child: MiuixButton(
+            enabled: !_checking,
+            onPressed: _checking ? null : _checkUpdates,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_checking)
+                  const MiuixInfiniteProgressIndicator(size: 16)
+                else
+                  const MiuixIcon(icon: Icons.system_update, size: 18),
+                const SizedBox(width: 8),
+                MiuixText(
+                  _checking
+                      ? context.tr('about.checking')
+                      : context.tr('about.checkUpdate'),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 28),
+
+        // ── 简介 ──
+        Center(
+          child: MiuixText(
+            context.tr('about.description'),
+            style: theme.textStyles.body1,
+            color: c.onSurfaceVariantSummary,
+          ),
+        ),
+
+        const SizedBox(height: 24),
+
+        // ── 官网 ──
+        MiuixSmallTitle(context.tr('about.website')),
+        MiuixBasicComponent(
+          startAction: prefIcon(Icons.language),
+          title: 'EdgeCube',
+          summary: 'edgecubemc.com',
+          endActions: [const MiuixIcon(icon: Icons.open_in_new, size: 18)],
+          onClick: () => launchUrl(
+            Uri.parse('https://edgecubemc.com/'),
+            mode: LaunchMode.externalApplication,
+          ),
+        ),
+
+        // ── GitHub ──
+        MiuixSmallTitle(context.tr('about.openSourceRepo')),
+        MiuixBasicComponent(
+          startAction: prefIcon(Icons.code),
+          title: 'GitHub',
+          summary: 'github.com/venti1112/EdgeCube',
+          endActions: [const MiuixIcon(icon: Icons.open_in_new, size: 18)],
+          onClick: () => launchUrl(
+            Uri.parse('https://github.com/venti1112/EdgeCube'),
+            mode: LaunchMode.externalApplication,
+          ),
+        ),
+
+        // ── 用户协议 ──
+        MiuixSmallTitle(context.tr('about.userAgreementSection')),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.description_outlined),
+          title: context.tr('about.userAgreement'),
+          summary: context.tr('about.userAgreementDesc'),
+          onClick: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const _UserAgreementViewerPage()),
+          ),
+        ),
+
+        // ── 开源许可 ──
+        MiuixSmallTitle(context.tr('about.openSourceLicense')),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.balance),
+          title: 'GNU General Public License v3.0',
+          summary: context.tr('about.gplNotice'),
+          onClick: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const _LicenseViewerPage())),
+        ),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.description_outlined),
+          title: context.tr('about.thirdPartyLicenses'),
+          summary: context.tr('about.thirdPartyLicensesDesc'),
+          // 三方许可页由 Flutter 框架提供，样式仍是 Material——它渲染的是各依赖
+          // 包的 LICENSE 原文，无 Miuix 对应物，保留原生实现。
+          onClick: () => showLicensePage(
+            context: context,
+            applicationName: 'EdgeCube',
+            applicationVersion: _version.isEmpty
+                ? ''
+                : '$_version (Build $_buildNumber)',
+            applicationIcon: Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.asset(
+                  'assets/images/app_logo.png',
+                  width: 64,
+                  height: 64,
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 24),
+
+        // ── 底部版权 ──
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Column(
+              children: [
+                MiuixText(
+                  context.tr('about.disclaimer'),
+                  textAlign: TextAlign.center,
+                  style: theme.textStyles.footnote1,
+                  color: c.onSurfaceVariantSummary,
+                  fontSize: 11,
+                  height: 1.6,
+                ),
+                const SizedBox(height: 12),
+                MiuixText(
+                  context.tr('about.copyright'),
+                  textAlign: TextAlign.center,
+                  style: theme.textStyles.footnote1,
+                  color: c.onSurfaceVariantSummary,
+                  height: 1.6,
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 32),
+      ],
     );
   }
 }
@@ -374,12 +340,15 @@ class _LicenseViewerPageState extends State<_LicenseViewerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('GNU General Public License v3.0')),
-      body: Markdown(
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: 'GNU General Public License v3.0',
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Markdown(
         data: _text,
         selectable: true,
-        padding: const EdgeInsets.all(16),
+        padding: padding + const EdgeInsets.all(16),
         onTapLink: (text, href, title) {
           if (href != null) {
             launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
@@ -412,12 +381,15 @@ class _UserAgreementViewerPageState extends State<_UserAgreementViewerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('userAgreement.title'))),
-      body: Markdown(
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('userAgreement.title'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Markdown(
         data: _text,
         selectable: true,
-        padding: const EdgeInsets.all(16),
+        padding: padding + const EdgeInsets.all(16),
         onTapLink: (text, href, title) {
           if (href != null) {
             launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);

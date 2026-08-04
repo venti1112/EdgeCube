@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:battery_optimization_helper/battery_optimization_helper.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_preference.dart';
 import '../widgets/error_dialog.dart';
 import '../server/power_service.dart';
 
@@ -153,94 +155,87 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('settings.section.keepAlive'))),
-      body: ListView(
-        children: [
-          _sectionHeader(theme, context.tr('settings.keepAlive.systemSection')),
-          _buildBatteryTile(context, theme),
-          if (_canOpenAutoStart)
-            ListTile(
-              leading: const Icon(Icons.restart_alt),
-              title: Text(context.tr('settings.autoStart.title')),
-              subtitle: Text(context.tr('settings.autoStart.subtitle')),
-              trailing: const Icon(Icons.open_in_new, size: 18),
-              onTap: _openAutoStartSettings,
-            ),
-          SwitchListTile(
-            secondary: const Icon(Icons.lock_clock_outlined),
-            title: Text(context.tr('settings.wakeLock.title')),
-            subtitle: Text(context.tr('settings.wakeLock.subtitle')),
-            value: _wakeLockEnabled,
-            onChanged: _loaded ? _setWakeLock : null,
+    return EcSettingsPage(
+      title: context.tr('settings.section.keepAlive'),
+      children: [
+        MiuixSmallTitle(context.tr('settings.keepAlive.systemSection')),
+        _buildBatteryTile(context),
+        if (_canOpenAutoStart)
+          MiuixArrowPreference(
+            startAction: prefIcon(Icons.restart_alt),
+            title: context.tr('settings.autoStart.title'),
+            summary: context.tr('settings.autoStart.subtitle'),
+            endActions: [const MiuixIcon(icon: Icons.open_in_new, size: 18)],
+            onClick: _openAutoStartSettings,
           ),
-          SwitchListTile(
-            secondary: const Icon(Icons.visibility_outlined),
-            title: Text(context.tr('settings.keepScreenOn.title')),
-            subtitle: Text(context.tr('settings.keepScreenOn.subtitle')),
-            value: _keepScreenOnEnabled,
-            onChanged: _loaded ? _setKeepScreenOn : null,
-          ),
-          const Divider(),
-          _sectionHeader(
-            theme,
-            context.tr('settings.keepAlive.overlaySection'),
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.picture_in_picture_alt_outlined),
-            title: Text(context.tr('settings.overlay.title')),
-            subtitle: Text(
-              _overlayEnabled || _canDrawOverlays
-                  ? context.tr('settings.overlay.subtitle')
-                  : context.tr('settings.overlay.needPermission'),
-            ),
-            value: _overlayEnabled && _canDrawOverlays,
-            onChanged: _loaded ? _setOverlay : null,
-          ),
-          if (_overlayEnabled && _canDrawOverlays)
-            ..._buildOverlayOptionTiles(context, theme),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionHeader(ThemeData theme, String text) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        text,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
+        MiuixSwitchPreference(
+          startAction: prefIcon(Icons.lock_clock_outlined),
+          title: context.tr('settings.wakeLock.title'),
+          summary: context.tr('settings.wakeLock.subtitle'),
+          value: _wakeLockEnabled,
+          enabled: _loaded,
+          onChanged: _setWakeLock,
         ),
-      ),
+        MiuixSwitchPreference(
+          startAction: prefIcon(Icons.visibility_outlined),
+          title: context.tr('settings.keepScreenOn.title'),
+          summary: context.tr('settings.keepScreenOn.subtitle'),
+          value: _keepScreenOnEnabled,
+          enabled: _loaded,
+          onChanged: _setKeepScreenOn,
+        ),
+
+        MiuixSmallTitle(context.tr('settings.keepAlive.overlaySection')),
+        MiuixSwitchPreference(
+          startAction: prefIcon(Icons.picture_in_picture_alt_outlined),
+          title: context.tr('settings.overlay.title'),
+          summary: _overlayEnabled || _canDrawOverlays
+              ? context.tr('settings.overlay.subtitle')
+              : context.tr('settings.overlay.needPermission'),
+          value: _overlayEnabled && _canDrawOverlays,
+          enabled: _loaded,
+          onChanged: _setOverlay,
+        ),
+        if (_overlayEnabled && _canDrawOverlays)
+          ..._buildOverlayOptionTiles(context),
+      ],
     );
   }
 
-  Widget _buildBatteryTile(BuildContext context, ThemeData theme) {
-    final String subtitle;
-    final Widget? trailing;
+  Widget _buildBatteryTile(BuildContext context) {
+    final theme = MiuixTheme.of(context);
+    final String summary;
+    final Widget? endAction;
     if (!_batteryLoaded) {
-      subtitle = context.tr('settings.battery.checking');
-      trailing = null;
+      summary = context.tr('settings.battery.checking');
+      endAction = null;
     } else if (_ignoringBattery) {
-      subtitle = context.tr('settings.battery.whitelisted');
-      trailing = const Icon(Icons.check_circle, color: Colors.green);
+      summary = context.tr('settings.battery.whitelisted');
+      endAction = MiuixIcon(
+        icon: Icons.check_circle,
+        tint: theme.colors.primary,
+      );
     } else {
-      subtitle = context.tr('settings.battery.notWhitelisted');
-      trailing = FilledButton.tonal(
+      summary = context.tr('settings.battery.notWhitelisted');
+      endAction = MiuixButton(
         onPressed: _requestIgnoreBattery,
-        child: Text(context.tr('common.goToSettings')),
+        insideMargin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        minWidth: 0,
+        minHeight: 0,
+        child: MiuixText(
+          context.tr('common.goToSettings'),
+          style: theme.textStyles.button,
+        ),
       );
     }
 
-    return ListTile(
-      leading: const Icon(Icons.battery_saver),
-      title: Text(context.tr('settings.battery.title')),
-      subtitle: Text(subtitle),
-      trailing: trailing,
+    return MiuixBasicComponent(
+      startAction: prefIcon(Icons.battery_saver),
+      title: context.tr('settings.battery.title'),
+      summary: summary,
+      endActions: endAction == null ? null : [endAction],
       // 已在白名单中时无需再申请；点击整行等同于点击「去设置」。
-      onTap: (!_batteryLoaded || _ignoringBattery)
+      onClick: (!_batteryLoaded || _ignoringBattery)
           ? null
           : _requestIgnoreBattery,
     );
@@ -248,31 +243,34 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
 
   /// 悬浮窗子设置：显示内容、仅状态点、点颜色绑定、穿透模式。
   ///
-  /// 缩进在开关下方（左侧 padding 对齐 ListTile 文本区），仅悬浮窗开启时显示。
-  List<Widget> _buildOverlayOptionTiles(BuildContext context, ThemeData theme) {
-    const indent = EdgeInsets.only(left: 72, right: 16);
+  /// 相对上一级开关缩进，仅悬浮窗开启时显示。
+  List<Widget> _buildOverlayOptionTiles(BuildContext context) {
+    // 缩进量对齐上级开关的文本区（图标宽 22 + 右侧留白 16 + 行内边距 16）。
+    const indent = EdgeInsets.only(left: 38);
     final opts = _overlayOptions;
 
-    Widget check(String titleKey, bool value, ValueChanged<bool?> onChanged) {
+    Widget check(String titleKey, bool value, ValueChanged<bool> onChanged) {
       return Padding(
         padding: indent,
-        child: CheckboxListTile(
-          title: Text(context.tr(titleKey)),
+        child: MiuixCheckboxPreference(
+          title: context.tr(titleKey),
           value: value,
           onChanged: onChanged,
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
+          insideMargin: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 10,
+          ),
         ),
       );
     }
 
-    String dotSourceLabel(OverlayDotSource s) => switch (s) {
-      OverlayDotSource.status => context.tr('settings.overlay.dotSource.status'),
-      OverlayDotSource.cpu => context.tr('settings.overlay.dotSource.cpu'),
-      OverlayDotSource.mem => context.tr('settings.overlay.dotSource.mem'),
-      OverlayDotSource.serverMem =>
-        context.tr('settings.overlay.dotSource.serverMem'),
+    String dotSourceLabel(BuildContext ctx, OverlayDotSource s) => switch (s) {
+      OverlayDotSource.status => ctx.tr('settings.overlay.dotSource.status'),
+      OverlayDotSource.cpu => ctx.tr('settings.overlay.dotSource.cpu'),
+      OverlayDotSource.mem => ctx.tr('settings.overlay.dotSource.mem'),
+      OverlayDotSource.serverMem => ctx.tr(
+        'settings.overlay.dotSource.serverMem',
+      ),
     };
 
     return [
@@ -281,53 +279,46 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
         check(
           'settings.overlay.showCpu',
           opts.showCpu,
-          (v) => _setOverlayOptions(opts.copyWith(showCpu: v ?? false)),
+          (v) => _setOverlayOptions(opts.copyWith(showCpu: v)),
         ),
         check(
           'settings.overlay.showMem',
           opts.showMem,
-          (v) => _setOverlayOptions(opts.copyWith(showMem: v ?? false)),
+          (v) => _setOverlayOptions(opts.copyWith(showMem: v)),
         ),
         check(
           'settings.overlay.showServerMem',
           opts.showServerMem,
-          (v) => _setOverlayOptions(opts.copyWith(showServerMem: v ?? false)),
+          (v) => _setOverlayOptions(opts.copyWith(showServerMem: v)),
         ),
       ],
       // 仅状态点模式。
       Padding(
         padding: indent,
-        child: SwitchListTile(
-          title: Text(context.tr('settings.overlay.dotOnly')),
-          subtitle: Text(context.tr('settings.overlay.dotOnlySubtitle')),
+        child: MiuixSwitchPreference(
+          title: context.tr('settings.overlay.dotOnly'),
+          summary: context.tr('settings.overlay.dotOnlySubtitle'),
           value: opts.dotOnly,
           onChanged: (v) => _setOverlayOptions(opts.copyWith(dotOnly: v)),
-          dense: true,
-          contentPadding: EdgeInsets.zero,
         ),
       ),
       // 点颜色绑定。
       Padding(
         padding: indent,
-        child: ListTile(
-          title: Text(context.tr('settings.overlay.dotSource')),
-          subtitle: Text(dotSourceLabel(opts.dotColorSource)),
-          trailing: const Icon(Icons.chevron_right),
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          onTap: () => _pickOverlayDotSource(dotSourceLabel),
+        child: MiuixArrowPreference(
+          title: context.tr('settings.overlay.dotSource'),
+          summary: dotSourceLabel(context, opts.dotColorSource),
+          onClick: () => _pickOverlayDotSource(dotSourceLabel),
         ),
       ),
       // 穿透模式。
       Padding(
         padding: indent,
-        child: SwitchListTile(
-          title: Text(context.tr('settings.overlay.clickThrough')),
-          subtitle: Text(context.tr('settings.overlay.clickThroughSubtitle')),
+        child: MiuixSwitchPreference(
+          title: context.tr('settings.overlay.clickThrough'),
+          summary: context.tr('settings.overlay.clickThroughSubtitle'),
           value: opts.clickThrough,
           onChanged: (v) => _setOverlayOptions(opts.copyWith(clickThrough: v)),
-          dense: true,
-          contentPadding: EdgeInsets.zero,
         ),
       ),
     ];
@@ -335,28 +326,14 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
 
   /// 弹出点颜色绑定来源选择对话框。
   Future<void> _pickOverlayDotSource(
-    String Function(OverlayDotSource) label,
+    String Function(BuildContext, OverlayDotSource) label,
   ) async {
-    final selected = await showDialog<OverlayDotSource>(
+    final selected = await showMiuixSingleChoice<OverlayDotSource>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(ctx.tr('settings.overlay.dotSource')),
-        children: [
-          for (final s in OverlayDotSource.values)
-            ListTile(
-              leading: Icon(
-                s == _overlayOptions.dotColorSource
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked,
-                color: s == _overlayOptions.dotColorSource
-                    ? Theme.of(ctx).colorScheme.primary
-                    : null,
-              ),
-              title: Text(label(s)),
-              onTap: () => Navigator.of(ctx).pop(s),
-            ),
-        ],
-      ),
+      title: context.tr('settings.overlay.dotSource'),
+      options: OverlayDotSource.values,
+      selected: _overlayOptions.dotColorSource,
+      labelOf: label,
     );
     if (selected != null) {
       await _setOverlayOptions(

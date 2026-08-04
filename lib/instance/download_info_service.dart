@@ -7,9 +7,7 @@ import 'download_info.dart';
 class DownloadInfoService {
   DownloadInfoService._();
 
-  static Future<DownloadInfo> fetchVelocityDownloadInfo(
-    String version,
-  ) async {
+  static Future<DownloadInfo> fetchVelocityDownloadInfo(String version) async {
     final client = HttpClient();
     try {
       final buildReq = await client.getUrl(
@@ -97,9 +95,7 @@ class DownloadInfoService {
     final client = HttpClient();
     try {
       final verReq = await client.getUrl(
-        Uri.parse(
-          'https://api.leafmc.one/v2/projects/leaf/versions/$version',
-        ),
+        Uri.parse('https://api.leafmc.one/v2/projects/leaf/versions/$version'),
       );
       verReq.headers.set('User-Agent', 'EdgeCube/1.0');
       final verRes = await verReq.close();
@@ -284,9 +280,7 @@ class DownloadInfoService {
   /// 从 release assets 中筛选服务端文件（文件名含「服务端」），优先选 Linux
   /// 版本（可通过 proot 运行），其次选未标明平台的通用包，最后回退到首个服务端文件。
   /// 无服务端文件时抛出异常。
-  static Future<DownloadInfo> fetchSurvivalcraftDownloadInfo(
-    String tag,
-  ) async {
+  static Future<DownloadInfo> fetchSurvivalcraftDownloadInfo(String tag) async {
     final client = HttpClient();
     try {
       final req = await client.getUrl(
@@ -321,8 +315,7 @@ class DownloadInfoService {
       Map<String, dynamic>? linuxAsset;
       Map<String, dynamic>? nonWindowsAsset;
       for (final a in serverAssets) {
-        final name =
-            (a as Map<String, dynamic>)['name'] as String? ?? '';
+        final name = (a as Map<String, dynamic>)['name'] as String? ?? '';
         final lower = name.toLowerCase();
         if (lower.contains('linux')) {
           linuxAsset = a;

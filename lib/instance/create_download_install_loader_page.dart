@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
@@ -15,6 +16,7 @@ import '../net/msl_mirror.dart';
 import '../server/java_env_resolver.dart';
 import '../server/proot_service.dart';
 import '../server/server_service.dart';
+import '../widgets/ec_preference.dart';
 import 'instance.dart';
 import 'download_info.dart';
 import 'forge_launch.dart';
@@ -255,8 +257,9 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
       );
 
       try {
-        await File(p.join(dir.path, installerPath.split(p.separator).last))
-            .delete();
+        await File(
+          p.join(dir.path, installerPath.split(p.separator).last),
+        ).delete();
       } catch (_) {}
 
       if (mounted) {
@@ -319,9 +322,7 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
     final preferredJre = _jreIdForMc(mcVersion);
     final results = await Future.wait([
       ServerService().availableJreIds(),
-      const ProotService().listRootfs().catchError(
-        (_) => <ProotRootfsInfo>[],
-      ),
+      const ProotService().listRootfs().catchError((_) => <ProotRootfsInfo>[]),
       JavaEnvPrefStore.loadPriority(),
     ]);
     return resolveJavaEnv(
@@ -338,25 +339,31 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
     final title = downloading
         ? context.tr('instance.titleDownloading')
         : (widget.installerType == 'neoforge'
-            ? context.tr('instance.titleInstallNeoforge')
-            : context.tr('instance.titleInstallForge'));
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: downloading
-          ? DownloadingStep(
-              progress: _downloadProgress,
-              error: _downloadError,
-              onRetry: () => Navigator.of(context).pop(false),
-              onCancel: () => Navigator.of(context).pop(false),
-            )
-          : ForgeInstallingStep(
-              logs: _installLogs,
-              installing: _installing,
-              error: _installError,
-              installerType: widget.installerType,
-              onCancel: () => Navigator.of(context).pop(false),
-              onReselect: () => Navigator.of(context).pop(false),
-            ),
+              ? context.tr('instance.titleInstallNeoforge')
+              : context.tr('instance.titleInstallForge'));
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: title,
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: downloading
+            ? DownloadingStep(
+                progress: _downloadProgress,
+                error: _downloadError,
+                onRetry: () => Navigator.of(context).pop(false),
+                onCancel: () => Navigator.of(context).pop(false),
+              )
+            : ForgeInstallingStep(
+                logs: _installLogs,
+                installing: _installing,
+                error: _installError,
+                installerType: widget.installerType,
+                onCancel: () => Navigator.of(context).pop(false),
+                onReselect: () => Navigator.of(context).pop(false),
+              ),
+      ),
     );
   }
 }

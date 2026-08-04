@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_preference.dart';
 import 'create_download_category_page.dart';
 import 'create_download_proot_page.dart';
 import 'create_download_server_page.dart';
@@ -22,9 +24,7 @@ class SelectEditionPage extends StatelessWidget {
     session.serverType = null;
     session.javaServerCategory = null;
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SelectCategoryPage(session: session),
-      ),
+      MaterialPageRoute(builder: (_) => SelectCategoryPage(session: session)),
     );
   }
 
@@ -53,13 +53,19 @@ class SelectEditionPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('instance.titleSelectEdition'))),
-      body: SafeArea(
-        child: EditionSelectStep(
-          onSelectJavaEdition: () => _pushJava(context),
-          onSelectBedrockEdition: () => _pushBedrock(context),
-          onSelectSurvivalcraftEdition: () => _pushSurvivalcraft(context),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('instance.titleSelectEdition'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: EditionSelectStep(
+            onSelectJavaEdition: () => _pushJava(context),
+            onSelectBedrockEdition: () => _pushBedrock(context),
+            onSelectSurvivalcraftEdition: () => _pushSurvivalcraft(context),
+          ),
         ),
       ),
     );

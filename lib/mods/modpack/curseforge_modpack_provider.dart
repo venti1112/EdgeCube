@@ -73,7 +73,9 @@ class CurseForgeModpackProvider extends ModpackProvider {
     final loaders = (minecraft?['modLoaders'] as List? ?? [])
         .whereType<Map<String, dynamic>>();
     for (final l in loaders) {
-      final id = l['id'] as String?; // 如 "forge-47.2.0" / "neoforge-21.1.5" / "fabric-0.15.0"
+      final id =
+          l['id']
+              as String?; // 如 "forge-47.2.0" / "neoforge-21.1.5" / "fabric-0.15.0"
       if (id == null) continue;
       final dash = id.indexOf('-');
       if (dash < 0) continue;
@@ -95,10 +97,7 @@ class CurseForgeModpackProvider extends ModpackProvider {
     final filesRaw = (data['files'] as List? ?? [])
         .whereType<Map<String, dynamic>>()
         .toList();
-    final fileIds = filesRaw
-        .map((f) => f['fileID'])
-        .whereType<int>()
-        .toList();
+    final fileIds = filesRaw.map((f) => f['fileID']).whereType<int>().toList();
     final resolved = await _cf.resolveFiles(fileIds);
 
     final files = <ModpackFileEntry>[];

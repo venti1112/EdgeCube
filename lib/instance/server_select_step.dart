@@ -48,10 +48,7 @@ class EditionSelectStep extends StatelessWidget {
 }
 
 class JavaServerCategoryStep extends StatelessWidget {
-  const JavaServerCategoryStep({
-    super.key,
-    required this.onSelectCategory,
-  });
+  const JavaServerCategoryStep({super.key, required this.onSelectCategory});
 
   final void Function(String category) onSelectCategory;
 

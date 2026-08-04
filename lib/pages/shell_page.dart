@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../config/terminal_store.dart';
 import '../i18n/locale_scope.dart';
@@ -7,6 +8,7 @@ import '../shell/shell_scope.dart';
 import '../shell/shell_service.dart';
 import '../widgets/terminal_keys_bar.dart';
 import '../widgets/terminal_zoom.dart';
+import '../widgets/ec_preference.dart';
 
 /// Shell 终端页：在设备上运行一个交互式 shell（系统 sh 或 proot 容器）。
 ///
@@ -78,60 +80,38 @@ class _ShellPageState extends State<ShellPage> {
   @override
   Widget build(BuildContext context) {
     final shell = ShellScope.of(context);
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(context.tr('shell.title')),
-            Text(
-              shell.isRunning
-                  ? (shell.shellLabel ?? 'shell')
-                  : (shell.lastExitCode != null
-                        ? context.tr('shell.exited', {
-                            'code': shell.lastExitCode.toString(),
-                          })
-                        : context.tr('shell.notRunning')),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: shell.isRunning
-                    ? Colors.green
-                    : theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
+    final theme = MiuixTheme.of(context);
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('shell.title'),
+        // 原先塞在标题里的第二行状态文案，正好对应 Miuix 的 subtitle 槽。
+        subtitle: shell.isRunning
+            ? (shell.shellLabel ?? 'shell')
+            : (shell.lastExitCode != null
+                  ? context.tr('shell.exited', {
+                      'code': shell.lastExitCode.toString(),
+                    })
+                  : context.tr('shell.notRunning')),
+        subtitleColor: shell.isRunning
+            ? theme.colors.primary
+            : theme.colors.onSurfaceVariantSummary,
+        navigationIcon: const EcBackButton(),
         actions: [
           // Shell 选择器：列出系统 sh 与已导入的 proot rootfs。
           // 仅在有多于一个选项时显示，避免单一 shell 时浪费空间。
           if (_optionsLoaded && _options.length > 1)
-            PopupMenuButton<String>(
-              tooltip: context.tr('shell.switch'),
-              icon: const Icon(Icons.terminal),
-              onSelected: (id) {
-                final opt = _options.firstWhere(
-                  (o) => o.id == id,
-                  orElse: () => _options.first,
-                );
-                _switchShell(opt);
-              },
-              itemBuilder: (ctx) => _options
-                  .map((opt) => PopupMenuItem<String>(
-                        value: opt.id,
-                        child: Row(
-                          children: [
-                            Icon(
-                              opt.type == 'proot'
-                                  ? Icons.dns_outlined
-                                  : Icons.terminal,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(child: Text(opt.label)),
-                          ],
-                        ),
-                      ))
-                  .toList(),
+            MiuixOverlayIconDropdownMenu(
+              entry: MiuixDropdownEntry(
+                items: [
+                  for (final opt in _options)
+                    MiuixDropdownItem(
+                      text: opt.label,
+                      selected: opt.label == shell.shellLabel,
+                      onClick: () => _switchShell(opt),
+                    ),
+                ],
+              ),
+              child: const MiuixIcon(icon: Icons.terminal),
             ),
           TerminalZoomButton(
             fontSize: _fontSize,
@@ -140,36 +120,36 @@ class _ShellPageState extends State<ShellPage> {
               _saveFontSize();
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.restart_alt),
-            tooltip: context.tr('shell.restart'),
+          MiuixIconButton(
             onPressed: () => shell.restart(),
+            child: const MiuixIcon(icon: Icons.restart_alt),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: context.tr('shell.clear'),
+          MiuixIconButton(
             onPressed: shell.clear,
+            child: const MiuixIcon(icon: Icons.delete_outline),
           ),
         ],
       ),
       // 键盘弹出时缩小终端区域；扩展按键栏紧贴键盘上方（Termux 式布局）。
-      body: SafeArea(
-        top: false,
-        child: Column(
-          children: [
-            Expanded(
-              child: ZoomableTerminal(
-                terminal: shell.terminal,
-                fontSize: _fontSize,
-                onFontSizeChanged: _setFontSize,
-                onFontSizeChangeEnd: _saveFontSize,
+      content: (padding) => Padding(
+        padding: EdgeInsets.only(top: padding.top),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              Expanded(
+                child: ZoomableTerminal(
+                  terminal: shell.terminal,
+                  fontSize: _fontSize,
+                  onFontSizeChanged: _setFontSize,
+                  onFontSizeChangeEnd: _saveFontSize,
+                ),
               ),
-            ),
-            TerminalKeysBar(shell),
-          ],
+              TerminalKeysBar(shell),
+            ],
+          ),
         ),
       ),
     );
   }
 }
-

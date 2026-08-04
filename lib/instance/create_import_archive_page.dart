@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../files/archive_service.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_dialog.dart';
 import 'create_instance_page.dart';
 import 'instance_controller.dart';
 import 'progress_steps.dart';
@@ -129,54 +132,50 @@ class _ImportArchivePageState extends State<ImportArchivePage> {
   }
 
   Future<bool?> _showImportPermissionDialog() {
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.storagePermissionTitle')),
-        content: Text(ctx.tr('instance.importStoragePermissionMessage')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('instance.goGrant')),
-          ),
-        ],
-      ),
+    return showMiuixConfirm(
+      context,
+      title: context.tr('instance.storagePermissionTitle'),
+      message: context.tr('instance.importStoragePermissionMessage'),
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('instance.goGrant'),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     // 解压中或出错：展示解压进度/错误；否则（仍在选文件）展示转圈。
     final showExtract = _extracting || _extractError != null;
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('instance.titleImportArchive'))),
-      body: SafeArea(
-        child: showExtract
-            ? ExtractingArchiveStep(
-                extracting: _extracting,
-                progress: _extractProgress,
-                error: _extractError,
-                onCancel: _cancel,
-                onReselect: _cancel,
-              )
-            : Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 24),
-                    Text(
-                      context.tr('instance.selectJarPrompt'),
-                      style: theme.textTheme.titleMedium,
-                    ),
-                  ],
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('instance.titleImportArchive'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: showExtract
+              ? ExtractingArchiveStep(
+                  extracting: _extracting,
+                  progress: _extractProgress,
+                  error: _extractError,
+                  onCancel: _cancel,
+                  onReselect: _cancel,
+                )
+              : Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const MiuixInfiniteProgressIndicator(),
+                      const SizedBox(height: 24),
+                      Text(
+                        context.tr('instance.selectJarPrompt'),
+                        style: theme.textStyles.title4,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+        ),
       ),
     );
   }

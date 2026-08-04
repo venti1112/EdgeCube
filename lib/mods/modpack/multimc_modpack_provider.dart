@@ -58,8 +58,9 @@ class MultiMcModpackProvider extends ModpackProvider {
     }
 
     final deps = <String, String>{};
-    for (final c in (data['components'] as List? ?? [])
-        .whereType<Map<String, dynamic>>()) {
+    for (final c
+        in (data['components'] as List? ?? [])
+            .whereType<Map<String, dynamic>>()) {
       final uid = c['uid'] as String?;
       final version = c['version'] as String?;
       if (uid == null || version == null) continue;

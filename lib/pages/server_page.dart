@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
@@ -28,6 +29,10 @@ import '../server/system_monitor_scope.dart';
 import '../widgets/expandable_address_list.dart';
 import '../server/system_monitor_service.dart';
 import '../widgets/placeholder_page.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/ec_text_field.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/miuix_snackbar.dart';
 
 class ServerPage extends StatelessWidget {
   const ServerPage({super.key});
@@ -37,25 +42,29 @@ class ServerPage extends StatelessWidget {
     final controller = InstanceScope.of(context);
     final selected = controller.selected;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(context.tr('server.title')),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('server.title'),
+        navigationIcon: const EcBackButton(),
         actions: [
           _InstanceSelectorButton(controller: controller, selected: selected),
           const SizedBox(width: 4),
         ],
       ),
-      body: selected == null
-          ? PlaceholderPage(
-              icon: Icons.dns_outlined,
-              title: context.tr('server.noInstanceTitle'),
-              description: context.tr('server.noInstanceDescription'),
-            )
-          : _ServerControlPanel(
-              key: ValueKey(selected.id),
-              instance: selected,
-              filesRevision: controller.filesRevision,
-            ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: selected == null
+            ? PlaceholderPage(
+                icon: Icons.dns_outlined,
+                title: context.tr('server.noInstanceTitle'),
+                description: context.tr('server.noInstanceDescription'),
+              )
+            : _ServerControlPanel(
+                key: ValueKey(selected.id),
+                instance: selected,
+                filesRevision: controller.filesRevision,
+              ),
+      ),
     );
   }
 }
@@ -77,6 +86,7 @@ class _LaunchContext {
   final String workingDir;
   final List<String> jars;
   final List<String> phars;
+
   /// 实例目录下所有文件（含无扩展名的 x86_64 二进制），用于 box64 等环境。
   final List<String> allFiles;
   final List<String> jreIds;
@@ -164,14 +174,16 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   /// 运行时列表变化时重新加载上下文。
   void _onRuntimesChanged() {
     if (mounted) {
-      setState(() { _ctxFuture = _loadContext(); });
+      setState(() {
+        _ctxFuture = _loadContext();
+      });
     }
   }
 
   /// 服务端意外退出回调。
   void _onCrashExit(CrashData crash) {
     if (!mounted) return;
-    showDialog<void>(
+    showMiuixDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _CrashDialog(crash: crash),
@@ -181,7 +193,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   /// FRP 隧道异常退出回调。复用 [_CrashDialog]，由 [CrashData.kind] 控制文案。
   void _onTunnelCrashExit(CrashData crash) {
     if (!mounted) return;
-    showDialog<void>(
+    showMiuixDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _CrashDialog(crash: crash),
@@ -192,31 +204,38 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   void _onUpnpTimeout() {
     if (!mounted) return;
     final server = ServerScope.of(context);
-    showDialog<void>(
+    showMiuixDialog<void>(
       context: context,
+      title: context.tr('server.upnpTimeoutTitle'),
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.tr('server.upnpTimeoutTitle')),
-        content: Text(context.tr('server.upnpTimeoutMessage')),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              server.disableUpnpNow();
-              NetworkStore.saveUpnpEnabled(false);
-            },
-            child: Text(context.tr('server.upnpTimeoutDisable')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(context.tr('server.upnpTimeoutLater')),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              server.suppressUpnpTimeout();
-            },
-            child: Text(context.tr('server.upnpTimeoutSuppress')),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(context.tr('server.upnpTimeoutMessage')),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                context.tr('server.upnpTimeoutDisable'),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  server.disableUpnpNow();
+                  NetworkStore.saveUpnpEnabled(false);
+                },
+              ),
+              MiuixTextButton(
+                context.tr('server.upnpTimeoutLater'),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+              MiuixTextButton(
+                context.tr('server.upnpTimeoutSuppress'),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  server.suppressUpnpTimeout();
+                },
+              ),
+            ],
           ),
         ],
       ),
@@ -333,7 +352,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         final files = showPhars
             ? ctx.phars
             : (showAllFiles ? ctx.allFiles : ctx.jars);
-        if (_selectedServerFile == null || !files.contains(_selectedServerFile)) {
+        if (_selectedServerFile == null ||
+            !files.contains(_selectedServerFile)) {
           _selectedServerFile = files.isNotEmpty ? files.first : null;
         }
         if (!ctx.jreIds.contains(_selectedJreId) && ctx.jreIds.isNotEmpty) {
@@ -410,7 +430,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       // 内置 PHP CLI（随 APK 打包）的友好名称；.ecpkg 安装的 PHP 会被同 id 覆盖。
       'php-cli-8.2': trans.get('server.phpBuiltin'),
       for (final r in prootRootfsList)
-        r.id: trans.get('server.envLabelProot', {'name': r.envName.isNotEmpty ? r.envName : r.id}),
+        r.id: trans.get('server.envLabelProot', {
+          'name': r.envName.isNotEmpty ? r.envName : r.id,
+        }),
     };
     return _LaunchContext(
       workingDir: dir.path,
@@ -445,46 +467,54 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
 
     // EULA 尚未同意，弹窗询问用户
     if (!mounted) return false;
-    final agreed = await showDialog<bool>(
+    final agreed = await showMiuixDialog<bool>(
       context: context,
+      title: context.tr('server.eula.title'),
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('server.eula.title')),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(ctx.tr('server.eula.content')),
-              const SizedBox(height: 12),
-              InkWell(
-                onTap: () {
-                  launchUrl(
-                    Uri.parse('https://aka.ms/MinecraftEULA'),
-                    mode: LaunchMode.externalApplication,
-                  );
-                },
-                child: const Text(
-                  'https://aka.ms/MinecraftEULA',
-                  style: TextStyle(
-                    color: Colors.blue,
-                    decoration: TextDecoration.underline,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(ctx.tr('server.eula.content')),
+                const SizedBox(height: 12),
+                InkWell(
+                  onTap: () {
+                    launchUrl(
+                      Uri.parse('https://aka.ms/MinecraftEULA'),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
+                  child: const Text(
+                    'https://aka.ms/MinecraftEULA',
+                    style: TextStyle(
+                      color: Colors.blue,
+                      decoration: TextDecoration.underline,
+                    ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                Text(ctx.tr('server.eula.agreementNote')),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                ctx.tr('common.disagree'),
+                onPressed: () => Navigator.of(ctx).pop(false),
               ),
-              const SizedBox(height: 12),
-              Text(ctx.tr('server.eula.agreementNote')),
+              MiuixButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(ctx.tr('common.agree')),
+              ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.disagree')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('common.agree')),
           ),
         ],
       ),
@@ -508,12 +538,15 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     // 仍扫描不到再由后续各分支给出对应的缺文件提示。
     // proot 纯容器与容器内直装（Survivalcraft）场景用启动命令而非服务端文件，
     // 无需扫描。
-    final needsServerFile = !_isProot ||
+    final needsServerFile =
+        !_isProot ||
         (widget.instance.path == null &&
             _selectedRootfsEnvType(ctx) != 'generic');
     if (file == null && needsServerFile) {
       final future = _loadContext();
-      setState(() { _ctxFuture = future; });
+      setState(() {
+        _ctxFuture = future;
+      });
       try {
         ctx = await future;
       } catch (_) {
@@ -523,10 +556,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       file = _selectedServerFile;
       // 把扫描结果持久化，下次启动无需再扫描。
       if (file != null && file != widget.instance.serverFile) {
-        InstanceScope.of(context).updateConfig(
-          widget.instance.id,
-          serverFile: file,
-        );
+        InstanceScope.of(
+          context,
+        ).updateConfig(widget.instance.id, serverFile: file);
       }
     }
 
@@ -681,7 +713,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       return;
     }
     // 优先用实例保存的 JRE，不可用则取首个原生 JRE。
-    final jreId = ctx.jreIds.contains(_selectedJreId) ? _selectedJreId : ctx.jreIds.first;
+    final jreId = ctx.jreIds.contains(_selectedJreId)
+        ? _selectedJreId
+        : ctx.jreIds.first;
     await _startNativeJava(jreId, ctx, file, server);
     return;
   }
@@ -760,22 +794,12 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     final contentKey = isJava
         ? 'server.runtimeRequiredContentJava'
         : 'server.runtimeRequiredContentPhp';
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr.get('server.runtimeRequiredTitle')),
-        content: Text(tr.get(contentKey)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(tr.get('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(tr.get('server.runtimeRequiredAction')),
-          ),
-        ],
-      ),
+    final go = await showMiuixConfirm(
+      context,
+      title: tr.get('server.runtimeRequiredTitle'),
+      message: tr.get(contentKey),
+      cancelLabel: tr.get('common.cancel'),
+      confirmLabel: tr.get('server.runtimeRequiredAction'),
     );
     if (go == true && mounted) {
       await Navigator.of(
@@ -799,7 +823,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           : (ctx.prootRootfs.isNotEmpty ? ctx.prootRootfs.first : '');
       final info = ctx.prootRootfsInfos.where((r) => r.id == rid).firstOrNull;
       if (info == null) return null;
-      return context.tr('server.envLabelProot', {'name': info.envName.isNotEmpty ? info.envName : info.id});
+      return context.tr('server.envLabelProot', {
+        'name': info.envName.isNotEmpty ? info.envName : info.id,
+      });
     }
     // runtime=java：实例存的是原生 JRE id。
     if (ctx.jreIds.contains(_selectedJreId)) {
@@ -820,7 +846,11 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         .where((r) => !r.isGeneric && r.envType == 'java')
         .firstOrNull;
     if (javaRootfs != null) {
-      return context.tr('server.envLabelProot', {'name': javaRootfs.envName.isNotEmpty ? javaRootfs.envName : javaRootfs.id});
+      return context.tr('server.envLabelProot', {
+        'name': javaRootfs.envName.isNotEmpty
+            ? javaRootfs.envName
+            : javaRootfs.id,
+      });
     }
     return null;
   }
@@ -869,12 +899,12 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     ServerStatus status,
     int? exitCode,
   ) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final envLabel = ctx != null ? _envLabel(ctx) : null;
     final (IconData icon, Color color, String text) = switch (status) {
       ServerStatus.stopped => (
         Icons.stop_circle_outlined,
-        theme.colorScheme.outline,
+        theme.colors.outline,
         context.tr('server.statusStopped'),
       ),
       ServerStatus.preparing => (
@@ -898,51 +928,45 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         context.tr('server.statusStopping'),
       ),
     };
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(icon, size: 40, color: color),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.instance.name,
-                    style: theme.textTheme.titleMedium,
-                  ),
+    return MiuixCard(
+      insideMargin: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Icon(icon, size: 40, color: color),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.instance.name, style: theme.textStyles.title4),
+                const SizedBox(height: 4),
+                Text(
+                  status == ServerStatus.stopped && exitCode != null
+                      ? context.tr('server.statusWithExitCode', {
+                          'status': text,
+                          'code': '$exitCode',
+                        })
+                      : text,
+                  style: theme.textStyles.body2.copyWith(color: color),
+                ),
+                // 始终展示当前使用的运行环境类型 + 名称（原生 JRE / proot · 环境名）。
+                if (envLabel != null) ...[
                   const SizedBox(height: 4),
                   Text(
-                    status == ServerStatus.stopped && exitCode != null
-                        ? context.tr('server.statusWithExitCode', {
-                            'status': text,
-                            'code': '$exitCode',
-                          })
-                        : text,
-                    style: theme.textTheme.bodyMedium?.copyWith(color: color),
-                  ),
-                  // 始终展示当前使用的运行环境类型 + 名称（原生 JRE / proot · 环境名）。
-                  if (envLabel != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      context.tr('server.usingEnv', {'name': envLabel}),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                    context.tr('server.usingEnv', {'name': envLabel}),
+                    style: theme.textStyles.footnote1.copyWith(
+                      color: theme.colors.onSurfaceVariantSummary,
                     ),
-                  ],
+                  ),
                 ],
-              ),
+              ],
             ),
-            IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              tooltip: context.tr('server.instanceConfig'),
-              onPressed: () => _openSettings(context, server, ctx),
-            ),
-          ],
-        ),
+          ),
+          MiuixIconButton(
+            onPressed: () => _openSettings(context, server, ctx),
+            child: MiuixIcon(icon: Icons.settings_outlined),
+          ),
+        ],
       ),
     );
   }
@@ -957,7 +981,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     _LaunchContext? initialCtx,
   ) async {
     final future = _loadContext();
-    setState(() { _ctxFuture = future; });
+    setState(() {
+      _ctxFuture = future;
+    });
     _LaunchContext? scanned;
     try {
       scanned = await future;
@@ -969,7 +995,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     if (ctx == null) return;
     final nameController = TextEditingController(text: widget.instance.name);
     final controller = InstanceScope.of(this.context);
-    await showDialog<void>(
+    await showMiuixDialog<void>(
       context: this.context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -981,154 +1007,197 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
             final selectedRootfsInfo = ctx.prootRootfsInfos
                 .where((r) => r.id == effectiveRootfsId)
                 .firstOrNull;
-            final isGenericRootfs = _isProot &&
-                (selectedRootfsInfo?.isGeneric ?? false);
-            final isProotJavaEnv = _isProot &&
+            final isGenericRootfs =
+                _isProot && (selectedRootfsInfo?.isGeneric ?? false);
+            final isProotJavaEnv =
+                _isProot &&
                 !isGenericRootfs &&
                 selectedRootfsInfo?.envType == 'java';
-            return AlertDialog(
-              title: Text(context.tr('server.instanceConfig')),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: nameController,
-                      decoration: InputDecoration(
-                        labelText: context.tr('server.nameLabel'),
-                        border: const OutlineInputBorder(),
-                        isDense: true,
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: MiuixText(
+                    context.tr('server.instanceConfig'),
+                    textAlign: TextAlign.center,
+                    style: MiuixTheme.of(context).textStyles.title4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      EcTextField(
+                        controller: nameController,
+                        label: context.tr('server.nameLabel'),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    // 运行环境：Java（JVM 跑 .jar）/ PHP（PocketMine 跑 .phar）/
-                    // proot（rootfs 内运行带元数据的环境或纯容器）。
-                    DropdownButtonFormField<String>(
-                      isExpanded: true,
-                      initialValue: _runtime,
-                      decoration: InputDecoration(
-                        labelText: context.tr('server.runtimeLabel'),
-                        border: const OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: [
-                        DropdownMenuItem(
-                          value: kRuntimeJava,
-                          child: Text(context.tr('server.runtimeJava')),
-                        ),
-                        DropdownMenuItem(
-                          value: kRuntimePhp,
-                          child: Text(context.tr('server.runtimePhp')),
-                        ),
-                        DropdownMenuItem(
-                          value: kRuntimeProot,
-                          child: Text(context.tr('server.runtimeProotLabel')),
-                        ),
-                      ],
-                      selectedItemBuilder: (context) => [
-                        DropdownMenuItem<String>(
-                          value: kRuntimeJava,
-                          child: Text(
+                      const SizedBox(height: 16),
+                      // 运行环境：Java（JVM 跑 .jar）/ PHP（PocketMine 跑 .phar）/
+                      // proot（rootfs 内运行带元数据的环境或纯容器）。
+                      Builder(
+                        builder: (context) {
+                          const values = [
+                            kRuntimeJava,
+                            kRuntimePhp,
+                            kRuntimeProot,
+                          ];
+                          final labels = [
                             context.tr('server.runtimeJava'),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: kRuntimePhp,
-                          child: Text(
                             context.tr('server.runtimePhp'),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: kRuntimeProot,
-                          child: Text(
                             context.tr('server.runtimeProotLabel'),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                      onChanged: (v) {
-                        if (v == null || v == _runtime) return;
-                        setDialogState(() {
-                          _runtime = v;
-                          // 切换运行环境后，把服务端文件/版本回退到该环境下的有效默认值。
-                          if (_isPhp) {
-                            _selectedServerFile = ctx.phars.isNotEmpty
-                                ? ctx.phars.first
-                                : null;
-                          } else if (_isProot) {
-                            // proot：默认选第一个 rootfs，服务端文件按其 envType
-                            // 决定（_serverFileField 会自动回退到正确文件列表）。
-                            // box64 环境显示全部文件，其余显示 .jar。
-                            final envType = _selectedRootfsEnvType(ctx);
-                            final fileList = envType == 'box64'
-                                ? ctx.allFiles
-                                : ctx.jars;
-                            _selectedServerFile = fileList.isNotEmpty
-                                ? fileList.first
-                                : null;
-                            // 默认选第一个 rootfs
-                            if (_prootRootfsId.isEmpty &&
-                                ctx.prootRootfs.isNotEmpty) {
-                              _prootRootfsId = ctx.prootRootfs.first;
-                            }
-                          } else {
-                            _selectedServerFile = ctx.jars.isNotEmpty
-                                ? ctx.jars.first
-                                : null;
-                            if (!ctx.jreIds.contains(_selectedJreId) &&
-                                ctx.jreIds.isNotEmpty) {
-                              _selectedJreId = ctx.jreIds.contains('jre21')
-                                  ? 'jre21'
-                                  : ctx.jreIds.first;
-                            }
-                          }
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    if (_isProot) ...[
-                      // proot rootfs 选择器：选择在哪个 Linux rootfs 内运行服务端。
-                      DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: ctx.prootRootfs.contains(_prootRootfsId)
-                            ? _prootRootfsId
-                            : (ctx.prootRootfs.isNotEmpty
-                                ? ctx.prootRootfs.first
-                                : null),
-                        decoration: const InputDecoration(
-                          labelText: 'proot rootfs',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        items: [
-                          for (final r in ctx.prootRootfs)
-                            DropdownMenuItem(
-                              value: r,
-                              child: Text(ctx.runtimeNames[r] ?? r),
-                            ),
-                        ],
-                        selectedItemBuilder: (context) => [
-                          for (final r in ctx.prootRootfs)
-                            DropdownMenuItem<String>(
-                              value: r,
-                              child: Text(
-                                ctx.runtimeNames[r] ?? r,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                        ],
-                        onChanged: (v) {
-                          setDialogState(() => _prootRootfsId = v ?? _prootRootfsId);
+                          ];
+                          return EcDropdownField(
+                            label: context.tr('server.runtimeLabel'),
+                            items: labels,
+                            selectedIndex: values.indexOf(_runtime),
+                            onSelected: (i) {
+                              final v = values[i];
+                              if (v == _runtime) return;
+                              setDialogState(() {
+                                _runtime = v;
+                                // 切换运行环境后，把服务端文件/版本回退到该环境下的有效默认值。
+                                if (_isPhp) {
+                                  _selectedServerFile = ctx.phars.isNotEmpty
+                                      ? ctx.phars.first
+                                      : null;
+                                } else if (_isProot) {
+                                  // proot：默认选第一个 rootfs，服务端文件按其 envType
+                                  // 决定（_serverFileField 会自动回退到正确文件列表）。
+                                  // box64 环境显示全部文件，其余显示 .jar。
+                                  final envType = _selectedRootfsEnvType(ctx);
+                                  final fileList = envType == 'box64'
+                                      ? ctx.allFiles
+                                      : ctx.jars;
+                                  _selectedServerFile = fileList.isNotEmpty
+                                      ? fileList.first
+                                      : null;
+                                  // 默认选第一个 rootfs
+                                  if (_prootRootfsId.isEmpty &&
+                                      ctx.prootRootfs.isNotEmpty) {
+                                    _prootRootfsId = ctx.prootRootfs.first;
+                                  }
+                                } else {
+                                  _selectedServerFile = ctx.jars.isNotEmpty
+                                      ? ctx.jars.first
+                                      : null;
+                                  if (!ctx.jreIds.contains(_selectedJreId) &&
+                                      ctx.jreIds.isNotEmpty) {
+                                    _selectedJreId =
+                                        ctx.jreIds.contains('jre21')
+                                        ? 'jre21'
+                                        : ctx.jreIds.first;
+                                  }
+                                }
+                              });
+                            },
+                          );
                         },
                       ),
                       const SizedBox(height: 16),
-                      if (isGenericRootfs || widget.instance.path != null)
-                        // 纯容器或 Survivalcraft 等容器内直接运行场景：
-                        // 用户须填写完整的启动命令（含主程序路径与参数）。
+                      if (_isProot) ...[
+                        // proot rootfs 选择器：选择在哪个 Linux rootfs 内运行服务端。
+                        EcDropdownField(
+                          label: 'proot rootfs',
+                          items: [
+                            for (final r in ctx.prootRootfs)
+                              ctx.runtimeNames[r] ?? r,
+                          ],
+                          selectedIndex: ctx.prootRootfs.indexOf(
+                            ctx.prootRootfs.contains(_prootRootfsId)
+                                ? _prootRootfsId
+                                : (ctx.prootRootfs.isNotEmpty
+                                      ? ctx.prootRootfs.first
+                                      : ''),
+                          ),
+                          onSelected: (i) => setDialogState(
+                            () => _prootRootfsId = ctx.prootRootfs[i],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        if (isGenericRootfs || widget.instance.path != null)
+                          // 纯容器或 Survivalcraft 等容器内直接运行场景：
+                          // 用户须填写完整的启动命令（含主程序路径与参数）。
+                          TextField(
+                            controller: _prootStartupCommandController,
+                            maxLines: 4,
+                            minLines: 2,
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                            ),
+                            decoration: InputDecoration(
+                              labelText: context.tr(
+                                'server.prootStartupCommandLabel',
+                              ),
+                              hintText: '/usr/bin/python3 /mnt/server/main.py',
+                              helperText: context.tr(
+                                'server.genericContainerHelperText',
+                              ),
+                              alignLabelWithHint: true,
+                              border: const OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                          )
+                        else if (isProotJavaEnv)
+                          // Java 元数据 rootfs：内存限制对 JVM 有意义。
+                          EcTextField(
+                            controller: _memController,
+                            label: context.tr('server.maxMemoryLabel'),
+                            suffixText: 'MB',
+                            keyboardType: TextInputType.number,
+                          ),
+                        const SizedBox(height: 16),
+                      ] else if (!_isPhp) ...[
+                        EcDropdownField(
+                          label: context.tr('server.javaVersionLabel'),
+                          items: [
+                            for (final v in ctx.jreIds)
+                              ctx.runtimeNames[v] ?? v,
+                          ],
+                          selectedIndex: ctx.jreIds.indexOf(_selectedJreId),
+                          onSelected: (i) => setDialogState(
+                            () => _selectedJreId = ctx.jreIds[i],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        EcTextField(
+                          controller: _memController,
+                          label: context.tr('server.maxMemoryLabel'),
+                          suffixText: 'MB',
+                          keyboardType: TextInputType.number,
+                        ),
+                        const SizedBox(height: 16),
+                      ] else ...[
+                        // PHP 运行时版本（只读；当前仅 PHP 8.2，且仅 aarch64 提供）。
+                        InputDecorator(
+                          decoration: InputDecoration(
+                            labelText: context.tr('server.runtimeVersionLabel'),
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          child: Text(
+                            ctx.phpRuntimes.isNotEmpty
+                                ? (ctx.runtimeNames[ctx.phpRuntimes.first] ??
+                                      ctx.phpRuntimes.first)
+                                : context.tr('server.phpArchUnsupported'),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      if (!isGenericRootfs && widget.instance.path == null)
+                        _serverFileField(dialogContext, ctx),
+                      const SizedBox(height: 16),
+                      // JVM 参数仅对 Java 环境有意义（含 proot Java 元数据 rootfs）；
+                      // 纯容器、PHP、Node、Python、Survivalcraft 等均不显示。
+                      if (!_isPhp &&
+                          !isGenericRootfs &&
+                          widget.instance.path == null &&
+                          (!_isProot || isProotJavaEnv)) ...[
                         TextField(
-                          controller: _prootStartupCommandController,
+                          controller: _jvmArgsController,
                           maxLines: 4,
                           minLines: 2,
                           style: const TextStyle(
@@ -1136,186 +1205,78 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                             fontSize: 12,
                           ),
                           decoration: InputDecoration(
-                            labelText: context.tr('server.prootStartupCommandLabel'),
-                            hintText: '/usr/bin/python3 /mnt/server/main.py',
-                            helperText: context.tr('server.genericContainerHelperText'),
+                            labelText: context.tr('server.jvmArgsLabel'),
+                            hintText: context.tr('server.jvmArgsHint'),
                             alignLabelWithHint: true,
                             border: const OutlineInputBorder(),
                             isDense: true,
                           ),
-                        )
-                      else if (isProotJavaEnv)
-                        // Java 元数据 rootfs：内存限制对 JVM 有意义。
-                        TextField(
-                          controller: _memController,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: context.tr('server.maxMemoryLabel'),
-                            suffixText: 'MB',
-                            border: const OutlineInputBorder(),
-                            isDense: true,
-                          ),
                         ),
-                      const SizedBox(height: 16),
-                    ] else if (!_isPhp) ...[
-                      DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: ctx.jreIds.contains(_selectedJreId)
-                            ? _selectedJreId
-                            : null,
-                        decoration: InputDecoration(
-                          labelText: context.tr('server.javaVersionLabel'),
-                          border: const OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        items: [
-                          for (final v in ctx.jreIds)
-                            DropdownMenuItem(
-                              value: v,
-                              child: Text(ctx.runtimeNames[v] ?? v),
-                            ),
-                        ],
-                        selectedItemBuilder: (context) => [
-                          for (final v in ctx.jreIds)
-                            DropdownMenuItem<String>(
-                              value: v,
-                              child: Text(
-                                ctx.runtimeNames[v] ?? v,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                        ],
-                        onChanged: (v) {
-                          setDialogState(() => _selectedJreId = v ?? _selectedJreId);
-                        },
+                        const SizedBox(height: 8),
+                      ],
+                      MiuixSwitchPreference(
+                        title: context.tr('server.compatModeTitle'),
+                        summary: context.tr('server.compatModeSubtitle'),
+                        value: _compatMode,
+                        onChanged: (v) => setDialogState(() => _compatMode = v),
                       ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _memController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: context.tr('server.maxMemoryLabel'),
-                          suffixText: 'MB',
-                          border: const OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ] else ...[
-                      // PHP 运行时版本（只读；当前仅 PHP 8.2，且仅 aarch64 提供）。
-                      InputDecorator(
-                        decoration: InputDecoration(
-                          labelText: context.tr('server.runtimeVersionLabel'),
-                          border: const OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        child: Text(
-                          ctx.phpRuntimes.isNotEmpty
-                              ? (ctx.runtimeNames[ctx.phpRuntimes.first] ??
-                                    ctx.phpRuntimes.first)
-                              : context.tr('server.phpArchUnsupported'),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    if (!isGenericRootfs && widget.instance.path == null)
-                      _serverFileField(dialogContext, ctx),
-                    const SizedBox(height: 16),
-                    // JVM 参数仅对 Java 环境有意义（含 proot Java 元数据 rootfs）；
-                    // 纯容器、PHP、Node、Python、Survivalcraft 等均不显示。
-                    if (!_isPhp && !isGenericRootfs &&
-                        widget.instance.path == null &&
-                        (!_isProot || isProotJavaEnv)) ...[
-                      TextField(
-                        controller: _jvmArgsController,
-                        maxLines: 4,
-                        minLines: 2,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: context.tr('server.jvmArgsLabel'),
-                          hintText: context.tr('server.jvmArgsHint'),
-                          alignLabelWithHint: true,
-                          border: const OutlineInputBorder(),
-                          isDense: true,
-                        ),
+                      MiuixSwitchPreference(
+                        title: context.tr('server.autoRestartTitle'),
+                        summary: context.tr('server.autoRestartSubtitle'),
+                        value: _autoRestartOnExit,
+                        onChanged: (v) =>
+                            setDialogState(() => _autoRestartOnExit = v),
                       ),
                       const SizedBox(height: 8),
-                    ],
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: _compatMode,
-                      onChanged: (v) => setDialogState(() => _compatMode = v),
-                      title: Text(context.tr('server.compatModeTitle')),
-                      subtitle: Text(context.tr('server.compatModeSubtitle')),
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: _autoRestartOnExit,
-                      onChanged: (v) =>
-                          setDialogState(() => _autoRestartOnExit = v),
-                      title: Text(context.tr('server.autoRestartTitle')),
-                      subtitle:
-                          Text(context.tr('server.autoRestartSubtitle')),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: _lineEnding,
-                      decoration: InputDecoration(
-                        labelText: context.tr('server.lineEndingLabel'),
-                        border: const OutlineInputBorder(),
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
+                      EcDropdownField(
+                        label: context.tr('server.lineEndingLabel'),
+                        items: [
+                          context.tr('server.lineEndingLinux'),
+                          context.tr('server.lineEndingWindows'),
+                        ],
+                        selectedIndex: _lineEnding == kLineEndingCrlf ? 1 : 0,
+                        onSelected: (i) => setDialogState(
+                          () => _lineEnding = i == 1
+                              ? kLineEndingCrlf
+                              : kLineEndingLf,
                         ),
                       ),
-                      items: [
-                        DropdownMenuItem(
-                          value: kLineEndingLf,
-                          child: Text(context.tr('server.lineEndingLinux')),
-                        ),
-                        DropdownMenuItem(
-                          value: kLineEndingCrlf,
-                          child: Text(context.tr('server.lineEndingWindows')),
-                        ),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) {
-                          setDialogState(() => _lineEnding = v);
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                MiuixDialogActions(
+                  children: [
+                    MiuixTextButton(
+                      context.tr('common.save'),
+                      onPressed: () async {
+                        final newName = nameController.text.trim();
+                        if (newName.isNotEmpty &&
+                            newName != widget.instance.name) {
+                          try {
+                            await controller.rename(
+                              widget.instance.id,
+                              newName,
+                            );
+                          } on DuplicateInstanceNameException {
+                            if (context.mounted) {
+                              await showErrorDialog(
+                                context,
+                                context.tr('server.duplicateName', {
+                                  'name': newName,
+                                }),
+                              );
+                            }
+                            return;
+                          }
+                        }
+                        _persistConfig();
+                        if (dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop();
                         }
                       },
                     ),
                   ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () async {
-                    final newName = nameController.text.trim();
-                    if (newName.isNotEmpty && newName != widget.instance.name) {
-                      try {
-                        await controller.rename(widget.instance.id, newName);
-                      } on DuplicateInstanceNameException {
-                        if (context.mounted) {
-                          await showErrorDialog(
-                            context,
-                            context.tr('server.duplicateName', {
-                              'name': newName,
-                            }),
-                          );
-                        }
-                        return;
-                      }
-                    }
-                    _persistConfig();
-                    if (dialogContext.mounted) {
-                      Navigator.of(dialogContext).pop();
-                    }
-                  },
-                  child: Text(context.tr('common.save')),
                 ),
               ],
             );
@@ -1327,7 +1288,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   }
 
   Widget _serverFileField(BuildContext context, _LaunchContext ctx) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     // proot 模式下根据 rootfs 元数据的 envType 决定显示的文件列表：
     //  - php：显示 .phar
     //  - box64：显示全部文件（x86_64 二进制可能无扩展名）
@@ -1342,18 +1303,18 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     final label = showPhars
         ? context.tr('server.serverPharLabel')
         : (showAllFiles
-            ? context.tr('server.serverFileLabel')
-            : context.tr('server.serverJarLabel'));
+              ? context.tr('server.serverFileLabel')
+              : context.tr('server.serverJarLabel'));
     if (files.isEmpty) {
       return Row(
         children: [
-          Icon(Icons.warning_amber, size: 20, color: theme.colorScheme.error),
+          Icon(Icons.warning_amber, size: 20, color: theme.colors.error),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               context.tr('server.fileNotFound', {'ext': ext}),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
+              style: theme.textStyles.footnote1.copyWith(
+                color: theme.colors.error,
               ),
             ),
           ),
@@ -1361,31 +1322,16 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
       );
     }
     // 持久化的选择可能属于另一种运行环境（jar/phar），回退到首个有效项以避免下拉断言。
-    final value = files.contains(_selectedServerFile) ? _selectedServerFile : files.first;
-    return DropdownButtonFormField<String>(
-      isExpanded: true,
-      initialValue: value,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-        isDense: true,
-      ),
-      items: [
-        for (final f in files)
-          DropdownMenuItem(value: f, child: Text(_jarDisplayName(context, f))),
-      ],
-      selectedItemBuilder: (context) => [
-        for (final f in files)
-          DropdownMenuItem<String>(
-            value: f,
-            child: Text(
-              _jarDisplayName(context, f),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-      ],
-      onChanged: (v) {
-        _selectedServerFile = v;
+    final value = files.contains(_selectedServerFile)
+        ? _selectedServerFile
+        : files.first;
+    return EcDropdownField(
+      label: label,
+      items: [for (final f in files) _jarDisplayName(context, f)],
+      // value 为 String?，indexOf 需要非空；null 时 -1 表示未选中。
+      selectedIndex: value == null ? -1 : files.indexOf(value),
+      onSelected: (i) {
+        _selectedServerFile = files[i];
       },
     );
   }
@@ -1415,7 +1361,7 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     _LaunchContext? ctx,
     ServerStatus status,
   ) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final otherRunning = server.isOtherRunning(widget.instance.id);
     // 已停止时可启动；无 jar 时按钮仍可点击，由 _start 在启动前校验并提示。
     final canStart = ctx != null && !otherRunning;
@@ -1423,26 +1369,40 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     // 第一行主按钮：已停止显示「启动」，准备中显示进度，
     // 启动中/运行中/停止中显示「停止」（仅运行中可点）。
     final Widget primaryButton = switch (status) {
-      ServerStatus.stopped => FilledButton.icon(
+      ServerStatus.stopped => MiuixButton(
         onPressed: canStart ? () => _start(server, ctx) : null,
-        icon: const Icon(Icons.play_arrow),
-        label: Text(context.tr('common.start')),
+        colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            MiuixIcon(icon: Icons.play_arrow),
+            const SizedBox(width: 8),
+            MiuixText(context.tr('common.start')),
+          ],
+        ),
       ),
       ServerStatus.preparing => FilledButton.icon(
         onPressed: null,
         icon: const SizedBox(
           width: 18,
           height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: MiuixInfiniteProgressIndicator(size: 20),
         ),
         label: Text(context.tr('server.statusPreparing')),
       ),
       ServerStatus.starting ||
       ServerStatus.running ||
-      ServerStatus.stopping => FilledButton.icon(
+      ServerStatus.stopping => MiuixButton(
         onPressed: status == ServerStatus.running ? server.stop : null,
-        icon: const Icon(Icons.stop),
-        label: Text(context.tr('common.stop')),
+        colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            MiuixIcon(icon: Icons.stop),
+            const SizedBox(width: 8),
+            MiuixText(context.tr('common.stop')),
+          ],
+        ),
       ),
     };
 
@@ -1467,20 +1427,32 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         Row(
           children: [
             Expanded(
-              child: OutlinedButton.icon(
+              child: MiuixButton(
                 onPressed: canRestart ? server.restart : null,
-                icon: const Icon(Icons.restart_alt),
-                label: Text(context.tr('common.restart')),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    MiuixIcon(icon: Icons.restart_alt),
+                    const SizedBox(width: 8),
+                    MiuixText(context.tr('common.restart')),
+                  ],
+                ),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: OutlinedButton.icon(
+              child: MiuixButton(
                 onPressed: canForceStop
                     ? () => _confirmForceStop(context, server, theme)
                     : null,
-                icon: const Icon(Icons.dangerous_outlined),
-                label: Text(context.tr('server.forceStopShort')),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    MiuixIcon(icon: Icons.dangerous_outlined),
+                    const SizedBox(width: 8),
+                    MiuixText(context.tr('server.forceStopShort')),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1489,8 +1461,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
           const SizedBox(height: 8),
           Text(
             hint,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.error,
+            style: theme.textStyles.footnote1.copyWith(
+              color: theme.colors.error,
             ),
           ),
         ],
@@ -1502,30 +1474,14 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   Future<void> _confirmForceStop(
     BuildContext context,
     ServerController server,
-    ThemeData theme,
+    MiuixThemeData theme,
   ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          context.tr('server.forceStopTitle'),
-          style: TextStyle(color: theme.colorScheme.error),
-        ),
-        content: Text(context.tr('server.forceStopContent')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(context.tr('common.cancel')),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: theme.colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(context.tr('server.forceStopConfirm')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: context.tr('server.forceStopTitle'),
+      message: context.tr('server.forceStopContent'),
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('server.forceStopConfirm'),
     );
     if (confirmed == true) server.forceStop();
   }
@@ -1545,7 +1501,7 @@ class _InstanceSelectorButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextButton.icon(
       style: TextButton.styleFrom(
-        foregroundColor: Theme.of(context).colorScheme.onSurface,
+        foregroundColor: MiuixTheme.of(context).colors.onSurface,
       ),
       icon: const Icon(Icons.dns),
       label: ConstrainedBox(
@@ -1587,7 +1543,7 @@ class _InstanceListSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final instances = controller.instances;
     final selectedId = controller.selected?.id;
 
@@ -1600,7 +1556,7 @@ class _InstanceListSheet extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: Text(
               context.tr('server.selectInstance'),
-              style: theme.textTheme.titleMedium,
+              style: theme.textStyles.title4,
             ),
           ),
           if (instances.isEmpty)
@@ -1608,8 +1564,8 @@ class _InstanceListSheet extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Text(
                 context.tr('server.noInstanceHint'),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+                style: theme.textStyles.body2.copyWith(
+                  color: theme.colors.onSurfaceVariantSummary,
                 ),
               ),
             )
@@ -1619,43 +1575,46 @@ class _InstanceListSheet extends StatelessWidget {
                 shrinkWrap: true,
                 children: [
                   for (final instance in instances)
-                    ListTile(
-                      leading: Icon(
-                        instance.id == selectedId
-                            ? Icons.radio_button_checked
-                            : Icons.radio_button_unchecked,
-                        color: instance.id == selectedId
-                            ? theme.colorScheme.primary
-                            : null,
+                    MiuixBasicComponent(
+                      startAction: Padding(
+                        padding: const EdgeInsets.only(right: 16),
+                        child: Icon(
+                          instance.id == selectedId
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_unchecked,
+                          color: instance.id == selectedId
+                              ? theme.colors.primary
+                              : null,
+                        ),
                       ),
-                      title: Text(instance.name),
-                      subtitle: Text(
-                        instance.id,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      selected: instance.id == selectedId,
-                      onTap: () {
+                      title: instance.name,
+                      summary: instance.id,
+                      endActions: [
+                        MiuixIconButton(
+                          onPressed: () =>
+                              _confirmDelete(context, instance, theme),
+                          child: MiuixIcon(
+                            icon: Icons.delete_outline,
+                            tint: theme.colors.error,
+                          ),
+                        ),
+                      ],
+                      onClick: () {
                         controller.select(instance.id);
                         Navigator.of(context).pop();
                       },
-                      trailing: IconButton(
-                        icon: Icon(
-                          Icons.delete_outline,
-                          color: theme.colorScheme.error,
-                        ),
-                        tooltip: context.tr('server.deleteInstance'),
-                        onPressed: () =>
-                            _confirmDelete(context, instance, theme),
-                      ),
                     ),
                 ],
               ),
             ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.add),
-            title: Text(context.tr('server.newInstance')),
-            onTap: () async {
+          const MiuixHorizontalDivider(),
+          MiuixBasicComponent(
+            startAction: Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: const Icon(Icons.add),
+            ),
+            title: context.tr('server.newInstance'),
+            onClick: () async {
               final navigator = Navigator.of(context);
               final result = await navigator.push<CreateInstanceResult>(
                 MaterialPageRoute(builder: (_) => const CreateInstancePage()),
@@ -1674,30 +1633,37 @@ class _InstanceListSheet extends StatelessWidget {
   Future<void> _confirmDelete(
     BuildContext context,
     InstanceSummary instance,
-    ThemeData theme,
+    MiuixThemeData theme,
   ) async {
     final navigator = Navigator.of(context);
     final running = server.isActive(instance.id);
     // 第一次确认
-    final first = await showDialog<bool>(
+    final first = await showMiuixDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.tr('server.confirmDeleteTitle')),
-        content: Text(
-          running
-              ? context.tr('server.confirmDeleteRunning', {
-                  'name': instance.name,
-                })
-              : context.tr('server.confirmDelete', {'name': instance.name}),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(context.tr('common.cancel')),
+      title: context.tr('server.confirmDeleteTitle'),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            running
+                ? context.tr('server.confirmDeleteRunning', {
+                    'name': instance.name,
+                  })
+                : context.tr('server.confirmDelete', {'name': instance.name}),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(context.tr('common.delete')),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                context.tr('common.cancel'),
+                onPressed: () => Navigator.of(ctx).pop(false),
+              ),
+              MiuixTextButton(
+                context.tr('common.delete'),
+                onPressed: () => Navigator.of(ctx).pop(true),
+              ),
+            ],
           ),
         ],
       ),
@@ -1706,32 +1672,14 @@ class _InstanceListSheet extends StatelessWidget {
 
     if (!context.mounted) return;
     // 第二次确认：强调不可恢复
-    final second = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          context.tr('server.irreversibleTitle'),
-          style: TextStyle(color: theme.colorScheme.error),
-        ),
-        content: Text(
-          context.tr('server.confirmDeleteIrreversible', {
-            'name': instance.name,
-          }),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(context.tr('common.cancel')),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: theme.colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(context.tr('server.confirmDeleteButton')),
-          ),
-        ],
-      ),
+    final second = await showMiuixConfirm(
+      context,
+      title: context.tr('server.irreversibleTitle'),
+      message: context.tr('server.confirmDeleteIrreversible', {
+        'name': instance.name,
+      }),
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('server.confirmDeleteButton'),
     );
     if (second != true || !context.mounted) return;
 
@@ -1771,7 +1719,7 @@ class _MonitorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final monitor = SystemMonitorScope.of(context);
     final info = monitor.info;
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
 
     final server = ServerScope.of(context);
     final serverStatus = server.status;
@@ -1783,55 +1731,53 @@ class _MonitorCard extends StatelessWidget {
     final memPercent = info.usedMemPercent;
     final cpuPercent = info.cpuUsage >= 0 ? info.cpuUsage : 0.0;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              context.tr('server.systemStatus'),
-              style: theme.textTheme.titleSmall,
-            ),
-            const SizedBox(height: 12),
+    return MiuixCard(
+      insideMargin: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            context.tr('server.systemStatus'),
+            style: theme.textStyles.subtitle,
+          ),
+          const SizedBox(height: 12),
 
-            // 设备内存
-            _MonitorRow(
-              icon: Icons.memory,
-              label: context.tr('server.deviceMemory'),
-              value: '${info.usedMemMb} MB / ${info.totalMemMb} MB',
-              percent: memPercent,
-              color: _colorForPercent(memPercent, theme),
-            ),
-            const SizedBox(height: 12),
+          // 设备内存
+          _MonitorRow(
+            icon: Icons.memory,
+            label: context.tr('server.deviceMemory'),
+            value: '${info.usedMemMb} MB / ${info.totalMemMb} MB',
+            percent: memPercent,
+            color: _colorForPercent(memPercent, theme),
+          ),
+          const SizedBox(height: 12),
 
-            // CPU 使用率
-            _MonitorRow(
-              icon: Icons.speed,
-              label: context.tr('server.cpuUsage'),
-              value: info.cpuUsage >= 0
-                  ? '${info.cpuUsage.toStringAsFixed(1)}%'
-                  : context.tr('server.unavailable'),
-              percent: cpuPercent,
-              color: _colorForPercent(cpuPercent, theme),
-            ),
+          // CPU 使用率
+          _MonitorRow(
+            icon: Icons.speed,
+            label: context.tr('server.cpuUsage'),
+            value: info.cpuUsage >= 0
+                ? '${info.cpuUsage.toStringAsFixed(1)}%'
+                : context.tr('server.unavailable'),
+            percent: cpuPercent,
+            color: _colorForPercent(cpuPercent, theme),
+          ),
 
-            // 服务端内存（常驻显示，未运行时显示提示信息）
-            const SizedBox(height: 12),
-            _ServerMemRow(
-              memMb: serverProcessAlive ? info.serverMemMb : null,
-              maxMemMb: maxMemoryMb,
-            ),
-          ],
-        ),
+          // 服务端内存（常驻显示，未运行时显示提示信息）
+          const SizedBox(height: 12),
+          _ServerMemRow(
+            memMb: serverProcessAlive ? info.serverMemMb : null,
+            maxMemMb: maxMemoryMb,
+          ),
+        ],
       ),
     );
   }
 
-  static Color _colorForPercent(double percent, ThemeData theme) {
-    if (percent >= 85) return theme.colorScheme.error;
+  static Color _colorForPercent(double percent, MiuixThemeData theme) {
+    if (percent >= 85) return theme.colors.error;
     if (percent >= 65) return Colors.orange;
-    return theme.colorScheme.primary;
+    return theme.colors.primary;
   }
 }
 
@@ -1853,19 +1799,19 @@ class _MonitorRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
+            Icon(icon, size: 18, color: theme.colors.onSurfaceVariantSummary),
             const SizedBox(width: 6),
-            Text(label, style: theme.textTheme.bodyMedium),
+            Text(label, style: theme.textStyles.body2),
             const Spacer(),
             Text(
               value,
-              style: theme.textTheme.bodyMedium?.copyWith(
+              style: theme.textStyles.body2.copyWith(
                 fontWeight: FontWeight.w600,
                 color: color,
               ),
@@ -1889,12 +1835,12 @@ class _ServerMemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final running = memMb != null;
     final percent = running && maxMemMb > 0 ? (memMb! / maxMemMb) * 100.0 : 0.0;
     final color = running
         ? _MonitorCard._colorForPercent(percent, theme)
-        : theme.colorScheme.outline;
+        : theme.colors.outline;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1904,19 +1850,19 @@ class _ServerMemRow extends StatelessWidget {
             Icon(
               Icons.dns,
               size: 18,
-              color: theme.colorScheme.onSurfaceVariant,
+              color: theme.colors.onSurfaceVariantSummary,
             ),
             const SizedBox(width: 6),
             Text(
               context.tr('server.serverMemory'),
-              style: theme.textTheme.bodyMedium,
+              style: theme.textStyles.body2,
             ),
             const Spacer(),
             Text(
               running
                   ? '$memMb MB / $maxMemMb MB'
                   : context.tr('server.serverNotRunning'),
-              style: theme.textTheme.bodyMedium?.copyWith(
+              style: theme.textStyles.body2.copyWith(
                 fontWeight: FontWeight.w600,
                 color: color,
               ),
@@ -1941,7 +1887,7 @@ class _AnimatedProgressBar extends StatelessWidget {
 
   final double percent;
   final Color color;
-  final ThemeData theme;
+  final MiuixThemeData theme;
 
   @override
   Widget build(BuildContext context) {
@@ -1961,7 +1907,7 @@ class _AnimatedProgressBar extends StatelessWidget {
               children: [
                 Positioned.fill(
                   child: ColoredBox(
-                    color: theme.colorScheme.surfaceContainerHighest,
+                    color: theme.colors.surfaceContainerHighest,
                   ),
                 ),
                 FractionallySizedBox(
@@ -2009,7 +1955,7 @@ class _ConnectionCardState extends State<_ConnectionCard> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final upnpActive = widget.server.isUpnpActive;
     final tunnelActive = widget.server.isTunnelActive;
     final tunnelRunning = widget.server.isTunnelRunning;
@@ -2025,240 +1971,242 @@ class _ConnectionCardState extends State<_ConnectionCard> {
     final stunRunning = widget.server.isStunRunning;
     final stunFailed = widget.server.isStunFailed;
     final stunAddress = widget.server.stunPublicAddress;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 标题行。
+    return MiuixCard(
+      insideMargin: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 标题行。
+          Row(
+            children: [
+              Icon(Icons.link, size: 20, color: theme.colors.primary),
+              const SizedBox(width: 8),
+              Text(
+                context.tr('server.connectionInfo'),
+                style: theme.textStyles.subtitle.copyWith(
+                  color: theme.colors.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // 未运行时仅显示占位提示，不展示连接地址与映射状态。
+          if (!widget.running)
             Row(
               children: [
-                Icon(Icons.link, size: 20, color: theme.colorScheme.primary),
+                Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: theme.colors.onSurfaceVariantSummary,
+                ),
                 const SizedBox(width: 8),
                 Text(
-                  context.tr('server.connectionInfo'),
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.primary,
+                  context.tr('server.serverNotRunning'),
+                  style: theme.textStyles.body2.copyWith(
+                    color: theme.colors.onSurfaceVariantSummary,
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 12),
-
-            // 未运行时仅显示占位提示，不展示连接地址与映射状态。
-            if (!widget.running)
-              Row(
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    size: 16,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.tr('server.serverNotRunning'),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              )
-            else ...[
-              // 内网连接地址。
-              ExpandableAddressList(
-                ips: _localIps ?? [],
-                itemBuilder: (ctx, ip, isPrimary) => isPrimary
-                    ? [
-                        _infoRow(ctx, theme,
-                          icon: Icons.lan_outlined,
-                          label: context.tr('server.lanAddress'),
-                          value: '$ip:${serverPort ?? upnpPort ?? 25565}',
-                          canCopy: true,
-                        ),
-                      ]
-                    : [
-                        Padding(
-                          padding: const EdgeInsets.only(left: 32, top: 4),
-                          child: SelectableText(
-                            '$ip:${serverPort ?? upnpPort ?? 25565}',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              fontFamily: 'monospace',
-                            ),
-                          ),
-                        ),
-                      ],
-              ),
-
-              // 映射状态指示器。
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  // 正版验证（online-mode / xbox-auth）状态，读取完成后显示。
-                  if (widget.server.onlineMode != null)
-                    _authChip(context, theme, online: widget.server.onlineMode!),
-                  _statusChip(
-                    context,
-                    theme,
-                    icon: Icons.router_outlined,
-                    label: 'UPnP',
-                    active: upnpActive,
-                    success: upnpIp != null,
-                  ),
-                  _statusChip(
-                    context,
-                    theme,
-                    icon: Icons.cloud_outlined,
-                    label: 'FRP',
-                    active: tunnelActive,
-                    success: tunnelRunning,
-                    error: tunnelCrashed,
-                  ),
-                  // DDNS 芯片仅在启用时显示（多数用户不配置域名，不常驻占位）。
-                  if (ddnsActive)
-                    _statusChip(
-                      context,
-                      theme,
-                      icon: Icons.dns_outlined,
-                      label: 'DDNS',
-                      active: ddnsActive,
-                      success: ddnsSucceeded,
-                      error: ddnsError != null,
-                    ),
-                  // STUN 芯片同理：仅在启用（或已确定失败）时显示。
-                  if (stunActive || stunFailed)
-                    _statusChip(
-                      context,
-                      theme,
-                      icon: Icons.hub_outlined,
-                      label: 'STUN',
-                      active: stunActive,
-                      success: stunRunning,
-                      error: stunFailed,
-                    ),
-                ],
-              ),
-
-              // 尚无任何已成功建立的外网入口（UPnP 映射成功 / FRP 已连接 /
-              // DDNS 解析成功）时，明确提示当前地址仅限局域网访问；
-              // 映射进行中或失败时该提示保持显示，直到真正映射成功。
-              if (!(upnpActive && upnpIp != null) &&
-                  !(tunnelActive && tunnelRunning) &&
-                  !(ddnsActive && ddnsSucceeded) &&
-                  !(stunActive && stunRunning))
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        size: 16,
-                        color: theme.colorScheme.onSurfaceVariant,
+            )
+          else ...[
+            // 内网连接地址。
+            ExpandableAddressList(
+              ips: _localIps ?? [],
+              itemBuilder: (ctx, ip, isPrimary) => isPrimary
+                  ? [
+                      _infoRow(
+                        ctx,
+                        theme,
+                        icon: Icons.lan_outlined,
+                        label: context.tr('server.lanAddress'),
+                        value: '$ip:${serverPort ?? upnpPort ?? 25565}',
+                        canCopy: true,
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          // 已启用映射但尚未成功（映射中/出错）：提示"映射未
-                          // 完成"；完全未启用：提示"开启端口映射"。
-                          upnpActive ||
-                                  tunnelActive ||
-                                  ddnsActive ||
-                                  stunActive ||
-                                  tunnelCrashed
-                              ? context.tr('server.lanOnlyMappingPendingHint')
-                              : context.tr('server.lanOnlyHint'),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                    ]
+                  : [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 32, top: 4),
+                        child: SelectableText(
+                          '$ip:${serverPort ?? upnpPort ?? 25565}',
+                          style: theme.textStyles.body2.copyWith(
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'monospace',
                           ),
                         ),
                       ),
                     ],
-                  ),
-                ),
+            ),
 
-              // UPnP 公网 IP（映射成功时显示）。
-              if (upnpActive && upnpIp != null && upnpPort != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: _infoRow(
-                    context,
-                    theme,
-                    icon: Icons.public,
-                    label: context.tr('server.upnpPublic'),
-                    value: '$upnpIp:$upnpPort',
-                    canCopy: true,
-                  ),
+            // 映射状态指示器。
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                // 正版验证（online-mode / xbox-auth）状态，读取完成后显示。
+                if (widget.server.onlineMode != null)
+                  _authChip(context, theme, online: widget.server.onlineMode!),
+                _statusChip(
+                  context,
+                  theme,
+                  icon: Icons.router_outlined,
+                  label: 'UPnP',
+                  active: upnpActive,
+                  success: upnpIp != null,
                 ),
-
-              // DDNS 域名地址（解析成功时显示）。端口优先取 UPnP 映射的
-              // 外网端口（与 UPnP 配合使用时二者才是同一个可达入口）。
-              if (ddnsActive && ddnsSucceeded && ddnsDomain != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: _infoRow(
+                _statusChip(
+                  context,
+                  theme,
+                  icon: Icons.cloud_outlined,
+                  label: 'FRP',
+                  active: tunnelActive,
+                  success: tunnelRunning,
+                  error: tunnelCrashed,
+                ),
+                // DDNS 芯片仅在启用时显示（多数用户不配置域名，不常驻占位）。
+                if (ddnsActive)
+                  _statusChip(
                     context,
                     theme,
                     icon: Icons.dns_outlined,
-                    label: context.tr('server.ddnsAddress'),
-                    value: '$ddnsDomain:${upnpPort ?? serverPort ?? 25565}',
-                    canCopy: true,
+                    label: 'DDNS',
+                    active: ddnsActive,
+                    success: ddnsSucceeded,
+                    error: ddnsError != null,
                   ),
-                ),
-
-              // STUN 隧道公网直连地址（打洞成功时显示）。地址已含端口，
-              // 且该端口由 NAT 分配，与服务端端口无关。
-              if (stunRunning && stunAddress != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: _infoRow(
+                // STUN 芯片同理：仅在启用（或已确定失败）时显示。
+                if (stunActive || stunFailed)
+                  _statusChip(
                     context,
                     theme,
                     icon: Icons.hub_outlined,
-                    label: context.tr('server.stunAddress'),
-                    value: stunAddress,
-                    canCopy: true,
+                    label: 'STUN',
+                    active: stunActive,
+                    success: stunRunning,
+                    error: stunFailed,
                   ),
-                ),
+              ],
+            ),
 
-              // UPnP 获取到的 IP 属于保留/私有地址段（CGNAT 等）时给出提示。
-              if (widget.server.upnpIsCgnat)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Card(
-                    color: theme.colorScheme.errorContainer,
-                    margin: EdgeInsets.zero,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.warning_amber_outlined,
-                            size: 18,
-                            color: theme.colorScheme.onErrorContainer,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              context.tr('server.upnpCgnatWarning'),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onErrorContainer,
-                              ),
+            // 尚无任何已成功建立的外网入口（UPnP 映射成功 / FRP 已连接 /
+            // DDNS 解析成功）时，明确提示当前地址仅限局域网访问；
+            // 映射进行中或失败时该提示保持显示，直到真正映射成功。
+            if (!(upnpActive && upnpIp != null) &&
+                !(tunnelActive && tunnelRunning) &&
+                !(ddnsActive && ddnsSucceeded) &&
+                !(stunActive && stunRunning))
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: theme.colors.onSurfaceVariantSummary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        // 已启用映射但尚未成功（映射中/出错）：提示"映射未
+                        // 完成"；完全未启用：提示"开启端口映射"。
+                        upnpActive ||
+                                tunnelActive ||
+                                ddnsActive ||
+                                stunActive ||
+                                tunnelCrashed
+                            ? context.tr('server.lanOnlyMappingPendingHint')
+                            : context.tr('server.lanOnlyHint'),
+                        style: theme.textStyles.footnote1.copyWith(
+                          color: theme.colors.onSurfaceVariantSummary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // UPnP 公网 IP（映射成功时显示）。
+            if (upnpActive && upnpIp != null && upnpPort != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _infoRow(
+                  context,
+                  theme,
+                  icon: Icons.public,
+                  label: context.tr('server.upnpPublic'),
+                  value: '$upnpIp:$upnpPort',
+                  canCopy: true,
+                ),
+              ),
+
+            // DDNS 域名地址（解析成功时显示）。端口优先取 UPnP 映射的
+            // 外网端口（与 UPnP 配合使用时二者才是同一个可达入口）。
+            if (ddnsActive && ddnsSucceeded && ddnsDomain != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _infoRow(
+                  context,
+                  theme,
+                  icon: Icons.dns_outlined,
+                  label: context.tr('server.ddnsAddress'),
+                  value: '$ddnsDomain:${upnpPort ?? serverPort ?? 25565}',
+                  canCopy: true,
+                ),
+              ),
+
+            // STUN 隧道公网直连地址（打洞成功时显示）。地址已含端口，
+            // 且该端口由 NAT 分配，与服务端端口无关。
+            if (stunRunning && stunAddress != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _infoRow(
+                  context,
+                  theme,
+                  icon: Icons.hub_outlined,
+                  label: context.tr('server.stunAddress'),
+                  value: stunAddress,
+                  canCopy: true,
+                ),
+              ),
+
+            // UPnP 获取到的 IP 属于保留/私有地址段（CGNAT 等）时给出提示。
+            if (widget.server.upnpIsCgnat)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Padding(
+                  padding: EdgeInsets.zero,
+                  child: MiuixCard(
+                    insideMargin: const EdgeInsets.all(12),
+                    colors: MiuixCardColors(
+                      color: theme.colors.errorContainer,
+                      contentColor: MiuixTheme.of(context).colors.onSurface,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.warning_amber_outlined,
+                          size: 18,
+                          color: theme.colors.onErrorContainer,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            context.tr('server.upnpCgnatWarning'),
+                            style: theme.textStyles.footnote1.copyWith(
+                              color: theme.colors.onErrorContainer,
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-
-            ],
+              ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -2266,7 +2214,7 @@ class _ConnectionCardState extends State<_ConnectionCard> {
   /// 信息行：图标 + 标签 + 值，可选复制按钮。
   Widget _infoRow(
     BuildContext context,
-    ThemeData theme, {
+    MiuixThemeData theme, {
     required IconData icon,
     required String label,
     required String value,
@@ -2274,19 +2222,19 @@ class _ConnectionCardState extends State<_ConnectionCard> {
   }) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+        Icon(icon, size: 16, color: theme.colors.onSurfaceVariantSummary),
         const SizedBox(width: 8),
         Text(
           label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+          style: theme.textStyles.footnote1.copyWith(
+            color: theme.colors.onSurfaceVariantSummary,
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             value,
-            style: theme.textTheme.bodyMedium?.copyWith(
+            style: theme.textStyles.body2.copyWith(
               fontWeight: FontWeight.w600,
               fontFamily: 'monospace',
             ),
@@ -2302,7 +2250,7 @@ class _ConnectionCardState extends State<_ConnectionCard> {
               child: Icon(
                 Icons.copy,
                 size: 16,
-                color: theme.colorScheme.onSurfaceVariant,
+                color: theme.colors.onSurfaceVariantSummary,
               ),
             ),
           ),
@@ -2316,7 +2264,7 @@ class _ConnectionCardState extends State<_ConnectionCard> {
   /// > active && !success（映射中，橙色）。
   Widget _statusChip(
     BuildContext context,
-    ThemeData theme, {
+    MiuixThemeData theme, {
     required IconData icon,
     required String label,
     required bool active,
@@ -2326,10 +2274,10 @@ class _ConnectionCardState extends State<_ConnectionCard> {
     final Color color;
     final String statusText;
     if (error) {
-      color = theme.colorScheme.error;
+      color = theme.colors.error;
       statusText = context.tr('server.mappingError');
     } else if (!active) {
-      color = theme.colorScheme.outline;
+      color = theme.colors.outline;
       statusText = context.tr('server.mappingDisabled');
     } else if (success) {
       color = Colors.green;
@@ -2351,7 +2299,7 @@ class _ConnectionCardState extends State<_ConnectionCard> {
           const SizedBox(width: 4),
           Text(
             '$label $statusText',
-            style: theme.textTheme.labelSmall?.copyWith(color: color),
+            style: theme.textStyles.footnote2.copyWith(color: color),
           ),
         ],
       ),
@@ -2364,12 +2312,13 @@ class _ConnectionCardState extends State<_ConnectionCard> {
   /// 开启为绿色，关闭（允许离线/盗版加入）为灰色。
   Widget _authChip(
     BuildContext context,
-    ThemeData theme, {
+    MiuixThemeData theme, {
     required bool online,
   }) {
-    final color = online ? Colors.green : theme.colorScheme.outline;
-    final statusText =
-        online ? context.tr('server.authOn') : context.tr('server.authOff');
+    final color = online ? Colors.green : theme.colors.outline;
+    final statusText = online
+        ? context.tr('server.authOn')
+        : context.tr('server.authOff');
     return Material(
       color: color.withValues(alpha: 0.12),
       borderRadius: BorderRadius.circular(12),
@@ -2385,7 +2334,7 @@ class _ConnectionCardState extends State<_ConnectionCard> {
               const SizedBox(width: 4),
               Text(
                 '${context.tr('server.onlineAuth')} $statusText',
-                style: theme.textTheme.labelSmall?.copyWith(color: color),
+                style: theme.textStyles.footnote2.copyWith(color: color),
               ),
               const SizedBox(width: 3),
               Icon(Icons.edit, size: 11, color: color),
@@ -2402,54 +2351,62 @@ class _ConnectionCardState extends State<_ConnectionCard> {
   /// 与退出服务器配置页时的提示一致；失败则用 SnackBar 提示。
   Future<void> _showAuthDialog(
     BuildContext context,
-    ThemeData theme,
+    MiuixThemeData theme,
     bool online,
   ) async {
     final failedMsg = context.tr('server.authChangeFailed');
 
-    final toValue = await showDialog<bool>(
+    final toValue = await showMiuixDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('server.onlineAuth')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(ctx.tr('server.authDialogDesc')),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  online ? Icons.verified_user : Icons.gpp_maybe_outlined,
-                  size: 18,
-                  color: online ? Colors.green : theme.colorScheme.outline,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  online
-                      ? ctx.tr('server.authStateOn')
-                      : ctx.tr('server.authStateOff'),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: online ? Colors.green : theme.colorScheme.outline,
+      title: context.tr('server.onlineAuth'),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(ctx.tr('server.authDialogDesc')),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    online ? Icons.verified_user : Icons.gpp_maybe_outlined,
+                    size: 18,
+                    color: online ? Colors.green : theme.colors.outline,
                   ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(ctx.tr('common.cancel')),
+                  const SizedBox(width: 8),
+                  Text(
+                    online
+                        ? ctx.tr('server.authStateOn')
+                        : ctx.tr('server.authStateOff'),
+                    style: theme.textStyles.body2.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: online ? Colors.green : theme.colors.outline,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(!online),
-            child: Text(
-              online
-                  ? ctx.tr('server.authTurnOff')
-                  : ctx.tr('server.authTurnOn'),
-            ),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                ctx.tr('common.cancel'),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+              MiuixButton(
+                onPressed: () => Navigator.of(ctx).pop(!online),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(
+                  online
+                      ? ctx.tr('server.authTurnOff')
+                      : ctx.tr('server.authTurnOn'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -2462,22 +2419,12 @@ class _ConnectionCardState extends State<_ConnectionCard> {
     }
     // 写回成功：服务端运行中则弹「需要重启生效」对话框（复用配置页文案）。
     if (context.mounted && widget.server.isRunning) {
-      final restartNow = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(ctx.tr('serverProps.restartRequiredTitle')),
-          content: Text(ctx.tr('serverProps.restartRequiredMsg')),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(ctx.tr('serverProps.restartLater')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(ctx.tr('serverProps.restartNow')),
-            ),
-          ],
-        ),
+      final restartNow = await showMiuixConfirm(
+        context,
+        title: context.tr('serverProps.restartRequiredTitle'),
+        message: context.tr('serverProps.restartRequiredMsg'),
+        cancelLabel: context.tr('serverProps.restartLater'),
+        confirmLabel: context.tr('serverProps.restartNow'),
       );
       if (restartNow == true) await widget.server.restart();
     }
@@ -2485,12 +2432,7 @@ class _ConnectionCardState extends State<_ConnectionCard> {
 
   void _copyAddress(BuildContext context, String address) {
     Clipboard.setData(ClipboardData(text: address));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(context.tr('server.copiedAddress', {'address': address})),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    showMiuixSnackbar(context.tr('server.copiedAddress', {'address': address}));
   }
 }
 
@@ -2545,7 +2487,8 @@ class _CrashDialogState extends State<_CrashDialog> {
           'proot' => 'proot',
           _ => 'Java',
         };
-        final envDisplay = (widget.crash.runtimeName != null &&
+        final envDisplay =
+            (widget.crash.runtimeName != null &&
                 widget.crash.runtimeName!.isNotEmpty)
             ? widget.crash.runtimeName!
             : _versionLabel(widget.crash.envRuntimeId);
@@ -2553,17 +2496,31 @@ class _CrashDialogState extends State<_CrashDialog> {
         lines.add(tr('server.crashEnvDisplay', {'env': envDisplay}));
         if (widget.crash.runtimeVersion != null &&
             widget.crash.runtimeVersion!.isNotEmpty) {
-          lines.add(tr('server.crashEnvVersion', {'version': widget.crash.runtimeVersion!}));
+          lines.add(
+            tr('server.crashEnvVersion', {
+              'version': widget.crash.runtimeVersion!,
+            }),
+          );
         }
       } else {
         lines.add(tr('server.crashSourceTunnel'));
       }
       lines
         ..add(tr('server.crashDeviceArch', {'arch': deviceInfo.architecture}))
-        ..add(tr('server.crashDeviceManufacturer', {'mfr': deviceInfo.manufacturer}))
+        ..add(
+          tr('server.crashDeviceManufacturer', {
+            'mfr': deviceInfo.manufacturer,
+          }),
+        )
         ..add(tr('server.crashDeviceModel', {'model': deviceInfo.model}))
-        ..add(tr('server.crashAndroidVersion', {'version': deviceInfo.androidVersion}))
-        ..add(tr('server.crashSecurityPatch', {'patch': deviceInfo.securityPatch}))
+        ..add(
+          tr('server.crashAndroidVersion', {
+            'version': deviceInfo.androidVersion,
+          }),
+        )
+        ..add(
+          tr('server.crashSecurityPatch', {'patch': deviceInfo.securityPatch}),
+        )
         ..add(tr('server.crashExitCode', {'code': '${widget.crash.exitCode}'}))
         ..addAll(['================', '']);
       if (mounted) setState(() => _deviceHeader = lines.join('\n'));
@@ -2643,106 +2600,115 @@ class _CrashDialogState extends State<_CrashDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final isTunnel = widget.crash.kind == 'tunnel';
     final titleKey = isTunnel ? 'tunnel.crashTitle' : 'server.crashTitle';
     final messageKey = isTunnel
         ? 'tunnel.crashMessageOffline'
         : 'server.crashMessageOffline';
 
-    return AlertDialog(
-      title: Row(
-        children: [
-          Icon(Icons.error_outline, color: theme.colorScheme.error, size: 24),
-          const SizedBox(width: 8),
-          Text(context.tr(titleKey)),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(context.tr(messageKey, {'code': '${widget.crash.exitCode}'})),
-          if (widget.crash.errorReason != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.errorContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    context.tr('server.crashReason'),
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.onErrorContainer,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    widget.crash.errorReason!,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onErrorContainer,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (widget.crash.errorDetail != null &&
-                      widget.crash.errorDetail!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    SelectableText(
-                      widget.crash.errorDetail!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onErrorContainer
-                            .withValues(alpha: 0.75),
-                        fontFamily: 'monospace',
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                  if (widget.crash.errorSuggest != null &&
-                      widget.crash.errorSuggest!.isNotEmpty) ...[
-                    const SizedBox(height: 10),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.error_outline, color: theme.colors.error, size: 24),
+            const SizedBox(width: 8),
+            Text(context.tr(titleKey)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(context.tr(messageKey, {'code': '${widget.crash.exitCode}'})),
+            if (widget.crash.errorReason != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colors.errorContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Text(
-                      context.tr('server.crashSuggest'),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onErrorContainer,
+                      context.tr('server.crashReason'),
+                      style: theme.textStyles.footnote1.copyWith(
+                        color: theme.colors.onErrorContainer,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      widget.crash.errorSuggest!,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onErrorContainer,
+                      widget.crash.errorReason!,
+                      style: theme.textStyles.body2.copyWith(
+                        color: theme.colors.onErrorContainer,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
+                    if (widget.crash.errorDetail != null &&
+                        widget.crash.errorDetail!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      SelectableText(
+                        widget.crash.errorDetail!,
+                        style: theme.textStyles.footnote1.copyWith(
+                          color: theme.colors.onErrorContainer.withValues(
+                            alpha: 0.75,
+                          ),
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                    if (widget.crash.errorSuggest != null &&
+                        widget.crash.errorSuggest!.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        context.tr('server.crashSuggest'),
+                        style: theme.textStyles.footnote1.copyWith(
+                          color: theme.colors.onErrorContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.crash.errorSuggest!,
+                        style: theme.textStyles.body2.copyWith(
+                          color: theme.colors.onErrorContainer,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 20),
+        MiuixDialogActions(
+          children: [
+            MiuixTextButton(
+              context.tr('common.close'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            OutlinedButton.icon(
+              onPressed: _exporting ? null : _exportLog,
+              icon: _exporting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: MiuixInfiniteProgressIndicator(size: 20),
+                    )
+                  : const Icon(Icons.download),
+              label: Text(context.tr('server.exportLog')),
             ),
           ],
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(context.tr('common.close')),
-        ),
-        OutlinedButton.icon(
-          onPressed: _exporting ? null : _exportLog,
-          icon: _exporting
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.download),
-          label: Text(context.tr('server.exportLog')),
         ),
       ],
     );

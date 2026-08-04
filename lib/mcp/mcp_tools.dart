@@ -237,7 +237,9 @@ void _registerControlTools(
     annotations: const ToolAnnotations(idempotentHint: true),
     callback: (args, extra) async {
       if (!server.isRunning) {
-        return _err(tr('mcp.err.serverNotRunning', {'status': server.status.name}));
+        return _err(
+          tr('mcp.err.serverNotRunning', {'status': server.status.name}),
+        );
       }
       await server.stop();
       return _ok({'stopping': true, 'status': server.status.name});
@@ -262,7 +264,9 @@ void _registerControlTools(
     description: tr('mcp.tool.sendCommand'),
     inputSchema: JsonSchema.object(
       properties: {
-        'command': JsonSchema.string(description: tr('mcp.tool.sendCommand.command')),
+        'command': JsonSchema.string(
+          description: tr('mcp.tool.sendCommand.command'),
+        ),
       },
       required: ['command'],
     ),
@@ -276,7 +280,9 @@ void _registerControlTools(
       if (server.status != ServerStatus.starting &&
           server.status != ServerStatus.running &&
           server.status != ServerStatus.stopping) {
-        return _err(tr('mcp.err.cannotSendCommand', {'status': server.status.name}));
+        return _err(
+          tr('mcp.err.cannotSendCommand', {'status': server.status.name}),
+        );
       }
       await server.sendCommand(command);
       return _ok({'sent': command});
@@ -287,7 +293,11 @@ void _registerControlTools(
     'select_instance',
     description: tr('mcp.tool.selectInstance'),
     inputSchema: JsonSchema.object(
-      properties: {'instanceId': JsonSchema.string(description: tr('mcp.tool.selectInstance.instanceId'))},
+      properties: {
+        'instanceId': JsonSchema.string(
+          description: tr('mcp.tool.selectInstance.instanceId'),
+        ),
+      },
       required: ['instanceId'],
     ),
     annotations: const ToolAnnotations(
@@ -320,7 +330,9 @@ void _registerShellTools(
     description: tr('mcp.tool.runShell'),
     inputSchema: JsonSchema.object(
       properties: {
-        'command': JsonSchema.string(description: tr('mcp.tool.runShell.command')),
+        'command': JsonSchema.string(
+          description: tr('mcp.tool.runShell.command'),
+        ),
         'cwd': JsonSchema.string(description: tr('mcp.tool.runShell.cwd')),
       },
       required: ['command'],
@@ -347,7 +359,9 @@ void _registerShellTools(
     'shell_cd',
     description: tr('mcp.tool.shellCd'),
     inputSchema: JsonSchema.object(
-      properties: {'path': JsonSchema.string(description: tr('mcp.tool.shellCd.path'))},
+      properties: {
+        'path': JsonSchema.string(description: tr('mcp.tool.shellCd.path')),
+      },
       required: ['path'],
     ),
     annotations: const ToolAnnotations(openWorldHint: false),
@@ -361,7 +375,9 @@ void _registerShellTools(
       );
       final exitCode = result['exitCode'] as int? ?? -1;
       final output = (result['output'] as String? ?? '').trim();
-      if (exitCode != 0 || output.isEmpty) return _err(tr('mcp.err.cannotEnterDirectory', {'path': path}));
+      if (exitCode != 0 || output.isEmpty) {
+        return _err(tr('mcp.err.cannotEnterDirectory', {'path': path}));
+      }
       session.cwd = output;
       return _ok({'cwd': session.cwd});
     },

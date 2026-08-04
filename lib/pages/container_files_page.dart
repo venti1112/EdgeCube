@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../files/file_browser.dart';
 import '../i18n/locale_scope.dart';
 import '../server/proot_service.dart';
+import '../widgets/ec_preference.dart';
 
 /// 直接管理某个 proot 容器（rootfs）内文件的页面。
 ///
@@ -44,13 +46,15 @@ class ContainerFilesPage extends StatelessWidget {
         }
         Navigator.of(context).pop();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            context.tr('containerFiles.title', {'name': title}),
-          ),
+      child: MiuixScaffold(
+        topBar: MiuixSmallTopAppBar(
+          title: context.tr('containerFiles.title', {'name': title}),
+          navigationIcon: const EcBackButton(),
         ),
-        body: FileBrowser(rootDir: Directory(rootfs.dir)),
+        content: (padding) => Padding(
+          padding: padding,
+          child: FileBrowser(rootDir: Directory(rootfs.dir)),
+        ),
       ),
     );
   }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_text_field.dart';
 
 /// 文件/目录搜索栏，供文件管理器、文件选择器、文件夹选择器共用。
 ///
@@ -26,48 +28,42 @@ class FileSearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back),
-            tooltip: context.tr('fileSearch.exit'),
+          MiuixIconButton(
             onPressed: onClose,
+            child: MiuixIcon(icon: Icons.arrow_back),
           ),
           Expanded(
-            child: TextField(
+            child: EcTextField(
               controller: controller,
+              hint: context.tr('fileSearch.hint'),
+              suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: controller,
+                builder: (_, value, _) => value.text.isEmpty
+                    ? const SizedBox.shrink()
+                    : MiuixIconButton(
+                        onPressed: () => controller.clear(),
+                        child: MiuixIcon(icon: Icons.clear, size: 18),
+                      ),
+              ),
               autofocus: autofocus,
               textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                hintText: context.tr('fileSearch.hint'),
-                suffixIcon: ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: controller,
-                  builder: (_, value, _) => value.text.isEmpty
-                      ? const SizedBox.shrink()
-                      : IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          tooltip: context.tr('fileSearch.clear'),
-                          onPressed: () => controller.clear(),
-                        ),
-                ),
-              ),
             ),
           ),
-          IconButton(
-            icon: Icon(
-              recursive
+          // 选中态原先靠 IconButton.isSelected 表达；Miuix 无此参数，
+          // 改用图标本身的实心/描边切换 + 主色着色来体现。
+          MiuixIconButton(
+            onPressed: () => onRecursiveChanged(!recursive),
+            child: MiuixIcon(
+              icon: recursive
                   ? Icons.account_tree
                   : Icons.account_tree_outlined,
+              tint: recursive ? theme.colors.primary : null,
             ),
-            color: recursive ? theme.colorScheme.primary : null,
-            tooltip: context.tr('fileSearch.includeSubdirs'),
-            isSelected: recursive,
-            onPressed: () => onRecursiveChanged(!recursive),
           ),
         ],
       ),

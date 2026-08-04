@@ -37,6 +37,5 @@ class FrpTokenStore {
   static Future<void> saveAccount(
     FrpProvider provider,
     Map<String, dynamic> json,
-  ) =>
-      _storage.write(key: _accountKey(provider), value: jsonEncode(json));
+  ) => _storage.write(key: _accountKey(provider), value: jsonEncode(json));
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart';
 
 import '../../frp/frp_models.dart';
@@ -7,6 +8,9 @@ import '../../frp/frp_registry_store.dart';
 import '../../frp/frp_scope.dart';
 import '../../i18n/locale_scope.dart';
 import '../../widgets/error_dialog.dart';
+import '../../widgets/ec_preference.dart';
+import '../../widgets/ec_text_field.dart';
+import '../../widgets/miuix_snackbar.dart';
 
 /// 自定义 FRP 配置页：简易表单生成 TOML，或整段粘贴 TOML。
 class FrpCustomConfigPage extends StatefulWidget {
@@ -97,9 +101,7 @@ class _FrpCustomConfigPageState extends State<FrpCustomConfigPage> {
         return;
       }
       toml = _rawField.text;
-      name = _nameField.text.trim().isEmpty
-          ? 'Custom'
-          : _nameField.text.trim();
+      name = _nameField.text.trim().isEmpty ? 'Custom' : _nameField.text.trim();
       localPort = null;
       remotePort = null;
     }
@@ -119,58 +121,53 @@ class _FrpCustomConfigPageState extends State<FrpCustomConfigPage> {
     if (!mounted) return;
     await FrpScope.of(context).saveTunnel(saved);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(context.tr('frp.tunnelSaved')),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    showMiuixSnackbar(context.tr('frp.tunnelSaved'));
     Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('frp.provider.custom'))),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            SegmentedButton<bool>(
-              segments: [
-                ButtonSegment(
-                  value: true,
-                  label: Text(context.tr('frp.easyMode')),
-                ),
-                ButtonSegment(
-                  value: false,
-                  label: Text(context.tr('frp.rawMode')),
-                ),
-              ],
-              selected: {_easyMode},
-              onSelectionChanged: (v) => setState(() => _easyMode = v.first),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _nameField,
-              decoration: InputDecoration(
-                labelText: context.tr('frp.tunnelName'),
-                isDense: true,
-                border: const OutlineInputBorder(),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('frp.provider.custom'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              MiuixTabRow(
+                tabs: [context.tr('frp.easyMode'), context.tr('frp.rawMode')],
+                selectedTabIndex: _easyMode ? 0 : 1,
+                onTabSelected: (i) => setState(() => _easyMode = i == 0),
               ),
-            ),
-            const SizedBox(height: 12),
-            if (_easyMode) ..._buildEasyFields() else _buildRawField(),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _save,
-                icon: const Icon(Icons.save, size: 18),
-                label: Text(context.tr('common.save')),
+              const SizedBox(height: 16),
+              EcTextField(
+                controller: _nameField,
+                label: context.tr('frp.tunnelName'),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              if (_easyMode) ..._buildEasyFields() else _buildRawField(),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: MiuixButton(
+                  onPressed: _save,
+                  colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      MiuixIcon(icon: Icons.save, size: 18),
+                      const SizedBox(width: 8),
+                      MiuixText(context.tr('common.save')),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -182,28 +179,20 @@ class _FrpCustomConfigPageState extends State<FrpCustomConfigPage> {
         children: [
           Expanded(
             flex: 3,
-            child: TextField(
+            child: EcTextField(
               controller: _serverAddrField,
-              decoration: InputDecoration(
-                labelText: context.tr('frp.serverAddr'),
-                hintText: 'frp.example.com',
-                isDense: true,
-                border: const OutlineInputBorder(),
-              ),
+              label: context.tr('frp.serverAddr'),
+              hint: 'frp.example.com',
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             flex: 2,
-            child: TextField(
+            child: EcTextField(
               controller: _serverPortField,
+              label: context.tr('frp.serverPort'),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: context.tr('frp.serverPort'),
-                isDense: true,
-                border: const OutlineInputBorder(),
-              ),
             ),
           ),
         ],
@@ -212,25 +201,17 @@ class _FrpCustomConfigPageState extends State<FrpCustomConfigPage> {
       Row(
         children: [
           Expanded(
-            child: TextField(
+            child: EcTextField(
               controller: _userField,
-              decoration: InputDecoration(
-                labelText: context.tr('frp.user'),
-                isDense: true,
-                border: const OutlineInputBorder(),
-              ),
+              label: context.tr('frp.user'),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: TextField(
+            child: EcTextField(
               controller: _tokenField,
+              label: context.tr('frp.authToken'),
               obscureText: true,
-              decoration: InputDecoration(
-                labelText: context.tr('frp.authToken'),
-                isDense: true,
-                border: const OutlineInputBorder(),
-              ),
             ),
           ),
         ],
@@ -239,29 +220,19 @@ class _FrpCustomConfigPageState extends State<FrpCustomConfigPage> {
       Row(
         children: [
           Expanded(
-            child: DropdownButtonFormField<String>(
-              initialValue: _type,
-              decoration: InputDecoration(
-                labelText: context.tr('frp.protocol'),
-                isDense: true,
-                border: const OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(value: 'tcp', child: Text('TCP')),
-                DropdownMenuItem(value: 'udp', child: Text('UDP')),
-              ],
-              onChanged: (v) => setState(() => _type = v ?? 'tcp'),
+            child: MiuixOverlayDropdownPreference(
+              title: context.tr('frp.protocol'),
+              items: const ['TCP', 'UDP'],
+              selectedIndex: _type == 'udp' ? 1 : 0,
+              onSelectedIndexChange: (i) =>
+                  setState(() => _type = i == 1 ? 'udp' : 'tcp'),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: TextField(
+            child: EcTextField(
               controller: _localIpField,
-              decoration: InputDecoration(
-                labelText: context.tr('frp.localIp'),
-                isDense: true,
-                border: const OutlineInputBorder(),
-              ),
+              label: context.tr('frp.localIp'),
             ),
           ),
         ],
@@ -270,54 +241,41 @@ class _FrpCustomConfigPageState extends State<FrpCustomConfigPage> {
       Row(
         children: [
           Expanded(
-            child: TextField(
+            child: EcTextField(
               controller: _localPortField,
+              label: context.tr('frp.localPort'),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: context.tr('frp.localPort'),
-                isDense: true,
-                border: const OutlineInputBorder(),
-              ),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: TextField(
+            child: EcTextField(
               controller: _remotePortField,
+              label: context.tr('frp.remotePort'),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: context.tr('frp.remotePort'),
-                isDense: true,
-                border: const OutlineInputBorder(),
-              ),
             ),
           ),
         ],
       ),
       const SizedBox(height: 4),
-      SwitchListTile(
-        title: Text(context.tr('frp.tlsEnable')),
+      MiuixSwitchPreference(
+        title: context.tr('frp.tlsEnable'),
         value: _tls,
         onChanged: (v) => setState(() => _tls = v),
-        dense: true,
-        contentPadding: EdgeInsets.zero,
+        insideMargin: const EdgeInsets.symmetric(vertical: 8),
       ),
     ];
   }
 
   Widget _buildRawField() {
-    return TextField(
+    return EcTextField(
       controller: _rawField,
       maxLines: 16,
-      style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-      decoration: InputDecoration(
-        labelText: 'frpc.toml',
-        hintText: context.tr('frp.rawConfigHint'),
-        alignLabelWithHint: true,
-        border: const OutlineInputBorder(),
-      ),
+      textStyle: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+      label: 'frpc.toml',
+      hint: context.tr('frp.rawConfigHint'),
     );
   }
 }

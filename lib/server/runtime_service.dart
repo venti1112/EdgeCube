@@ -45,7 +45,8 @@ class RuntimeInfo {
   bool get canCheckUpdate => updateUrl.isNotEmpty;
 
   /// 用于展示的版本字符串：优先 [versionName]，否则 [version]。
-  String get displayVersion => versionName?.isNotEmpty == true ? versionName! : version.toString();
+  String get displayVersion =>
+      versionName?.isNotEmpty == true ? versionName! : version.toString();
 
   factory RuntimeInfo.fromMap(Map<String, dynamic> m) {
     return RuntimeInfo(

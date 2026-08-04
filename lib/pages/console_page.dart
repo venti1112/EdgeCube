@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -12,6 +13,7 @@ import '../server/server_controller.dart';
 import '../server/server_scope.dart';
 import '../widgets/terminal_keys_bar.dart';
 import '../widgets/terminal_zoom.dart';
+import '../widgets/miuix_snackbar.dart';
 
 /// 控制台终端页：直接交互的伪终端（PTY + xterm）+ Termux 式扩展按键栏。
 ///
@@ -88,26 +90,20 @@ class _ConsolePageState extends State<ConsolePage> {
   @override
   Widget build(BuildContext context) {
     final server = ServerScope.of(context);
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final running = server.isRunning;
     final hasLog = server.log.isNotEmpty;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(context.tr('console.title')),
-            Text(
-              '${_subtitle(context, server)} · ${server.lineMode ? context.tr('console.modeCommandLine') : context.tr('console.modeRawTerminal')}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: running
-                    ? Colors.green
-                    : theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('console.title'),
+        // 原先塞进标题的第二行状态文案，正好对应 Miuix 的 subtitle 槽。
+        subtitle:
+            '${_subtitle(context, server)} · '
+            '${server.lineMode ? context.tr('console.modeCommandLine') : context.tr('console.modeRawTerminal')}',
+        subtitleColor: running
+            ? theme.colors.primary
+            : theme.colors.onSurfaceVariantSummary,
         actions: [
           TerminalZoomButton(
             fontSize: _fontSize,
@@ -116,62 +112,57 @@ class _ConsolePageState extends State<ConsolePage> {
               _saveFontSize();
             },
           ),
-          IconButton(
-            icon: Icon(server.lineMode ? Icons.edit : Icons.keyboard),
-            tooltip: server.lineMode
-                ? context.tr('console.tooltipLineModeOn')
-                : context.tr('console.tooltipLineModeOff'),
+          MiuixIconButton(
             onPressed: server.toggleLineMode,
+            child: MiuixIcon(
+              icon: server.lineMode ? Icons.edit : Icons.keyboard,
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.copy),
-            tooltip: context.tr('console.tooltipCopyAllLogs'),
+          MiuixIconButton(
             onPressed: !hasLog
                 ? null
                 : () {
                     Clipboard.setData(
                       ClipboardData(text: server.log.join('\n')),
                     );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(context.tr('console.logCopied'))),
-                    );
+                    showMiuixSnackbar(context.tr('console.logCopied'));
                   },
+            child: MiuixIcon(icon: Icons.copy),
           ),
-          IconButton(
-            icon: _exporting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.download),
-            tooltip: context.tr('console.tooltipExportLog'),
+          MiuixIconButton(
             onPressed: !hasLog ? null : () => _exportLog(server),
+            enabled: hasLog,
+            child: _exporting
+                ? const MiuixInfiniteProgressIndicator(size: 20)
+                : const MiuixIcon(icon: Icons.download),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: context.tr('console.tooltipClearTerminal'),
+          MiuixIconButton(
             onPressed: !hasLog ? null : server.clearLog,
+            child: MiuixIcon(icon: Icons.delete_outline),
           ),
         ],
       ),
       // 键盘弹出时缩小终端区域；扩展按键栏紧贴键盘上方（Termux 式布局）。
-      body: SafeArea(
-        top: false,
-        child: Column(
-          children: [
-            Expanded(
-              child: ZoomableTerminal(
-                terminal: server.terminal,
-                fontSize: _fontSize,
-                onFontSizeChanged: _setFontSize,
-                onFontSizeChangeEnd: _saveFontSize,
+      // 本页是标签页，底部留白由 HomeShell 统一处理，此处只取顶栏高度。
+      content: (padding) => Padding(
+        padding: EdgeInsets.only(top: padding.top),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              Expanded(
+                child: ZoomableTerminal(
+                  terminal: server.terminal,
+                  fontSize: _fontSize,
+                  onFontSizeChanged: _setFontSize,
+                  onFontSizeChangeEnd: _saveFontSize,
+                ),
               ),
-            ),
-            // RepaintBoundary 让按键栏拥有独立合成层，与 TerminalView 同步清除，
-            // 避免 IndexedStack 切换时按键栏比终端慢一帧消失的视觉残留。
-            RepaintBoundary(child: TerminalKeysBar(server)),
-          ],
+              // RepaintBoundary 让按键栏拥有独立合成层，与 TerminalView 同步清除，
+              // 避免 IndexedStack 切换时按键栏比终端慢一帧消失的视觉残留。
+              RepaintBoundary(child: TerminalKeysBar(server)),
+            ],
+          ),
         ),
       ),
     );

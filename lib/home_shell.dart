@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'config/config_store.dart';
@@ -23,6 +24,8 @@ import 'server/power_service.dart';
 import 'server/server_controller.dart';
 import 'server/server_scope.dart';
 import 'widgets/error_dialog.dart';
+import 'widgets/miuix_dialog.dart';
+import 'widgets/miuix_snackbar.dart';
 import 'widgets/update_dialog.dart';
 import 'widgets/open_source_notice_dialog.dart';
 import 'widgets/user_agreement_dialog.dart';
@@ -154,9 +157,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final config = await ConfigStore.readConfig(fileName);
     if (config['acknowledged'] == true) return true;
     if (!mounted) return false;
-    final result = await showDialog<bool>(
+    final result = await showMiuixDialog<bool>(
       context: context,
       barrierDismissible: false,
+      title: OpenSourceNoticeDialog.title,
       builder: (_) => const OpenSourceNoticeDialog(),
     );
     if (result == true) {
@@ -181,9 +185,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       return true;
     }
     if (!mounted) return false;
-    final result = await showDialog<bool>(
+    final result = await showMiuixDialog<bool>(
       context: context,
       barrierDismissible: false,
+      title: context.tr('userAgreement.title'),
       builder: (_) => const UserAgreementDialog(),
     );
     if (result == true) {
@@ -225,20 +230,21 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   Future<bool?> _showStartupStoragePermissionDialog() {
-    return showDialog<bool>(
+    return showMiuixDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.storagePermissionTitle')),
-        content: Text(ctx.tr('settings.storage.startupPermissionMessage')),
-        actions: [
-          TextButton(
+      title: context.tr('instance.storagePermissionTitle'),
+      summary: context.tr('settings.storage.startupPermissionMessage'),
+      builder: (ctx) => MiuixDialogActions(
+        children: [
+          MiuixTextButton(
+            ctx.tr('common.close'),
             onPressed: () => SystemNavigator.pop(),
-            child: Text(ctx.tr('common.close')),
           ),
-          FilledButton(
+          MiuixButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('instance.goGrant')),
+            colors: MiuixButtonDefaults.buttonColorsPrimary(ctx),
+            child: MiuixText(ctx.tr('instance.goGrant')),
           ),
         ],
       ),
@@ -252,9 +258,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (!mounted) return;
     final updateInfo = await UpdateService.pickBestUpdate(result);
     if (!mounted || updateInfo == null) return;
-    showDialog<void>(
+    showMiuixDialog<void>(
       context: context,
       barrierDismissible: false,
+      title: context.tr('update.newVersionFound'),
       builder: (_) => UpdateDialog(updateInfo: updateInfo),
     );
   }
@@ -270,32 +277,39 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (await NetworkStore.loadMirrorAsked()) return;
     if (!mounted) return;
 
-    final result = await showDialog<bool>(
+    final result = await showMiuixDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            ClipRRect(
+      title: context.tr('firstLaunch.mirror.title'),
+      summary: context.tr('firstLaunch.mirror.content'),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 品牌标识改置于文案上方居中，替代原先塞进标题行的做法
+          // （Miuix 的标题是居中单行文本，不接受 Widget）。
+          Center(
+            child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.asset(
                 'assets/images/msl_logo.png',
-                width: 32,
-                height: 32,
+                width: 40,
+                height: 40,
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(child: Text(ctx.tr('firstLaunch.mirror.title'))),
-          ],
-        ),
-        content: Text(ctx.tr('firstLaunch.mirror.content')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('firstLaunch.mirror.decline')),
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('common.enable')),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                ctx.tr('firstLaunch.mirror.decline'),
+                onPressed: () => Navigator.of(ctx).pop(false),
+              ),
+              MiuixButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(ctx),
+                child: MiuixText(ctx.tr('common.enable')),
+              ),
+            ],
           ),
         ],
       ),
@@ -312,17 +326,17 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (await NetworkStore.loadQqGroupAsked()) return;
     if (!mounted) return;
 
-    await showDialog<void>(
+    await showMiuixDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('firstLaunch.qqGroup.title')),
-        content: Text('${ctx.tr('firstLaunch.qqGroup.content')}1028916207'),
-        actions: [
-          TextButton(
+      title: context.tr('firstLaunch.qqGroup.title'),
+      summary: '${context.tr('firstLaunch.qqGroup.content')}1028916207',
+      builder: (ctx) => MiuixDialogActions(
+        children: [
+          MiuixTextButton(
+            ctx.tr('common.close'),
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(ctx.tr('common.close')),
           ),
-          FilledButton(
+          MiuixButton(
             onPressed: () {
               Navigator.of(ctx).pop();
               launchUrl(
@@ -330,7 +344,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 mode: LaunchMode.externalApplication,
               );
             },
-            child: Text(ctx.tr('firstLaunch.qqGroup.join')),
+            colors: MiuixButtonDefaults.buttonColorsPrimary(ctx),
+            child: MiuixText(ctx.tr('firstLaunch.qqGroup.join')),
           ),
         ],
       ),
@@ -377,40 +392,43 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         // 其它情况：返回服务器页面
         setState(() => _selectedIndex = 0);
       },
-      child: Scaffold(
-        body: IndexedStack(index: _selectedIndex, children: _tabPages),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _selectedIndex,
-          onDestinationSelected: _onDestinationSelected,
-          destinations: <NavigationDestination>[
-            NavigationDestination(
-              icon: const Icon(Icons.dns_outlined),
-              selectedIcon: const Icon(Icons.dns),
-              label: context.tr('nav.server'),
-            ),
-            NavigationDestination(
-              icon: const Icon(Icons.terminal_outlined),
-              selectedIcon: const Icon(Icons.terminal),
-              label: context.tr('nav.console'),
-            ),
-            NavigationDestination(
-              icon: const Icon(Icons.tune_outlined),
-              selectedIcon: const Icon(Icons.tune),
-              label: context.tr('nav.manage'),
-            ),
-            NavigationDestination(
-              icon: const Icon(Icons.folder_outlined),
-              selectedIcon: const Icon(Icons.folder),
-              label: context.tr('nav.files'),
-            ),
-            NavigationDestination(
-              icon: const Icon(Icons.settings_outlined),
-              selectedIcon: const Icon(Icons.settings),
-              label: context.tr('nav.settings'),
+      child: MiuixScaffold(
+        bottomBar: MiuixNavigationBar(
+          children: [
+            _navItem(0, Icons.dns_outlined, Icons.dns, 'nav.server'),
+            _navItem(1, Icons.terminal_outlined, Icons.terminal, 'nav.console'),
+            _navItem(2, Icons.tune_outlined, Icons.tune, 'nav.manage'),
+            _navItem(3, Icons.folder_outlined, Icons.folder, 'nav.files'),
+            _navItem(
+              4,
+              Icons.settings_outlined,
+              Icons.settings,
+              'nav.settings',
             ),
           ],
         ),
+        // 只取底部内边距：各标签页目前仍是 Material Scaffold + AppBar，
+        // 顶部安全区由它们各自处理，此处再套一遍会双重留白。
+        content: (padding) => Padding(
+          padding: EdgeInsets.only(bottom: padding.bottom),
+          child: IndexedStack(index: _selectedIndex, children: _tabPages),
+        ),
       ),
+    );
+  }
+
+  MiuixNavigationBarItem _navItem(
+    int index,
+    IconData icon,
+    IconData selectedIcon,
+    String labelKey,
+  ) {
+    final selected = _selectedIndex == index;
+    return MiuixNavigationBarItem(
+      selected: selected,
+      onPressed: () => _onDestinationSelected(index),
+      icon: MiuixIcon(icon: selected ? selectedIcon : icon),
+      label: context.tr(labelKey),
     );
   }
 
@@ -439,12 +457,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       final toastKey = server.status != ServerStatus.stopped
           ? 'home.backgroundToast'
           : 'home.exitToast';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.tr(toastKey)),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      showMiuixSnackbar(context.tr(toastKey));
     }
   }
 }

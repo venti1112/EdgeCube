@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:xterm/xterm.dart';
 
 import '../config/terminal_store.dart';
@@ -196,57 +197,36 @@ class TerminalZoomButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final canEnlarge = fontSize < kMaxTerminalFontSize;
     final canShrink = fontSize > kMinTerminalFontSize;
-    return PopupMenuButton<void>(
-      icon: const Icon(Icons.format_size),
-      tooltip: context.tr('terminal.adjustFontSize'),
-      itemBuilder: (context) => [
-        PopupMenuItem<void>(
-          enabled: false,
-          child: Text(
-            context.tr('terminal.currentFontSize', {
+    // 当前字号原先占一个 disabled 菜单项；Miuix 的下拉项没有禁用态，
+    // 改为放进菜单标题（title）里展示。
+    return MiuixOverlayIconDropdownMenu(
+      entry: MiuixDropdownEntry(
+        items: [
+          // 当前字号：不可点，仅作信息展示（沿用原先 disabled 菜单项的做法）。
+          MiuixDropdownItem(
+            text: context.tr('terminal.currentFontSize', {
               'size': fontSize.toStringAsFixed(0),
             }),
+            enabled: false,
+            onClick: () {},
           ),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem<void>(
-          enabled: canEnlarge,
-          onTap: () => _change(_step),
-          child: _MenuRow(
-            icon: Icons.zoom_in,
-            label: context.tr('terminal.zoomIn'),
+          MiuixDropdownItem(
+            text: context.tr('terminal.zoomIn'),
+            enabled: canEnlarge,
+            onClick: () => _change(_step),
           ),
-        ),
-        PopupMenuItem<void>(
-          enabled: canShrink,
-          onTap: () => _change(-_step),
-          child: _MenuRow(
-            icon: Icons.zoom_out,
-            label: context.tr('terminal.zoomOut'),
+          MiuixDropdownItem(
+            text: context.tr('terminal.zoomOut'),
+            enabled: canShrink,
+            onClick: () => _change(-_step),
           ),
-        ),
-        PopupMenuItem<void>(
-          onTap: () => onChanged(kDefaultTerminalFontSize),
-          child: _MenuRow(
-            icon: Icons.restart_alt,
-            label: context.tr('terminal.zoomReset'),
+          MiuixDropdownItem(
+            text: context.tr('terminal.zoomReset'),
+            onClick: () => onChanged(kDefaultTerminalFontSize),
           ),
-        ),
-      ],
-    );
-  }
-}
-
-class _MenuRow extends StatelessWidget {
-  const _MenuRow({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(label)],
+        ],
+      ),
+      child: const MiuixIcon(icon: Icons.format_size),
     );
   }
 }

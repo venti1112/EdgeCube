@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../i18n/locale_scope.dart';
 import '../server/proot_service.dart';
+import '../widgets/ec_preference.dart';
 import 'create_download_version_page.dart';
 import 'download_session.dart';
 
@@ -77,101 +79,76 @@ class _SelectProotContainerPageState extends State<SelectProotContainerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(context.tr('instance.titleSelectProotContainer')),
+    final theme = MiuixTheme.of(context);
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('instance.titleSelectProotContainer'),
+        navigationIcon: const EcBackButton(),
       ),
-      body: SafeArea(child: _buildBody(theme)),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(child: _buildBody(theme)),
+      ),
     );
   }
 
-  Widget _buildBody(ThemeData theme) {
+  Widget _buildBody(MiuixThemeData theme) {
     if (_loading) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(),
+            const MiuixInfiniteProgressIndicator(),
             const SizedBox(height: 24),
-            Text(
+            MiuixText(
               context.tr('instance.loadingProotContainers'),
-              style: theme.textTheme.titleMedium,
+              style: theme.textStyles.title4,
             ),
           ],
         ),
       );
     }
     if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
-              const SizedBox(height: 16),
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: _load,
-                icon: const Icon(Icons.refresh),
-                label: Text(context.tr('common.retry')),
-              ),
-            ],
-          ),
-        ),
+      return EcErrorRetry(
+        message: _error!,
+        retryLabel: context.tr('common.retry'),
+        onRetry: _load,
       );
     }
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         const SizedBox(height: 8),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, color: theme.colorScheme.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    context.tr('instance.selectProotContainerHint'),
-                    style: theme.textTheme.bodySmall,
-                  ),
+        MiuixCard(
+          child: Row(
+            children: [
+              MiuixIcon(icon: Icons.info_outline, tint: theme.colors.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: MiuixText(
+                  context.tr('instance.selectProotContainerHint'),
+                  style: theme.textStyles.footnote1,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 12),
         for (final rootfs in _rootfsList) ...[
-          Card(
-            child: ListTile(
-              leading: Icon(
-                rootfs.isGeneric ? Icons.inventory_2_outlined : Icons.memory,
-                size: 36,
-              ),
-              title: Text(
-                rootfs.envName.isNotEmpty ? rootfs.envName : rootfs.id,
-                style: const TextStyle(fontSize: 16),
-              ),
-              subtitle: Text(
-                rootfs.isGeneric
-                    ? context.tr('instance.prootContainerGeneric')
-                    : '${rootfs.envType} · ${rootfs.envVersionName}',
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              onTap: () => _select(rootfs),
+          EcCardTile(
+            leading: MiuixIcon(
+              icon: rootfs.isGeneric
+                  ? Icons.inventory_2_outlined
+                  : Icons.memory,
+              size: 36,
             ),
+            title: rootfs.envName.isNotEmpty ? rootfs.envName : rootfs.id,
+            summary: rootfs.isGeneric
+                ? context.tr('instance.prootContainerGeneric')
+                : '${rootfs.envType} · ${rootfs.envVersionName}',
+            margin: const EdgeInsets.only(bottom: 12),
+            onTap: () => _select(rootfs),
           ),
-          const SizedBox(height: 12),
         ],
       ],
     );

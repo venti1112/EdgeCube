@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import '../i18n/locale_scope.dart';
 import '../net/download_engine.dart';
 import '../net/download_format.dart';
@@ -31,20 +32,23 @@ class DownloadingStep extends StatelessWidget {
                 height: 48,
                 child: (progress != null && progress!.hasTotal)
                     ? TweenAnimationBuilder<double>(
-                        tween: Tween(begin: progress!.fraction, end: progress!.fraction),
+                        tween: Tween(
+                          begin: progress!.fraction,
+                          end: progress!.fraction,
+                        ),
                         duration: const Duration(milliseconds: 500),
                         curve: Curves.linear,
                         builder: (context, value, _) =>
-                            CircularProgressIndicator(value: value),
+                            MiuixCircularProgressIndicator(progress: value),
                       )
-                    : const CircularProgressIndicator(),
+                    : const MiuixInfiniteProgressIndicator(size: 48),
               ),
               const SizedBox(height: 16),
               Text(
                 progress != null
                     ? context.tr('instance.downloadingServer')
                     : context.tr('instance.preparingDownload'),
-                style: Theme.of(context).textTheme.titleMedium,
+                style: MiuixTheme.of(context).textStyles.title4,
               ),
               if (progress != null) ...[
                 const SizedBox(height: 8),
@@ -61,12 +65,12 @@ class DownloadingStep extends StatelessWidget {
                       final pct = (frac * 100).toStringAsFixed(1);
                       return Text(
                         '$pct% · ${formatBytes(bytes.round())} / ${formatBytes(progress!.totalBytes!)}',
-                        style: Theme.of(context).textTheme.bodyLarge,
+                        style: MiuixTheme.of(context).textStyles.body1,
                       );
                     }
                     return Text(
                       formatBytes(bytes.round()),
-                      style: Theme.of(context).textTheme.bodyLarge,
+                      style: MiuixTheme.of(context).textStyles.body1,
                     );
                   },
                 ),
@@ -74,36 +78,39 @@ class DownloadingStep extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     _speedLine(progress!),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                    style: MiuixTheme.of(context).textStyles.footnote1.copyWith(
+                      color: MiuixTheme.of(
+                        context,
+                      ).colors.onSurfaceVariantSummary,
+                    ),
                   ),
                 ],
               ],
             ] else ...[
-              Icon(
-                Icons.error_outline,
+              MiuixIcon(
+                icon: Icons.error_outline,
                 size: 48,
-                color: Theme.of(context).colorScheme.error,
+                tint: MiuixTheme.of(context).colors.error,
               ),
               const SizedBox(height: 16),
               Text(
                 error!,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: TextStyle(color: MiuixTheme.of(context).colors.error),
               ),
               const SizedBox(height: 16),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  OutlinedButton(
+                  MiuixTextButton(
+                    context.tr('common.cancel'),
                     onPressed: onCancel,
-                    child: Text(context.tr('common.cancel')),
                   ),
                   const SizedBox(width: 12),
-                  FilledButton(
+                  MiuixButton(
                     onPressed: onRetry,
-                    child: Text(context.tr('instance.reselect')),
+                    colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                    child: MiuixText(context.tr('instance.reselect')),
                   ),
                 ],
               ),
@@ -148,100 +155,103 @@ class ForgeInstallingStep extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (installing)
-                    const SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: CircularProgressIndicator(),
-                    )
-                  else if (error == null)
-                    Icon(
-                      Icons.check_circle_outline,
-                      size: 36,
-                      color: Theme.of(context).colorScheme.primary,
-                    )
-                  else
-                    Icon(
-                      Icons.error_outline,
-                      size: 36,
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  const SizedBox(height: 12),
-                  Text(
-                    installing
-                        ? (installerType == 'neoforge'
-                              ? context.tr('instance.installingNeoforge')
-                              : context.tr('instance.installingForge'))
-                        : (error != null
-                              ? context.tr('instance.installFailed')
-                              : context.tr('instance.installComplete')),
-                    style: Theme.of(context).textTheme.titleMedium,
+          MiuixCard(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (installing)
+                  const MiuixInfiniteProgressIndicator(size: 36)
+                else if (error == null)
+                  MiuixIcon(
+                    icon: Icons.check_circle_outline,
+                    size: 36,
+                    tint: MiuixTheme.of(context).colors.primary,
+                  )
+                else
+                  MiuixIcon(
+                    icon: Icons.error_outline,
+                    size: 36,
+                    tint: MiuixTheme.of(context).colors.error,
                   ),
-                  if (error != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                      textAlign: TextAlign.center,
+                const SizedBox(height: 12),
+                Text(
+                  installing
+                      ? (installerType == 'neoforge'
+                            ? context.tr('instance.installingNeoforge')
+                            : context.tr('instance.installingForge'))
+                      : (error != null
+                            ? context.tr('instance.installFailed')
+                            : context.tr('instance.installComplete')),
+                  style: MiuixTheme.of(context).textStyles.title4,
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    error!,
+                    style: TextStyle(
+                      color: MiuixTheme.of(context).colors.error,
                     ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        if (onExportLogs != null)
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.save_outlined, size: 18),
-                            onPressed: onExportLogs,
-                            label: Text(context.tr('instance.exportForgeLog')),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      if (onExportLogs != null)
+                        MiuixButton(
+                          onPressed: onExportLogs,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const MiuixIcon(
+                                icon: Icons.save_outlined,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              MiuixText(context.tr('instance.exportForgeLog')),
+                            ],
                           ),
-                        OutlinedButton(
-                          onPressed: onCancel,
-                          child: Text(context.tr('common.cancel')),
                         ),
-                        if (onReselect != null)
-                          FilledButton(
-                            onPressed: onReselect,
-                            child: Text(context.tr('instance.reselect')),
+                      MiuixTextButton(
+                        context.tr('common.cancel'),
+                        onPressed: onCancel,
+                      ),
+                      if (onReselect != null)
+                        MiuixButton(
+                          onPressed: onReselect,
+                          colors: MiuixButtonDefaults.buttonColorsPrimary(
+                            context,
                           ),
-                      ],
-                    ),
-                  ],
+                          child: MiuixText(context.tr('instance.reselect')),
+                        ),
+                    ],
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: logs.isEmpty
-                    ? Center(
-                        child: Text(
-                          context.tr('instance.waitingInstallerOutput'),
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: logs.length,
-                        itemBuilder: (_, i) => Text(
-                          logs[i],
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontFamily: 'monospace',
-                          ),
+            child: MiuixCard(
+              insideMargin: const EdgeInsets.all(8),
+              child: logs.isEmpty
+                  ? Center(
+                      child: Text(
+                        context.tr('instance.waitingInstallerOutput'),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: logs.length,
+                      itemBuilder: (_, i) => Text(
+                        logs[i],
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontFamily: 'monospace',
                         ),
                       ),
-              ),
+                    ),
             ),
           ),
         ],
@@ -255,9 +265,7 @@ class ImportingStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Text(context.tr('instance.selectFileHint')),
-    );
+    return Center(child: Text(context.tr('instance.selectFileHint')));
   }
 }
 
@@ -286,27 +294,25 @@ class ExtractingArchiveStep extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (error != null) ...[
-              Icon(
-                Icons.error_outline,
+              MiuixIcon(
+                icon: Icons.error_outline,
                 size: 48,
-                color: Theme.of(context).colorScheme.error,
+                tint: MiuixTheme.of(context).colors.error,
               ),
               const SizedBox(height: 16),
               Text(
                 error!,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: TextStyle(color: MiuixTheme.of(context).colors.error),
               ),
               const SizedBox(height: 24),
-              TextButton(
-                onPressed: onCancel,
-                child: Text(context.tr('common.cancel')),
-              ),
+              MiuixTextButton(context.tr('common.cancel'), onPressed: onCancel),
               if (onReselect != null) ...[
                 const SizedBox(height: 12),
-                FilledButton(
+                MiuixButton(
                   onPressed: onReselect,
-                  child: Text(context.tr('instance.reselect')),
+                  colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                  child: MiuixText(context.tr('instance.reselect')),
                 ),
               ],
             ] else if (extracting) ...[
@@ -316,10 +322,10 @@ class ExtractingArchiveStep extends StatelessWidget {
                   duration: const Duration(milliseconds: 500),
                   curve: Curves.linear,
                   builder: (context, value, _) =>
-                      CircularProgressIndicator(value: value),
+                      MiuixCircularProgressIndicator(progress: value),
                 )
               else
-                const CircularProgressIndicator(),
+                const MiuixInfiniteProgressIndicator(),
               const SizedBox(height: 16),
               Text(context.tr('instance.extractingArchive')),
               if (progress != null)
@@ -368,34 +374,29 @@ class ModpackImportStep extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (error != null) ...[
-              Icon(
-                Icons.error_outline,
+              MiuixIcon(
+                icon: Icons.error_outline,
                 size: 48,
-                color: Theme.of(context).colorScheme.error,
+                tint: MiuixTheme.of(context).colors.error,
               ),
               const SizedBox(height: 16),
               Text(
                 error!,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: TextStyle(color: MiuixTheme.of(context).colors.error),
               ),
               const SizedBox(height: 24),
-              TextButton(
-                onPressed: onCancel,
-                child: Text(context.tr('common.cancel')),
-              ),
+              MiuixTextButton(context.tr('common.cancel'), onPressed: onCancel),
             ] else ...[
-              const CircularProgressIndicator(),
+              const MiuixInfiniteProgressIndicator(),
               const SizedBox(height: 16),
-              Text(
-                switch (phase) {
-                  'parsing' => context.tr('instance.modpackParsing'),
-                  'downloading' => context.tr('instance.modpackDownloading'),
-                  'extracting' => context.tr('instance.modpackExtracting'),
-                  'preparing' => context.tr('instance.modpackPreparing'),
-                  _ => context.tr('instance.modpackImporting'),
-                },
-              ),
+              Text(switch (phase) {
+                'parsing' => context.tr('instance.modpackParsing'),
+                'downloading' => context.tr('instance.modpackDownloading'),
+                'extracting' => context.tr('instance.modpackExtracting'),
+                'preparing' => context.tr('instance.modpackPreparing'),
+                _ => context.tr('instance.modpackImporting'),
+              }),
               if (phase == 'downloading' && total > 0) ...[
                 const SizedBox(height: 8),
                 Text('$current / $total'),
@@ -406,7 +407,9 @@ class ModpackImportStep extends StatelessWidget {
                       currentFile,
                       style: TextStyle(
                         fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        color: MiuixTheme.of(
+                          context,
+                        ).colors.onSurfaceVariantSummary,
                       ),
                     ),
                   ),

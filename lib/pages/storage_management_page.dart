@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -14,6 +15,9 @@ import '../instance/instance_store.dart';
 import '../mods/icon_cache.dart';
 import '../server/proot_service.dart';
 import '../server/runtime_service.dart';
+import '../widgets/miuix_snackbar.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_dialog.dart';
 
 /// 存储空间管理页：展示设备总空间与本程序各部分的占用。
 ///
@@ -42,6 +46,10 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
   bool _calculating = true;
   bool _clearing = false;
 
+  /// MiuixPullToRefresh 的 isRefreshing 是**受控**参数：动画不会因 onRefresh
+  /// 返回的 Future 完成而自动收起，必须由本页自行置回 false。
+  bool _refreshing = false;
+
   // 各部分目录路径（用于显示）
   String _cachePath = '';
   String _instancesPath = '';
@@ -52,6 +60,17 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
   void initState() {
     super.initState();
     _loadAll();
+  }
+
+  /// 下拉刷新：自行管理受控的 [_refreshing] 状态。
+  Future<void> _handleRefresh() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      await _loadAll();
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
   }
 
   Future<void> _loadAll() async {
@@ -96,15 +115,13 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
     setState(() => _loading = false);
 
     // 并行获取 proot rootfs 列表（不含大小，大小在 Dart 端实时计算）
-    final prootList = await const ProotService()
-        .listRootfs()
-        .catchError((_) => <ProotRootfsInfo>[]);
+    final prootList = await const ProotService().listRootfs().catchError(
+      (_) => <ProotRootfsInfo>[],
+    );
 
     // 所有 proot rootfs 在同一个 isolate 中顺序遍历，避免多个 isolate 并发
     // 遍历数万文件时内存不足被系统回收（此前只有第一个 rootfs 能算出大小）。
-    final prootIdToPath = {
-      for (final r in prootList) r.id: r.dir,
-    };
+    final prootIdToPath = {for (final r in prootList) r.id: r.dir};
 
     // 并行：四个普通目录各开一个 isolate + proot 全部在单个 isolate 中算
     final results = await Future.wait<List<int>>([
@@ -115,8 +132,10 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
         compute(_calcDirSize, configDir.path),
       ]),
       prootIdToPath.isNotEmpty
-          ? compute(_calcRootfsSizes, prootIdToPath)
-              .then((m) => m.values.toList())
+          ? compute(
+              _calcRootfsSizes,
+              prootIdToPath,
+            ).then((m) => m.values.toList())
           : Future.value(<int>[]),
     ]);
 
@@ -137,24 +156,13 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
   /// 清理缓存目录。
   Future<void> _clearCache() async {
     final tr = LocaleScope.of(context).translations;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr.get('storage.clearCacheTitle')),
-        content: Text(tr.get('storage.clearCacheConfirm')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(tr.get('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(tr.get('storage.clear')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: tr.get('storage.clearCacheTitle'),
+      message: tr.get('storage.clearCacheConfirm'),
+      confirmLabel: tr.get('storage.clear'),
     );
-    if (confirmed != true) return;
+    if (!confirmed || !mounted) return;
 
     setState(() => _clearing = true);
     try {
@@ -168,14 +176,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
         _clearing = false;
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(tr.get('storage.clearCacheSuccess')),
-            duration: const Duration(seconds: 3),
-          ),
-        );
+      showMiuixSnackbar(tr.get('storage.clearCacheSuccess'));
     } catch (e) {
       if (!mounted) return;
       setState(() => _clearing = false);
@@ -185,16 +186,23 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final tr = LocaleScope.of(context).translations;
-    return Scaffold(
-      appBar: AppBar(title: Text(tr.get('storage.title'))),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadAll,
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: tr.get('storage.title'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => _loading
+          ? const Center(child: MiuixInfiniteProgressIndicator())
+          // MiuixPullToRefresh 的 isRefreshing 是受控参数，需自持状态，
+          // 不像 RefreshIndicator 那样靠 onRefresh 返回的 Future 自动收起。
+          : MiuixPullToRefresh(
+              isRefreshing: _refreshing,
+              onRefresh: _handleRefresh,
+              contentPadding: padding,
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: padding + const EdgeInsets.all(16),
                 children: [
                   _buildUsageBar(theme, tr),
                   const SizedBox(height: 24),
@@ -261,68 +269,63 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
   }
 
   /// 顶部大占用条：显示设备总空间和本程序各部分的占比。
-  Widget _buildUsageBar(ThemeData theme, Translations tr) {
+  Widget _buildUsageBar(MiuixThemeData theme, Translations tr) {
     final appTotal =
         _cacheSize + _instancesSize + _runtimeSize + _appDataSize + _appSize;
     final usedBytes = _totalBytes - _availableBytes;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              tr.get('storage.deviceStorage'),
-              style: theme.textTheme.titleMedium,
+    return MiuixCard(
+      insideMargin: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(tr.get('storage.deviceStorage'), style: theme.textStyles.title4),
+          const SizedBox(height: 12),
+          // 占用条
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: SizedBox(
+              height: 24,
+              child: Row(children: _buildBarSegments(appTotal, usedBytes)),
             ),
-            const SizedBox(height: 12),
-            // 占用条
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: SizedBox(
-                height: 24,
-                child: Row(children: _buildBarSegments(appTotal, usedBytes)),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // 总计文字
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _calculating
-                      ? tr.get('storage.appUsed', {
-                          'used': tr.get('storage.calculating'),
-                        })
-                      : tr.get('storage.appUsed', {
-                          'used': _formatSize(appTotal),
-                        }),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+          ),
+          const SizedBox(height: 12),
+          // 总计文字
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _calculating
+                    ? tr.get('storage.appUsed', {
+                        'used': tr.get('storage.calculating'),
+                      })
+                    : tr.get('storage.appUsed', {
+                        'used': _formatSize(appTotal),
+                      }),
+                style: theme.textStyles.body2.copyWith(
+                  fontWeight: FontWeight.w600,
                 ),
-                Text(
-                  tr.get('storage.totalSpace', {
-                    'total': _formatSize(_totalBytes),
-                  }),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              tr.get('storage.availableSpace', {
-                'available': _formatSize(_availableBytes),
-              }),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
               ),
+              Text(
+                tr.get('storage.totalSpace', {
+                  'total': _formatSize(_totalBytes),
+                }),
+                style: theme.textStyles.body2.copyWith(
+                  color: theme.colors.onSurfaceVariantSummary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            tr.get('storage.availableSpace', {
+              'available': _formatSize(_availableBytes),
+            }),
+            style: theme.textStyles.footnote1.copyWith(
+              color: theme.colors.onSurfaceVariantSummary,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -392,20 +395,18 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
     return segments;
   }
 
-  Widget _buildSectionHeader(ThemeData theme, String text) {
+  Widget _buildSectionHeader(MiuixThemeData theme, String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Text(
         text,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
-        ),
+        style: theme.textStyles.subtitle.copyWith(color: theme.colors.primary),
       ),
     );
   }
 
   Widget _buildSectionItem(
-    ThemeData theme,
+    MiuixThemeData theme,
     Translations tr, {
     required IconData icon,
     required Color color,
@@ -417,54 +418,47 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
     VoidCallback? onTap,
     bool actionInProgress = false,
   }) {
-    final card = Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: color, size: 22),
+    final card = MiuixCard(
+      insideMargin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: theme.textTheme.bodyLarge),
-                  const SizedBox(height: 2),
-                  Text(
-                    (_calculating && size == 0)
-                        ? tr.get('storage.calculating')
-                        : _formatSize(size),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: theme.textStyles.body1),
+                const SizedBox(height: 2),
+                Text(
+                  (_calculating && size == 0)
+                      ? tr.get('storage.calculating')
+                      : _formatSize(size),
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: theme.colors.onSurfaceVariantSummary,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            if (actionText != null)
-              actionInProgress
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : TextButton(onPressed: onAction, child: Text(actionText)),
-            if (onTap != null && actionText == null)
-              Icon(
-                Icons.chevron_right,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-          ],
-        ),
+          ),
+          if (actionText != null)
+            actionInProgress
+                ? const MiuixInfiniteProgressIndicator(size: 20)
+                : MiuixTextButton(actionText, onPressed: onAction),
+          if (onTap != null && actionText == null)
+            Icon(
+              Icons.chevron_right,
+              color: theme.colors.onSurfaceVariantSummary,
+            ),
+        ],
       ),
     );
     if (onTap != null) {
@@ -477,58 +471,43 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
     return card;
   }
 
-  Widget _buildDeviceInfo(ThemeData theme, Translations tr) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 图例
-            Wrap(
-              spacing: 16,
-              runSpacing: 8,
-              children: [
-                _legend(
-                  theme,
-                  const Color(0xFF42A5F5),
-                  tr.get('storage.cache'),
-                ),
-                _legend(
-                  theme,
-                  const Color(0xFF66BB6A),
-                  tr.get('storage.instances'),
-                ),
-                _legend(
-                  theme,
-                  const Color(0xFFFF7043),
-                  tr.get('storage.runtime'),
-                ),
-                _legend(
-                  theme,
-                  const Color(0xFFAB47BC),
-                  tr.get('storage.appData'),
-                ),
-                _legend(theme, const Color(0xFF26A69A), tr.get('storage.app')),
-                _legend(
-                  theme,
-                  Colors.grey.shade400,
-                  tr.get('storage.otherUsed'),
-                ),
-                _legend(
-                  theme,
-                  Colors.grey.shade200,
-                  tr.get('storage.available'),
-                ),
-              ],
-            ),
-          ],
-        ),
+  Widget _buildDeviceInfo(MiuixThemeData theme, Translations tr) {
+    return MiuixCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 图例
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              _legend(theme, const Color(0xFF42A5F5), tr.get('storage.cache')),
+              _legend(
+                theme,
+                const Color(0xFF66BB6A),
+                tr.get('storage.instances'),
+              ),
+              _legend(
+                theme,
+                const Color(0xFFFF7043),
+                tr.get('storage.runtime'),
+              ),
+              _legend(
+                theme,
+                const Color(0xFFAB47BC),
+                tr.get('storage.appData'),
+              ),
+              _legend(theme, const Color(0xFF26A69A), tr.get('storage.app')),
+              _legend(theme, Colors.grey.shade400, tr.get('storage.otherUsed')),
+              _legend(theme, Colors.grey.shade200, tr.get('storage.available')),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  Widget _legend(ThemeData theme, Color color, String label) {
+  Widget _legend(MiuixThemeData theme, Color color, String label) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -541,7 +520,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
           ),
         ),
         const SizedBox(width: 6),
-        Text(label, style: theme.textTheme.bodySmall),
+        Text(label, style: theme.textStyles.footnote1),
       ],
     );
   }
@@ -566,6 +545,7 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
 
   /// 每个原生运行时 id → 字节大小；计算中或失败时不包含该 key。
   final Map<String, int> _nativeSizes = {};
+
   /// 每个 proot rootfs id → 字节大小。
   final Map<String, int> _prootSizes = {};
 
@@ -581,9 +561,9 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
     setState(() => _loading = true);
     try {
       final runtimes = await _runtimeService.installedRuntimes();
-      final prootList = await _prootService
-          .listRootfs()
-          .catchError((_) => <ProotRootfsInfo>[]);
+      final prootList = await _prootService.listRootfs().catchError(
+        (_) => <ProotRootfsInfo>[],
+      );
       if (!mounted) return;
       setState(() {
         _nativeRuntimes = runtimes;
@@ -629,52 +609,56 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final tr = LocaleScope.of(context).translations;
 
     final nativeTotal = _nativeSizes.values.fold(0, (a, b) => a + b);
     final prootTotal = _prootSizes.values.fold(0, (a, b) => a + b);
     final grandTotal = nativeTotal + prootTotal;
 
-    return Scaffold(
-      appBar: AppBar(title: Text(tr.get('storage.runtimeDetail'))),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: tr.get('storage.runtimeDetail'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => _loading
+          ? const Center(child: MiuixInfiniteProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(16),
+              padding: padding + const EdgeInsets.all(16),
               children: [
                 // 总计卡片
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                tr.get('storage.runtime'),
-                                style: theme.textTheme.titleMedium,
+                MiuixCard(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              tr.get('storage.runtime'),
+                              style: theme.textStyles.title4,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _formatSize(grandTotal),
+                              style: theme.textStyles.title2.copyWith(
+                                color: theme.colors.primary,
+                                fontWeight: FontWeight.bold,
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _formatSize(grandTotal),
-                                style: theme.textTheme.headlineSmall?.copyWith(
-                                  color: theme.colorScheme.primary,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 8),
                 // —— 原生运行时区 ——
-                _buildSubHeader(theme, tr.get('storage.runtimeNative'), nativeTotal),
+                _buildSubHeader(
+                  theme,
+                  tr.get('storage.runtimeNative'),
+                  nativeTotal,
+                ),
                 if (_nativeRuntimes.isEmpty)
                   _buildEmptyHint(theme, tr.get('storage.noRuntime'))
                 else
@@ -688,7 +672,11 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
                     ),
                 const SizedBox(height: 16),
                 // —— proot 容器区 ——
-                _buildSubHeader(theme, tr.get('storage.runtimeProot'), prootTotal),
+                _buildSubHeader(
+                  theme,
+                  tr.get('storage.runtimeProot'),
+                  prootTotal,
+                ),
                 if (_prootRootfs.isEmpty)
                   _buildEmptyHint(theme, tr.get('storage.noRuntime'))
                 else
@@ -702,7 +690,7 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
                       subtitle: r.isGeneric
                           ? 'generic · ${tr.get('storage.genericContainer')}'
                           : '${r.envType}: ${r.envMainBin}'
-                              '${r.envVersionName.isNotEmpty ? ' (${r.envVersionName})' : ''}',
+                                '${r.envVersionName.isNotEmpty ? ' (${r.envVersionName})' : ''}',
                       size: _prootSizes[r.id],
                     ),
                 const SizedBox(height: 16),
@@ -711,17 +699,17 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
     );
   }
 
-  Widget _buildSubHeader(ThemeData theme, String title, int total) {
+  Widget _buildSubHeader(MiuixThemeData theme, String title, int total) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
       child: Row(
         children: [
-          Text(title, style: theme.textTheme.titleSmall),
+          Text(title, style: theme.textStyles.subtitle),
           const Spacer(),
           Text(
             _formatSize(total),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: theme.textStyles.footnote1.copyWith(
+              color: theme.colors.onSurfaceVariantSummary,
             ),
           ),
         ],
@@ -730,57 +718,54 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
   }
 
   Widget _buildSizeItem(
-    ThemeData theme, {
+    MiuixThemeData theme, {
     required IconData icon,
     required String title,
     required String subtitle,
     required int? size,
   }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Icon(icon, size: 28, color: theme.colorScheme.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: theme.textTheme.bodyLarge),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+    return MiuixCard(
+      insideMargin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Icon(icon, size: 28, color: theme.colors.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: theme.textStyles.body1),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: theme.colors.onSurfaceVariantSummary,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            Text(
-              size == null
-                  ? LocaleScope.of(context).translations.get('storage.calculating')
-                  : _formatSize(size),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+          ),
+          Text(
+            size == null
+                ? LocaleScope.of(
+                    context,
+                  ).translations.get('storage.calculating')
+                : _formatSize(size),
+            style: theme.textStyles.body2.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildEmptyHint(ThemeData theme, String text) {
+  Widget _buildEmptyHint(MiuixThemeData theme, String text) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Center(
         child: Text(
           text,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+          style: theme.textStyles.footnote1.copyWith(
+            color: theme.colors.onSurfaceVariantSummary,
           ),
         ),
       ),
@@ -788,18 +773,18 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
   }
 
   IconData _iconForType(String type) => switch (type) {
-        'jre' => Icons.coffee,
-        'php' => Icons.code,
-        'frpc' => Icons.network_check,
-        _ => Icons.memory,
-      };
+    'jre' => Icons.coffee,
+    'php' => Icons.code,
+    'frpc' => Icons.network_check,
+    _ => Icons.memory,
+  };
 
   String _typeLabel(String type) => switch (type) {
-        'jre' => 'Java',
-        'php' => 'PHP',
-        'frpc' => 'FRP',
-        _ => type,
-      };
+    'jre' => 'Java',
+    'php' => 'PHP',
+    'frpc' => 'FRP',
+    _ => type,
+  };
 }
 
 // ── 辅助函数 ──────────────────────────────────────────────────

@@ -1,13 +1,18 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import '../mods/download_queue.dart';
 import '../mods/icon_cache.dart';
 import '../mods/poggit_service.dart';
-import 'mod_download_page.dart' show DownloadQueueBanner, showDownloadQueueSheet;
+import '../widgets/ec_text_field.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_snackbar.dart';
+import 'mod_download_page.dart'
+    show DownloadQueueBanner, showDownloadQueueSheet;
 
 /// Poggit 排序方式。
 enum PoggitSort { downloads, updated, name }
@@ -235,67 +240,64 @@ class _PoggitDownloadPageState extends State<PoggitDownloadPage> {
       // sheet 关闭后，用父页面稳定的 context 显示 SnackBar，
       // 避免 sheet 的 context 失效导致 SnackBar 永不消失或"查看队列"按钮无效。
       if (downloaded == true && mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(context.tr('poggit.downloadQueued')),
-              duration: const Duration(seconds: 4),
-              action: SnackBarAction(
-                label: context.tr('modsPlugins.viewQueue'),
-                onPressed: () => showDownloadQueueSheet(context),
-              ),
-            ),
-          );
+        showMiuixSnackbar(
+          context.tr('poggit.downloadQueued'),
+          actionLabel: context.tr('modsPlugins.viewQueue'),
+        ).then((r) {
+          // 用 State.mounted 而非 context.mounted：这里的 context 属于本
+          // State，异步回来后 State 还在即说明 context 仍有效。
+          if (r == MiuixSnackbarResult.actionPerformed && mounted) {
+            showDownloadQueueSheet(context);
+          }
+        });
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: widget.embedded
+    final theme = MiuixTheme.of(context);
+    return MiuixScaffold(
+      // 内嵌在「模组与插件」标签页中时不显示自己的顶栏。
+      topBar: widget.embedded
           ? null
-          : AppBar(title: Text(context.tr('poggit.title'))),
-      body: Column(
-        children: [
-          _buildSearchBar(theme),
-          _buildFilterBar(theme),
-          const DownloadQueueBanner(),
-          Expanded(child: _buildBody(theme)),
-        ],
+          : MiuixSmallTopAppBar(
+              title: context.tr('poggit.title'),
+              navigationIcon: const EcBackButton(),
+            ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: Column(
+          children: [
+            _buildSearchBar(theme),
+            _buildFilterBar(theme),
+            const DownloadQueueBanner(),
+            Expanded(child: _buildBody(theme)),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSearchBar(ThemeData theme) {
+  Widget _buildSearchBar(MiuixThemeData theme) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
         children: [
           Expanded(
-            child: TextField(
+            child: EcTextField(
               controller: _controller,
-              decoration: InputDecoration(
-                hintText: context.tr('poggit.searchHint'),
-                prefixIcon: const Icon(Icons.search, size: 20),
-                border: const OutlineInputBorder(),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                isDense: true,
-                suffixIcon: _controller.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () {
-                          _controller.clear();
-                          _search();
-                        },
-                      )
-                    : null,
-              ),
+              hint: context.tr('poggit.searchHint'),
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _controller.text.isNotEmpty
+                  ? MiuixIconButton(
+                      onPressed: () {
+                        _controller.clear();
+                        _search();
+                      },
+                      child: MiuixIcon(icon: Icons.clear, size: 18),
+                    )
+                  : null,
               onSubmitted: (_) => _search(),
             ),
           ),
@@ -305,18 +307,20 @@ class _PoggitDownloadPageState extends State<PoggitDownloadPage> {
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: MiuixInfiniteProgressIndicator(size: 20),
                   )
                 : const Icon(Icons.refresh, size: 20),
             tooltip: context.tr('common.refresh'),
-            onPressed: _refreshing ? null : () => _loadPlugins(forceRefresh: true),
+            onPressed: _refreshing
+                ? null
+                : () => _loadPlugins(forceRefresh: true),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFilterBar(ThemeData theme) {
+  Widget _buildFilterBar(MiuixThemeData theme) {
     return SizedBox(
       height: 44,
       child: ListView(
@@ -422,38 +426,22 @@ class _PoggitDownloadPageState extends State<PoggitDownloadPage> {
     );
   }
 
-  void _showSortPicker(ThemeData theme) {
-    final options = PoggitSort.values;
-    showDialog(
+  Future<void> _showSortPicker(MiuixThemeData theme) async {
+    final selected = await showMiuixSingleChoice<PoggitSort>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(context.tr('poggit.sortLabel')),
-        children: options
-            .map(
-              (s) => SimpleDialogOption(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  setState(() => _sort = s);
-                  _results = _applyFilters();
-                },
-                child: Row(
-                  children: [
-                    if (_sort == s)
-                      Icon(Icons.check, color: theme.colorScheme.primary)
-                    else
-                      const SizedBox(width: 24),
-                    const SizedBox(width: 8),
-                    Text(context.tr('poggit.sort.${s.name}')),
-                  ],
-                ),
-              ),
-            )
-            .toList(),
-      ),
+      title: context.tr('poggit.sortLabel'),
+      options: PoggitSort.values,
+      selected: _sort,
+      labelOf: (ctx, s) => ctx.tr('poggit.sort.${s.name}'),
     );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _sort = selected;
+      _results = _applyFilters();
+    });
   }
 
-  void _showCategoryPicker(ThemeData theme) {
+  void _showCategoryPicker(MiuixThemeData theme) {
     _showOptionPicker(
       theme,
       title: context.tr('poggit.category'),
@@ -466,9 +454,10 @@ class _PoggitDownloadPageState extends State<PoggitDownloadPage> {
     );
   }
 
-  void _showApiPicker(ThemeData theme) {
+  void _showApiPicker(MiuixThemeData theme) {
     // API 版本降序排列（最新在前）
-    final apis = List<String>.from(_apiVersions)..sort((a, b) => _compareApiVersions(b, a));
+    final apis = List<String>.from(_apiVersions)
+      ..sort((a, b) => _compareApiVersions(b, a));
     _showOptionPicker(
       theme,
       title: context.tr('poggit.apiVersion'),
@@ -482,76 +471,40 @@ class _PoggitDownloadPageState extends State<PoggitDownloadPage> {
   }
 
   /// 通用单选弹窗：含「任意」选项。
-  void _showOptionPicker(
-    ThemeData theme, {
+  ///
+  /// 按**下标**而非值选择：「任意」的值是 null，而弹窗取消时同样返回 null，
+  /// 用值无法区分「选了任意」和「取消」。
+  Future<void> _showOptionPicker(
+    MiuixThemeData theme, {
     required String title,
     required List<String> options,
     required String? selected,
     required ValueChanged<String?> onSelected,
-  }) {
-    showDialog(
+  }) async {
+    final items = <String?>[null, ...options];
+    final picked = await showMiuixSingleChoice<int>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(title),
-        children: [
-          SimpleDialogOption(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              onSelected(null);
-            },
-            child: Row(
-              children: [
-                if (selected == null)
-                  Icon(Icons.check, color: theme.colorScheme.primary)
-                else
-                  const SizedBox(width: 24),
-                const SizedBox(width: 8),
-                Text(context.tr('poggit.any')),
-              ],
-            ),
-          ),
-          ...options.map((opt) {
-            final isSel = opt == selected;
-            return SimpleDialogOption(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                onSelected(opt);
-              },
-              child: Row(
-                children: [
-                  if (isSel)
-                    Icon(Icons.check, color: theme.colorScheme.primary)
-                  else
-                    const SizedBox(width: 24),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      opt,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
-        ],
-      ),
+      title: title,
+      options: List.generate(items.length, (i) => i),
+      selected: items.indexOf(selected),
+      labelOf: (ctx, i) => items[i] ?? ctx.tr('poggit.any'),
     );
+    if (picked == null || !mounted) return;
+    onSelected(items[picked]);
   }
 
-  Widget _buildBody(ThemeData theme) {
+  Widget _buildBody(MiuixThemeData theme) {
     if (_loading) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(),
+            const MiuixInfiniteProgressIndicator(),
             const SizedBox(height: 12),
             Text(
               context.tr('poggit.loading'),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              style: theme.textStyles.body2.copyWith(
+                color: theme.colors.onSurfaceVariantSummary,
               ),
             ),
           ],
@@ -572,7 +525,10 @@ class _PoggitDownloadPageState extends State<PoggitDownloadPage> {
         context.tr('poggit.noResults'),
       );
     }
-    return RefreshIndicator(
+    // MiuixPullToRefresh 的 isRefreshing 是受控参数，不像 RefreshIndicator
+    // 那样靠 onRefresh 返回的 Future 自动收起——这里复用已有的 _refreshing。
+    return MiuixPullToRefresh(
+      isRefreshing: _refreshing,
       onRefresh: () => _loadPlugins(forceRefresh: true),
       child: ListView.builder(
         controller: _scrollCtrl,
@@ -586,74 +542,89 @@ class _PoggitDownloadPageState extends State<PoggitDownloadPage> {
     );
   }
 
-  Widget _buildPluginCard(ThemeData theme, PoggitPlugin plugin) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: ListTile(
-        leading: CachedModIcon(url: plugin.iconUrl, size: 40),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                plugin.projectName.isNotEmpty ? plugin.projectName : plugin.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (plugin.isOfficial)
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Icon(
-                  Icons.verified,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            if (plugin.isOutdated)
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Icon(
-                  Icons.warning_amber,
-                  size: 16,
-                  color: theme.colorScheme.error,
-                ),
-              ),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (plugin.tagline.isNotEmpty)
-              Text(
-                plugin.tagline,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall,
-              ),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 6,
+  Widget _buildPluginCard(MiuixThemeData theme, PoggitPlugin plugin) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: MiuixCard(
+        child: MiuixBasicComponent(
+          startAction: Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: CachedModIcon(url: plugin.iconUrl, size: 40),
+          ),
+          content: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                if (plugin.mainCategory.isNotEmpty)
-                  _chip(theme, plugin.mainCategory),
-                if (plugin.version.isNotEmpty)
-                  _chip(theme, 'v${plugin.version}'),
-                _downloadsChip(theme, plugin.downloads),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        plugin.projectName.isNotEmpty
+                            ? plugin.projectName
+                            : plugin.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (plugin.isOfficial)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Icon(
+                          Icons.verified,
+                          size: 16,
+                          color: theme.colors.primary,
+                        ),
+                      ),
+                    if (plugin.isOutdated)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Icon(
+                          Icons.warning_amber,
+                          size: 16,
+                          color: theme.colors.error,
+                        ),
+                      ),
+                  ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (plugin.tagline.isNotEmpty)
+                      Text(
+                        plugin.tagline,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textStyles.footnote1,
+                      ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      children: [
+                        if (plugin.mainCategory.isNotEmpty)
+                          _chip(theme, plugin.mainCategory),
+                        if (plugin.version.isNotEmpty)
+                          _chip(theme, 'v${plugin.version}'),
+                        _downloadsChip(theme, plugin.downloads),
+                      ],
+                    ),
+                  ],
+                ),
               ],
             ),
           ],
+          onClick: () => _openVersions(plugin),
         ),
-        onTap: () => _openVersions(plugin),
       ),
     );
   }
 
-  Widget _downloadsChip(ThemeData theme, int downloads) {
+  Widget _downloadsChip(MiuixThemeData theme, int downloads) {
     return Container(
       margin: const EdgeInsets.only(top: 4),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
+        color: theme.colors.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
@@ -662,13 +633,10 @@ class _PoggitDownloadPageState extends State<PoggitDownloadPage> {
           Icon(
             Icons.download_outlined,
             size: 12,
-            color: theme.colorScheme.onSurfaceVariant,
+            color: theme.colors.onSurfaceVariantSummary,
           ),
           const SizedBox(width: 2),
-          Text(
-            _formatDownloads(downloads),
-            style: theme.textTheme.labelSmall,
-          ),
+          Text(_formatDownloads(downloads), style: theme.textStyles.footnote2),
         ],
       ),
     );
@@ -749,7 +717,7 @@ class _PoggitVersionSheetState extends State<_PoggitVersionSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final tr = LocaleScope.of(context).translations;
     return DraggableScrollableSheet(
       initialChildSize: 0.6,
@@ -768,14 +736,14 @@ class _PoggitVersionSheetState extends State<_PoggitVersionSheet> {
                       widget.plugin.projectName.isNotEmpty
                           ? widget.plugin.projectName
                           : widget.plugin.name,
-                      style: theme.textTheme.titleMedium,
+                      style: theme.textStyles.title4,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
+                  MiuixIconButton(
                     onPressed: () => Navigator.of(ctx).pop(false),
+                    child: MiuixIcon(icon: Icons.close),
                   ),
                 ],
               ),
@@ -787,13 +755,13 @@ class _PoggitVersionSheetState extends State<_PoggitVersionSheet> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     widget.plugin.tagline,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    style: theme.textStyles.footnote1.copyWith(
+                      color: theme.colors.onSurfaceVariantSummary,
                     ),
                   ),
                 ),
               ),
-            const Divider(height: 1),
+            const MiuixHorizontalDivider(),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -820,30 +788,62 @@ class _PoggitVersionSheetState extends State<_PoggitVersionSheet> {
     );
   }
 
-  Widget _buildVersionTile(ThemeData theme, PoggitPlugin v) {
+  Widget _buildVersionTile(MiuixThemeData theme, PoggitPlugin v) {
     final isCurrent = v.id == widget.plugin.id;
-    return ListTile(
-      leading: isCurrent
-          ? Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 24)
-          : Icon(Icons.history, color: theme.colorScheme.onSurfaceVariant, size: 24),
-      title: Text(v.version),
-      subtitle: Wrap(
-        spacing: 6,
-        children: [
-          if (v.api.isNotEmpty)
-            _chip(theme, 'API ${v.api.first.from}~${v.api.first.to}'),
-          if (v.isPreRelease)
-            _chipWithColor(theme, context.tr('poggit.preRelease'), theme.colorScheme.tertiary),
-          if (v.isOutdated)
-            _chipWithColor(theme, context.tr('poggit.outdated'), theme.colorScheme.error),
-          if (v.submissionDate != 0) _chip(theme, _formatDate(v.submissionDate)),
-        ],
+    return MiuixBasicComponent(
+      startAction: Padding(
+        padding: const EdgeInsets.only(right: 16),
+        child: isCurrent
+            ? Icon(Icons.check_circle, color: theme.colors.primary, size: 24)
+            : Icon(
+                Icons.history,
+                color: theme.colors.onSurfaceVariantSummary,
+                size: 24,
+              ),
       ),
-      trailing: FilledButton.tonalIcon(
-        icon: const Icon(Icons.download, size: 18),
-        label: Text(context.tr('common.add')),
-        onPressed: () => _enqueueDownload(v),
-      ),
+      content: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(v.version),
+            Wrap(
+              spacing: 6,
+              children: [
+                if (v.api.isNotEmpty)
+                  _chip(theme, 'API ${v.api.first.from}~${v.api.first.to}'),
+                if (v.isPreRelease)
+                  _chipWithColor(
+                    theme,
+                    context.tr('poggit.preRelease'),
+                    theme.colors.onTertiaryContainer,
+                  ),
+                if (v.isOutdated)
+                  _chipWithColor(
+                    theme,
+                    context.tr('poggit.outdated'),
+                    theme.colors.error,
+                  ),
+                if (v.submissionDate != 0)
+                  _chip(theme, _formatDate(v.submissionDate)),
+              ],
+            ),
+          ],
+        ),
+      ],
+      endActions: [
+        MiuixButton(
+          onPressed: () => _enqueueDownload(v),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              MiuixIcon(icon: Icons.download, size: 18),
+              const SizedBox(width: 8),
+              MiuixText(context.tr('common.add')),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -856,20 +856,20 @@ class _PoggitVersionSheetState extends State<_PoggitVersionSheet> {
 
 // ───────────────────────────── 通用组件 ─────────────────────────────
 
-Widget _chip(ThemeData theme, String label) {
+Widget _chip(MiuixThemeData theme, String label) {
   return Container(
     margin: const EdgeInsets.only(top: 4),
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
     decoration: BoxDecoration(
-      color: theme.colorScheme.surfaceContainerHighest,
+      color: theme.colors.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(4),
     ),
-    child: Text(label, style: theme.textTheme.labelSmall),
+    child: Text(label, style: theme.textStyles.footnote2),
   );
 }
 
 // 重载：带颜色参数的 _chip（用于状态标签）
-Widget _chipWithColor(ThemeData theme, String label, Color color) {
+Widget _chipWithColor(MiuixThemeData theme, String label, Color color) {
   return Container(
     margin: const EdgeInsets.only(top: 4),
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -880,25 +880,25 @@ Widget _chipWithColor(ThemeData theme, String label, Color color) {
     ),
     child: Text(
       label,
-      style: theme.textTheme.labelSmall?.copyWith(color: color),
+      style: theme.textStyles.footnote2.copyWith(color: color),
     ),
   );
 }
 
-Widget _centerMessage(ThemeData theme, IconData icon, String message) {
+Widget _centerMessage(MiuixThemeData theme, IconData icon, String message) {
   return Center(
     child: Padding(
       padding: const EdgeInsets.all(32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 48, color: theme.colorScheme.onSurfaceVariant),
+          Icon(icon, size: 48, color: theme.colors.onSurfaceVariantSummary),
           const SizedBox(height: 12),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: theme.textStyles.body2.copyWith(
+              color: theme.colors.onSurfaceVariantSummary,
             ),
           ),
         ],

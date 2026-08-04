@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
@@ -9,6 +10,10 @@ import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
 import '../instance/instance_scope.dart';
 import '../server/pnx_properties.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/ec_text_field.dart';
+import '../widgets/miuix_snackbar.dart';
+import '../widgets/miuix_dialog.dart';
 
 /// pnx.yml (PowerNukkitX) 可视化编辑页面。
 ///
@@ -141,7 +146,11 @@ final _sections = <_Section>[
       subtitle: 'pnx.subtitle.xboxAuth',
       kind: _PropKind.toggle,
     ),
-    _PropDef(path: 'settings.autoSave', label: 'pnx.label.autoSave', kind: _PropKind.toggle),
+    _PropDef(
+      path: 'settings.autoSave',
+      label: 'pnx.label.autoSave',
+      kind: _PropKind.toggle,
+    ),
     _PropDef(
       path: 'settings.autosaveDelay',
       label: 'pnx.label.autosaveDelay',
@@ -400,12 +409,7 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
       await _fileService.writeText(filePath, _props.toString());
       _dirtyKeys.clear();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.tr('serverProps.saved')),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        showMiuixSnackbar(context.tr('serverProps.saved'));
         setState(() => _saving = false);
       }
     } catch (e) {
@@ -435,19 +439,26 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
 
   Future<bool> _onWillPop() async {
     if (!_isDirty) return true;
-    final result = await showDialog<bool>(
+    final result = await showMiuixDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.tr('serverProps.unsavedChanges')),
-        content: Text(context.tr('serverProps.unsavedChangesMsg')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton.tonal(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(context.tr('serverProps.discard')),
+      title: context.tr('serverProps.unsavedChanges'),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(context.tr('serverProps.unsavedChangesMsg')),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                ctx.tr('common.cancel'),
+                onPressed: () => Navigator.of(ctx).pop(false),
+              ),
+              MiuixButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: MiuixText(context.tr('serverProps.discard')),
+              ),
+            ],
           ),
         ],
       ),
@@ -468,9 +479,10 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
         final shouldPop = await _onWillPop();
         if (shouldPop && context.mounted) Navigator.of(context).pop();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(context.tr('pnxProps.title')),
+      child: MiuixScaffold(
+        topBar: MiuixSmallTopAppBar(
+          title: context.tr('pnxProps.title'),
+          navigationIcon: const EcBackButton(),
           actions: [
             if (!_loading && _error == null)
               IconButton(
@@ -478,7 +490,7 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: MiuixInfiniteProgressIndicator(size: 20),
                       )
                     : Icon(_isDirty ? Icons.save : Icons.save_outlined),
                 tooltip: context.tr('common.save'),
@@ -486,7 +498,7 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
               ),
           ],
         ),
-        body: _buildBody(),
+        content: (padding) => Padding(padding: padding, child: _buildBody()),
       ),
     );
   }
@@ -503,7 +515,7 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
               Icon(
                 Icons.error_outline,
                 size: 48,
-                color: Theme.of(context).colorScheme.error,
+                color: MiuixTheme.of(context).colors.error,
               ),
               const SizedBox(height: 16),
               Text(
@@ -512,7 +524,7 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),
-              FilledButton.tonal(
+              MiuixButton(
                 onPressed: () {
                   setState(() {
                     _loading = true;
@@ -520,7 +532,7 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
                   });
                   _load();
                 },
-                child: Text(context.tr('common.retry')),
+                child: MiuixText(context.tr('common.retry')),
               ),
             ],
           ),
@@ -542,34 +554,32 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
 
     return Padding(
       padding: const EdgeInsets.only(top: 16),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Row(
-                  children: [
-                    Icon(
-                      section.icon,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.primary,
+      child: MiuixCard(
+        insideMargin: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    section.icon,
+                    size: 20,
+                    color: MiuixTheme.of(context).colors.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    context.tr(section.title),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: MiuixTheme.of(context).colors.primary,
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      context.tr(section.title),
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              for (final prop in props) _buildProp(prop),
-            ],
-          ),
+            ),
+            for (final prop in props) _buildProp(prop),
+          ],
         ),
       ),
     );
@@ -590,12 +600,10 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
 
   Widget _buildToggle(_PropDef prop) {
     final value = _getValue(prop.path) == 'true';
-    return SwitchListTile(
-      title: Text(context.tr(prop.label)),
-      subtitle: prop.subtitle != null ? Text(context.tr(prop.subtitle!)) : null,
+    return MiuixSwitchPreference(
+      title: context.tr(prop.label),
       value: value,
       onChanged: (v) => _setValue(prop.path, v.toString()),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
     );
   }
 
@@ -603,23 +611,19 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
     final controller = _controllerFor(prop.path);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: TextField(
+      child: EcTextField(
         controller: controller,
+        label: context.tr(prop.label),
+        helperText: prop.subtitle != null ? context.tr(prop.subtitle!) : null,
+        suffixIcon: _isDirtyKey(prop.path)
+            ? Icon(
+                Icons.edit_note,
+                color: MiuixTheme.of(context).colors.primary,
+                size: 20,
+              )
+            : null,
         keyboardType: TextInputType.number,
         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^-?\d*'))],
-        decoration: InputDecoration(
-          labelText: context.tr(prop.label),
-          helperText: prop.subtitle != null ? context.tr(prop.subtitle!) : null,
-          border: const OutlineInputBorder(),
-          isDense: true,
-          suffixIcon: _isDirtyKey(prop.path)
-              ? Icon(
-                  Icons.edit_note,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 20,
-                )
-              : null,
-        ),
         onChanged: (v) => _setValue(prop.path, v),
       ),
     );
@@ -629,21 +633,17 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
     final controller = _controllerFor(prop.path);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: TextField(
+      child: EcTextField(
         controller: controller,
-        decoration: InputDecoration(
-          labelText: context.tr(prop.label),
-          helperText: prop.subtitle != null ? context.tr(prop.subtitle!) : null,
-          border: const OutlineInputBorder(),
-          isDense: true,
-          suffixIcon: _isDirtyKey(prop.path)
-              ? Icon(
-                  Icons.edit_note,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 20,
-                )
-              : null,
-        ),
+        label: context.tr(prop.label),
+        helperText: prop.subtitle != null ? context.tr(prop.subtitle!) : null,
+        suffixIcon: _isDirtyKey(prop.path)
+            ? Icon(
+                Icons.edit_note,
+                color: MiuixTheme.of(context).colors.primary,
+                size: 20,
+              )
+            : null,
         onChanged: (v) => _setValue(prop.path, v),
       ),
     );
@@ -652,33 +652,32 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
   Widget _buildDropdown(_PropDef prop) {
     final options = prop.options!;
     final currentValue = _getValue(prop.path);
-    final items = <DropdownMenuItem<String>>[
-      for (final entry in options.entries)
-        DropdownMenuItem(value: entry.key, child: Text(context.tr(entry.value))),
+    // 值与展示文案分离：values 是写回配置的原始值，labels 是给用户看的译文。
+    final values = <String>[
+      ...options.keys,
       if (!options.containsKey(currentValue) && currentValue.isNotEmpty)
-        DropdownMenuItem(value: currentValue, child: Text(currentValue)),
+        currentValue,
+    ];
+    final labels = <String>[
+      for (final entry in options.entries) context.tr(entry.value),
+      if (!options.containsKey(currentValue) && currentValue.isNotEmpty)
+        currentValue,
     ];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: DropdownButtonFormField<String>(
-        initialValue: currentValue.isNotEmpty ? currentValue : null,
-        items: items,
-        onChanged: (v) {
-          if (v != null) _setValue(prop.path, v);
-        },
-        decoration: InputDecoration(
-          labelText: context.tr(prop.label),
-          helperText: prop.subtitle != null ? context.tr(prop.subtitle!) : null,
-          border: const OutlineInputBorder(),
-          isDense: true,
-          suffixIcon: _isDirtyKey(prop.path)
-              ? Icon(
-                  Icons.edit_note,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 20,
-                )
-              : null,
-        ),
+      child: EcDropdownField(
+        items: labels,
+        selectedIndex: values.indexOf(currentValue),
+        onSelected: (i) => _setValue(prop.path, values[i]),
+        label: context.tr(prop.label),
+        helperText: prop.subtitle != null ? context.tr(prop.subtitle!) : null,
+        suffixIcon: _isDirtyKey(prop.path)
+            ? MiuixIcon(
+                icon: Icons.edit_note,
+                tint: MiuixTheme.of(context).colors.primary,
+                size: 20,
+              )
+            : null,
       ),
     );
   }

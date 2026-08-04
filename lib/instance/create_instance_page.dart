@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../files/storage_permission.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_dialog.dart';
 import 'create_download_edition_page.dart';
 import 'create_import_archive_page.dart';
 import 'create_import_server_page.dart';
@@ -86,24 +89,14 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
   Future<bool> _ensureInstanceStoragePermission() async {
     if (await StoragePermission.isGranted()) return true;
     if (!mounted) return false;
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.storagePermissionTitle')),
-        content: Text(ctx.tr('instance.createStoragePermissionMessage')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('instance.goGrant')),
-          ),
-        ],
-      ),
+    final go = await showMiuixConfirm(
+      context,
+      title: context.tr('instance.storagePermissionTitle'),
+      message: context.tr('instance.createStoragePermissionMessage'),
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('instance.goGrant'),
     );
-    if (go != true) return false;
+    if (!go) return false;
     await StoragePermission.request();
     return false;
   }
@@ -141,10 +134,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     FocusScope.of(context).unfocus();
     final result = await Navigator.of(context).push<CreateInstanceResult>(
       MaterialPageRoute(
-        builder: (_) => ImportServerPage(
-          controller: _instanceController,
-          instanceId: id,
-        ),
+        builder: (_) =>
+            ImportServerPage(controller: _instanceController, instanceId: id),
       ),
     );
     if (result == CreateInstanceResult.done && mounted) _finishWizard();
@@ -158,10 +149,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     FocusScope.of(context).unfocus();
     final result = await Navigator.of(context).push<CreateInstanceResult>(
       MaterialPageRoute(
-        builder: (_) => ImportArchivePage(
-          controller: _instanceController,
-          instanceId: id,
-        ),
+        builder: (_) =>
+            ImportArchivePage(controller: _instanceController, instanceId: id),
       ),
     );
     if (result == CreateInstanceResult.done && mounted) _finishWizard();
@@ -175,10 +164,8 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
     FocusScope.of(context).unfocus();
     final result = await Navigator.of(context).push<CreateInstanceResult>(
       MaterialPageRoute(
-        builder: (_) => ModpackImportPage(
-          controller: _instanceController,
-          instanceId: id,
-        ),
+        builder: (_) =>
+            ModpackImportPage(controller: _instanceController, instanceId: id),
       ),
     );
     if (result == CreateInstanceResult.done && mounted) _finishWizard();
@@ -221,8 +208,10 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   // —— 对话框 ——
 
-  Future<void> _showDuplicateDialog(String name) =>
-      showErrorDialog(context, context.tr('instance.duplicateName', {'name': name}));
+  Future<void> _showDuplicateDialog(String name) => showErrorDialog(
+    context,
+    context.tr('instance.duplicateName', {'name': name}),
+  );
 
   Future<void> _showNameEmptyDialog() =>
       showErrorDialog(context, context.tr('instance.nameEmpty'));
@@ -239,18 +228,24 @@ class _CreateInstancePageState extends State<CreateInstancePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('instance.titleNameEntry'))),
-      body: SafeArea(
-        child: NameEntryStep(
-          controller: _nameController,
-          showBungeeCordTile: false,
-          onGoToServerType: _goToDownloadFlow,
-          onStartImport: _goImportServer,
-          onStartArchive: _goImportArchive,
-          onStartModpack: _goModpack,
-          onCreateBungeeCord: () {},
-          onCreateEmpty: _createEmptyInstance,
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('instance.titleNameEntry'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: NameEntryStep(
+            controller: _nameController,
+            showBungeeCordTile: false,
+            onGoToServerType: _goToDownloadFlow,
+            onStartImport: _goImportServer,
+            onStartArchive: _goImportArchive,
+            onStartModpack: _goModpack,
+            onCreateBungeeCord: () {},
+            onCreateEmpty: _createEmptyInstance,
+          ),
         ),
       ),
     );

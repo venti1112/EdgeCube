@@ -13,7 +13,8 @@ import 'modrinth_service.dart';
 
 export 'modpack/modpack_provider.dart'
     show ModpackFormat, ParsedModpack, ModpackFileEntry;
-export 'modpack/modpack_utils.dart' show InvalidPathException, ModpackParseException;
+export 'modpack/modpack_utils.dart'
+    show InvalidPathException, ModpackParseException;
 
 /// 整合包解析与安装服务（薄封装）。
 ///
@@ -78,11 +79,13 @@ class ModpackService {
           try {
             await targetFile.delete();
           } catch (_) {}
-          throw Exception(tr('modpack.hashMismatch', {
-            'fileName': p.basename(targetPath),
-            'expected': file.sha1!,
-            'actual': actual,
-          }));
+          throw Exception(
+            tr('modpack.hashMismatch', {
+              'fileName': p.basename(targetPath),
+              'expected': file.sha1!,
+              'actual': actual,
+            }),
+          );
         }
       }
 

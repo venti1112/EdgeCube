@@ -51,10 +51,16 @@ class NetworkAddress {
   /// 接口名称 → 优先级（越小越优先）。
   static int _interfacePriority(String name) {
     // Wi-Fi
-    if (name.startsWith('wlan') || name.startsWith('wlp')) { return 0; }
+    if (name.startsWith('wlan') || name.startsWith('wlp')) {
+      return 0;
+    }
     // 物理有线 / 移动数据
-    if (name.startsWith('eth') || name.startsWith('en') ||
-        name.startsWith('rmnet') || name.startsWith('ccmni')) { return 1; }
+    if (name.startsWith('eth') ||
+        name.startsWith('en') ||
+        name.startsWith('rmnet') ||
+        name.startsWith('ccmni')) {
+      return 1;
+    }
     return 2; // 虚拟、隧道等
   }
 

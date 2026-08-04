@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart';
 
 import '../../frp/frp_models.dart';
@@ -11,6 +12,10 @@ import '../../frp/frp_scope.dart';
 import '../../i18n/locale_scope.dart';
 import '../../widgets/error_dialog.dart';
 import '../../widgets/loading_dialog.dart';
+import '../../widgets/miuix_dialog.dart';
+import '../../widgets/ec_preference.dart';
+import '../../widgets/ec_text_field.dart';
+import '../../widgets/miuix_snackbar.dart';
 import 'frp_provider_login_page.dart';
 
 /// 供应商隧道管理页：Tab1「我的隧道」（选择保存到本地）+ Tab2「创建隧道」。
@@ -30,9 +35,10 @@ class FrpProviderTunnelsPage extends StatefulWidget {
   State<FrpProviderTunnelsPage> createState() => _FrpProviderTunnelsPageState();
 }
 
-class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage> {
+  /// 当前标签页下标。Miuix 无 TabBarView 对应物，改用 EcTabbedView
+  /// （MiuixTabRow + PageView）承载，选中项由本页持有。
+  int _tabIndex = 0;
 
   List<FrpRemoteTunnel>? _tunnels;
   List<FrpNode>? _nodes;
@@ -59,7 +65,6 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
 
   @override
   void dispose() {
-    _tabs.dispose();
     _nameField.dispose();
     _localIpField.dispose();
     _localPortField.dispose();
@@ -83,8 +88,10 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
   Future<void> _refreshTunnels() async {
     setState(() => _loadingTunnels = true);
     try {
-      final list =
-          await FrpProviderService.tunnelList(widget.provider, widget.token);
+      final list = await FrpProviderService.tunnelList(
+        widget.provider,
+        widget.token,
+      );
       if (mounted) setState(() => _tunnels = list);
     } on FrpApiException catch (_) {
       if (mounted) _handleTokenInvalid();
@@ -98,8 +105,10 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
   Future<void> _refreshNodes() async {
     setState(() => _loadingNodes = true);
     try {
-      final list =
-          await FrpProviderService.nodeList(widget.provider, widget.token);
+      final list = await FrpProviderService.nodeList(
+        widget.provider,
+        widget.token,
+      );
       if (mounted) {
         setState(() {
           _nodes = list;
@@ -144,20 +153,16 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
       remotePort: tunnel.remotePort,
       remoteAddress: tunnel.remoteAddress.isNotEmpty
           ? tunnel.remoteAddress
-          : (node != null && node.hostname.isNotEmpty &&
-                  tunnel.remotePort != null
-              ? '${node.hostname}:${tunnel.remotePort}'
-              : ''),
+          : (node != null &&
+                    node.hostname.isNotEmpty &&
+                    tunnel.remotePort != null
+                ? '${node.hostname}:${tunnel.remotePort}'
+                : ''),
     );
     if (!mounted) return;
     await FrpScope.of(context).saveTunnel(saved);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(context.tr('frp.tunnelSaved')),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    showMiuixSnackbar(context.tr('frp.tunnelSaved'));
     // 返回隧道列表页（弹出本页与供应商选择页）。
     final navigator = Navigator.of(context);
     navigator.pop();
@@ -167,22 +172,12 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
   /// 删除远端隧道。
   Future<void> _deleteRemote(FrpRemoteTunnel tunnel) async {
     final trans = LocaleScope.of(context).translations;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(trans.get('frp.deleteRemoteTitle')),
-        content: Text(trans.get('frp.deleteRemoteMessage', {'name': tunnel.name})),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(trans.get('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(trans.get('common.confirm')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: trans.get('frp.deleteRemoteTitle'),
+      message: trans.get('frp.deleteRemoteMessage', {'name': tunnel.name}),
+      cancelLabel: trans.get('common.cancel'),
+      confirmLabel: trans.get('common.confirm'),
     );
     if (confirmed != true || !mounted) return;
     try {
@@ -224,13 +219,8 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
         remotePort: remotePort,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.tr('frp.tunnelCreated')),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      _tabs.animateTo(0);
+      showMiuixSnackbar(context.tr('frp.tunnelCreated'));
+      setState(() => _tabIndex = 0);
       await _refreshTunnels();
     } catch (e) {
       if (mounted) showErrorDialog(context, '$e');
@@ -246,36 +236,32 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.provider.displayName),
+    final theme = MiuixTheme.of(context);
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: widget.provider.displayName,
+        navigationIcon: const EcBackButton(),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: context.tr('frp.logout'),
+          MiuixIconButton(
             onPressed: _logout,
+            child: const MiuixIcon(icon: Icons.logout),
           ),
         ],
-        bottom: TabBar(
-          controller: _tabs,
-          tabs: [
-            Tab(text: context.tr('frp.myTunnels')),
-            Tab(text: context.tr('frp.createTunnel')),
-          ],
-        ),
       ),
-      body: SafeArea(
+      content: (padding) => Padding(
+        padding: padding,
         child: Column(
           children: [
             _buildAccountBar(theme),
             Expanded(
-              child: TabBarView(
-                controller: _tabs,
-                children: [
-                  _buildTunnelsTab(theme),
-                  _buildCreateTab(theme),
+              child: EcTabbedView(
+                index: _tabIndex,
+                onTabChanged: (i) => setState(() => _tabIndex = i),
+                tabs: [
+                  context.tr('frp.myTunnels'),
+                  context.tr('frp.createTunnel'),
                 ],
+                children: [_buildTunnelsTab(theme), _buildCreateTab(theme)],
               ),
             ),
           ],
@@ -284,27 +270,27 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
     );
   }
 
-  Widget _buildAccountBar(ThemeData theme) {
+  Widget _buildAccountBar(MiuixThemeData theme) {
     final account = widget.account;
     final quota = (account.usedTunnels != null && account.maxTunnels != null)
         ? ' · ${account.usedTunnels}/${account.maxTunnels}'
         : '';
     return Container(
       width: double.infinity,
-      color: theme.colorScheme.surfaceContainerHighest,
+      color: theme.colors.surfaceContainerHighest,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Text(
         '${account.username}'
         '${account.group.isNotEmpty ? ' (${account.group})' : ''}$quota',
-        style: theme.textTheme.bodySmall,
+        style: theme.textStyles.footnote1,
       ),
     );
   }
 
-  Widget _buildTunnelsTab(ThemeData theme) {
+  Widget _buildTunnelsTab(MiuixThemeData theme) {
     final tunnels = _tunnels;
     if (_loadingTunnels && tunnels == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: MiuixInfiniteProgressIndicator());
     }
     if (tunnels == null || tunnels.isEmpty) {
       return Center(
@@ -313,54 +299,63 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
           children: [
             Text(
               context.tr('frp.noRemoteTunnels'),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              style: theme.textStyles.body2.copyWith(
+                color: theme.colors.onSurfaceVariantSummary,
               ),
             ),
             const SizedBox(height: 12),
-            FilledButton.tonalIcon(
+            MiuixButton(
               onPressed: _refreshTunnels,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: Text(context.tr('common.refresh')),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  MiuixIcon(icon: Icons.refresh, size: 18),
+                  const SizedBox(width: 8),
+                  MiuixText(context.tr('common.refresh')),
+                ],
+              ),
             ),
           ],
         ),
       );
     }
-    return RefreshIndicator(
+    // isRefreshing 受控，复用已有的 _loadingTunnels。
+    return MiuixPullToRefresh(
+      isRefreshing: _loadingTunnels,
       onRefresh: _refreshTunnels,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           for (final tunnel in tunnels) ...[
-            Card(
-              child: ListTile(
-                leading: Icon(
-                  tunnel.online ? Icons.cloud_done_outlined : Icons.cloud_outlined,
-                  color: tunnel.online
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant,
+            MiuixCard(
+              insideMargin: EdgeInsets.zero,
+              child: MiuixBasicComponent(
+                startAction: Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: MiuixIcon(
+                    icon: tunnel.online
+                        ? Icons.cloud_done_outlined
+                        : Icons.cloud_outlined,
+                    tint: tunnel.online
+                        ? theme.colors.primary
+                        : theme.colors.onSurfaceVariantSummary,
+                  ),
                 ),
-                title: Text(tunnel.name),
-                subtitle: Text(
-                  '${tunnel.type.toUpperCase()} · '
-                  '${tunnel.localIp}:${tunnel.localPort} → '
-                  '${tunnel.displayAddress}',
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 20),
-                      tooltip: context.tr('common.delete'),
-                      onPressed: () => _deleteRemote(tunnel),
-                    ),
-                    FilledButton.tonal(
-                      onPressed: () => _saveTunnel(tunnel),
-                      child: Text(context.tr('frp.useTunnel')),
-                    ),
-                  ],
-                ),
+                title: tunnel.name,
+                summary:
+                    '${tunnel.type.toUpperCase()} · '
+                    '${tunnel.localIp}:${tunnel.localPort} → '
+                    '${tunnel.displayAddress}',
+                endActions: [
+                  MiuixIconButton(
+                    onPressed: () => _deleteRemote(tunnel),
+                    child: MiuixIcon(icon: Icons.delete_outline, size: 20),
+                  ),
+                  MiuixButton(
+                    onPressed: () => _saveTunnel(tunnel),
+                    child: MiuixText(context.tr('frp.useTunnel')),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
@@ -370,95 +365,74 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
     );
   }
 
-  Widget _buildCreateTab(ThemeData theme) {
+  Widget _buildCreateTab(MiuixThemeData theme) {
     final nodes = _nodes;
     if (_loadingNodes && nodes == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: MiuixInfiniteProgressIndicator());
     }
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        DropdownButtonFormField<FrpNode>(
-          isExpanded: true,
-          initialValue: _selectedNode,
-          decoration: InputDecoration(
-            labelText: context.tr('frp.node'),
-            isDense: true,
-            border: const OutlineInputBorder(),
-          ),
-          items: [
-            for (final node in nodes ?? <FrpNode>[])
-              DropdownMenuItem(
-                value: node,
-                child: Text(
+        Builder(
+          builder: (context) {
+            final list = nodes ?? <FrpNode>[];
+            return MiuixOverlayDropdownPreference(
+              title: context.tr('frp.node'),
+              items: [
+                for (final node in list)
                   '${node.name}'
-                  '${node.vip ? ' [VIP]' : ''}'
-                  '${node.online ? '' : ' (${context.tr('frp.nodeOffline')})'}',
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-          ],
-          onChanged: (v) => setState(() {
-            _selectedNode = v;
-            _randomizeRemotePort();
-          }),
+                      '${node.vip ? ' [VIP]' : ''}'
+                      '${node.online ? '' : ' (${context.tr('frp.nodeOffline')})'}',
+              ],
+              selectedIndex: _selectedNode == null
+                  ? 0
+                  : list.indexOf(_selectedNode!).clamp(0, list.length),
+              enabled: list.isNotEmpty,
+              onSelectedIndexChange: (i) => setState(() {
+                _selectedNode = list[i];
+                _randomizeRemotePort();
+              }),
+            );
+          },
         ),
         if (_selectedNode?.description.isNotEmpty == true) ...[
           const SizedBox(height: 8),
           Text(
             _selectedNode!.description,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: theme.textStyles.footnote1.copyWith(
+              color: theme.colors.onSurfaceVariantSummary,
             ),
           ),
         ],
         const SizedBox(height: 12),
-        TextField(
+        EcTextField(
           controller: _nameField,
-          decoration: InputDecoration(
-            labelText: context.tr('frp.tunnelName'),
-            isDense: true,
-            border: const OutlineInputBorder(),
-          ),
+          label: context.tr('frp.tunnelName'),
         ),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          initialValue: _type,
-          decoration: InputDecoration(
-            labelText: context.tr('frp.protocol'),
-            isDense: true,
-            border: const OutlineInputBorder(),
-          ),
-          items: const [
-            DropdownMenuItem(value: 'tcp', child: Text('TCP')),
-            DropdownMenuItem(value: 'udp', child: Text('UDP')),
-          ],
-          onChanged: (v) => setState(() => _type = v ?? 'tcp'),
+        MiuixOverlayDropdownPreference(
+          title: context.tr('frp.protocol'),
+          items: const ['TCP', 'UDP'],
+          selectedIndex: _type == 'udp' ? 1 : 0,
+          onSelectedIndexChange: (i) =>
+              setState(() => _type = i == 1 ? 'udp' : 'tcp'),
         ),
         const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
-              child: TextField(
+              child: EcTextField(
                 controller: _localIpField,
-                decoration: InputDecoration(
-                  labelText: context.tr('frp.localIp'),
-                  isDense: true,
-                  border: const OutlineInputBorder(),
-                ),
+                label: context.tr('frp.localIp'),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: TextField(
+              child: EcTextField(
                 controller: _localPortField,
+                label: context.tr('frp.localPort'),
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: InputDecoration(
-                  labelText: context.tr('frp.localPort'),
-                  isDense: true,
-                  border: const OutlineInputBorder(),
-                ),
               ),
             ),
           ],
@@ -467,40 +441,40 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage>
         Row(
           children: [
             Expanded(
-              child: TextField(
+              child: EcTextField(
                 controller: _remotePortField,
+                label: context.tr('frp.remotePort'),
+                helperText: _selectedNode?.minPort != null
+                    ? '${_selectedNode!.minPort} - ${_selectedNode!.maxPort}'
+                    : null,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: InputDecoration(
-                  labelText: context.tr('frp.remotePort'),
-                  helperText: _selectedNode?.minPort != null
-                      ? '${_selectedNode!.minPort} - ${_selectedNode!.maxPort}'
-                      : null,
-                  isDense: true,
-                  border: const OutlineInputBorder(),
-                ),
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.casino_outlined),
-              tooltip: context.tr('frp.randomPort'),
+            MiuixIconButton(
               onPressed: () => setState(_randomizeRemotePort),
+              child: MiuixIcon(icon: Icons.casino_outlined),
             ),
           ],
         ),
         const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: _creating || _selectedNode == null ? null : _createTunnel,
-            icon: _creating
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.add, size: 18),
-            label: Text(context.tr('frp.createTunnel')),
+          child: MiuixButton(
+            onPressed: _creating || _selectedNode == null
+                ? null
+                : _createTunnel,
+            colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _creating
+                    ? const MiuixInfiniteProgressIndicator(size: 18)
+                    : const MiuixIcon(icon: Icons.add, size: 18),
+                const SizedBox(width: 8),
+                MiuixText(context.tr('frp.createTunnel')),
+              ],
+            ),
           ),
         ),
       ],

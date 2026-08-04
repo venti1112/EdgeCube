@@ -42,26 +42,25 @@ class ChmlFrpApi {
     final resp = await http
         .post(
           Uri.parse('$_oauthIssuer/oauth2/device_authorization'),
-          headers: const {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: {
-            'client_id': _clientId,
-            'scope': _scope,
-          },
+          headers: const {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: {'client_id': _clientId, 'scope': _scope},
         )
         .timeout(_timeout);
-    final json = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+    final json =
+        jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
     // device_authorization 失败时返回 {error, error_description}，无 code 字段。
     if (json.containsKey('error')) {
       throw FrpApiException(
-        json['error_description'] as String? ?? json['error'] as String? ?? '设备码申请失败',
+        json['error_description'] as String? ??
+            json['error'] as String? ??
+            '设备码申请失败',
       );
     }
     final deviceCode = json['device_code'] as String? ?? '';
     final userCode = json['user_code'] as String? ?? '';
     // verification_uri_complete 自动带入 user_code，优先用；否则用 verification_uri。
-    final url = (json['verification_uri_complete'] as String?) ??
+    final url =
+        (json['verification_uri_complete'] as String?) ??
         (json['verification_uri'] as String? ?? '');
     final interval = (json['interval'] as int?) ?? 5;
     final expiresIn = (json['expires_in'] as int?) ?? 300;
@@ -95,9 +94,7 @@ class ChmlFrpApi {
     final resp = await http
         .post(
           Uri.parse('$_oauthIssuer/oauth2/token'),
-          headers: const {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
+          headers: const {'Content-Type': 'application/x-www-form-urlencoded'},
           body: {
             'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
             'client_id': _clientId,
@@ -105,20 +102,20 @@ class ChmlFrpApi {
           },
         )
         .timeout(_timeout);
-    final json = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+    final json =
+        jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
     final error = json['error'] as String?;
     if (error != null) {
       if (error == 'authorization_pending') {
         return null;
       }
       if (error == 'slow_down') {
-        session.state['interval'] = (session.state['interval'] as int? ?? 5) + 5;
+        session.state['interval'] =
+            (session.state['interval'] as int? ?? 5) + 5;
         return null;
       }
       // expired_token / access_denied / invalid_grant 等：致命，停止轮询。
-      throw FrpApiException(
-        json['error_description'] as String? ?? error,
-      );
+      throw FrpApiException(json['error_description'] as String? ?? error);
     }
     final accessToken = json['access_token'] as String?;
     final refreshToken = json['refresh_token'] as String?;
@@ -144,9 +141,7 @@ class ChmlFrpApi {
     final resp = await http
         .post(
           Uri.parse('$_oauthIssuer/oauth2/token'),
-          headers: const {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
+          headers: const {'Content-Type': 'application/x-www-form-urlencoded'},
           body: {
             'grant_type': 'refresh_token',
             'client_id': _clientId,
@@ -154,10 +149,13 @@ class ChmlFrpApi {
           },
         )
         .timeout(_timeout);
-    final json = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+    final json =
+        jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
     if (json.containsKey('error')) {
       throw FrpApiException(
-        json['error_description'] as String? ?? json['error'] as String? ?? '刷新 token 失败',
+        json['error_description'] as String? ??
+            json['error'] as String? ??
+            '刷新 token 失败',
       );
     }
     final accessToken = json['access_token'] as String?;
@@ -182,7 +180,8 @@ class ChmlFrpApi {
     final exp = parsed['exp'] as int?;
     // 无过期时间或未即将过期：直接用。
     if (exp == null ||
-        DateTime.now().millisecondsSinceEpoch + _refreshSkew.inMilliseconds < exp) {
+        DateTime.now().millisecondsSinceEpoch + _refreshSkew.inMilliseconds <
+            exp) {
       return accessToken;
     }
     // 即将过期：刷新。刷新后返回新 access_token。
@@ -242,7 +241,9 @@ class ChmlFrpApi {
     final code = json['code'] as int?;
     final ok = state == 'success' || code == 200;
     if (!ok) {
-      throw FrpApiException(json['msg'] as String? ?? 'HTTP ${resp.statusCode}');
+      throw FrpApiException(
+        json['msg'] as String? ?? 'HTTP ${resp.statusCode}',
+      );
     }
     return json;
   }
@@ -276,8 +277,9 @@ class ChmlFrpApi {
         localIp: m['localip'] as String? ?? '127.0.0.1',
         localPort: (m['nport'] as int?) ?? 25565,
         remotePort: remotePort,
-        remoteAddress:
-            remotePort != null ? '${m['ip'] ?? ''}:$remotePort' : dorp,
+        remoteAddress: remotePort != null
+            ? '${m['ip'] ?? ''}:$remotePort'
+            : dorp,
       );
     }).toList();
   }
@@ -328,7 +330,8 @@ class ChmlFrpApi {
             'compression': false,
             'extraparams': '',
             'remoteport': remotePort,
-            if (banddomain != null && banddomain.isNotEmpty) 'banddomain': banddomain,
+            if (banddomain != null && banddomain.isNotEmpty)
+              'banddomain': banddomain,
           }),
         )
         .timeout(_timeout);

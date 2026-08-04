@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_preference.dart';
 import 'create_download_progress_page.dart';
 import 'create_download_version_page.dart';
 import 'download_session.dart';
@@ -48,18 +50,20 @@ class SelectServerPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final bedrock =
         types.contains('pocketmine') || types.contains('powernukkitx');
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          bedrock
-              ? context.tr('instance.titleBedrockServerType')
-              : context.tr('instance.titleJavaServerType'),
-        ),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: bedrock
+            ? context.tr('instance.titleBedrockServerType')
+            : context.tr('instance.titleJavaServerType'),
+        navigationIcon: const EcBackButton(),
       ),
-      body: SafeArea(
-        child: ServerTypeTileList(
-          types: types,
-          onSelect: (t) => _select(context, t),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: ServerTypeTileList(
+            types: types,
+            onSelect: (t) => _select(context, t),
+          ),
         ),
       ),
     );

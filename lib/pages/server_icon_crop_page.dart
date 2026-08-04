@@ -3,11 +3,13 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:image/image.dart' as img;
 
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/ec_preference.dart';
 
 /// 图片裁剪页面：将导入的图片裁剪为 1:1 并缩放至 64×64，保存为 PNG。
 ///
@@ -176,40 +178,42 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(context.tr('serverIcon.cropIcon')),
+    // 裁剪页刻意固定为黑底白字（与相册取景一致），不随明暗主题变化。
+    return MiuixScaffold(
+      containerColor: Colors.black,
+      topBar: MiuixSmallTopAppBar(
+        color: Colors.black,
+        titleColor: Colors.white,
+        title: context.tr('serverIcon.cropIcon'),
+        navigationIcon: const EcBackButton(),
         actions: [
           if (!_loading && _error == null)
             _saving
                 ? const Padding(
                     padding: EdgeInsets.all(16),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
+                    child: MiuixInfiniteProgressIndicator(
+                      size: 20,
+                      color: Colors.white,
                     ),
                   )
-                : IconButton(
-                    icon: const Icon(Icons.check),
-                    tooltip: context.tr('serverIcon.confirmCrop'),
+                : MiuixIconButton(
                     onPressed: _confirmCrop,
+                    child: const MiuixIcon(
+                      icon: Icons.check,
+                      tint: Colors.white,
+                    ),
                   ),
         ],
       ),
-      body: _buildBody(),
+      content: (padding) => Padding(padding: padding, child: _buildBody()),
     );
   }
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: MiuixInfiniteProgressIndicator(color: Colors.white),
+      );
     }
     if (_error != null) {
       return Center(
@@ -218,7 +222,11 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.white70),
+              const MiuixIcon(
+                icon: Icons.error_outline,
+                size: 48,
+                tint: Colors.white70,
+              ),
               const SizedBox(height: 16),
               Text(
                 _error!,

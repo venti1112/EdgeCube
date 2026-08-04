@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -12,7 +13,10 @@ import '../config/terminal_store.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_preference.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/miuix_snackbar.dart';
 import '../instance/data_folder_migration.dart';
 import '../instance/instance_scope.dart';
 import '../instance/instance_store.dart';
@@ -63,35 +67,13 @@ class _SettingsPageState extends State<SettingsPage> {
 
   /// 弹出优先级选择对话框（proot 优先 / 原生优先）。
   Future<void> _pickJavaEnvPriority() async {
-    final selected = await showDialog<JavaEnvPriority>(
+    final selected = await showMiuixSingleChoice<JavaEnvPriority>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(ctx.tr('settings.javaEnvPriority.dialogTitle')),
-        children: [
-          for (final p in JavaEnvPriority.values)
-            ListTile(
-              leading: Icon(
-                p == _javaEnvPriority
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked,
-                color: p == _javaEnvPriority
-                    ? Theme.of(ctx).colorScheme.primary
-                    : null,
-              ),
-              title: Text(_javaEnvPriorityLabel(ctx, p)),
-              onTap: () => Navigator.of(ctx).pop(p),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
-            child: Text(
-              ctx.tr('settings.javaEnvPriority.hint'),
-              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-          ),
-        ],
-      ),
+      title: context.tr('settings.javaEnvPriority.dialogTitle'),
+      options: JavaEnvPriority.values,
+      selected: _javaEnvPriority,
+      labelOf: _javaEnvPriorityLabel,
+      hint: context.tr('settings.javaEnvPriority.hint'),
     );
     if (selected != null) await _saveJavaEnvPriority(selected);
   }
@@ -124,170 +106,114 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  /// 压入子页面，返回后执行 [onReturn]（用于刷新可能被子页面改动的状态）。
+  Future<void> _push(Widget page, {VoidCallback? onReturn}) async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    if (mounted) onReturn?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final themeScope = ThemeScope.of(context);
     final localeScope = LocaleScope.of(context);
 
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('settings.title'))),
-      body: ListView(
-        children: [
-          _sectionHeader(theme, context.tr('settings.section.appearance')),
-          ListTile(
-            leading: const Icon(Icons.palette_outlined),
-            title: Text(context.tr('settings.appearance.title')),
-            subtitle: Text(_themeModeLabel(context, themeScope.themeMode)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const AppearanceSettingsPage(),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.translate),
-            title: Text(context.tr('settings.language.title')),
-            subtitle: Text(
-              localeScope.currentLanguageName ??
-                  context.tr('common.followSystem'),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const LanguageSettingsPage()),
-              );
-            },
-          ),
-          const Divider(),
-          _sectionHeader(theme, context.tr('settings.section.console')),
-          SwitchListTile(
-            secondary: const Icon(Icons.delete_sweep_outlined),
-            title: Text(context.tr('settings.console.autoClearLogOnStart')),
-            subtitle: Text(
-              context.tr('settings.console.autoClearLogOnStartDescription'),
-            ),
-            value: _autoClearLogOnStart,
-            onChanged: _saveAutoClearLogOnStart,
-          ),
-          if (Platform.isAndroid) ...[
-            const Divider(),
-            _sectionHeader(theme, context.tr('settings.section.keepAlive')),
-            ListTile(
-              leading: const Icon(Icons.battery_saver),
-              title: Text(context.tr('settings.keepAlive.title')),
-              subtitle: Text(context.tr('settings.keepAlive.subtitle')),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const KeepAliveSettingsPage(),
-                  ),
-                );
-              },
-            ),
-          ],
-          const Divider(),
-          _sectionHeader(theme, context.tr('settings.section.storage')),
-          _CustomDataFolderTile(),
-          ListTile(
-            leading: const Icon(Icons.storage),
-            title: Text(context.tr('storage.title')),
-            subtitle: Text(context.tr('storage.subtitle')),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const StorageManagementPage(),
-                ),
-              );
-            },
-          ),
-          const Divider(),
-          _sectionHeader(theme, context.tr('settings.section.runtime')),
-          ListTile(
-            leading: const Icon(Icons.memory),
-            title: Text(context.tr('settings.javaEnvPriority.title')),
-            subtitle: Text(
-              context.tr('settings.javaEnvPriority.subtitle', {
-                'value': _javaEnvPriorityLabel(context, _javaEnvPriority),
-              }),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _pickJavaEnvPriority,
-          ),
-          const Divider(),
-          _sectionHeader(theme, context.tr('settings.section.network')),
-          ListTile(
-            leading: const Icon(Icons.lan_outlined),
-            title: Text(context.tr('settings.network.title')),
-            subtitle: Text(context.tr('settings.network.subtitle')),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const NetworkSettingsPage()),
-              );
-            },
-          ),
-          const Divider(),
-          _sectionHeader(theme, context.tr('settings.section.other')),
-          ListTile(
-            leading: const Icon(Icons.group_outlined),
-            title: Text(context.tr('settings.community.title')),
-            subtitle: Text(context.tr('settings.community.subtitle')),
-            trailing: const Icon(Icons.open_in_new, size: 18),
-            onTap: () => launchUrl(
-              Uri.parse('https://qm.qq.com/q/pnCZcmnKIS'),
-              mode: LaunchMode.externalApplication,
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: Text(context.tr('settings.about.title')),
-            subtitle: Text(context.tr('settings.about.subtitle')),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AboutPage()),
-              );
-              // 从关于页返回后刷新开发者模式状态（可能在关于页解锁了）
-              if (mounted) _loadDevMode();
-            },
-          ),
-          // ── 开发者选项入口（仅在开发者模式启用后显示）──
-          if (_devModeEnabled)
-            ListTile(
-              leading: const Icon(Icons.developer_mode),
-              title: Text(context.tr('settings.section.developer')),
-              subtitle: Text(context.tr('settings.developer.entrySubtitle')),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const DeveloperOptionsPage(),
-                  ),
-                );
-                // 从开发者选项页返回后刷新状态（可能关闭了开发者模式）
-                if (mounted) _loadDevMode();
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionHeader(ThemeData theme, String text) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        text,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
+    return EcSettingsPage(
+      title: context.tr('settings.title'),
+      isTab: true,
+      children: [
+        MiuixSmallTitle(context.tr('settings.section.appearance')),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.palette_outlined),
+          title: context.tr('settings.appearance.title'),
+          summary: _themeModeLabel(context, themeScope.themeMode),
+          onClick: () => _push(const AppearanceSettingsPage()),
         ),
-      ),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.translate),
+          title: context.tr('settings.language.title'),
+          summary:
+              localeScope.currentLanguageName ??
+              context.tr('common.followSystem'),
+          onClick: () => _push(const LanguageSettingsPage()),
+        ),
+
+        MiuixSmallTitle(context.tr('settings.section.console')),
+        MiuixSwitchPreference(
+          startAction: prefIcon(Icons.delete_sweep_outlined),
+          title: context.tr('settings.console.autoClearLogOnStart'),
+          summary: context.tr(
+            'settings.console.autoClearLogOnStartDescription',
+          ),
+          value: _autoClearLogOnStart,
+          onChanged: _saveAutoClearLogOnStart,
+        ),
+
+        if (Platform.isAndroid) ...[
+          MiuixSmallTitle(context.tr('settings.section.keepAlive')),
+          MiuixArrowPreference(
+            startAction: prefIcon(Icons.battery_saver),
+            title: context.tr('settings.keepAlive.title'),
+            summary: context.tr('settings.keepAlive.subtitle'),
+            onClick: () => _push(const KeepAliveSettingsPage()),
+          ),
+        ],
+
+        MiuixSmallTitle(context.tr('settings.section.storage')),
+        const _CustomDataFolderTile(),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.storage),
+          title: context.tr('storage.title'),
+          summary: context.tr('storage.subtitle'),
+          onClick: () => _push(const StorageManagementPage()),
+        ),
+
+        MiuixSmallTitle(context.tr('settings.section.runtime')),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.memory),
+          title: context.tr('settings.javaEnvPriority.title'),
+          summary: context.tr('settings.javaEnvPriority.subtitle', {
+            'value': _javaEnvPriorityLabel(context, _javaEnvPriority),
+          }),
+          onClick: _pickJavaEnvPriority,
+        ),
+
+        MiuixSmallTitle(context.tr('settings.section.network')),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.lan_outlined),
+          title: context.tr('settings.network.title'),
+          summary: context.tr('settings.network.subtitle'),
+          onClick: () => _push(const NetworkSettingsPage()),
+        ),
+
+        MiuixSmallTitle(context.tr('settings.section.other')),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.group_outlined),
+          title: context.tr('settings.community.title'),
+          summary: context.tr('settings.community.subtitle'),
+          endActions: [const MiuixIcon(icon: Icons.open_in_new, size: 18)],
+          onClick: () => launchUrl(
+            Uri.parse('https://qm.qq.com/q/pnCZcmnKIS'),
+            mode: LaunchMode.externalApplication,
+          ),
+        ),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.info_outline),
+          title: context.tr('settings.about.title'),
+          summary: context.tr('settings.about.subtitle'),
+          // 从关于页返回后刷新开发者模式状态（可能在关于页解锁了）
+          onClick: () => _push(const AboutPage(), onReturn: _loadDevMode),
+        ),
+        // ── 开发者选项入口（仅在开发者模式启用后显示）──
+        if (_devModeEnabled)
+          MiuixArrowPreference(
+            startAction: prefIcon(Icons.developer_mode),
+            title: context.tr('settings.section.developer'),
+            summary: context.tr('settings.developer.entrySubtitle'),
+            // 从开发者选项页返回后刷新状态（可能关闭了开发者模式）
+            onClick: () =>
+                _push(const DeveloperOptionsPage(), onReturn: _loadDevMode),
+          ),
+      ],
     );
   }
 }
@@ -302,8 +228,7 @@ class _CustomDataFolderTile extends StatefulWidget {
   const _CustomDataFolderTile();
 
   @override
-  State<_CustomDataFolderTile> createState() =>
-      _CustomDataFolderTileState();
+  State<_CustomDataFolderTile> createState() => _CustomDataFolderTileState();
 }
 
 class _CustomDataFolderTileState extends State<_CustomDataFolderTile>
@@ -385,40 +310,25 @@ class _CustomDataFolderTileState extends State<_CustomDataFolderTile>
 
   Future<void> _applyChange(String targetPath, {required bool isReset}) async {
     final instances = InstanceScope.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     final source = Directory(_currentPath);
     final target = Directory(targetPath);
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.tr('settings.storage.dataFolderConfirmTitle')),
-        content: Text(
-          isReset
-              ? context.tr('settings.storage.dataFolderResetConfirmMessage', {
-                  'path': targetPath,
-                })
-              : context.tr('settings.storage.dataFolderConfirmMessage', {
-                  'path': targetPath,
-                }),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(context.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(context.tr('common.confirm')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: context.tr('settings.storage.dataFolderConfirmTitle'),
+      message: isReset
+          ? context.tr('settings.storage.dataFolderResetConfirmMessage', {
+              'path': targetPath,
+            })
+          : context.tr('settings.storage.dataFolderConfirmMessage', {
+              'path': targetPath,
+            }),
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     setState(() => _busy = true);
     try {
-      final result = await showDialog<DataFolderMigrationResult>(
+      final result = await showMiuixDialog<DataFolderMigrationResult>(
         context: context,
         barrierDismissible: false,
         builder: (_) => _PathMigrationDialog(source: source, target: target),
@@ -429,11 +339,9 @@ class _CustomDataFolderTileState extends State<_CustomDataFolderTile>
       instances.refreshAfterPathChange();
       await _load();
       if (!mounted) return;
-      // 部分文件迁移失败属于错误，用弹窗提示；全部成功用 SnackBar。
+      // 部分文件迁移失败属于错误，用弹窗提示；全部成功用 Snackbar。
       if (result.success) {
-        messenger.showSnackBar(
-          SnackBar(content: Text(_resultMessage(result, isReset))),
-        );
+        showMiuixSnackbar(_resultMessage(result, isReset));
       } else {
         showErrorDialog(context, _resultMessage(result, isReset));
       }
@@ -467,20 +375,21 @@ class _CustomDataFolderTileState extends State<_CustomDataFolderTile>
   Future<bool> _ensurePermission() async {
     if (await StoragePermission.isGranted()) return true;
     if (!mounted) return false;
-    final go = await showDialog<bool>(
+    final go = await showMiuixDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.storagePermissionTitle')),
-        content: Text(ctx.tr('settings.storage.permissionMessage')),
-        actions: [
-          TextButton(
+      title: context.tr('instance.storagePermissionTitle'),
+      summary: context.tr('settings.storage.permissionMessage'),
+      builder: (ctx) => MiuixDialogActions(
+        children: [
+          MiuixTextButton(
+            ctx.tr('common.cancel'),
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
           ),
-          FilledButton(
+          MiuixButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('instance.goGrant')),
+            colors: MiuixButtonDefaults.buttonColorsPrimary(ctx),
+            child: MiuixText(ctx.tr('instance.goGrant')),
           ),
         ],
       ),
@@ -507,52 +416,58 @@ class _CustomDataFolderTileState extends State<_CustomDataFolderTile>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final subtitle = _loading
         ? context.tr('common.loading')
         : (_isCustom
               ? _customPath!
               : '${context.tr('settings.storage.dataFolderDefault')} · $_defaultPath');
-    return Column(
-      children: [
-        ListTile(
-          leading: const Icon(Icons.folder_open),
-          title: Text(context.tr('settings.storage.dataFolderTitle')),
-          subtitle: Text(
-            subtitle,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: _isCustom
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurfaceVariant,
+    return MiuixBasicComponent(
+      startAction: prefIcon(Icons.folder_open),
+      title: context.tr('settings.storage.dataFolderTitle'),
+      summary: subtitle,
+      // 自定义路径用主色标出，与默认路径区分。
+      summaryColor: _isCustom
+          ? MiuixBasicComponentColors(
+              color: theme.colors.primary,
+              disabledColor: theme.colors.disabledOnSecondaryVariant,
+            )
+          : null,
+      enabled: !_busy,
+      onClick: _busy ? null : _change,
+      endActions: [
+        if (_busy)
+          const MiuixInfiniteProgressIndicator(size: 22)
+        else
+          MiuixButton(
+            onPressed: _change,
+            insideMargin: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 8,
             ),
-            overflow: TextOverflow.ellipsis,
-            maxLines: 2,
-          ),
-          trailing: _busy
-              ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : FilledButton.tonal(
-                  onPressed: _change,
-                  child: Text(context.tr('settings.storage.dataFolderChange')),
-                ),
-          onTap: _busy ? null : _change,
-        ),
-        if (_isCustom && !_busy)
-          Padding(
-            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: _reset,
-                icon: const Icon(Icons.restore, size: 18),
-                label: Text(context.tr('settings.storage.dataFolderReset')),
-              ),
+            minWidth: 0,
+            minHeight: 0,
+            child: MiuixText(
+              context.tr('settings.storage.dataFolderChange'),
+              style: theme.textStyles.button,
             ),
           ),
       ],
+      bottomAction: (_isCustom && !_busy)
+          ? Align(
+              alignment: Alignment.centerLeft,
+              child: MiuixTextButton(
+                context.tr('settings.storage.dataFolderReset'),
+                onPressed: _reset,
+                insideMargin: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                minWidth: 0,
+                minHeight: 0,
+              ),
+            )
+          : null,
     );
   }
 }
@@ -598,31 +513,34 @@ class _PathMigrationDialogState extends State<_PathMigrationDialog> {
     final progress = _total == 0 ? null : _processed / _total;
     return PopScope(
       canPop: false,
-      child: AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircularProgressIndicator(value: progress),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: Text(
-                    _total == 0
-                        ? context.tr('settings.storage.dataFolderMigrating')
-                        : context.tr(
-                            'settings.storage.dataFolderMigratingProgress',
-                            {'processed': '$_processed', 'total': '$_total'},
-                          ),
-                  ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // 总数未知时用不定长转圈，已知则显示确定进度环。
+              progress == null
+                  ? const MiuixInfiniteProgressIndicator()
+                  : MiuixCircularProgressIndicator(progress: progress),
+              const SizedBox(width: 20),
+              Expanded(
+                child: MiuixText(
+                  _total == 0
+                      ? context.tr('settings.storage.dataFolderMigrating')
+                      : context.tr(
+                          'settings.storage.dataFolderMigratingProgress',
+                          {'processed': '$_processed', 'total': '$_total'},
+                        ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(context.tr('settings.storage.dataFolderMigratingDoNotClose')),
-          ],
-        ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          MiuixText(
+            context.tr('settings.storage.dataFolderMigratingDoNotClose'),
+          ),
+        ],
       ),
     );
   }

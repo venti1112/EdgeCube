@@ -70,7 +70,8 @@ class FrpRegistryStore {
     final existing = await ConfigStore.readJsonFile(file);
     await ConfigStore.writeJsonFile(file, {
       ...tunnel.toJson(),
-      'createdAt': (existing['createdAt'] as int?) ??
+      'createdAt':
+          (existing['createdAt'] as int?) ??
           DateTime.now().millisecondsSinceEpoch,
     });
   }

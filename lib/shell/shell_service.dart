@@ -8,7 +8,11 @@ import 'package:flutter/services.dart';
 /// - [label] 为展示名（如 "system sh"、"proot: debian-12-jdk21"）
 /// - [type] 为 "system" 或 "proot"，便于 UI 分组渲染
 class ShellOption {
-  const ShellOption({required this.id, required this.label, required this.type});
+  const ShellOption({
+    required this.id,
+    required this.label,
+    required this.type,
+  });
 
   final String id;
   final String label;

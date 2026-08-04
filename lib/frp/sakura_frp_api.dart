@@ -24,7 +24,9 @@ class SakuraFrpApi {
       String message = 'HTTP ${resp.statusCode}';
       try {
         final body = jsonDecode(utf8.decode(resp.bodyBytes));
-        if (body is Map && body['msg'] is String) message = body['msg'] as String;
+        if (body is Map && body['msg'] is String) {
+          message = body['msg'] as String;
+        }
       } catch (_) {}
       throw FrpApiException(message);
     }
@@ -33,8 +35,9 @@ class SakuraFrpApi {
   }
 
   static Future<dynamic> _get(String pathWithQuery) async {
-    final resp =
-        await http.get(Uri.parse('$_base$pathWithQuery')).timeout(_timeout);
+    final resp = await http
+        .get(Uri.parse('$_base$pathWithQuery'))
+        .timeout(_timeout);
     return _decode(resp);
   }
 
@@ -90,7 +93,8 @@ class SakuraFrpApi {
 
   /// 验证 token 并获取用户信息。
   static Future<FrpAccount> userInfo(String token) async {
-    final json = (await _get('/user/info?token=$token')) as Map<String, dynamic>;
+    final json =
+        (await _get('/user/info?token=$token')) as Map<String, dynamic>;
     final group = (json['group'] as Map?)?.cast<String, dynamic>() ?? {};
     return FrpAccount(
       username: json['name'] as String? ?? '',
@@ -101,7 +105,8 @@ class SakuraFrpApi {
 
   /// 用户等级（过滤 vip 节点用）。
   static Future<int> userLevel(String token) async {
-    final json = (await _get('/user/info?token=$token')) as Map<String, dynamic>;
+    final json =
+        (await _get('/user/info?token=$token')) as Map<String, dynamic>;
     final group = (json['group'] as Map?)?.cast<String, dynamic>() ?? {};
     return group['level'] as int? ?? 0;
   }
@@ -130,7 +135,10 @@ class SakuraFrpApi {
   /// 节点列表（API 返回以节点 id 为 key 的对象）。
   ///
   /// `flag` 为位标记：`1 << 5` 允许 UDP 流量，`1 << 9` 节点离线。
-  static Future<List<FrpNode>> nodeList(String token, {int userLevel = 0}) async {
+  static Future<List<FrpNode>> nodeList(
+    String token, {
+    int userLevel = 0,
+  }) async {
     const int flagUdp = 1 << 5;
     const int flagOffline = 1 << 9;
     final json = await _get('/nodes?token=$token');
@@ -142,15 +150,17 @@ class SakuraFrpApi {
       final vip = m['vip'] as int? ?? 0;
       if (vip > userLevel) return; // 等级不足的节点不展示
       final flag = m['flag'] as int? ?? 0;
-      nodes.add(FrpNode(
-        id: id,
-        name: m['name'] as String? ?? '',
-        hostname: m['host'] as String? ?? '',
-        description: m['description'] as String? ?? '',
-        online: (flag & flagOffline) == 0,
-        vip: vip > 0,
-        udpSupport: (flag & flagUdp) != 0,
-      ));
+      nodes.add(
+        FrpNode(
+          id: id,
+          name: m['name'] as String? ?? '',
+          hostname: m['host'] as String? ?? '',
+          description: m['description'] as String? ?? '',
+          online: (flag & flagOffline) == 0,
+          vip: vip > 0,
+          udpSupport: (flag & flagUdp) != 0,
+        ),
+      );
     });
     return nodes;
   }
@@ -181,8 +191,6 @@ class SakuraFrpApi {
 
   /// 删除隧道（`ids` 为逗号分隔的隧道 ID 字符串，最多 10 条）。
   static Future<void> deleteTunnel(String token, String tunnelId) async {
-    await _post('/tunnel/delete', token, {
-      'ids': tunnelId,
-    });
+    await _post('/tunnel/delete', token, {'ids': tunnelId});
   }
 }

@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:ui';
 
-import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:logging/logging.dart';
 
 import 'config/ddns_store.dart';
@@ -37,25 +37,29 @@ import 'ssh/ssh_controller.dart';
 import 'ssh/ssh_scope.dart';
 
 import 'net/download_engine.dart';
+import 'widgets/miuix_snackbar.dart';
 import 'theme/theme_scope.dart';
 import 'theme/theme_store.dart';
 import 'theme/precipitation_effect_mode.dart';
 import 'widgets/precipitation_overlay.dart';
 
 Future<void> main() async {
-  await runZonedGuarded(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-    // 初始化 .ecpkg 文件关联处理器
-    EcpkgHandler.init();
-    // 初始化软件日志系统（默认关闭，按设置中配置生效）
-    await LogService.instance.init();
-    // 安装全局异常捕获：Flutter 框架错误 + 平台异步错误
-    _setupGlobalErrorHandlers();
-    await _bootstrap();
-  }, (error, stack) {
-    // Zone 末梢兜底：捕获上述处理器未能拦截的异步错误
-    Logger('ZoneGuard').severe('Uncaught async error', error, stack);
-  });
+  await runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      // 初始化 .ecpkg 文件关联处理器
+      EcpkgHandler.init();
+      // 初始化软件日志系统（默认关闭，按设置中配置生效）
+      await LogService.instance.init();
+      // 安装全局异常捕获：Flutter 框架错误 + 平台异步错误
+      _setupGlobalErrorHandlers();
+      await _bootstrap();
+    },
+    (error, stack) {
+      // Zone 末梢兜底：捕获上述处理器未能拦截的异步错误
+      Logger('ZoneGuard').severe('Uncaught async error', error, stack);
+    },
+  );
 }
 
 /// 安装全局异常捕获处理器。
@@ -67,11 +71,9 @@ void _setupGlobalErrorHandlers() {
   // Flutter 框架错误（widget 构建、布局异常等）
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
-    Logger('FlutterError').severe(
-      details.exceptionAsString(),
-      details.exception,
-      details.stack,
-    );
+    Logger(
+      'FlutterError',
+    ).severe(details.exceptionAsString(), details.exception, details.stack);
   };
   // 平台层未捕获的异步错误 / Isolate 错误
   PlatformDispatcher.instance.onError = (error, stack) {
@@ -323,31 +325,26 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                       controller: widget.sshController,
                       child: FrpScope(
                         controller: widget.frpController,
-                        child: DynamicColorBuilder(
-                        builder:
-                            (
-                              ColorScheme? lightDynamic,
-                              ColorScheme? darkDynamic,
-                            ) {
-                              // 当用户开启「跟随系统主题色」且设备支持动态色时使用系统取色。
-                              final useDynamic =
-                                  _useDynamicColor && lightDynamic != null;
-                              final lightScheme = useDynamic
-                                  ? lightDynamic
-                                  : ColorScheme.fromSeed(
-                                      seedColor: _seedColor,
-                                    );
-                              final darkScheme = useDynamic
-                                  ? (darkDynamic ??
-                                        ColorScheme.fromSeed(
-                                          seedColor: _seedColor,
-                                          brightness: Brightness.dark,
-                                        ))
-                                  : ColorScheme.fromSeed(
-                                      seedColor: _seedColor,
-                                      brightness: Brightness.dark,
-                                    );
-
+                        child: MiuixThemeController(
+                          // 配色统一交给 Miuix 的 Monet 动态取色：
+                          // - 关闭「跟随系统主题色」→ keyColor 为用户选定的种子色，
+                          //   由 miuixColorsFromSeed 同步按 HCT 生成整套配色；
+                          // - 开启 → keyColor 置空，Miuix 内部异步读取 Android
+                          //   壁纸取色，就绪前用固定种子占位以避免闪烁。
+                          colorSchemeMode: MiuixColorSchemeMode.monetSystem,
+                          keyColor: _useDynamicColor ? null : _seedColor,
+                          // null 表示跟随系统亮度，对应 ThemeMode.system。
+                          isDark: switch (_themeMode) {
+                            ThemeMode.system => null,
+                            ThemeMode.light => false,
+                            ThemeMode.dark => true,
+                          },
+                          child: Builder(
+                            builder: (context) {
+                              // 明暗由 MiuixThemeController 统一裁决，故这里只给
+                              // MaterialApp 单一 theme（不给 darkTheme/themeMode），
+                              // 避免两套亮度解析打架。
+                              final miuix = MiuixTheme.of(context);
                               return MaterialApp(
                                 title: 'EdgeCube',
                                 localizationsDelegates: [
@@ -358,28 +355,61 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                                 supportedLocales:
                                     widget.localeController.supportedLocales,
                                 locale: widget.localeController.locale,
-                                theme: ThemeData(colorScheme: lightScheme),
-                                darkTheme: ThemeData(colorScheme: darkScheme),
-                                themeMode: _themeMode,
+                                // 无法 Miuix 化的第三方 Material 组件
+                                // （xterm / re_editor / markdown 等）由 Miuix
+                                // 主色派生配色，避免与整体视觉割裂。
+                                theme: ThemeData(
+                                  useMaterial3: true,
+                                  brightness: miuix.brightness,
+                                  colorScheme: ColorScheme.fromSeed(
+                                    seedColor: miuix.colors.primary,
+                                    brightness: miuix.brightness,
+                                  ),
+                                ),
                                 navigatorObservers: [appRouteObserver],
                                 builder: (context, child) {
-                                  final content =
+                                  Widget content =
                                       child ?? const SizedBox.shrink();
-                                  if (!_snowfallEnabled) return content;
-                                  return Stack(
-                                    children: [
-                                      content,
-                                      Positioned.fill(
-                                        child: PrecipitationOverlay(
-                                          mode: _precipitationMode,
-                                        ),
-                                      ),
-                                    ],
+                                  // MiuixScaffold 的根是 MiuixSurface 而非
+                                  // Material。换掉 Scaffold 后页面内文本失去
+                                  // Material 祖先，DefaultTextStyle 会退化成
+                                  // WidgetsApp 的错误样式（黄色双下划线）。
+                                  // 补一层透明 Material 统一兜住，顺带满足
+                                  // MiuixTextField 对 Material 祖先的依赖。
+                                  content = Material(
+                                    type: MaterialType.transparency,
+                                    child: content,
                                   );
+                                  // MiuixText 的取色链是
+                                  // color ?? style.color ?? MiuixContentColor，
+                                  // 而 textStyles 预设不带颜色、MiuixContentColor
+                                  // 缺失时**硬编码回退纯黑**（深色模式下即黑底黑字）。
+                                  // MiuixSurface 之外的位置（对话框内容等）没有这
+                                  // 层，故在应用根部给一个语义正确的兜底值。
+                                  content = MiuixContentColor(
+                                    color: miuix.colors.onBackground,
+                                    child: content,
+                                  );
+                                  if (_snowfallEnabled) {
+                                    content = Stack(
+                                      children: [
+                                        content,
+                                        Positioned.fill(
+                                          child: PrecipitationOverlay(
+                                            mode: _precipitationMode,
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }
+                                  // Snackbar 宿主必须高于 Navigator，否则压入
+                                  // 子路由后消息会被盖住（见 MiuixSnackbarOverlay）。
+                                  return MiuixSnackbarOverlay(child: content);
                                 },
                                 home: const HomeShell(),
                               );
                             },
+                          ),
                         ),
                       ),
                     ),

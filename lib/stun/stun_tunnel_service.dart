@@ -164,7 +164,10 @@ class StunTunnelService extends ChangeNotifier {
     notifyListeners();
 
     _speedTimer?.cancel();
-    _speedTimer = Timer.periodic(const Duration(seconds: 1), (_) => _tickSpeed());
+    _speedTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _tickSpeed(),
+    );
 
     final epoch = ++_epoch;
     _log('隧道启动中，本地目标端口 $targetPort');
@@ -246,8 +249,9 @@ class StunTunnelService extends ChangeNotifier {
 
   /// 依次尝试各 STUN 服务器，返回可用的长连接会话；全部失败返回 null。
   Future<StunTcpSession?> _probe(int epoch) async {
-    final servers =
-        _config.servers.isNotEmpty ? _config.servers : StunClient.defaultServers;
+    final servers = _config.servers.isNotEmpty
+        ? _config.servers
+        : StunClient.defaultServers;
     for (final server in servers) {
       if (!_running || epoch != _epoch) return null;
       _log('正在从 STUN 服务器探测：$server');
@@ -295,7 +299,9 @@ class StunTunnelService extends ChangeNotifier {
       _status = StunTunnelStatus.running;
       _lastError = null;
       notifyListeners();
-      _log('隧道已就绪：tcp://127.0.0.1:$_targetPort → tcp://0.0.0.0:${session.localPort}');
+      _log(
+        '隧道已就绪：tcp://127.0.0.1:$_targetPort → tcp://0.0.0.0:${session.localPort}',
+      );
       _log('公网直连地址：${_publicAddress ?? '-'}');
       return true;
     } catch (e) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../i18n/locale_scope.dart';
@@ -6,14 +7,19 @@ import '../net/download_engine.dart';
 import '../net/download_exceptions.dart';
 import '../net/download_format.dart';
 import '../online/update_service.dart';
+import 'miuix_dialog.dart';
 
-enum _DialogState { pending, downloading, verifyingSha256, verifyingSignature, ready, error }
+enum _DialogState {
+  pending,
+  downloading,
+  verifyingSha256,
+  verifyingSignature,
+  ready,
+  error,
+}
 
 class UpdateDialog extends StatefulWidget {
-  const UpdateDialog({
-    super.key,
-    required this.updateInfo,
-  });
+  const UpdateDialog({super.key, required this.updateInfo});
 
   final AppUpdateInfo updateInfo;
 
@@ -50,7 +56,10 @@ class _UpdateDialogState extends State<UpdateDialog> {
   Future<void> _startDownload() async {
     final link = _selectedLink;
     if (link.isWebPage) {
-      await launchUrl(Uri.parse(link.url), mode: LaunchMode.externalApplication);
+      await launchUrl(
+        Uri.parse(link.url),
+        mode: LaunchMode.externalApplication,
+      );
       if (mounted) Navigator.of(context).pop();
       return;
     }
@@ -132,215 +141,236 @@ class _UpdateDialogState extends State<UpdateDialog> {
     return eta.isEmpty ? speed : '$speed · $eta';
   }
 
+  /// 「转圈 + 文案」的校验中提示行。
+  Widget _verifyingRow(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        children: [
+          const MiuixInfiniteProgressIndicator(size: 16),
+          const SizedBox(width: 12),
+          Expanded(child: MiuixText(label)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final theme = MiuixTheme.of(context);
+    final c = theme.colors;
     final info = _info;
 
-    return AlertDialog(
-      title: Row(
-        children: [
-          Expanded(child: Text(context.tr('update.newVersionFound'))),
-          if (_state == _DialogState.ready)
-            Icon(Icons.check_circle, color: cs.primary, size: 24),
-        ],
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: cs.errorContainer.withAlpha(80),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.warning_amber_rounded, size: 18, color: cs.error),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '如果继续使用旧版本，遇到问题我们不会受理',
-                      style: theme.textTheme.bodySmall?.copyWith(color: cs.onErrorContainer),
-                    ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.5,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DecoratedBox(
+                  decoration: ShapeDecoration(
+                    color: c.errorContainer.withAlpha(80),
+                    shape: const MiuixSquircleBorder(cornerRadius: 12),
                   ),
-                ],
-              ),
-            ),
-            Text(
-              context.tr('update.latestVersion', {'version': '${info.version} (Build ${info.build})'}),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              context.tr('update.releaseNotes'),
-              style: theme.textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              info.releaseNotes,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: cs.onSurfaceVariant,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (_state == _DialogState.pending) ...[
-              Text(
-                context.tr('update.selectSource'),
-                style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-              ),
-              const SizedBox(height: 8),
-              ...List.generate(_links.length, (i) {
-                final link = _links[i];
-                final selected = _selectedLinkIndex == i;
-                return ListTile(
-                  leading: Icon(
-                    selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                    size: 20,
-                    color: selected ? theme.colorScheme.primary : null,
-                  ),
-                  title: Text(link.name),
-                  subtitle: Text(link.extra, style: theme.textTheme.bodySmall),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  enabled: _state == _DialogState.pending,
-                  selected: selected,
-                  onTap: _state == _DialogState.pending
-                      ? () => setState(() => _selectedLinkIndex = i)
-                      : null,
-                );
-              }),
-            ],
-            if (_state == _DialogState.downloading) ...[
-              const SizedBox(height: 12),
-              _progress != null && _progress!.hasTotal
-                  ? TweenAnimationBuilder<double>(
-                      tween: Tween(begin: _progress!.fraction, end: _progress!.fraction),
-                      duration: const Duration(milliseconds: 500),
-                      curve: Curves.linear,
-                      builder: (context, value, _) =>
-                          LinearProgressIndicator(value: value),
-                    )
-                  : const LinearProgressIndicator(),
-              const SizedBox(height: 8),
-              _progress != null
-                  ? TweenAnimationBuilder<double>(
-                      tween: Tween(
-                        begin: _progress!.receivedBytes.toDouble(),
-                        end: _progress!.receivedBytes.toDouble(),
-                      ),
-                      duration: const Duration(milliseconds: 500),
-                      curve: Curves.linear,
-                      builder: (context, bytes, _) {
-                        if (_progress!.hasTotal) {
-                          final frac = bytes / _progress!.totalBytes!;
-                          final pct = (frac * 100).toStringAsFixed(1);
-                          return Text(
-                            '$pct% · ${formatBytes(bytes.round())} / ${formatBytes(_progress!.totalBytes!)}',
-                            style: theme.textTheme.bodySmall,
-                          );
-                        }
-                        return Text(
-                          formatBytes(bytes.round()),
-                          style: theme.textTheme.bodySmall,
-                        );
-                      },
-                    )
-                  : Text(
-                      context.tr('update.downloading'),
-                      style: theme.textTheme.bodySmall,
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
+                      children: [
+                        MiuixIcon(
+                          icon: Icons.warning_amber_rounded,
+                          size: 18,
+                          tint: c.error,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: MiuixText(
+                            '如果继续使用旧版本，遇到问题我们不会受理',
+                            style: theme.textStyles.footnote1,
+                            color: c.onErrorContainer,
+                          ),
+                        ),
+                      ],
                     ),
-              if (_progress != null && _progress!.speedBytesPerSec > 0) ...[
-                const SizedBox(height: 2),
-                Text(
-                  _speedLine(_progress!),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
                   ),
                 ),
+                const SizedBox(height: 12),
+                MiuixText(
+                  context.tr('update.latestVersion', {
+                    'version': '${info.version} (Build ${info.build})',
+                  }),
+                ),
+                const SizedBox(height: 12),
+                MiuixText(
+                  context.tr('update.releaseNotes'),
+                  style: theme.textStyles.footnote2,
+                  color: c.onSurfaceVariantSummary,
+                ),
+                const SizedBox(height: 4),
+                MiuixText(
+                  info.releaseNotes,
+                  style: theme.textStyles.footnote1,
+                  color: c.onSurfaceVariantSummary,
+                  height: 1.5,
+                ),
+                const SizedBox(height: 12),
+                if (_state == _DialogState.pending) ...[
+                  MiuixText(
+                    context.tr('update.selectSource'),
+                    style: theme.textStyles.footnote1,
+                    color: c.onSurfaceVariantSummary,
+                  ),
+                  const SizedBox(height: 8),
+                  ...List.generate(_links.length, (i) {
+                    final link = _links[i];
+                    final selected = _selectedLinkIndex == i;
+                    return MiuixBasicComponent(
+                      title: link.name,
+                      summary: link.extra,
+                      insideMargin: const EdgeInsets.symmetric(vertical: 6),
+                      startAction: Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: MiuixRadioButton(
+                          selected: selected,
+                          onChanged: (_) =>
+                              setState(() => _selectedLinkIndex = i),
+                        ),
+                      ),
+                      onClick: () => setState(() => _selectedLinkIndex = i),
+                    );
+                  }),
+                ],
+                if (_state == _DialogState.downloading) ...[
+                  const SizedBox(height: 12),
+                  _progress != null && _progress!.hasTotal
+                      ? TweenAnimationBuilder<double>(
+                          tween: Tween(
+                            begin: _progress!.fraction,
+                            end: _progress!.fraction,
+                          ),
+                          duration: const Duration(milliseconds: 500),
+                          curve: Curves.linear,
+                          builder: (context, value, _) =>
+                              MiuixLinearProgressIndicator(progress: value),
+                        )
+                      : const MiuixLinearProgressIndicator(),
+                  const SizedBox(height: 8),
+                  _progress != null
+                      ? TweenAnimationBuilder<double>(
+                          tween: Tween(
+                            begin: _progress!.receivedBytes.toDouble(),
+                            end: _progress!.receivedBytes.toDouble(),
+                          ),
+                          duration: const Duration(milliseconds: 500),
+                          curve: Curves.linear,
+                          builder: (context, bytes, _) {
+                            if (_progress!.hasTotal) {
+                              final frac = bytes / _progress!.totalBytes!;
+                              final pct = (frac * 100).toStringAsFixed(1);
+                              return MiuixText(
+                                '$pct% · ${formatBytes(bytes.round())} / ${formatBytes(_progress!.totalBytes!)}',
+                                style: theme.textStyles.footnote1,
+                              );
+                            }
+                            return MiuixText(
+                              formatBytes(bytes.round()),
+                              style: theme.textStyles.footnote1,
+                            );
+                          },
+                        )
+                      : MiuixText(
+                          context.tr('update.downloading'),
+                          style: theme.textStyles.footnote1,
+                        ),
+                  if (_progress != null && _progress!.speedBytesPerSec > 0) ...[
+                    const SizedBox(height: 2),
+                    MiuixText(
+                      _speedLine(_progress!),
+                      style: theme.textStyles.footnote1,
+                      color: c.onSurfaceVariantSummary,
+                    ),
+                  ],
+                ],
+                if (_state == _DialogState.verifyingSha256)
+                  _verifyingRow(context.tr('update.verifyingSha256')),
+                if (_state == _DialogState.verifyingSignature)
+                  _verifyingRow(context.tr('update.verifyingSignature')),
+                if (_state == _DialogState.ready) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      MiuixIcon(
+                        icon: Icons.check_circle,
+                        size: 18,
+                        tint: c.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: MiuixText(
+                          context.tr('update.verificationPassed'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  MiuixText(_error!, color: c.error),
+                ],
               ],
-            ],
-            if (_state == _DialogState.verifyingSha256) ...[
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  SizedBox(
-                    width: 16, height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(context.tr('update.verifyingSha256')),
-                ],
-              ),
-            ],
-            if (_state == _DialogState.verifyingSignature) ...[
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  SizedBox(
-                    width: 16, height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(context.tr('update.verifyingSignature')),
-                ],
-              ),
-            ],
-            if (_state == _DialogState.ready) ...[
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Icon(Icons.check_circle, size: 18, color: Colors.green),
-                  const SizedBox(width: 8),
-                  Text(context.tr('update.verificationPassed')),
-                ],
-              ),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(_error!, style: TextStyle(color: cs.error)),
-            ],
-          ],
+            ),
+          ),
         ),
-      ),
-      actions: [
-        if (_state == _DialogState.pending && _selectedLink.isWebPage) ...[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(context.tr('update.later')),
-          ),
-          FilledButton.icon(
-            icon: const Icon(Icons.open_in_new, size: 18),
-            onPressed: _startDownload,
-            label: Text(context.tr('update.openInBrowser')),
-          ),
-        ],
-        if (_state == _DialogState.pending && _selectedLink.isDirect) ...[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(context.tr('update.later')),
-          ),
-          FilledButton(
-            onPressed: _startDownload,
-            child: Text(context.tr('update.downloadAndInstall')),
-          ),
-        ],
-        if (_state == _DialogState.error)
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(context.tr('common.close')),
-          ),
-        if (_state == _DialogState.ready)
-          FilledButton(
-            onPressed: _install,
-            child: Text(context.tr('update.install')),
-          ),
+        const SizedBox(height: 20),
+        MiuixDialogActions(children: _actions(context)),
       ],
     );
+  }
+
+  List<Widget> _actions(BuildContext context) {
+    switch (_state) {
+      case _DialogState.pending:
+        return [
+          MiuixTextButton(
+            context.tr('update.later'),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          MiuixButton(
+            onPressed: _startDownload,
+            colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+            child: MiuixText(
+              _selectedLink.isWebPage
+                  ? context.tr('update.openInBrowser')
+                  : context.tr('update.downloadAndInstall'),
+            ),
+          ),
+        ];
+      case _DialogState.error:
+        return [
+          MiuixTextButton(
+            context.tr('common.close'),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ];
+      case _DialogState.ready:
+        return [
+          MiuixButton(
+            onPressed: _install,
+            colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+            child: MiuixText(context.tr('update.install')),
+          ),
+        ];
+      // 下载与校验途中不提供任何按钮，避免中途打断。
+      case _DialogState.downloading:
+      case _DialogState.verifyingSha256:
+      case _DialogState.verifyingSignature:
+        return const [];
+    }
   }
 }

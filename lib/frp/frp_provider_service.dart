@@ -226,18 +226,14 @@ class FrpProviderService {
     final json = await FrpTokenStore.readAccount(provider);
     if (json == null || json.isEmpty) return null;
     try {
-      return FrpAccount.fromJson(
-          jsonDecode(json) as Map<String, dynamic>);
+      return FrpAccount.fromJson(jsonDecode(json) as Map<String, dynamic>);
     } catch (_) {
       return null;
     }
   }
 
   /// 缓存账号信息（登录成功后调用，用于下次直接进入操作页）。
-  static Future<void> saveAccount(
-    FrpProvider provider,
-    FrpAccount account,
-  ) =>
+  static Future<void> saveAccount(FrpProvider provider, FrpAccount account) =>
       FrpTokenStore.saveAccount(provider, account.toJson());
 
   /// 退出登录（清除 token 与账号缓存）。

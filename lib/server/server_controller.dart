@@ -125,7 +125,10 @@ class CrashData {
 
       if (trimmed.contains('Could not find or load main class')) {
         final cls = _after(trimmed, 'Could not find or load main class');
-        return ('server.error.mainClassNotFound', 'Could not find or load main class $cls');
+        return (
+          'server.error.mainClassNotFound',
+          'Could not find or load main class $cls',
+        );
       }
 
       if (trimmed.contains('LinkageError')) {
@@ -194,7 +197,8 @@ class ResolvedDefaultTunnel {
 ///
 /// 单活动进程模型：同一时刻只跟踪一个正在运行的服务端，[runningInstanceId]
 /// 标识它属于哪个实例。日志为所有页面共享，故本控制器置于全局 Scope。
-class ServerController extends ChangeNotifier implements TerminalKeysController {
+class ServerController extends ChangeNotifier
+    implements TerminalKeysController {
   /// 软件日志（文件 + logcat），记录服务端启停与崩溃等关键事件。
   static final Logger _logger = Logger('ServerController');
 
@@ -520,8 +524,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     try {
       final propsFile = File(p.join(dir, 'server.properties'));
       if (await propsFile.exists()) {
-        final props =
-            ServerProperties.parse(await propsFile.readAsString());
+        final props = ServerProperties.parse(await propsFile.readAsString());
         return props.getInt('server-port') ?? 25565;
       }
       final pnxFile = File(p.join(dir, 'pnx.yml'));
@@ -552,8 +555,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     try {
       final propsFile = File(p.join(dir, 'server.properties'));
       if (await propsFile.exists()) {
-        final props =
-            ServerProperties.parse(await propsFile.readAsString());
+        final props = ServerProperties.parse(await propsFile.readAsString());
         return props.getBool('online-mode') ??
             props.getBool('xbox-auth') ??
             true;
@@ -732,10 +734,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
         notifyListeners();
       }
     } catch (e) {
-      _logger.severe(
-        'Server start failed: $instanceName ($instanceId)',
-        e,
-      );
+      _logger.severe('Server start failed: $instanceName ($instanceId)', e);
       _notice(tr('server.notice.startFailed', {'error': '$e'}));
       _status = ServerStatus.stopped;
       _instanceId = null;
@@ -1444,16 +1443,19 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     // 并行加载：服务端端口、自定义外网端口、映射协议。
     final extResolver = upnpExternalPortResolver;
     final protoResolver = upnpProtocolResolver;
-    final extFuture =
-        extResolver != null ? extResolver() : Future<int?>.value(null);
-    final protoFuture =
-        protoResolver != null ? protoResolver() : Future.value('tcp');
+    final extFuture = extResolver != null
+        ? extResolver()
+        : Future<int?>.value(null);
+    final protoFuture = protoResolver != null
+        ? protoResolver()
+        : Future.value('tcp');
 
     Future.wait([readServerPort(), extFuture, protoFuture]).then((results) {
       final internalPort = results[0] as int? ?? 25565;
       final externalPort = results[1] as int?;
-      final protocol =
-          (results[2] as String) == 'udp' ? PortType.udp : PortType.tcp;
+      final protocol = (results[2] as String) == 'udp'
+          ? PortType.udp
+          : PortType.tcp;
 
       _upnp
           .openPort(
@@ -1462,15 +1464,16 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
             protocol: protocol,
           )
           .then((port) async {
-        if (port != null) {
-          _notice(tr('server.notice.upnpMapped', {'port': '$port'}));
-          _upnpExternalIp = await _upnp.getExternalIp();
-          _upnpIsCgnat = _upnpExternalIp != null && _isPrivateIp(_upnpExternalIp!);
-          _upnpSucceeded = true;
-          _cancelUpnpTimer();
-          notifyListeners();
-        }
-      });
+            if (port != null) {
+              _notice(tr('server.notice.upnpMapped', {'port': '$port'}));
+              _upnpExternalIp = await _upnp.getExternalIp();
+              _upnpIsCgnat =
+                  _upnpExternalIp != null && _isPrivateIp(_upnpExternalIp!);
+              _upnpSucceeded = true;
+              _cancelUpnpTimer();
+              notifyListeners();
+            }
+          });
     });
   }
 
@@ -1549,34 +1552,41 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     _ddns
         .update(config, ipv4Fallback: _upnp.getExternalIp)
         .then((result) {
-      // 期间 DDNS 已停止或重启（代次不符），丢弃过期结果。
-      if (epoch != _ddnsEpoch) return;
-      if (result.success) {
-        _ddnsSucceeded = true;
-        _ddnsError = null;
-        if (!result.unchanged) {
-          final ip = [
-            result.ipv4,
-            result.ipv6,
-          ].whereType<String>().join(' / ');
-          _notice(tr('server.notice.ddnsUpdated', {
-            'domain': _ddnsDomain ?? '',
-            'ip': ip,
-          }));
-        } else if (notify) {
-          _notice(tr('server.notice.ddnsUnchanged', {
-            'domain': _ddnsDomain ?? '',
-          }));
-        }
-      } else {
-        _ddnsSucceeded = false;
-        _ddnsError = result.error;
-        _notice(tr('server.notice.ddnsFailed', {'error': result.error ?? ''}));
-      }
-      notifyListeners();
-    }).whenComplete(() {
-      _ddnsUpdating = false;
-    });
+          // 期间 DDNS 已停止或重启（代次不符），丢弃过期结果。
+          if (epoch != _ddnsEpoch) return;
+          if (result.success) {
+            _ddnsSucceeded = true;
+            _ddnsError = null;
+            if (!result.unchanged) {
+              final ip = [
+                result.ipv4,
+                result.ipv6,
+              ].whereType<String>().join(' / ');
+              _notice(
+                tr('server.notice.ddnsUpdated', {
+                  'domain': _ddnsDomain ?? '',
+                  'ip': ip,
+                }),
+              );
+            } else if (notify) {
+              _notice(
+                tr('server.notice.ddnsUnchanged', {
+                  'domain': _ddnsDomain ?? '',
+                }),
+              );
+            }
+          } else {
+            _ddnsSucceeded = false;
+            _ddnsError = result.error;
+            _notice(
+              tr('server.notice.ddnsFailed', {'error': result.error ?? ''}),
+            );
+          }
+          notifyListeners();
+        })
+        .whenComplete(() {
+          _ddnsUpdating = false;
+        });
   }
 
   /// 停止 DDNS 周期更新。
@@ -1975,9 +1985,7 @@ class ServerController extends ChangeNotifier implements TerminalKeysController 
     String? runtimeId,
   }) async {
     if (_tunnelActive) {
-      throw StateError(
-        _standaloneTunnel ? 'standalone-active' : 'auto-active',
-      );
+      throw StateError(_standaloneTunnel ? 'standalone-active' : 'auto-active');
     }
     _tunnelActive = true;
     _tunnelRunning = false;

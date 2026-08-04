@@ -64,7 +64,8 @@ JavaEnv? resolveJavaEnv({
 
   JavaEnv? nativeEnv() {
     if (nativeJreIds.isEmpty) return null;
-    final id = (preferredNativeJreId != null &&
+    final id =
+        (preferredNativeJreId != null &&
             nativeJreIds.contains(preferredNativeJreId))
         ? preferredNativeJreId
         : nativeJreIds.first;

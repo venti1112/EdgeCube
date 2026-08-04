@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_preference.dart';
 
 class VersionSelectStep extends StatelessWidget {
   const VersionSelectStep({
@@ -22,41 +24,20 @@ class VersionSelectStep extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: MiuixInfiniteProgressIndicator());
     }
     if (error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.error_outline,
-                size: 48,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                error!,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: onRetry,
-                child: Text(context.tr('common.retry')),
-              ),
-            ],
-          ),
-        ),
+      return EcErrorRetry(
+        message: error!,
+        retryLabel: context.tr('common.retry'),
+        onRetry: onRetry,
       );
     }
     if (versions.isEmpty) {
       return Center(
-        child: Text(
+        child: MiuixText(
           context.tr('instance.noVersionsAvailable'),
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+          color: MiuixTheme.of(context).colors.onSurfaceVariantSummary,
         ),
       );
     }
@@ -66,13 +47,10 @@ class VersionSelectStep extends StatelessWidget {
       itemBuilder: (context, index) {
         final version = versions[index];
         final subtitle = subtitles?[version];
-        return Card(
-          child: ListTile(
-            title: Text(version),
-            subtitle: subtitle != null ? Text(subtitle) : null,
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => onSelect(version),
-          ),
+        return EcCardTile(
+          title: version,
+          summary: subtitle,
+          onTap: () => onSelect(version),
         );
       },
     );

@@ -43,21 +43,21 @@ class FrpAccount {
 
   /// 序列化为 JSON（用于本地缓存）。
   Map<String, dynamic> toJson() => {
-        'username': username,
-        'group': group,
-        'usedTunnels': usedTunnels,
-        'maxTunnels': maxTunnels,
-        'frpToken': frpToken,
-      };
+    'username': username,
+    'group': group,
+    'usedTunnels': usedTunnels,
+    'maxTunnels': maxTunnels,
+    'frpToken': frpToken,
+  };
 
   /// 从缓存的 JSON 反序列化。
   factory FrpAccount.fromJson(Map<String, dynamic> json) => FrpAccount(
-        username: json['username'] as String? ?? '',
-        group: json['group'] as String? ?? '',
-        usedTunnels: json['usedTunnels'] as int?,
-        maxTunnels: json['maxTunnels'] as int?,
-        frpToken: json['frpToken'] as String?,
-      );
+    username: json['username'] as String? ?? '',
+    group: json['group'] as String? ?? '',
+    usedTunnels: json['usedTunnels'] as int?,
+    maxTunnels: json['maxTunnels'] as int?,
+    frpToken: json['frpToken'] as String?,
+  );
 }
 
 /// 供应商节点。
@@ -189,49 +189,49 @@ class SavedFrpTunnel {
   }
 
   SavedFrpTunnel copyWith({String? remoteAddress}) => SavedFrpTunnel(
-        localId: localId,
-        provider: provider,
-        name: name,
-        remoteTunnelId: remoteTunnelId,
-        nodeId: nodeId,
-        nodeName: nodeName,
-        type: type,
-        localIp: localIp,
-        localPort: localPort,
-        remotePort: remotePort,
-        remoteAddress: remoteAddress ?? this.remoteAddress,
-        customToml: customToml,
-      );
+    localId: localId,
+    provider: provider,
+    name: name,
+    remoteTunnelId: remoteTunnelId,
+    nodeId: nodeId,
+    nodeName: nodeName,
+    type: type,
+    localIp: localIp,
+    localPort: localPort,
+    remotePort: remotePort,
+    remoteAddress: remoteAddress ?? this.remoteAddress,
+    customToml: customToml,
+  );
 
   Map<String, dynamic> toJson() => {
-        'localId': localId,
-        'provider': provider.key,
-        'name': name,
-        'remoteTunnelId': remoteTunnelId,
-        'nodeId': nodeId,
-        'nodeName': nodeName,
-        'type': type,
-        'localIp': localIp,
-        'localPort': localPort,
-        if (remotePort != null) 'remotePort': remotePort,
-        'remoteAddress': remoteAddress,
-        if (customToml.isNotEmpty) 'customToml': customToml,
-      };
+    'localId': localId,
+    'provider': provider.key,
+    'name': name,
+    'remoteTunnelId': remoteTunnelId,
+    'nodeId': nodeId,
+    'nodeName': nodeName,
+    'type': type,
+    'localIp': localIp,
+    'localPort': localPort,
+    if (remotePort != null) 'remotePort': remotePort,
+    'remoteAddress': remoteAddress,
+    if (customToml.isNotEmpty) 'customToml': customToml,
+  };
 
   factory SavedFrpTunnel.fromJson(Map<String, dynamic> json) => SavedFrpTunnel(
-        localId: json['localId'] as String? ?? '',
-        provider: FrpProvider.fromKey(json['provider'] as String?),
-        name: json['name'] as String? ?? '',
-        remoteTunnelId: json['remoteTunnelId'] as String? ?? '',
-        nodeId: json['nodeId'] as String? ?? '',
-        nodeName: json['nodeName'] as String? ?? '',
-        type: json['type'] as String? ?? 'tcp',
-        localIp: json['localIp'] as String? ?? '127.0.0.1',
-        localPort: (json['localPort'] as int?) ?? 25565,
-        remotePort: json['remotePort'] as int?,
-        remoteAddress: json['remoteAddress'] as String? ?? '',
-        customToml: json['customToml'] as String? ?? '',
-      );
+    localId: json['localId'] as String? ?? '',
+    provider: FrpProvider.fromKey(json['provider'] as String?),
+    name: json['name'] as String? ?? '',
+    remoteTunnelId: json['remoteTunnelId'] as String? ?? '',
+    nodeId: json['nodeId'] as String? ?? '',
+    nodeName: json['nodeName'] as String? ?? '',
+    type: json['type'] as String? ?? 'tcp',
+    localIp: json['localIp'] as String? ?? '127.0.0.1',
+    localPort: (json['localPort'] as int?) ?? 25565,
+    remotePort: json['remotePort'] as int?,
+    remoteAddress: json['remoteAddress'] as String? ?? '',
+    customToml: json['customToml'] as String? ?? '',
+  );
 }
 
 /// 浏览器授权登录会话（createBrowserLogin 返回，pollBrowserLogin 回传）。

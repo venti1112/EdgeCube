@@ -1,12 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../files/archive_service.dart';
 import '../i18n/locale_scope.dart';
 import '../net/download_engine.dart';
 import '../net/download_exceptions.dart';
+import '../widgets/ec_preference.dart';
 import 'download_info.dart';
 import 'download_info_service.dart';
 import 'download_runner.dart';
@@ -79,8 +81,9 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
       } on DuplicateInstanceNameException {
         if (!mounted) return;
         setState(() {
-          _downloadError = context.tr('instance.duplicateName',
-              {'name': _session.name});
+          _downloadError = context.tr('instance.duplicateName', {
+            'name': _session.name,
+          });
         });
         return;
       }
@@ -114,13 +117,18 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
     final version = _session.selectedVersion!;
     DownloadInfo info;
     try {
-      info = await DownloadRunner.tryMirrorDownloadInfo(_serverType, version) ??
+      info =
+          await DownloadRunner.tryMirrorDownloadInfo(_serverType, version) ??
           await DownloadRunner.fetchDownloadInfo(
-              _serverType, version, _session.vanillaVersionUrls);
+            _serverType,
+            version,
+            _session.vanillaVersionUrls,
+          );
     } catch (e) {
       if (!mounted) return;
-      _setDownloadError(context.tr('instance.fetchDownloadInfoFailed',
-          {'error': '$e'}));
+      _setDownloadError(
+        context.tr('instance.fetchDownloadInfoFailed', {'error': '$e'}),
+      );
       return;
     }
 
@@ -140,14 +148,20 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
   Future<void> _downloadFabric() async {
     DownloadInfo info;
     try {
-      info = await DownloadRunner.tryMirrorDownloadInfo(
-              'fabric', _session.selectedMcVersion!) ??
+      info =
+          await DownloadRunner.tryMirrorDownloadInfo(
+            'fabric',
+            _session.selectedMcVersion!,
+          ) ??
           await DownloadRunner.fetchFabricDownloadInfo(
-              _session.selectedMcVersion!, _session.selectedLoaderVersion!);
+            _session.selectedMcVersion!,
+            _session.selectedLoaderVersion!,
+          );
     } catch (e) {
       if (!mounted) return;
-      _setDownloadError(context.tr('instance.fetchDownloadInfoFailed',
-          {'error': '$e'}));
+      _setDownloadError(
+        context.tr('instance.fetchDownloadInfoFailed', {'error': '$e'}),
+      );
       return;
     }
     await _download(info, 'server.jar');
@@ -156,12 +170,14 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
   Future<void> _downloadBungeeCord() async {
     DownloadInfo info;
     try {
-      info = await DownloadRunner.tryMirrorDownloadInfo('bungeecord', 'latest') ??
+      info =
+          await DownloadRunner.tryMirrorDownloadInfo('bungeecord', 'latest') ??
           await DownloadInfoService.fetchBungeeCordDownloadInfo();
     } catch (e) {
       if (!mounted) return;
-      _setDownloadError(context.tr('instance.fetchDownloadInfoFailed',
-          {'error': '$e'}));
+      _setDownloadError(
+        context.tr('instance.fetchDownloadInfoFailed', {'error': '$e'}),
+      );
       return;
     }
     await _download(info, 'bungeecord.jar');
@@ -186,8 +202,11 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
       if (mounted) finishDownloadFlow(context);
     } on DownloadHttpException catch (e) {
       if (!mounted) return;
-      _setDownloadError(context.tr('instance.downloadFailedHttp',
-          {'status': '${e.statusCode}'}));
+      _setDownloadError(
+        context.tr('instance.downloadFailedHttp', {
+          'status': '${e.statusCode}',
+        }),
+      );
     } on HashMismatchException {
       if (!mounted) return;
       _setDownloadError(context.tr('instance.hashVerifyFailed'));
@@ -205,8 +224,9 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
       info = await DownloadInfoService.fetchSurvivalcraftDownloadInfo(version);
     } catch (e) {
       if (!mounted) return;
-      _setDownloadError(context.tr('instance.fetchDownloadInfoFailed',
-          {'error': '$e'}));
+      _setDownloadError(
+        context.tr('instance.fetchDownloadInfoFailed', {'error': '$e'}),
+      );
       return;
     }
 
@@ -226,8 +246,11 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
       );
     } on DownloadHttpError catch (e) {
       if (!mounted) return;
-      _setDownloadError(context.tr('instance.downloadFailedHttp',
-          {'status': '${e.statusCode}'}));
+      _setDownloadError(
+        context.tr('instance.downloadFailedHttp', {
+          'status': '${e.statusCode}',
+        }),
+      );
       return;
     } catch (e) {
       if (!mounted) return;
@@ -275,8 +298,9 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
       setState(() {
         _extracting = false;
         _extractProgress = null;
-        _extractError =
-            context.tr('instance.extractArchiveFailed', {'error': '$e'});
+        _extractError = context.tr('instance.extractArchiveFailed', {
+          'error': '$e',
+        });
       });
     }
   }
@@ -305,29 +329,31 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _extracting
-              ? context.tr('instance.titleImportArchive')
-              : context.tr('instance.titleDownloading'),
-        ),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: _extracting
+            ? context.tr('instance.titleImportArchive')
+            : context.tr('instance.titleDownloading'),
+        navigationIcon: const EcBackButton(),
       ),
-      body: SafeArea(
-        child: _extracting || _extractError != null
-            ? ExtractingArchiveStep(
-                extracting: _extracting,
-                progress: _extractProgress,
-                error: _extractError,
-                onCancel: _reselect,
-                onReselect: _reselect,
-              )
-            : DownloadingStep(
-                progress: _downloadProgress,
-                error: _downloadError,
-                onRetry: _reselect,
-                onCancel: _reselect,
-              ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: _extracting || _extractError != null
+              ? ExtractingArchiveStep(
+                  extracting: _extracting,
+                  progress: _extractProgress,
+                  error: _extractError,
+                  onCancel: _reselect,
+                  onReselect: _reselect,
+                )
+              : DownloadingStep(
+                  progress: _downloadProgress,
+                  error: _downloadError,
+                  onRetry: _reselect,
+                  onCancel: _reselect,
+                ),
+        ),
       ),
     );
   }

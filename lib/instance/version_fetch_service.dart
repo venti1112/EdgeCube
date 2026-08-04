@@ -42,9 +42,7 @@ class VersionFetchService {
       req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
-      final versionRegex = RegExp(
-        r'<h4>Version</h4>\s*<h2>([\d.]+)</h2>',
-      );
+      final versionRegex = RegExp(r'<h4>Version</h4>\s*<h2>([\d.]+)</h2>');
       return versionRegex.allMatches(body).map((m) => m.group(1)!).toList();
     } finally {
       client.close();
@@ -60,9 +58,7 @@ class VersionFetchService {
       req.headers.set('User-Agent', await CloudHeaders.userAgent);
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
-      final versionRegex = RegExp(
-        r'<h4>Version</h4>\s*<h2>([\d.]+)</h2>',
-      );
+      final versionRegex = RegExp(r'<h4>Version</h4>\s*<h2>([\d.]+)</h2>');
       return versionRegex.allMatches(body).map((m) => m.group(1)!).toList();
     } finally {
       client.close();
@@ -105,7 +101,11 @@ class VersionFetchService {
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
       final versions = json['versions'] as List<dynamic>;
-      return versions.map<String>((v) => v as String).toList().reversed.toList();
+      return versions
+          .map<String>((v) => v as String)
+          .toList()
+          .reversed
+          .toList();
     } finally {
       client.close();
     }
@@ -248,17 +248,14 @@ class VersionFetchService {
     final client = HttpClient();
     try {
       final req = await client.getUrl(
-        Uri.parse(
-          'https://meta.fabricmc.net/v2/versions/loader/$mcVersion',
-        ),
+        Uri.parse('https://meta.fabricmc.net/v2/versions/loader/$mcVersion'),
       );
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as List<dynamic>;
       return json
           .map<String>(
-            (v) =>
-                (v['loader'] as Map<String, dynamic>)['version'] as String,
+            (v) => (v['loader'] as Map<String, dynamic>)['version'] as String,
           )
           .toList();
     } finally {
@@ -345,7 +342,7 @@ class VersionFetchService {
   /// 从 GitHub Releases 获取 PowerNukkitX 版本列表（tag_name），
   /// 同时从 release body 中提取对应的 MCBE 版本号返回。
   static Future<({List<String> versions, Map<String, String> mcVersions})>
-      fetchPowernukkitxVersions() async {
+  fetchPowernukkitxVersions() async {
     final client = HttpClient();
     try {
       final req = await client.getUrl(
@@ -384,7 +381,7 @@ class VersionFetchService {
   ///
   /// 数据源：https://github.com/pmmp/update.pmmp.io/tree/master/channels
   static Future<({List<String> versions, Map<String, String> mcpeVersions})>
-      fetchPocketmineVersions() async {
+  fetchPocketmineVersions() async {
     final client = HttpClient();
     try {
       final req = await client.getUrl(
@@ -424,8 +421,9 @@ class VersionFetchService {
       // 并发获取每个版本的 mcpe_version。
       final mcpeVersions = <String, String>{};
       await Future.wait(
-        versions
-            .map((v) => _fetchPocketmineMcpeVersion(client, v, mcpeVersions)),
+        versions.map(
+          (v) => _fetchPocketmineMcpeVersion(client, v, mcpeVersions),
+        ),
       );
 
       return (versions: versions, mcpeVersions: mcpeVersions);

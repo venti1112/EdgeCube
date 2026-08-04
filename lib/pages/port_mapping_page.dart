@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart';
 
 import '../config/ddns_store.dart';
@@ -15,6 +16,10 @@ import '../server/runtime_service.dart';
 import '../server/server_scope.dart';
 import '../stun/stun_tunnel_service.dart';
 import '../tunnel/tunnel_service.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/ec_text_field.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/miuix_snackbar.dart';
 import 'frp/frp_tunnel_list_page.dart';
 import 'runtime_page.dart';
 
@@ -152,10 +157,9 @@ class _PortMappingPageState extends State<PortMappingPage> {
       }
       _savedTunnels = savedTunnels;
       // 已保存的默认隧道被删除时按未设置处理（同 frpcRuntimeId 校验模式）。
-      _defaultTunnelId =
-          savedTunnels.any((t) => t.localId == defaultTunnelId)
-              ? defaultTunnelId
-              : null;
+      _defaultTunnelId = savedTunnels.any((t) => t.localId == defaultTunnelId)
+          ? defaultTunnelId
+          : null;
     });
   }
 
@@ -221,12 +225,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
     setState(() => _ddnsConfig = config);
     // 运行中则重启 DDNS 周期任务以应用新配置。
     ServerScope.of(context).applyDdnsConfig();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(context.tr('portMapping.saved')),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    showMiuixSnackbar(context.tr('portMapping.saved'));
   }
 
   /// 保存配置后立即强制推送一次解析记录，用于验证凭据与域名配置。
@@ -238,24 +237,15 @@ class _PortMappingPageState extends State<PortMappingPage> {
       _ddnsConfig = config;
       _ddnsUpdating = true;
     });
-    final messenger = ScaffoldMessenger.of(context);
     final trans = LocaleScope.of(context).translations;
     try {
       final result = await ServerScope.of(context).updateDdnsOnce();
       if (!mounted) return;
       if (result.success) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              trans.get('portMapping.ddnsUpdateSuccess', {
-                'ip': [
-                  result.ipv4,
-                  result.ipv6,
-                ].whereType<String>().join(' / '),
-              }),
-            ),
-            duration: const Duration(seconds: 3),
-          ),
+        showMiuixSnackbar(
+          trans.get('portMapping.ddnsUpdateSuccess', {
+            'ip': [result.ipv4, result.ipv6].whereType<String>().join(' / '),
+          }),
         );
       } else {
         showErrorDialog(
@@ -283,8 +273,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
       localPort: (port != null && port > 0 && port < 65536) ? port : null,
       clearLocalPort: port == null || port <= 0 || port >= 65536,
       maxConnections: (maxConn == null || maxConn < 1) ? 128 : maxConn,
-      keepAliveSeconds:
-          (keepAlive == null || keepAlive < 5) ? 20 : keepAlive,
+      keepAliveSeconds: (keepAlive == null || keepAlive < 5) ? 20 : keepAlive,
     );
   }
 
@@ -319,12 +308,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
     });
     // 运行中则重建隧道以应用新配置（公网端口会变化）。
     ServerScope.of(context).applyStunConfig();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(context.tr('portMapping.saved')),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    showMiuixSnackbar(context.tr('portMapping.saved'));
   }
 
   void _subscribeStunLog() {
@@ -350,24 +334,13 @@ class _PortMappingPageState extends State<PortMappingPage> {
   /// 复制公网直连地址到剪贴板。
   Future<void> _copyStunAddress() async {
     final address = _stun.publicAddress?.toString();
-    final messenger = ScaffoldMessenger.of(context);
     final trans = LocaleScope.of(context).translations;
     if (address == null) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(trans.get('portMapping.stunNoAddress')),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      showMiuixSnackbar(trans.get('portMapping.stunNoAddress'));
       return;
     }
     await Clipboard.setData(ClipboardData(text: address));
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(trans.get('portMapping.stunCopied')),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    showMiuixSnackbar(trans.get('portMapping.stunCopied'));
   }
 
   Future<void> _setTunnel(bool value) async {
@@ -410,22 +383,12 @@ class _PortMappingPageState extends State<PortMappingPage> {
   /// 未创建任何映射隧道，提示用户前往「映射隧道」页新增。
   Future<void> _showTunnelRequiredDialog() async {
     final tr = LocaleScope.of(context).translations;
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr.get('portMapping.noTunnelTitle')),
-        content: Text(tr.get('portMapping.noTunnelMessage')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(tr.get('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(tr.get('portMapping.manageTunnels')),
-          ),
-        ],
-      ),
+    final go = await showMiuixConfirm(
+      context,
+      title: tr.get('portMapping.noTunnelTitle'),
+      message: tr.get('portMapping.noTunnelMessage'),
+      cancelLabel: tr.get('common.cancel'),
+      confirmLabel: tr.get('portMapping.manageTunnels'),
     );
     if (go == true && mounted) _openTunnelManager();
   }
@@ -433,22 +396,12 @@ class _PortMappingPageState extends State<PortMappingPage> {
   /// 未安装 frpc 运行时，提示用户前往「运行环境」页导入。
   Future<void> _showFrpcRequiredDialog() async {
     final tr = LocaleScope.of(context).translations;
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr.get('server.runtimeRequiredTitle')),
-        content: Text(tr.get('portMapping.frpcRequiredContent')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(tr.get('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(tr.get('server.runtimeRequiredAction')),
-          ),
-        ],
-      ),
+    final go = await showMiuixConfirm(
+      context,
+      title: tr.get('server.runtimeRequiredTitle'),
+      message: tr.get('portMapping.frpcRequiredContent'),
+      cancelLabel: tr.get('common.cancel'),
+      confirmLabel: tr.get('server.runtimeRequiredAction'),
     );
     if (go == true && mounted) {
       await Navigator.of(
@@ -463,9 +416,9 @@ class _PortMappingPageState extends State<PortMappingPage> {
   /// 进入「映射隧道」子页面：登录各映射平台、管理与运行隧道。
   /// 返回后重载，同步隧道增删对默认隧道下拉框的影响。
   Future<void> _openTunnelManager() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const FrpTunnelListPage()),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const FrpTunnelListPage()));
     if (mounted) _loadAll();
   }
 
@@ -509,25 +462,31 @@ class _PortMappingPageState extends State<PortMappingPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('portMapping.title'))),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildFrpcCard(theme),
-            if (_tunnelEnabled) ...[
+    final theme = MiuixTheme.of(context);
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('portMapping.title'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _buildFrpcCard(theme),
+              if (_tunnelEnabled) ...[
+                const SizedBox(height: 16),
+                _buildLogSection(theme),
+              ],
               const SizedBox(height: 16),
-              _buildLogSection(theme),
+              _buildStunCard(theme),
+              const SizedBox(height: 16),
+              _buildUpnpCard(theme),
+              const SizedBox(height: 16),
+              _buildDdnsCard(theme),
             ],
-            const SizedBox(height: 16),
-            _buildStunCard(theme),
-            const SizedBox(height: 16),
-            _buildUpnpCard(theme),
-            const SizedBox(height: 16),
-            _buildDdnsCard(theme),
-          ],
+          ),
         ),
       ),
     );
@@ -535,7 +494,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
 
   // —— STUN 隧道卡片 ——
 
-  Widget _buildStunCard(ThemeData theme) {
+  Widget _buildStunCard(MiuixThemeData theme) {
     final status = _stun.status;
     final running = status == StunTunnelStatus.running;
     final address = _stun.publicAddress?.toString();
@@ -543,288 +502,149 @@ class _PortMappingPageState extends State<PortMappingPage> {
 
     final (String statusText, Color statusColor) = switch (status) {
       StunTunnelStatus.running => (
-          context.tr('portMapping.stunRunning'),
-          theme.colorScheme.primary,
-        ),
+        context.tr('portMapping.stunRunning'),
+        theme.colors.primary,
+      ),
       StunTunnelStatus.probing => (
-          context.tr('portMapping.stunProbing'),
-          theme.colorScheme.tertiary,
-        ),
+        context.tr('portMapping.stunProbing'),
+        theme.colors.onTertiaryContainer,
+      ),
       StunTunnelStatus.failed => (
-          context.tr('portMapping.stunFailed'),
-          theme.colorScheme.error,
-        ),
+        context.tr('portMapping.stunFailed'),
+        theme.colors.error,
+      ),
       StunTunnelStatus.stopped => (
-          context.tr('portMapping.stunNotStarted'),
-          theme.colorScheme.outline,
-        ),
+        context.tr('portMapping.stunNotStarted'),
+        theme.colors.outline,
+      ),
     };
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.hub_outlined,
-                    size: 20,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      context.tr('portMapping.stunCardTitle'),
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                  if (_stunConfig.enabled)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        statusText,
-                        style: theme.textTheme.labelSmall
-                            ?.copyWith(color: statusColor),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            SwitchListTile(
-              title: Text(context.tr('portMapping.enableStun')),
-              subtitle: Text(context.tr('portMapping.enableStunSubtitle')),
-              value: _stunConfig.enabled,
-              onChanged: _setStun,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            ),
-            if (_stunConfig.enabled) ...[
-              // 公网直连地址 + 复制。
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Card(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  margin: EdgeInsets.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-                    child: Row(
-                      children: [
-                        Icon(Icons.public, size: 18, color: statusColor),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                context.tr('portMapping.stunPublicAddress'),
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              SelectableText(
-                                address ??
-                                    (!serverRunning
-                                        ? context.tr(
-                                            'portMapping.stunServerNotRunning')
-                                        : statusText),
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  fontFamily:
-                                      address != null ? 'monospace' : null,
-                                  color: statusColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.copy, size: 18),
-                          tooltip: context.tr('portMapping.stunCopyAddress'),
-                          onPressed: address == null ? null : _copyStunAddress,
-                        ),
-                      ],
+    return MiuixCard(
+      insideMargin: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Icon(Icons.hub_outlined, size: 20, color: theme.colors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    context.tr('portMapping.stunCardTitle'),
+                    style: theme.textStyles.subtitle.copyWith(
+                      color: theme.colors.primary,
                     ),
                   ),
                 ),
-              ),
-              // 建立失败时展示具体原因。
-              if (status == StunTunnelStatus.failed && _stun.lastError != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: Card(
-                    color: theme.colorScheme.errorContainer,
-                    margin: EdgeInsets.zero,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.warning_amber_outlined,
-                            size: 18,
-                            color: theme.colorScheme.onErrorContainer,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _stun.lastError!,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onErrorContainer,
+                if (_stunConfig.enabled)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      statusText,
+                      style: theme.textStyles.footnote2.copyWith(
+                        color: statusColor,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          MiuixSwitchPreference(
+            title: context.tr('portMapping.enableStun'),
+            summary: context.tr('portMapping.enableStunSubtitle'),
+            value: _stunConfig.enabled,
+            onChanged: _setStun,
+          ),
+          if (_stunConfig.enabled) ...[
+            // 公网直连地址 + 复制。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Padding(
+                padding: EdgeInsets.zero,
+                child: MiuixCard(
+                  insideMargin: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                  colors: MiuixCardColors(
+                    color: theme.colors.surfaceContainerHighest,
+                    contentColor: MiuixTheme.of(context).colors.onSurface,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.public, size: 18, color: statusColor),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              context.tr('portMapping.stunPublicAddress'),
+                              style: theme.textStyles.footnote2.copyWith(
+                                color: theme.colors.onSurfaceVariantSummary,
                               ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 2),
+                            SelectableText(
+                              address ??
+                                  (!serverRunning
+                                      ? context.tr(
+                                          'portMapping.stunServerNotRunning',
+                                        )
+                                      : statusText),
+                              style: theme.textStyles.body2.copyWith(
+                                fontWeight: FontWeight.w600,
+                                fontFamily: address != null
+                                    ? 'monospace'
+                                    : null,
+                                color: statusColor,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
-                ),
-              // 运行时的连接数与流量统计。
-              if (running)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _stunStat(
-                        theme,
-                        Icons.people_outline,
-                        context.tr('portMapping.stunConnections', {
-                          'current': '${_stun.activeConnections}',
-                          'max': '${_stun.maxConnections}',
-                        }),
-                      ),
-                      const SizedBox(height: 4),
-                      _stunStat(
-                        theme,
-                        Icons.speed_outlined,
-                        context.tr('portMapping.stunSpeed', {
-                          'up': StunTunnelService.formatBytes(
-                            _stun.uploadSpeed,
-                          ),
-                          'down': StunTunnelService.formatBytes(
-                            _stun.downloadSpeed,
-                          ),
-                        }),
-                      ),
-                      const SizedBox(height: 4),
-                      _stunStat(
-                        theme,
-                        Icons.data_usage_outlined,
-                        context.tr('portMapping.stunTraffic', {
-                          'up': StunTunnelService.formatBytes(
-                            _stun.totalUpload,
-                          ),
-                          'down': StunTunnelService.formatBytes(
-                            _stun.totalDownload,
-                          ),
-                        }),
+                      MiuixIconButton(
+                        onPressed: address == null ? null : _copyStunAddress,
+                        child: MiuixIcon(icon: Icons.copy, size: 18),
                       ),
                     ],
                   ),
                 ),
-              // 端口与并发配置。
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _field(
-                        _stunLocalPort,
-                        context.tr('portMapping.stunLocalPort'),
-                        hint: context.tr('portMapping.stunLocalPortHint'),
-                        number: true,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _field(
-                        _stunMaxConnections,
-                        context.tr('portMapping.stunMaxConnections'),
-                        hint: '128',
-                        number: true,
-                      ),
-                    ),
-                  ],
-                ),
               ),
+            ),
+            // 建立失败时展示具体原因。
+            if (status == StunTunnelStatus.failed && _stun.lastError != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: _field(
-                  _stunKeepAlive,
-                  context.tr('portMapping.stunKeepAlive'),
-                  hint: '20',
-                  number: true,
-                ),
-              ),
-              SwitchListTile(
-                title: Text(context.tr('portMapping.stunProxyProtocol')),
-                subtitle: Text(
-                  context.tr('portMapping.stunProxyProtocolSubtitle'),
-                ),
-                value: _stunConfig.proxyProtocol,
-                onChanged: (v) => setState(() {
-                  _stunConfig = _stunConfig.copyWith(proxyProtocol: v);
-                }),
-                dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-              SwitchListTile(
-                title: Text(context.tr('portMapping.stunShowConnLog')),
-                subtitle: Text(
-                  context.tr('portMapping.stunShowConnLogSubtitle'),
-                ),
-                value: _stunConfig.showConnectionLog,
-                onChanged: (v) => setState(() {
-                  _stunConfig = _stunConfig.copyWith(showConnectionLog: v);
-                }),
-                dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.tonalIcon(
-                    onPressed: _saveStunSettings,
-                    icon: const Icon(Icons.save, size: 18),
-                    label: Text(context.tr('portMapping.saveStunConfig')),
-                  ),
-                ),
-              ),
-              // NAT 类型限制说明。
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Card(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  margin: EdgeInsets.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
+                child: Padding(
+                  padding: EdgeInsets.zero,
+                  child: MiuixCard(
+                    insideMargin: const EdgeInsets.all(12),
+                    colors: MiuixCardColors(
+                      color: theme.colors.errorContainer,
+                      contentColor: MiuixTheme.of(context).colors.onSurface,
+                    ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Icon(
-                          Icons.info_outline,
+                          Icons.warning_amber_outlined,
                           size: 18,
-                          color: theme.colorScheme.primary,
+                          color: theme.colors.onErrorContainer,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            context.tr('portMapping.stunHint'),
-                            style: theme.textTheme.bodySmall,
+                            _stun.lastError!,
+                            style: theme.textStyles.footnote1.copyWith(
+                              color: theme.colors.onErrorContainer,
+                            ),
                           ),
                         ),
                       ],
@@ -832,27 +652,164 @@ class _PortMappingPageState extends State<PortMappingPage> {
                   ),
                 ),
               ),
+            // 运行时的连接数与流量统计。
+            if (running)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: _buildStunLogSection(theme),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _stunStat(
+                      theme,
+                      Icons.people_outline,
+                      context.tr('portMapping.stunConnections', {
+                        'current': '${_stun.activeConnections}',
+                        'max': '${_stun.maxConnections}',
+                      }),
+                    ),
+                    const SizedBox(height: 4),
+                    _stunStat(
+                      theme,
+                      Icons.speed_outlined,
+                      context.tr('portMapping.stunSpeed', {
+                        'up': StunTunnelService.formatBytes(_stun.uploadSpeed),
+                        'down': StunTunnelService.formatBytes(
+                          _stun.downloadSpeed,
+                        ),
+                      }),
+                    ),
+                    const SizedBox(height: 4),
+                    _stunStat(
+                      theme,
+                      Icons.data_usage_outlined,
+                      context.tr('portMapping.stunTraffic', {
+                        'up': StunTunnelService.formatBytes(_stun.totalUpload),
+                        'down': StunTunnelService.formatBytes(
+                          _stun.totalDownload,
+                        ),
+                      }),
+                    ),
+                  ],
+                ),
               ),
-            ],
+            // 端口与并发配置。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _field(
+                      _stunLocalPort,
+                      context.tr('portMapping.stunLocalPort'),
+                      hint: context.tr('portMapping.stunLocalPortHint'),
+                      number: true,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _field(
+                      _stunMaxConnections,
+                      context.tr('portMapping.stunMaxConnections'),
+                      hint: '128',
+                      number: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: _field(
+                _stunKeepAlive,
+                context.tr('portMapping.stunKeepAlive'),
+                hint: '20',
+                number: true,
+              ),
+            ),
+            MiuixSwitchPreference(
+              title: context.tr('portMapping.stunProxyProtocol'),
+              summary: context.tr('portMapping.stunProxyProtocolSubtitle'),
+              value: _stunConfig.proxyProtocol,
+              onChanged: (v) => setState(() {
+                _stunConfig = _stunConfig.copyWith(proxyProtocol: v);
+              }),
+            ),
+            MiuixSwitchPreference(
+              title: context.tr('portMapping.stunShowConnLog'),
+              summary: context.tr('portMapping.stunShowConnLogSubtitle'),
+              value: _stunConfig.showConnectionLog,
+              onChanged: (v) => setState(() {
+                _stunConfig = _stunConfig.copyWith(showConnectionLog: v);
+              }),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: MiuixButton(
+                  onPressed: _saveStunSettings,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      MiuixIcon(icon: Icons.save, size: 18),
+                      const SizedBox(width: 8),
+                      MiuixText(context.tr('portMapping.saveStunConfig')),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // NAT 类型限制说明。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Padding(
+                padding: EdgeInsets.zero,
+                child: MiuixCard(
+                  insideMargin: const EdgeInsets.all(12),
+                  colors: MiuixCardColors(
+                    color: theme.colors.surfaceContainerHighest,
+                    contentColor: MiuixTheme.of(context).colors.onSurface,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 18,
+                        color: theme.colors.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          context.tr('portMapping.stunHint'),
+                          style: theme.textStyles.footnote1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: _buildStunLogSection(theme),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _stunStat(ThemeData theme, IconData icon, String text) {
+  Widget _stunStat(MiuixThemeData theme, IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+        Icon(icon, size: 16, color: theme.colors.onSurfaceVariantSummary),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             text,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: theme.textStyles.footnote1.copyWith(
+              color: theme.colors.onSurfaceVariantSummary,
             ),
           ),
         ),
@@ -860,7 +817,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
     );
   }
 
-  Widget _buildStunLogSection(ThemeData theme) {
+  Widget _buildStunLogSection(MiuixThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -868,25 +825,27 @@ class _PortMappingPageState extends State<PortMappingPage> {
           children: [
             Text(
               context.tr('portMapping.stunLog'),
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: theme.colorScheme.primary,
+              style: theme.textStyles.subtitle.copyWith(
+                color: theme.colors.primary,
               ),
             ),
             const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.cleaning_services_outlined, size: 18),
-              tooltip: context.tr('portMapping.clearLog'),
+            MiuixIconButton(
               onPressed: () {
                 _stun.clearLog();
                 setState(() => _stunLogs.clear());
               },
+              child: MiuixIcon(
+                icon: Icons.cleaning_services_outlined,
+                size: 18,
+              ),
             ),
           ],
         ),
         Container(
           height: 180,
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
+            color: theme.colors.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(8),
           ),
           padding: const EdgeInsets.all(8),
@@ -894,8 +853,8 @@ class _PortMappingPageState extends State<PortMappingPage> {
               ? Center(
                   child: Text(
                     context.tr('portMapping.noLogs'),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    style: theme.textStyles.footnote1.copyWith(
+                      color: theme.colors.onSurfaceVariantSummary,
                     ),
                   ),
                 )
@@ -918,361 +877,336 @@ class _PortMappingPageState extends State<PortMappingPage> {
 
   // —— UPnP 卡片 ——
 
-  Widget _buildUpnpCard(ThemeData theme) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+  Widget _buildUpnpCard(MiuixThemeData theme) {
+    return MiuixCard(
+      insideMargin: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.router_outlined,
+                  size: 20,
+                  color: theme.colors.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  context.tr('portMapping.upnpCardTitle'),
+                  style: theme.textStyles.subtitle.copyWith(
+                    color: theme.colors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          MiuixSwitchPreference(
+            title: context.tr('portMapping.enableUpnp'),
+            summary: context.tr('portMapping.enableUpnpSubtitle'),
+            value: _upnpEnabled,
+            onChanged: _setUpnp,
+          ),
+          if (_upnpEnabled) ...[
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.router_outlined,
-                    size: 20,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.tr('portMapping.upnpCardTitle'),
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: theme.colorScheme.primary,
+                  Expanded(
+                    child: _field(
+                      _upnpExternalPort,
+                      context.tr('portMapping.upnpExternalPort'),
+                      hint: context.tr('portMapping.upnpExternalPortHint'),
+                      number: true,
                     ),
                   ),
+                  const SizedBox(width: 12),
+                  Expanded(child: _upnpProtocolDropdown()),
                 ],
               ),
             ),
-            SwitchListTile(
-              title: Text(context.tr('portMapping.enableUpnp')),
-              subtitle: Text(context.tr('portMapping.enableUpnpSubtitle')),
-              value: _upnpEnabled,
-              onChanged: _setUpnp,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            ),
-            if (_upnpEnabled) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _field(
-                        _upnpExternalPort,
-                        context.tr('portMapping.upnpExternalPort'),
-                        hint: context.tr('portMapping.upnpExternalPortHint'),
-                        number: true,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: _upnpProtocolDropdown()),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.tonalIcon(
-                    onPressed: () async {
-                      await _saveUpnpSettings();
-                      if (!mounted) return;
-                      final server = ServerScope.of(context);
-                      if (server.isRunning) {
-                        server.disableUpnpNow();
-                        server.enableUpnpNow();
-                      }
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(context.tr('portMapping.saved')),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.save, size: 18),
-                    label: Text(context.tr('portMapping.saveConfig')),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: MiuixButton(
+                  onPressed: () async {
+                    await _saveUpnpSettings();
+                    if (!mounted) return;
+                    final server = ServerScope.of(context);
+                    if (server.isRunning) {
+                      server.disableUpnpNow();
+                      server.enableUpnpNow();
+                    }
+                    if (!mounted) return;
+                    showMiuixSnackbar(context.tr('portMapping.saved'));
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      MiuixIcon(icon: Icons.save, size: 18),
+                      const SizedBox(width: 8),
+                      MiuixText(context.tr('portMapping.saveConfig')),
+                    ],
                   ),
                 ),
               ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
 
   // —— DDNS 卡片 ——
 
-  Widget _buildDdnsCard(ThemeData theme) {
+  Widget _buildDdnsCard(MiuixThemeData theme) {
     final provider = _ddnsConfig.provider;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return MiuixCard(
+      insideMargin: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Icon(Icons.dns_outlined, size: 20, color: theme.colors.primary),
+                const SizedBox(width: 8),
+                Text(
+                  context.tr('portMapping.ddnsCardTitle'),
+                  style: theme.textStyles.subtitle.copyWith(
+                    color: theme.colors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          MiuixSwitchPreference(
+            title: context.tr('portMapping.enableDdns'),
+            summary: context.tr('portMapping.enableDdnsSubtitle'),
+            value: _ddnsConfig.enabled,
+            onChanged: _setDdns,
+          ),
+          if (_ddnsConfig.enabled) ...[
+            // 服务商选择。
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: _ddnsProviderDropdown(),
+            ),
+            // 域名与主机记录。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: provider == DdnsProvider.duckdns
+                  ? _field(
+                      _ddnsDomain,
+                      context.tr('portMapping.ddnsDuckdnsDomain'),
+                      hint: 'mysub',
+                    )
+                  : Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: _field(
+                            _ddnsHost,
+                            context.tr('portMapping.ddnsHost'),
+                            hint: 'mc',
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 3,
+                          child: _field(
+                            _ddnsDomain,
+                            context.tr('portMapping.ddnsDomain'),
+                            hint: 'example.com',
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+            // 凭据字段（依服务商变化）。
+            if (provider == DdnsProvider.dnspod ||
+                provider == DdnsProvider.aliyun)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: _field(
+                  _ddnsTokenId,
+                  provider == DdnsProvider.dnspod
+                      ? context.tr('portMapping.ddnsTokenId')
+                      : context.tr('portMapping.ddnsAccessKeyId'),
+                ),
+              ),
+            if (provider != DdnsProvider.custom)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: _field(_ddnsToken, switch (provider) {
+                  DdnsProvider.cloudflare => context.tr(
+                    'portMapping.ddnsApiToken',
+                  ),
+                  DdnsProvider.duckdns => context.tr('portMapping.ddnsToken'),
+                  DdnsProvider.dnspod => context.tr('portMapping.ddnsToken'),
+                  _ => context.tr('portMapping.ddnsAccessKeySecret'),
+                }, obscure: true),
+              ),
+            if (provider == DdnsProvider.custom)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: _field(
+                  _ddnsCustomUrl,
+                  context.tr('portMapping.ddnsCustomUrl'),
+                  hint: 'https://…?domain={domain}&ip={ipv4}',
+                ),
+              ),
+            // 记录类型与检查间隔。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.dns_outlined,
-                    size: 20,
-                    color: theme.colorScheme.primary,
+                  Expanded(
+                    child: MiuixCheckboxPreference(
+                      title: 'IPv4 (A)',
+                      value: _ddnsConfig.ipv4Enabled,
+                      onChanged: (v) => setState(() {
+                        _ddnsConfig = _ddnsConfig.copyWith(ipv4Enabled: v);
+                      }),
+                      insideMargin: const EdgeInsets.symmetric(vertical: 8),
+                    ),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.tr('portMapping.ddnsCardTitle'),
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: theme.colorScheme.primary,
+                  Expanded(
+                    child: MiuixCheckboxPreference(
+                      title: 'IPv6 (AAAA)',
+                      value: _ddnsConfig.ipv6Enabled,
+                      onChanged: (v) => setState(() {
+                        _ddnsConfig = _ddnsConfig.copyWith(ipv6Enabled: v);
+                      }),
+                      insideMargin: const EdgeInsets.symmetric(vertical: 8),
                     ),
                   ),
                 ],
               ),
             ),
-            SwitchListTile(
-              title: Text(context.tr('portMapping.enableDdns')),
-              subtitle: Text(context.tr('portMapping.enableDdnsSubtitle')),
-              value: _ddnsConfig.enabled,
-              onChanged: _setDdns,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            ),
-            if (_ddnsConfig.enabled) ...[
-              // 服务商选择。
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: _ddnsProviderDropdown(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: _field(
+                _ddnsInterval,
+                context.tr('portMapping.ddnsInterval'),
+                hint: '10',
+                number: true,
               ),
-              // 域名与主机记录。
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: provider == DdnsProvider.duckdns
-                    ? _field(
-                        _ddnsDomain,
-                        context.tr('portMapping.ddnsDuckdnsDomain'),
-                        hint: 'mysub',
-                      )
-                    : Row(
+            ),
+            // 停服时清理远端解析（自定义 URL 无删除接口，不提供该选项）。
+            if (provider != DdnsProvider.custom)
+              MiuixSwitchPreference(
+                title: context.tr('portMapping.ddnsDeleteOnStop'),
+                summary: context.tr('portMapping.ddnsDeleteOnStopSubtitle'),
+                value: _ddnsConfig.deleteOnStop,
+                onChanged: (v) => setState(() {
+                  _ddnsConfig = _ddnsConfig.copyWith(deleteOnStop: v);
+                }),
+              ),
+            // 保存 + 立即更新。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: MiuixButton(
+                      onPressed: _saveDdnsSettings,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Expanded(
-                            flex: 2,
-                            child: _field(
-                              _ddnsHost,
-                              context.tr('portMapping.ddnsHost'),
-                              hint: 'mc',
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 3,
-                            child: _field(
-                              _ddnsDomain,
-                              context.tr('portMapping.ddnsDomain'),
-                              hint: 'example.com',
-                            ),
-                          ),
+                          MiuixIcon(icon: Icons.save, size: 18),
+                          const SizedBox(width: 8),
+                          MiuixText(context.tr('portMapping.saveDdnsConfig')),
                         ],
                       ),
-              ),
-              // 凭据字段（依服务商变化）。
-              if (provider == DdnsProvider.dnspod ||
-                  provider == DdnsProvider.aliyun)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: _field(
-                    _ddnsTokenId,
-                    provider == DdnsProvider.dnspod
-                        ? context.tr('portMapping.ddnsTokenId')
-                        : context.tr('portMapping.ddnsAccessKeyId'),
+                    ),
                   ),
-                ),
-              if (provider != DdnsProvider.custom)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: _field(
-                    _ddnsToken,
-                    switch (provider) {
-                      DdnsProvider.cloudflare =>
-                        context.tr('portMapping.ddnsApiToken'),
-                      DdnsProvider.duckdns =>
-                        context.tr('portMapping.ddnsToken'),
-                      DdnsProvider.dnspod =>
-                        context.tr('portMapping.ddnsToken'),
-                      _ => context.tr('portMapping.ddnsAccessKeySecret'),
-                    },
-                    obscure: true,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      onPressed: _ddnsUpdating ? null : _updateDdnsNow,
+                      icon: _ddnsUpdating
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: MiuixInfiniteProgressIndicator(size: 20),
+                            )
+                          : const Icon(Icons.sync, size: 18),
+                      label: Text(context.tr('portMapping.ddnsUpdateNow')),
+                    ),
                   ),
-                ),
-              if (provider == DdnsProvider.custom)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: _field(
-                    _ddnsCustomUrl,
-                    context.tr('portMapping.ddnsCustomUrl'),
-                    hint: 'https://…?domain={domain}&ip={ipv4}',
+                ],
+              ),
+            ),
+            // 与 UPnP 配合的说明。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Padding(
+                padding: EdgeInsets.zero,
+                child: MiuixCard(
+                  insideMargin: const EdgeInsets.all(12),
+                  colors: MiuixCardColors(
+                    color: theme.colors.surfaceContainerHighest,
+                    contentColor: MiuixTheme.of(context).colors.onSurface,
                   ),
-                ),
-              // 记录类型与检查间隔。
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: CheckboxListTile(
-                        title: const Text('IPv4 (A)'),
-                        value: _ddnsConfig.ipv4Enabled,
-                        onChanged: (v) => setState(() {
-                          _ddnsConfig =
-                              _ddnsConfig.copyWith(ipv4Enabled: v ?? true);
-                        }),
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 18,
+                        color: theme.colors.primary,
                       ),
-                    ),
-                    Expanded(
-                      child: CheckboxListTile(
-                        title: const Text('IPv6 (AAAA)'),
-                        value: _ddnsConfig.ipv6Enabled,
-                        onChanged: (v) => setState(() {
-                          _ddnsConfig =
-                              _ddnsConfig.copyWith(ipv6Enabled: v ?? false);
-                        }),
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: _field(
-                  _ddnsInterval,
-                  context.tr('portMapping.ddnsInterval'),
-                  hint: '10',
-                  number: true,
-                ),
-              ),
-              // 停服时清理远端解析（自定义 URL 无删除接口，不提供该选项）。
-              if (provider != DdnsProvider.custom)
-                SwitchListTile(
-                  title: Text(context.tr('portMapping.ddnsDeleteOnStop')),
-                  subtitle:
-                      Text(context.tr('portMapping.ddnsDeleteOnStopSubtitle')),
-                  value: _ddnsConfig.deleteOnStop,
-                  onChanged: (v) => setState(() {
-                    _ddnsConfig = _ddnsConfig.copyWith(deleteOnStop: v);
-                  }),
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                ),
-              // 保存 + 立即更新。
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: _saveDdnsSettings,
-                        icon: const Icon(Icons.save, size: 18),
-                        label: Text(context.tr('portMapping.saveDdnsConfig')),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: _ddnsUpdating ? null : _updateDdnsNow,
-                        icon: _ddnsUpdating
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.sync, size: 18),
-                        label: Text(context.tr('portMapping.ddnsUpdateNow')),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // 与 UPnP 配合的说明。
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Card(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  margin: EdgeInsets.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 18,
-                          color: theme.colorScheme.primary,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          context.tr('portMapping.ddnsUpnpHint'),
+                          style: theme.textStyles.footnote1,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            context.tr('portMapping.ddnsUpnpHint'),
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
 
   Widget _ddnsProviderDropdown() {
-    return DropdownButtonFormField<DdnsProvider>(
-      initialValue: _ddnsConfig.provider,
-      decoration: InputDecoration(
-        labelText: context.tr('portMapping.ddnsProvider'),
-        isDense: true,
-        border: const OutlineInputBorder(),
-      ),
-      items: [
-        const DropdownMenuItem(
-          value: DdnsProvider.cloudflare,
-          child: Text('Cloudflare'),
-        ),
-        const DropdownMenuItem(
-          value: DdnsProvider.duckdns,
-          child: Text('DuckDNS'),
-        ),
-        DropdownMenuItem(
-          value: DdnsProvider.dnspod,
-          child: Text(context.tr('portMapping.ddnsProviderDnspod')),
-        ),
-        DropdownMenuItem(
-          value: DdnsProvider.aliyun,
-          child: Text(context.tr('portMapping.ddnsProviderAliyun')),
-        ),
-        DropdownMenuItem(
-          value: DdnsProvider.custom,
-          child: Text(context.tr('portMapping.ddnsProviderCustom')),
-        ),
-      ],
-      onChanged: (v) => setState(() {
-        _ddnsConfig = _ddnsConfig.copyWith(provider: v ?? DdnsProvider.cloudflare);
+    // 值与展示文案分离，按下标回写枚举值。
+    const providers = [
+      DdnsProvider.cloudflare,
+      DdnsProvider.duckdns,
+      DdnsProvider.dnspod,
+      DdnsProvider.aliyun,
+      DdnsProvider.custom,
+    ];
+    final labels = [
+      'Cloudflare',
+      'DuckDNS',
+      context.tr('portMapping.ddnsProviderDnspod'),
+      context.tr('portMapping.ddnsProviderAliyun'),
+      context.tr('portMapping.ddnsProviderCustom'),
+    ];
+    return EcDropdownField(
+      label: context.tr('portMapping.ddnsProvider'),
+      items: labels,
+      selectedIndex: providers.indexOf(_ddnsConfig.provider),
+      onSelected: (i) => setState(() {
+        _ddnsConfig = _ddnsConfig.copyWith(provider: providers[i]);
       }),
     );
   }
 
   // —— FRP 卡片 ——
 
-  Widget _buildFrpcCard(ThemeData theme) {
+  Widget _buildFrpcCard(MiuixThemeData theme) {
     final statusText = _tunnelExitCode != null
         ? (_tunnelExitCode == 0
               ? context.tr('portMapping.tunnelExited')
@@ -1285,123 +1219,133 @@ class _PortMappingPageState extends State<PortMappingPage> {
             'preparing' => context.tr('portMapping.tunnelPreparing'),
             _ => null,
           };
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.cloud_outlined,
-                    size: 20,
-                    color: theme.colorScheme.primary,
+    return MiuixCard(
+      insideMargin: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.cloud_outlined,
+                  size: 20,
+                  color: theme.colors.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    context.tr('portMapping.frpCardTitle'),
+                    style: theme.textStyles.subtitle.copyWith(
+                      color: theme.colors.primary,
+                    ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      context.tr('portMapping.frpCardTitle'),
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.primary,
+                ),
+                if (statusText != null) _statusChip(theme, statusText),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+            child: _buildFrpcRuntimeSelector(theme),
+          ),
+          MiuixSwitchPreference(
+            title: context.tr('portMapping.enableFrp'),
+            summary: context.tr('portMapping.enableFrpSubtitle'),
+            value: _tunnelEnabled,
+            enabled: _frpcRuntimes.isNotEmpty,
+            onChanged: _setTunnel,
+          ),
+          if (_tunnelEnabled) ...[
+            const Divider(indent: 16, endIndent: 16),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: _buildDefaultTunnelSelector(theme),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Padding(
+                padding: EdgeInsets.zero,
+                child: MiuixCard(
+                  insideMargin: const EdgeInsets.all(12),
+                  colors: MiuixCardColors(
+                    color: theme.colors.surfaceContainerHighest,
+                    contentColor: MiuixTheme.of(context).colors.onSurface,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 18,
+                        color: theme.colors.primary,
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          context.tr('portMapping.defaultTunnelInfo'),
+                          style: theme.textStyles.footnote1,
+                        ),
+                      ),
+                    ],
                   ),
-                  if (statusText != null) _statusChip(theme, statusText),
-                ],
+                ),
               ),
             ),
+            const SizedBox(height: 12),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-              child: _buildFrpcRuntimeSelector(theme),
-            ),
-            SwitchListTile(
-              title: Text(context.tr('portMapping.enableFrp')),
-              subtitle: Text(context.tr('portMapping.enableFrpSubtitle')),
-              value: _tunnelEnabled,
-              onChanged: _frpcRuntimes.isEmpty ? null : _setTunnel,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            ),
-            if (_tunnelEnabled) ...[
-              const Divider(indent: 16, endIndent: 16),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: _buildDefaultTunnelSelector(theme),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Card(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  margin: EdgeInsets.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 18,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            context.tr('portMapping.defaultTunnelInfo'),
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: MiuixButton(
+                  onPressed: _openTunnelManager,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      MiuixIcon(icon: Icons.cable, size: 18),
+                      const SizedBox(width: 8),
+                      MiuixText(context.tr('portMapping.manageTunnels')),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.tonalIcon(
-                    onPressed: _openTunnelManager,
-                    icon: const Icon(Icons.cable, size: 18),
-                    label: Text(context.tr('portMapping.manageTunnels')),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildFrpcRuntimeSelector(ThemeData theme) {
+  Widget _buildFrpcRuntimeSelector(MiuixThemeData theme) {
     if (_frpcRuntimes.isEmpty) {
-      return Card(
-        color: theme.colorScheme.errorContainer,
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+      return Padding(
+        padding: EdgeInsets.zero,
+        child: MiuixCard(
+          insideMargin: const EdgeInsets.all(12),
+          colors: MiuixCardColors(
+            color: theme.colors.errorContainer,
+            contentColor: MiuixTheme.of(context).colors.onSurface,
+          ),
           child: Row(
             children: [
               Icon(
                 Icons.warning_amber_outlined,
                 size: 18,
-                color: theme.colorScheme.onErrorContainer,
+                color: theme.colors.onErrorContainer,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   context.tr('portMapping.frpcRequiredContent'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onErrorContainer,
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: theme.colors.onErrorContainer,
                   ),
                 ),
               ),
-              TextButton(
+              MiuixTextButton(
+                context.tr('server.runtimeRequiredAction'),
                 onPressed: _showFrpcRequiredDialog,
-                child: Text(context.tr('server.runtimeRequiredAction')),
               ),
             ],
           ),
@@ -1413,61 +1357,45 @@ class _PortMappingPageState extends State<PortMappingPage> {
       for (final r in _frpcRuntimes) r.id: '${r.name} (${r.displayVersion})',
     };
 
-    return DropdownButtonFormField<String>(
-      key: ValueKey(_selectedFrpcRuntimeId),
-      isExpanded: true,
-      initialValue: _selectedFrpcRuntimeId,
-      decoration: InputDecoration(
-        labelText: context.tr('portMapping.frpcRuntimeLabel'),
-        isDense: true,
-        border: const OutlineInputBorder(),
+    return EcDropdownField(
+      label: context.tr('portMapping.frpcRuntimeLabel'),
+      items: [for (final r in _frpcRuntimes) runtimeNames[r.id] ?? r.id],
+      selectedIndex: _frpcRuntimes.indexWhere(
+        (r) => r.id == _selectedFrpcRuntimeId,
       ),
-      items: _frpcRuntimes.map((r) {
-        return DropdownMenuItem(
-          value: r.id,
-          child: Text(runtimeNames[r.id] ?? r.id),
-        );
-      }).toList(),
-      selectedItemBuilder: (context) => _frpcRuntimes.map((r) {
-        return DropdownMenuItem<String>(
-          value: r.id,
-          child: Text(
-            runtimeNames[r.id] ?? r.id,
-            overflow: TextOverflow.ellipsis,
-          ),
-        );
-      }).toList(),
-      onChanged: (v) {
-        if (v != null) {
-          setState(() => _selectedFrpcRuntimeId = v);
-          NetworkStore.saveFrpcRuntimeId(v);
-        }
+      onSelected: (i) {
+        final id = _frpcRuntimes[i].id;
+        setState(() => _selectedFrpcRuntimeId = id);
+        NetworkStore.saveFrpcRuntimeId(id);
       },
     );
   }
 
   /// 默认映射隧道下拉框：选中的隧道随服务端自动启停。
-  Widget _buildDefaultTunnelSelector(ThemeData theme) {
+  Widget _buildDefaultTunnelSelector(MiuixThemeData theme) {
     // 开关打开后隧道被全部删掉的场景：提示去「映射隧道」页创建。
     if (_savedTunnels.isEmpty) {
-      return Card(
-        color: theme.colorScheme.errorContainer,
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+      return Padding(
+        padding: EdgeInsets.zero,
+        child: MiuixCard(
+          insideMargin: const EdgeInsets.all(12),
+          colors: MiuixCardColors(
+            color: theme.colors.errorContainer,
+            contentColor: MiuixTheme.of(context).colors.onSurface,
+          ),
           child: Row(
             children: [
               Icon(
                 Icons.warning_amber_outlined,
                 size: 18,
-                color: theme.colorScheme.onErrorContainer,
+                color: theme.colors.onErrorContainer,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   context.tr('portMapping.noTunnelMessage'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onErrorContainer,
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: theme.colors.onErrorContainer,
                   ),
                 ),
               ),
@@ -1484,45 +1412,26 @@ class _PortMappingPageState extends State<PortMappingPage> {
       return '${t.name} · $providerName';
     }
 
-    return DropdownButtonFormField<String>(
-      key: ValueKey(_defaultTunnelId),
-      isExpanded: true,
-      initialValue: _defaultTunnelId,
-      decoration: InputDecoration(
-        labelText: context.tr('portMapping.defaultTunnelLabel'),
-        isDense: true,
-        border: const OutlineInputBorder(),
+    return EcDropdownField(
+      label: context.tr('portMapping.defaultTunnelLabel'),
+      items: [for (final t in _savedTunnels) tunnelLabel(t)],
+      selectedIndex: _savedTunnels.indexWhere(
+        (t) => t.localId == _defaultTunnelId,
       ),
-      items: _savedTunnels.map((t) {
-        return DropdownMenuItem(
-          value: t.localId,
-          child: Text(tunnelLabel(t)),
-        );
-      }).toList(),
-      selectedItemBuilder: (context) => _savedTunnels.map((t) {
-        return DropdownMenuItem<String>(
-          value: t.localId,
-          child: Text(tunnelLabel(t), overflow: TextOverflow.ellipsis),
-        );
-      }).toList(),
-      onChanged: (v) {
-        if (v != null) _setDefaultTunnel(v);
-      },
+      onSelected: (i) => _setDefaultTunnel(_savedTunnels[i].localId),
     );
   }
 
-  Widget _statusChip(ThemeData theme, String text) {
+  Widget _statusChip(MiuixThemeData theme, String text) {
     final Color color;
     if (_tunnelExitCode != null) {
       // 已退出：退出码 0 灰色，非 0 红色。
-      color = _tunnelExitCode == 0
-          ? theme.colorScheme.outline
-          : theme.colorScheme.error;
+      color = _tunnelExitCode == 0 ? theme.colors.outline : theme.colors.error;
     } else if (_tunnelStatus == 'running') {
-      color = theme.colorScheme.primary;
+      color = theme.colors.primary;
     } else {
       // 连接中 / 准备中。
-      color = theme.colorScheme.tertiary;
+      color = theme.colors.onTertiaryContainer;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -1532,14 +1441,14 @@ class _PortMappingPageState extends State<PortMappingPage> {
       ),
       child: Text(
         text,
-        style: theme.textTheme.labelSmall?.copyWith(color: color),
+        style: theme.textStyles.footnote2.copyWith(color: color),
       ),
     );
   }
 
   // —— 工具 ——
 
-  Widget _buildLogSection(ThemeData theme) {
+  Widget _buildLogSection(MiuixThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1549,18 +1458,20 @@ class _PortMappingPageState extends State<PortMappingPage> {
             children: [
               Text(
                 context.tr('portMapping.tunnelLog'),
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: theme.colorScheme.primary,
+                style: theme.textStyles.subtitle.copyWith(
+                  color: theme.colors.primary,
                 ),
               ),
               const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.cleaning_services_outlined, size: 18),
-                tooltip: context.tr('portMapping.clearLog'),
+              MiuixIconButton(
                 onPressed: () {
                   _tunnel.clearLog();
                   setState(() => _logs.clear());
                 },
+                child: MiuixIcon(
+                  icon: Icons.cleaning_services_outlined,
+                  size: 18,
+                ),
               ),
             ],
           ),
@@ -1568,7 +1479,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
         Container(
           height: 220,
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
+            color: theme.colors.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(8),
           ),
           padding: const EdgeInsets.all(8),
@@ -1576,8 +1487,8 @@ class _PortMappingPageState extends State<PortMappingPage> {
               ? Center(
                   child: Text(
                     context.tr('portMapping.noLogs'),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    style: theme.textStyles.footnote1.copyWith(
+                      color: theme.colors.onSurfaceVariantSummary,
                     ),
                   ),
                 )
@@ -1605,34 +1516,22 @@ class _PortMappingPageState extends State<PortMappingPage> {
     bool number = false,
     bool obscure = false,
   }) {
-    return TextField(
+    return EcTextField(
       controller: c,
-      obscureText: obscure,
+      label: label,
+      hint: hint,
       keyboardType: number ? TextInputType.number : TextInputType.text,
       inputFormatters: number ? [FilteringTextInputFormatter.digitsOnly] : null,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        isDense: true,
-        border: const OutlineInputBorder(),
-      ),
+      obscureText: obscure,
     );
   }
 
   Widget _upnpProtocolDropdown() {
-    return DropdownButtonFormField<String>(
-      initialValue: _upnpProtocol,
-      decoration: InputDecoration(
-        labelText: context.tr('portMapping.protocol'),
-        isDense: true,
-        border: const OutlineInputBorder(),
-      ),
-      items: const [
-        DropdownMenuItem(value: 'tcp', child: Text('TCP')),
-        DropdownMenuItem(value: 'udp', child: Text('UDP')),
-      ],
-      onChanged: (v) => setState(() => _upnpProtocol = v ?? 'tcp'),
+    return EcDropdownField(
+      label: context.tr('portMapping.protocol'),
+      items: const ['TCP', 'UDP'],
+      selectedIndex: _upnpProtocol == 'udp' ? 1 : 0,
+      onSelected: (i) => setState(() => _upnpProtocol = i == 1 ? 'udp' : 'tcp'),
     );
   }
-
 }

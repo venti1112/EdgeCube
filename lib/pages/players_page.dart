@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
@@ -9,6 +10,9 @@ import '../instance/instance.dart';
 import '../instance/instance_scope.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
+import '../widgets/ec_text_field.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/ec_preference.dart';
 
 /// 玩家管理页：在线玩家、白名单、封禁名单、OP 名单的可视化管理。
 class PlayersPage extends StatefulWidget {
@@ -22,10 +26,18 @@ class _PlayersPageState extends State<PlayersPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabCtrl;
 
+  /// MiuixTabRow 是受控组件，需自持选中项；滑动 TabBarView 时反向同步。
+  int _tabIndex = 0;
+
   @override
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 5, vsync: this);
+    _tabCtrl.addListener(() {
+      if (_tabCtrl.index != _tabIndex && mounted) {
+        setState(() => _tabIndex = _tabCtrl.index);
+      }
+    });
   }
 
   @override
@@ -37,34 +49,45 @@ class _PlayersPageState extends State<PlayersPage>
   @override
   Widget build(BuildContext context) {
     final instance = InstanceScope.of(context).selected;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(context.tr('players.title')),
-        bottom: TabBar(
-          controller: _tabCtrl,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          tabs: [
-            Tab(text: context.tr('players.tab.online')),
-            Tab(text: context.tr('players.tab.whitelist')),
-            Tab(text: context.tr('players.tab.bans')),
-            Tab(text: context.tr('players.tab.banIps')),
-            Tab(text: context.tr('players.tab.ops')),
-          ],
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('players.title'),
+        navigationIcon: const EcBackButton(),
+        // 只换有 Material 观感的标签条；TabController + TabBarView 作为
+        // 不可见的翻页管道保留（它们不绘制任何 Material 装饰）。
+        bottomContent: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: MiuixTabRow(
+            tabs: [
+              context.tr('players.tab.online'),
+              context.tr('players.tab.whitelist'),
+              context.tr('players.tab.bans'),
+              context.tr('players.tab.banIps'),
+              context.tr('players.tab.ops'),
+            ],
+            selectedTabIndex: _tabIndex,
+            onTabSelected: (i) {
+              setState(() => _tabIndex = i);
+              _tabCtrl.animateTo(i);
+            },
+          ),
         ),
       ),
-      body: instance == null
-          ? Center(child: Text(context.tr('players.noInstanceHint')))
-          : TabBarView(
-              controller: _tabCtrl,
-              children: [
-                _OnlineTab(instance: instance),
-                _WhitelistTab(instance: instance),
-                _BansTab(instance: instance),
-                _BanIpsTab(instance: instance),
-                _OpsTab(instance: instance),
-              ],
-            ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: instance == null
+            ? Center(child: Text(context.tr('players.noInstanceHint')))
+            : TabBarView(
+                controller: _tabCtrl,
+                children: [
+                  _OnlineTab(instance: instance),
+                  _WhitelistTab(instance: instance),
+                  _BansTab(instance: instance),
+                  _BanIpsTab(instance: instance),
+                  _OpsTab(instance: instance),
+                ],
+              ),
+      ),
     );
   }
 }
@@ -140,7 +163,7 @@ class _OnlineTabState extends State<_OnlineTab> {
   @override
   Widget build(BuildContext context) {
     final server = ServerScope.of(context);
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final running = server.isRunning && server.isActive(widget.instance.id);
     final players = server.onlinePlayers.toList()..sort();
 
@@ -169,103 +192,90 @@ class _OnlineTabState extends State<_OnlineTab> {
           final inWhitelist = _whitelist.contains(lower);
           final isOp = _ops.contains(lower);
           final isBanned = _bans.contains(lower);
-          return Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: theme.colorScheme.primaryContainer,
-                child: Text(
-                  name[0].toUpperCase(),
-                  style: TextStyle(
-                    color: theme.colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.bold,
+          return MiuixCard(
+            child: MiuixBasicComponent(
+              startAction: Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: CircleAvatar(
+                  backgroundColor: theme.colors.primaryContainer,
+                  child: Text(
+                    name[0].toUpperCase(),
+                    style: TextStyle(
+                      color: theme.colors.onPrimaryContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
-              title: Text(name),
-              subtitle: Row(
-                children: [
-                  if (isOp)
-                    _PlayerTag(label: 'OP', color: theme.colorScheme.tertiary),
-                  if (inWhitelist)
-                    _PlayerTag(
-                      label: context.tr('players.tag.whitelist'),
-                      color: theme.colorScheme.primary,
+              content: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(name),
+                    Row(
+                      children: [
+                        if (isOp)
+                          _PlayerTag(
+                            label: 'OP',
+                            color: theme.colors.onTertiaryContainer,
+                          ),
+                        if (inWhitelist)
+                          _PlayerTag(
+                            label: context.tr('players.tag.whitelist'),
+                            color: theme.colors.primary,
+                          ),
+                        if (isBanned)
+                          _PlayerTag(
+                            label: context.tr('players.tag.banned'),
+                            color: theme.colors.error,
+                          ),
+                      ],
                     ),
-                  if (isBanned)
-                    _PlayerTag(
-                      label: context.tr('players.tag.banned'),
-                      color: theme.colorScheme.error,
-                    ),
-                ],
-              ),
-              trailing: PopupMenuButton<String>(
-                onSelected: (action) =>
-                    _handleAction(context, server, name, action),
-                itemBuilder: (ctx) => [
-                  PopupMenuItem(
-                    value: 'kick',
-                    child: ListTile(
-                      leading: Icon(
-                        Icons.exit_to_app,
-                        color: theme.colorScheme.error,
+                  ],
+                ),
+              ],
+              endActions: [
+                MiuixOverlayIconDropdownMenu(
+                  entry: MiuixDropdownEntry(
+                    items: [
+                      MiuixDropdownItem(
+                        text: context.tr('players.action.kick'),
+                        onClick: () =>
+                            _handleAction(context, server, name, 'kick'),
                       ),
-                      title: Text(context.tr('players.action.kick')),
-                      contentPadding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                  const PopupMenuDivider(),
-                  PopupMenuItem(
-                    value: inWhitelist ? 'wl_remove' : 'wl_add',
-                    child: ListTile(
-                      leading: Icon(
-                        inWhitelist ? Icons.delete : Icons.how_to_reg_outlined,
-                        color: inWhitelist
-                            ? theme.colorScheme.error
-                            : theme.colorScheme.primary,
-                      ),
-                      title: Text(
-                        inWhitelist
+                      MiuixDropdownItem(
+                        text: inWhitelist
                             ? context.tr('players.action.removeFromWhitelist')
                             : context.tr('players.action.addToWhitelist'),
+                        onClick: () => _handleAction(
+                          context,
+                          server,
+                          name,
+                          inWhitelist ? 'wl_remove' : 'wl_add',
+                        ),
                       ),
-                      contentPadding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: isOp ? 'deop' : 'op',
-                    child: ListTile(
-                      leading: Icon(
-                        isOp ? Icons.delete : Icons.admin_panel_settings,
-                        color: isOp
-                            ? theme.colorScheme.error
-                            : theme.colorScheme.primary,
-                      ),
-                      title: Text(
-                        isOp
+                      MiuixDropdownItem(
+                        text: isOp
                             ? context.tr('players.action.deop')
                             : context.tr('players.action.op'),
+                        onClick: () => _handleAction(
+                          context,
+                          server,
+                          name,
+                          isOp ? 'deop' : 'op',
+                        ),
                       ),
-                      contentPadding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                  const PopupMenuDivider(),
-                  PopupMenuItem(
-                    value: 'ban',
-                    child: ListTile(
-                      leading: Icon(
-                        Icons.block,
-                        color: theme.colorScheme.error,
+                      MiuixDropdownItem(
+                        text: context.tr('players.action.ban'),
+                        onClick: () =>
+                            _handleAction(context, server, name, 'ban'),
                       ),
-                      title: Text(context.tr('players.action.ban')),
-                      contentPadding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                    ),
+                    ],
                   ),
-                ],
-              ),
+                  child: const MiuixIcon(icon: Icons.more_vert),
+                ),
+              ],
             ),
           );
         },
@@ -328,27 +338,40 @@ class _OnlineTabState extends State<_OnlineTab> {
     ServerController server,
     String name,
   ) async {
-    final reason = await showDialog<String>(
+    final reason = await showMiuixDialog<String>(
       context: context,
       builder: (ctx) {
         final ctrl = TextEditingController();
-        return AlertDialog(
-          title: Text(context.tr('players.kick.title', {'name': name})),
-          content: TextField(
-            controller: ctrl,
-            decoration: InputDecoration(
-              labelText: context.tr('players.kick.reasonHint'),
-              border: const OutlineInputBorder(),
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: MiuixText(
+                context.tr('players.kick.title', {'name': name}),
+                textAlign: TextAlign.center,
+                style: MiuixTheme.of(context).textStyles.title4,
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(ctx.tr('common.cancel')),
+            const SizedBox(height: 12),
+            EcTextField(
+              controller: ctrl,
+              label: context.tr('players.kick.reasonHint'),
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-              child: Text(ctx.tr('players.action.kick')),
+            const SizedBox(height: 20),
+            MiuixDialogActions(
+              children: [
+                MiuixTextButton(
+                  ctx.tr('common.cancel'),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                ),
+                MiuixButton(
+                  onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
+                  colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                  child: MiuixText(ctx.tr('players.action.kick')),
+                ),
+              ],
             ),
           ],
         );
@@ -364,30 +387,40 @@ class _OnlineTabState extends State<_OnlineTab> {
     ServerController server,
     String name,
   ) async {
-    final reason = await showDialog<String>(
+    final reason = await showMiuixDialog<String>(
       context: context,
       builder: (ctx) {
         final ctrl = TextEditingController();
-        return AlertDialog(
-          title: Text(context.tr('players.ban.title', {'name': name})),
-          content: TextField(
-            controller: ctrl,
-            decoration: InputDecoration(
-              labelText: context.tr('players.ban.reasonHint'),
-              border: const OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(ctx.tr('common.cancel')),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error,
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: MiuixText(
+                context.tr('players.ban.title', {'name': name}),
+                textAlign: TextAlign.center,
+                style: MiuixTheme.of(context).textStyles.title4,
               ),
-              onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-              child: Text(ctx.tr('players.action.ban')),
+            ),
+            const SizedBox(height: 12),
+            EcTextField(
+              controller: ctrl,
+              label: context.tr('players.ban.reasonHint'),
+            ),
+            const SizedBox(height: 20),
+            MiuixDialogActions(
+              children: [
+                MiuixTextButton(
+                  ctx.tr('common.cancel'),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                ),
+                MiuixButton(
+                  onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
+                  colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                  child: MiuixText(ctx.tr('players.action.ban')),
+                ),
+              ],
             ),
           ],
         );
@@ -419,7 +452,9 @@ class _WhitelistTabState extends State<_WhitelistTab> {
     // 不能在 initState 中直接同步调用，否则触发
     // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() { _future = _loadWhitelist(); });
+      if (mounted) {
+        setState(() => _future = _loadWhitelist());
+      }
     });
   }
 
@@ -464,7 +499,7 @@ class _WhitelistTabState extends State<_WhitelistTab> {
   Widget build(BuildContext context) {
     final server = ServerScope.of(context);
     final running = server.isRunning && server.isActive(widget.instance.id);
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
 
     return FutureBuilder<List<_NamedEntry>>(
       future: _future,
@@ -502,8 +537,8 @@ class _WhitelistTabState extends State<_WhitelistTab> {
                 ),
                 child: Text(
                   context.tr('players.readonlyNote'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: theme.colors.onSurfaceVariantSummary,
                   ),
                 ),
               ),
@@ -520,40 +555,53 @@ class _WhitelistTabState extends State<_WhitelistTab> {
                       itemCount: entries.length,
                       itemBuilder: (ctx, i) {
                         final e = entries[i];
-                        return Card(
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.secondaryContainer,
-                              child: Text(
-                                e.name[0].toUpperCase(),
-                                style: TextStyle(
-                                  color: theme.colorScheme.onSecondaryContainer,
-                                  fontWeight: FontWeight.bold,
+                        return MiuixCard(
+                          child: MiuixBasicComponent(
+                            startAction: Padding(
+                              padding: const EdgeInsets.only(right: 16),
+                              child: CircleAvatar(
+                                backgroundColor:
+                                    theme.colors.secondaryContainer,
+                                child: Text(
+                                  e.name[0].toUpperCase(),
+                                  style: TextStyle(
+                                    color: theme.colors.onSecondaryContainer,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ),
-                            title: Text(e.name),
-                            subtitle: e.uuid.isNotEmpty
-                                ? Text(e.uuid, style: theme.textTheme.bodySmall)
-                                : null,
-                            trailing: running
-                                ? IconButton(
-                                    icon: Icon(
-                                      Icons.delete,
-                                      color: theme.colorScheme.error,
-                                    ),
-                                    tooltip: context.tr(
-                                      'players.whitelist.remove',
-                                    ),
-                                    onPressed: () {
-                                      server.sendCommand(
-                                        'whitelist remove ${e.name}',
-                                      );
-                                      _refresh();
-                                    },
-                                  )
-                                : null,
+                            content: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(e.name),
+                                  ?e.uuid.isNotEmpty
+                                      ? Text(
+                                          e.uuid,
+                                          style: theme.textStyles.footnote1,
+                                        )
+                                      : null,
+                                ],
+                              ),
+                            ],
+                            endActions: [
+                              ?running
+                                  ? MiuixIconButton(
+                                      onPressed: () {
+                                        server.sendCommand(
+                                          'whitelist remove ${e.name}',
+                                        );
+                                        _refresh();
+                                      },
+                                      child: MiuixIcon(
+                                        icon: Icons.delete,
+                                        tint: theme.colors.error,
+                                      ),
+                                    )
+                                  : null,
+                            ],
                           ),
                         );
                       },
@@ -585,7 +633,9 @@ class _BansTabState extends State<_BansTab> {
     // 不能在 initState 中直接同步调用，否则触发
     // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() { _future = _loadBans(); });
+      if (mounted) {
+        setState(() => _future = _loadBans());
+      }
     });
   }
 
@@ -622,14 +672,16 @@ class _BansTabState extends State<_BansTab> {
         return lines
             .map((l) => l.trim())
             .where((l) => l.isNotEmpty)
-            .map((l) => _BanEntry(
-                  name: l,
-                  uuid: '',
-                  reason: '',
-                  source: '',
-                  expires: '',
-                  created: '',
-                ))
+            .map(
+              (l) => _BanEntry(
+                name: l,
+                uuid: '',
+                reason: '',
+                source: '',
+                expires: '',
+                created: '',
+              ),
+            )
             .toList();
       } catch (_) {}
     }
@@ -643,7 +695,7 @@ class _BansTabState extends State<_BansTab> {
   Widget build(BuildContext context) {
     final server = ServerScope.of(context);
     final running = server.isRunning && server.isActive(widget.instance.id);
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
 
     return FutureBuilder<List<_BanEntry>>(
       future: _future,
@@ -682,8 +734,8 @@ class _BansTabState extends State<_BansTab> {
                 ),
                 child: Text(
                   context.tr('players.readonlyNote'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: theme.colors.onSurfaceVariantSummary,
                   ),
                 ),
               ),
@@ -700,58 +752,70 @@ class _BansTabState extends State<_BansTab> {
                       itemCount: entries.length,
                       itemBuilder: (ctx, i) {
                         final e = entries[i];
-                        return Card(
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: theme.colorScheme.errorContainer,
-                              child: Icon(
-                                Icons.block,
-                                color: theme.colorScheme.onErrorContainer,
-                                size: 20,
+                        return MiuixCard(
+                          child: MiuixBasicComponent(
+                            startAction: Padding(
+                              padding: const EdgeInsets.only(right: 16),
+                              child: CircleAvatar(
+                                backgroundColor: theme.colors.errorContainer,
+                                child: Icon(
+                                  Icons.block,
+                                  color: theme.colors.onErrorContainer,
+                                  size: 20,
+                                ),
                               ),
                             ),
-                            title: Text(e.name),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (e.reason.isNotEmpty &&
-                                    e.reason != 'Banned by an operator.')
-                                  Text(
-                                    context.tr('players.bans.reason', {
-                                      'reason': e.reason,
-                                    }),
-                                    style: theme.textTheme.bodySmall,
+                            content: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(e.name),
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (e.reason.isNotEmpty &&
+                                          e.reason != 'Banned by an operator.')
+                                        Text(
+                                          context.tr('players.bans.reason', {
+                                            'reason': e.reason,
+                                          }),
+                                          style: theme.textStyles.footnote1,
+                                        ),
+                                      if (e.expires.isNotEmpty &&
+                                          e.expires.toLowerCase() != 'forever')
+                                        Text(
+                                          context.tr('players.bans.expires', {
+                                            'expires': e.expires,
+                                          }),
+                                          style: theme.textStyles.footnote1,
+                                        ),
+                                      if (e.uuid.isNotEmpty)
+                                        Text(
+                                          e.uuid,
+                                          style: theme.textStyles.footnote1
+                                              .copyWith(fontSize: 10),
+                                        ),
+                                    ],
                                   ),
-                                if (e.expires.isNotEmpty &&
-                                    e.expires.toLowerCase() != 'forever')
-                                  Text(
-                                    context.tr('players.bans.expires', {
-                                      'expires': e.expires,
-                                    }),
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                                if (e.uuid.isNotEmpty)
-                                  Text(
-                                    e.uuid,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            trailing: running
-                                ? IconButton(
-                                    icon: Icon(
-                                      Icons.delete,
-                                      color: theme.colorScheme.primary,
-                                    ),
-                                    tooltip: context.tr('players.bans.pardon'),
-                                    onPressed: () {
-                                      server.sendCommand('pardon ${e.name}');
-                                      _refresh();
-                                    },
-                                  )
-                                : null,
+                                ],
+                              ),
+                            ],
+                            endActions: [
+                              ?running
+                                  ? MiuixIconButton(
+                                      onPressed: () {
+                                        server.sendCommand('pardon ${e.name}');
+                                        _refresh();
+                                      },
+                                      child: MiuixIcon(
+                                        icon: Icons.delete,
+                                        tint: theme.colors.primary,
+                                      ),
+                                    )
+                                  : null,
+                            ],
                           ),
                         );
                       },
@@ -783,7 +847,9 @@ class _BanIpsTabState extends State<_BanIpsTab> {
     // 不能在 initState 中直接同步调用，否则触发
     // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() { _future = _loadBanIps(); });
+      if (mounted) {
+        setState(() => _future = _loadBanIps());
+      }
     });
   }
 
@@ -817,13 +883,15 @@ class _BanIpsTabState extends State<_BanIpsTab> {
         return lines
             .map((l) => l.trim())
             .where((l) => l.isNotEmpty)
-            .map((l) => _IpBanEntry(
-                  ip: l,
-                  reason: '',
-                  source: '',
-                  expires: '',
-                  created: '',
-                ))
+            .map(
+              (l) => _IpBanEntry(
+                ip: l,
+                reason: '',
+                source: '',
+                expires: '',
+                created: '',
+              ),
+            )
             .toList();
       } catch (_) {}
     }
@@ -837,7 +905,7 @@ class _BanIpsTabState extends State<_BanIpsTab> {
   Widget build(BuildContext context) {
     final server = ServerScope.of(context);
     final running = server.isRunning && server.isActive(widget.instance.id);
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
 
     return FutureBuilder<List<_IpBanEntry>>(
       future: _future,
@@ -858,14 +926,14 @@ class _BanIpsTabState extends State<_BanIpsTab> {
               actionIcon: Icons.add,
               onAction: running
                   ? () => _promptAndSend(
-                        context,
-                        server,
-                        title: context.tr('players.banIps.addTitle'),
-                        hint: context.tr('players.banIps.hint'),
-                        commandPrefix: 'ban-ip',
-                        onDone: _refresh,
-                        withReason: true,
-                      )
+                      context,
+                      server,
+                      title: context.tr('players.banIps.addTitle'),
+                      hint: context.tr('players.banIps.hint'),
+                      commandPrefix: 'ban-ip',
+                      onDone: _refresh,
+                      withReason: true,
+                    )
                   : null,
             ),
             if (!running)
@@ -876,8 +944,8 @@ class _BanIpsTabState extends State<_BanIpsTab> {
                 ),
                 child: Text(
                   context.tr('players.readonlyNote'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: theme.colors.onSurfaceVariantSummary,
                   ),
                 ),
               ),
@@ -894,38 +962,50 @@ class _BanIpsTabState extends State<_BanIpsTab> {
                       itemCount: entries.length,
                       itemBuilder: (ctx, i) {
                         final e = entries[i];
-                        return Card(
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: theme.colorScheme.errorContainer,
-                              child: Icon(
-                                Icons.router,
-                                color: theme.colorScheme.onErrorContainer,
-                                size: 20,
+                        return MiuixCard(
+                          child: MiuixBasicComponent(
+                            startAction: Padding(
+                              padding: const EdgeInsets.only(right: 16),
+                              child: CircleAvatar(
+                                backgroundColor: theme.colors.errorContainer,
+                                child: Icon(
+                                  Icons.router,
+                                  color: theme.colors.onErrorContainer,
+                                  size: 20,
+                                ),
                               ),
                             ),
-                            title: Text(e.ip),
-                            subtitle: e.reason.isNotEmpty
-                                ? Text(
-                                    context.tr('players.bans.reason', {
-                                      'reason': e.reason,
-                                    }),
-                                    style: theme.textTheme.bodySmall,
-                                  )
-                                : null,
-                            trailing: running
-                                ? IconButton(
-                                    icon: Icon(
-                                      Icons.delete,
-                                      color: theme.colorScheme.primary,
-                                    ),
-                                    tooltip: context.tr('players.banIps.pardon'),
-                                    onPressed: () {
-                                      server.sendCommand('pardon-ip ${e.ip}');
-                                      _refresh();
-                                    },
-                                  )
-                                : null,
+                            content: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(e.ip),
+                                  ?e.reason.isNotEmpty
+                                      ? Text(
+                                          context.tr('players.bans.reason', {
+                                            'reason': e.reason,
+                                          }),
+                                          style: theme.textStyles.footnote1,
+                                        )
+                                      : null,
+                                ],
+                              ),
+                            ],
+                            endActions: [
+                              ?running
+                                  ? MiuixIconButton(
+                                      onPressed: () {
+                                        server.sendCommand('pardon-ip ${e.ip}');
+                                        _refresh();
+                                      },
+                                      child: MiuixIcon(
+                                        icon: Icons.delete,
+                                        tint: theme.colors.primary,
+                                      ),
+                                    )
+                                  : null,
+                            ],
                           ),
                         );
                       },
@@ -957,7 +1037,9 @@ class _OpsTabState extends State<_OpsTab> {
     // 不能在 initState 中直接同步调用，否则触发
     // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() { _future = _loadOps(); });
+      if (mounted) {
+        setState(() => _future = _loadOps());
+      }
     });
   }
 
@@ -1002,7 +1084,7 @@ class _OpsTabState extends State<_OpsTab> {
   Widget build(BuildContext context) {
     final server = ServerScope.of(context);
     final running = server.isRunning && server.isActive(widget.instance.id);
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
 
     return FutureBuilder<List<_NamedEntry>>(
       future: _future,
@@ -1040,8 +1122,8 @@ class _OpsTabState extends State<_OpsTab> {
                 ),
                 child: Text(
                   context.tr('players.readonlyNote'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: theme.colors.onSurfaceVariantSummary,
                   ),
                 ),
               ),
@@ -1058,34 +1140,48 @@ class _OpsTabState extends State<_OpsTab> {
                       itemCount: entries.length,
                       itemBuilder: (ctx, i) {
                         final e = entries[i];
-                        return Card(
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.tertiaryContainer,
-                              child: Icon(
-                                Icons.star,
-                                color: theme.colorScheme.onTertiaryContainer,
-                                size: 20,
+                        return MiuixCard(
+                          child: MiuixBasicComponent(
+                            startAction: Padding(
+                              padding: const EdgeInsets.only(right: 16),
+                              child: CircleAvatar(
+                                backgroundColor: theme.colors.tertiaryContainer,
+                                child: Icon(
+                                  Icons.star,
+                                  color: theme.colors.onTertiaryContainer,
+                                  size: 20,
+                                ),
                               ),
                             ),
-                            title: Text(e.name),
-                            subtitle: e.uuid.isNotEmpty
-                                ? Text(e.uuid, style: theme.textTheme.bodySmall)
-                                : null,
-                            trailing: running
-                                ? IconButton(
-                                    icon: Icon(
-                                      Icons.delete,
-                                      color: theme.colorScheme.error,
-                                    ),
-                                    tooltip: context.tr('players.action.deop'),
-                                    onPressed: () {
-                                      server.sendCommand('deop ${e.name}');
-                                      _refresh();
-                                    },
-                                  )
-                                : null,
+                            content: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(e.name),
+                                  ?e.uuid.isNotEmpty
+                                      ? Text(
+                                          e.uuid,
+                                          style: theme.textStyles.footnote1,
+                                        )
+                                      : null,
+                                ],
+                              ),
+                            ],
+                            endActions: [
+                              ?running
+                                  ? MiuixIconButton(
+                                      onPressed: () {
+                                        server.sendCommand('deop ${e.name}');
+                                        _refresh();
+                                      },
+                                      child: MiuixIcon(
+                                        icon: Icons.delete,
+                                        tint: theme.colors.error,
+                                      ),
+                                    )
+                                  : null,
+                            ],
                           ),
                         );
                       },
@@ -1152,23 +1248,21 @@ class _ListHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
       child: Row(
         children: [
-          Text(title, style: theme.textTheme.titleSmall),
+          Text(title, style: theme.textStyles.subtitle),
           const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.refresh, size: 20),
-            tooltip: tooltip,
+          MiuixIconButton(
             onPressed: onRefresh,
+            child: MiuixIcon(icon: Icons.refresh, size: 20),
           ),
           if (actionIcon != null)
-            IconButton(
-              icon: Icon(actionIcon, size: 20),
-              tooltip: actionLabel,
+            MiuixIconButton(
               onPressed: onAction,
+              child: MiuixIcon(icon: actionIcon, size: 20),
             ),
         ],
       ),
@@ -1177,22 +1271,27 @@ class _ListHeader extends StatelessWidget {
 }
 
 /// 空白占位状态。
-Widget _emptyState(ThemeData theme, IconData icon, String title, String desc) {
+Widget _emptyState(
+  MiuixThemeData theme,
+  IconData icon,
+  String title,
+  String desc,
+) {
   return Center(
     child: Padding(
       padding: const EdgeInsets.all(32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 48, color: theme.colorScheme.onSurfaceVariant),
+          Icon(icon, size: 48, color: theme.colors.onSurfaceVariantSummary),
           const SizedBox(height: 12),
-          Text(title, style: theme.textTheme.titleMedium),
+          Text(title, style: theme.textStyles.title4),
           const SizedBox(height: 4),
           Text(
             desc,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: theme.textStyles.body2.copyWith(
+              color: theme.colors.onSurfaceVariantSummary,
             ),
           ),
         ],
@@ -1213,56 +1312,66 @@ Future<void> _promptAndSend(
 }) async {
   final nameCtrl = TextEditingController();
   final reasonCtrl = TextEditingController();
-  final result = await showDialog<Map<String, String>>(
+  final result = await showMiuixDialog<Map<String, String>>(
     context: context,
     builder: (ctx) {
-      return AlertDialog(
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: hint,
-                border: const OutlineInputBorder(),
-              ),
-              onSubmitted: (_) {
-                if (withReason) {
-                  // 有原因字段时，不在此处提交
-                } else {
-                  Navigator.of(ctx).pop({'name': nameCtrl.text.trim()});
-                }
-              },
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: MiuixText(
+              title,
+              textAlign: TextAlign.center,
+              style: MiuixTheme.of(context).textStyles.title4,
             ),
-            if (withReason) ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: reasonCtrl,
-                decoration: InputDecoration(
-                  labelText: ctx.tr('players.reasonHint'),
-                  border: const OutlineInputBorder(),
+          ),
+          const SizedBox(height: 12),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              EcTextField(
+                controller: nameCtrl,
+                label: hint,
+                onSubmitted: (_) {
+                  if (withReason) {
+                    // 有原因字段时，不在此处提交
+                  } else {
+                    Navigator.of(ctx).pop({'name': nameCtrl.text.trim()});
+                  }
+                },
+                autofocus: true,
+              ),
+              if (withReason) ...[
+                const SizedBox(height: 12),
+                EcTextField(
+                  controller: reasonCtrl,
+                  label: ctx.tr('players.reasonHint'),
+                  onSubmitted: (_) => Navigator.of(ctx).pop({
+                    'name': nameCtrl.text.trim(),
+                    'reason': reasonCtrl.text.trim(),
+                  }),
                 ),
-                onSubmitted: (_) => Navigator.of(ctx).pop({
+              ],
+            ],
+          ),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                ctx.tr('common.cancel'),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+              MiuixButton(
+                onPressed: () => Navigator.of(ctx).pop({
                   'name': nameCtrl.text.trim(),
-                  'reason': reasonCtrl.text.trim(),
+                  if (withReason) 'reason': reasonCtrl.text.trim(),
                 }),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(ctx.tr('common.ok')),
               ),
             ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop({
-              'name': nameCtrl.text.trim(),
-              if (withReason) 'reason': reasonCtrl.text.trim(),
-            }),
-            child: Text(ctx.tr('common.ok')),
           ),
         ],
       );

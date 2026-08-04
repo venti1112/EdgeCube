@@ -291,13 +291,7 @@ class InstanceController extends ChangeNotifier {
     final clear = newPath == null || newPath.isEmpty;
     _summaries = [
       for (final s in _summaries)
-        if (s.id == id)
-          s.copyWith(
-            path: newPath,
-            clearPath: clear,
-          )
-        else
-          s,
+        if (s.id == id) s.copyWith(path: newPath, clearPath: clear) else s,
     ];
     await _store.saveIndex(_summaries, _selectedId);
     notifyListeners();

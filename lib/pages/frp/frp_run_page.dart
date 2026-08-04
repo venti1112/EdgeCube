@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart';
 
 import '../../frp/frp_models.dart';
@@ -9,6 +10,8 @@ import '../../frp/frp_scope.dart';
 import '../../i18n/locale_scope.dart';
 import '../../tunnel/tunnel_service.dart';
 import '../../widgets/error_dialog.dart';
+import '../../widgets/ec_preference.dart';
+import '../../widgets/miuix_snackbar.dart';
 
 /// 单隧道运行页：启停开关 + 公网地址复制 + 实时 frpc 日志。
 class FrpRunPage extends StatefulWidget {
@@ -109,7 +112,7 @@ class _FrpRunPageState extends State<FrpRunPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final frp = FrpScope.of(context);
     final tunnel = widget.tunnel;
     final running = _isThisRunning;
@@ -120,30 +123,34 @@ class _FrpRunPageState extends State<FrpRunPage> {
     final address = tunnel.displayAddress;
 
     final String? statusText;
-    Color statusColor = theme.colorScheme.tertiary;
+    Color statusColor = theme.colors.onTertiaryContainer;
     if (running && _status == 'running') {
       statusText = context.tr('portMapping.tunnelRunning');
-      statusColor = theme.colorScheme.primary;
+      statusColor = theme.colors.primary;
     } else if (starting || (running && _status != null)) {
       statusText = context.tr('portMapping.tunnelConnecting');
     } else if (_exitCode != null && _exitCode != 0) {
       statusText = context.tr('portMapping.tunnelExitedWithError', {
         'code': '$_exitCode',
       });
-      statusColor = theme.colorScheme.error;
+      statusColor = theme.colors.error;
     } else {
       statusText = null;
     }
 
-    return Scaffold(
-      appBar: AppBar(title: Text(tunnel.name)),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: tunnel.name,
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              MiuixCard(
+                insideMargin: const EdgeInsets.only(bottom: 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -154,14 +161,14 @@ class _FrpRunPageState extends State<FrpRunPage> {
                           Icon(
                             Icons.cloud_outlined,
                             size: 20,
-                            color: theme.colorScheme.primary,
+                            color: theme.colors.primary,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               '$providerName · ${tunnel.type.toUpperCase()}',
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                color: theme.colorScheme.primary,
+                              style: theme.textStyles.subtitle.copyWith(
+                                color: theme.colors.primary,
                               ),
                             ),
                           ),
@@ -177,98 +184,100 @@ class _FrpRunPageState extends State<FrpRunPage> {
                               ),
                               child: Text(
                                 statusText,
-                                style: theme.textTheme.labelSmall
-                                    ?.copyWith(color: statusColor),
+                                style: theme.textStyles.footnote2.copyWith(
+                                  color: statusColor,
+                                ),
                               ),
                             ),
                         ],
                       ),
                     ),
-                    SwitchListTile(
-                      title: Text(context.tr('frp.runTunnel')),
-                      subtitle: Text(context.tr('frp.runTunnelSubtitle')),
+                    MiuixSwitchPreference(
+                      title: context.tr('frp.runTunnel'),
+                      summary: context.tr('frp.runTunnelSubtitle'),
                       value: running || starting,
-                      onChanged: starting ? null : _toggle,
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 16),
+                      enabled: !starting,
+                      onChanged: _toggle,
                     ),
                     if (address.isNotEmpty)
-                      ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.link, size: 20),
-                        title: Text(
-                          address,
-                          style: const TextStyle(fontFamily: 'monospace'),
+                      MiuixBasicComponent(
+                        insideMargin: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.copy, size: 18),
-                          tooltip: context.tr('frp.copyAddress'),
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: address));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content:
-                                    Text(context.tr('frp.addressCopied')),
-                                duration: const Duration(seconds: 2),
-                              ),
-                            );
-                          },
+                        startAction: const Padding(
+                          padding: EdgeInsets.only(right: 12),
+                          child: MiuixIcon(icon: Icons.link, size: 20),
                         ),
+                        title: address,
+                        endActions: [
+                          MiuixIconButton(
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: address));
+                              showMiuixSnackbar(
+                                context.tr('frp.addressCopied'),
+                              );
+                            },
+                            child: const MiuixIcon(icon: Icons.copy, size: 18),
+                          ),
+                        ],
                       ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Text(
-                  context.tr('portMapping.tunnelLog'),
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.cleaning_services_outlined, size: 18),
-                  tooltip: context.tr('portMapping.clearLog'),
-                  onPressed: () {
-                    _tunnelService.clearLog();
-                    setState(() => _logs.clear());
-                  },
-                ),
-              ],
-            ),
-            Container(
-              height: 280,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.all(8),
-              child: _logs.isEmpty
-                  ? Center(
-                      child: Text(
-                        context.tr('portMapping.noLogs'),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      controller: _logScroll,
-                      itemCount: _logs.length,
-                      itemBuilder: (_, i) => Text(
-                        _logs[i],
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 11,
-                          height: 1.3,
-                        ),
-                      ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Text(
+                    context.tr('portMapping.tunnelLog'),
+                    style: theme.textStyles.subtitle.copyWith(
+                      color: theme.colors.primary,
                     ),
-            ),
-          ],
+                  ),
+                  const Spacer(),
+                  MiuixIconButton(
+                    onPressed: () {
+                      _tunnelService.clearLog();
+                      setState(() => _logs.clear());
+                    },
+                    child: MiuixIcon(
+                      icon: Icons.cleaning_services_outlined,
+                      size: 18,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                height: 280,
+                decoration: BoxDecoration(
+                  color: theme.colors.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.all(8),
+                child: _logs.isEmpty
+                    ? Center(
+                        child: Text(
+                          context.tr('portMapping.noLogs'),
+                          style: theme.textStyles.footnote1.copyWith(
+                            color: theme.colors.onSurfaceVariantSummary,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _logScroll,
+                        itemCount: _logs.length,
+                        itemBuilder: (_, i) => Text(
+                          _logs[i],
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -36,7 +36,7 @@ class DownloadRunner {
 
   /// 获取官方端（Vanilla）发行版本列表，同时返回每个版本的详情页 URL 映射。
   static Future<({List<String> versions, Map<String, String> urls})>
-      fetchVanillaVersions() async {
+  fetchVanillaVersions() async {
     final client = HttpClient();
     try {
       final req = await client.getUrl(

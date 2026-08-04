@@ -65,7 +65,9 @@ class ShellController extends ChangeNotifier implements TerminalKeysController {
     try {
       await _service.start(cwd: cwd, shellId: shellId);
     } catch (e) {
-      _writeTerm('\r\n[EdgeCube] ${tr('shell.startFailed', {'error': '$e'})}\r\n');
+      _writeTerm(
+        '\r\n[EdgeCube] ${tr('shell.startFailed', {'error': '$e'})}\r\n',
+      );
     }
   }
 

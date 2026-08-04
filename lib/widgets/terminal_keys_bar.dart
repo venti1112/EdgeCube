@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:xterm/xterm.dart';
 
 /// 终端扩展按键栏
@@ -9,9 +10,9 @@ class TerminalKeysBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     return Material(
-      color: theme.colorScheme.surfaceContainerHigh,
+      color: theme.colors.surfaceContainerHigh,
       elevation: 2,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
@@ -27,8 +28,16 @@ class TerminalKeysBar extends StatelessWidget {
                 ),
                 _key(context, '/', () => controller.sendText('/')),
                 _key(context, '-', () => controller.sendText('-')),
-                _key(context, 'HOME', () => controller.sendKey(TerminalKey.home)),
-                _key(context, '↑', () => controller.sendKey(TerminalKey.arrowUp)),
+                _key(
+                  context,
+                  'HOME',
+                  () => controller.sendKey(TerminalKey.home),
+                ),
+                _key(
+                  context,
+                  '↑',
+                  () => controller.sendKey(TerminalKey.arrowUp),
+                ),
                 _key(context, 'END', () => controller.sendKey(TerminalKey.end)),
                 _key(
                   context,

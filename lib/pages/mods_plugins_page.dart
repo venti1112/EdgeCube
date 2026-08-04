@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../files/file_entry.dart';
@@ -14,6 +15,9 @@ import '../mods/download_queue.dart';
 import '../mods/icon_cache.dart';
 import '../mods/mod_metadata.dart';
 import '../mods/modrinth_service.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/miuix_snackbar.dart';
+import '../widgets/ec_preference.dart';
 import 'mod_download_page.dart';
 import 'poggit_download_page.dart';
 
@@ -45,6 +49,9 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
   Directory? _pluginsDir;
   Directory? _modsDir;
   TabController? _tabCtrl;
+
+  /// MiuixTabRow 是受控组件，需自持选中项；滑动 TabBarView 时反向同步。
+  int _tabIndex = 0;
 
   @override
   void didChangeDependencies() {
@@ -78,7 +85,13 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
     _tabCtrl?.dispose();
     // plugins → 管理选项卡 + 下载选项卡；mods → 管理选项卡 + 下载选项卡
     final count = (hasPlugins ? 2 : 0) + (hasMods ? 2 : 0);
+    _tabIndex = 0;
     _tabCtrl = count > 0 ? TabController(length: count, vsync: this) : null;
+    _tabCtrl?.addListener(() {
+      if (_tabCtrl != null && _tabCtrl!.index != _tabIndex && mounted) {
+        setState(() => _tabIndex = _tabCtrl!.index);
+      }
+    });
 
     if (!mounted) return;
     setState(() {
@@ -99,67 +112,73 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(context.tr('modsPlugins.title')),
-        bottom: _tabCtrl == null
+    final theme = MiuixTheme.of(context);
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('modsPlugins.title'),
+        navigationIcon: const EcBackButton(),
+        // 只换有 Material 观感的标签条；TabController + TabBarView 保留。
+        bottomContent: _tabCtrl == null
             ? null
-            : TabBar(
-                controller: _tabCtrl,
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                tabs: [
-                  if (_hasPlugins)
-                    Tab(text: context.tr('modsPlugins.tab.plugins')),
-                  if (_hasPlugins)
-                    Tab(
-                      text: _isPmmp
+            : Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: MiuixTabRow(
+                  tabs: [
+                    if (_hasPlugins) context.tr('modsPlugins.tab.plugins'),
+                    if (_hasPlugins)
+                      _isPmmp
                           ? context.tr('modsPlugins.tab.downloadPoggit')
                           : context.tr('modsPlugins.tab.downloadPlugin'),
+                    if (_hasMods) context.tr('modsPlugins.tab.mods'),
+                    if (_hasMods) context.tr('modsPlugins.tab.download'),
+                  ],
+                  selectedTabIndex: _tabIndex,
+                  onTabSelected: (i) {
+                    setState(() => _tabIndex = i);
+                    _tabCtrl?.animateTo(i);
+                  },
+                ),
+              ),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _tabCtrl == null
+            ? _emptyState(
+                theme,
+                Icons.extension_outlined,
+                context.tr('modsPlugins.noFolder.title'),
+                context.tr('modsPlugins.noFolder.desc'),
+              )
+            : TabBarView(
+                controller: _tabCtrl,
+                children: [
+                  if (_hasPlugins && _pluginsDir != null)
+                    _ContentTab(
+                      folder: _pluginsDir!,
+                      isJarContent: true,
+                      isPmmp: _isPmmp,
                     ),
-                  if (_hasMods) Tab(text: context.tr('modsPlugins.tab.mods')),
-                  if (_hasMods)
-                    Tab(text: context.tr('modsPlugins.tab.download')),
+                  if (_hasPlugins && _pluginsDir != null)
+                    _isPmmp
+                        ? PoggitDownloadPage(
+                            pluginsFolder: _pluginsDir!,
+                            embedded: true,
+                          )
+                        : ModDownloadPage(
+                            modsFolder: _pluginsDir!,
+                            embedded: true,
+                            projectType: 'plugin',
+                            titleKey: 'modsPlugins.downloadPlugin',
+                          ),
+                  if (_hasMods && _modsDir != null)
+                    _ContentTab(folder: _modsDir!, isJarContent: true),
+                  if (_hasMods && _modsDir != null)
+                    ModDownloadPage(modsFolder: _modsDir!, embedded: true),
                 ],
               ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _tabCtrl == null
-          ? _emptyState(
-              theme,
-              Icons.extension_outlined,
-              context.tr('modsPlugins.noFolder.title'),
-              context.tr('modsPlugins.noFolder.desc'),
-            )
-          : TabBarView(
-              controller: _tabCtrl,
-              children: [
-                if (_hasPlugins && _pluginsDir != null)
-                  _ContentTab(
-                    folder: _pluginsDir!,
-                    isJarContent: true,
-                    isPmmp: _isPmmp,
-                  ),
-                if (_hasPlugins && _pluginsDir != null)
-                  _isPmmp
-                      ? PoggitDownloadPage(
-                          pluginsFolder: _pluginsDir!,
-                          embedded: true,
-                        )
-                      : ModDownloadPage(
-                          modsFolder: _pluginsDir!,
-                          embedded: true,
-                          projectType: 'plugin',
-                          titleKey: 'modsPlugins.downloadPlugin',
-                        ),
-                if (_hasMods && _modsDir != null)
-                  _ContentTab(folder: _modsDir!, isJarContent: true),
-                if (_hasMods && _modsDir != null)
-                  ModDownloadPage(modsFolder: _modsDir!, embedded: true),
-              ],
-            ),
     );
   }
 }
@@ -215,7 +234,9 @@ class _ContentTabState extends State<_ContentTab> {
     final entries = await _service.list(widget.folder);
     if (!mounted) return;
     // PMMP 识别 .phar 文件，Java 识别 .jar 文件
-    final files = entries.where((e) => e.isFile && _isPluginFile(e.name)).toList();
+    final files = entries
+        .where((e) => e.isFile && _isPluginFile(e.name))
+        .toList();
     setState(() {
       _entries = files;
       _loading = false;
@@ -388,21 +409,14 @@ class _ContentTabState extends State<_ContentTab> {
       setState(() => _checkingUpdates = false);
 
       // 提示结果
-      final messenger = ScaffoldMessenger.of(context);
       final tr = LocaleScope.of(context).translations;
       if (_updates.isEmpty) {
-        messenger.showSnackBar(
-          SnackBar(content: Text(tr.get('modsPlugins.noUpdates'))),
-        );
+        showMiuixSnackbar(tr.get('modsPlugins.noUpdates'));
       } else {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              tr.get('modsPlugins.updatesAvailable', {
-                'count': '${_updates.length}',
-              }),
-            ),
-          ),
+        showMiuixSnackbar(
+          tr.get('modsPlugins.updatesAvailable', {
+            'count': '${_updates.length}',
+          }),
         );
       }
     } catch (e) {
@@ -517,7 +531,6 @@ class _ContentTabState extends State<_ContentTab> {
   /// 弹出更新选择对话框，让用户勾选要更新的模组。
   Future<void> _showUpdateSelection() async {
     final tr = LocaleScope.of(context).translations;
-    final theme = Theme.of(context);
 
     // 收集可更新的条目
     final updatable = <MapEntry<FileEntry, ModrinthVersion>>[];
@@ -534,103 +547,113 @@ class _ContentTabState extends State<_ContentTab> {
       for (final e in updatable) e.key.path: true,
     };
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showMiuixDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           final selectedCount = selected.values.where((v) => v).length;
-          return AlertDialog(
-            title: Text(tr.get('modsPlugins.selectUpdates')),
-            contentPadding: const EdgeInsets.only(top: 16),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        TextButton(
-                          onPressed: selected.values.every((v) => v)
-                              ? null
-                              : () {
-                                  setDialogState(() {
-                                    for (final k in selected.keys) {
-                                      selected[k] = true;
-                                    }
-                                  });
-                                },
-                          child: Text(tr.get('modsPlugins.selectAll')),
-                        ),
-                        TextButton(
-                          onPressed: selected.values.any((v) => v)
-                              ? () {
-                                  setDialogState(() {
-                                    for (final k in selected.keys) {
-                                      selected[k] = false;
-                                    }
-                                  });
-                                }
-                              : null,
-                          child: Text(tr.get('modsPlugins.deselectAll')),
-                        ),
-                      ],
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: MiuixText(
+                  tr.get('modsPlugins.selectUpdates'),
+                  textAlign: TextAlign.center,
+                  style: MiuixTheme.of(context).textStyles.title4,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          MiuixTextButton(
+                            tr.get('modsPlugins.selectAll'),
+                            onPressed: selected.values.every((v) => v)
+                                ? null
+                                : () {
+                                    setDialogState(() {
+                                      for (final k in selected.keys) {
+                                        selected[k] = true;
+                                      }
+                                    });
+                                  },
+                          ),
+                          MiuixTextButton(
+                            tr.get('modsPlugins.deselectAll'),
+                            onPressed: selected.values.any((v) => v)
+                                ? () {
+                                    setDialogState(() {
+                                      for (final k in selected.keys) {
+                                        selected[k] = false;
+                                      }
+                                    });
+                                  }
+                                : null,
+                          ),
+                        ],
+                      ),
                     ),
+                    const MiuixHorizontalDivider(),
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: updatable.length,
+                        itemBuilder: (ctx, i) {
+                          final entry = updatable[i].key;
+                          final version = updatable[i].value;
+                          final meta = _metadata[entry.path];
+                          final name = (meta != null && meta.name.isNotEmpty)
+                              ? meta.name
+                              : entry.name;
+                          final oldVersion = meta?.version ?? '?';
+                          final newVersion = version.name.isEmpty
+                              ? version.versionNumber
+                              : version.name;
+                          return MiuixCheckboxPreference(
+                            value: selected[entry.path] ?? false,
+                            onChanged: (v) {
+                              setDialogState(() => selected[entry.path] = v);
+                            },
+                            title: name,
+                            summary: '$oldVersion → $newVersion',
+                            insideMargin: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              MiuixDialogActions(
+                children: [
+                  MiuixTextButton(
+                    tr.get('common.cancel'),
+                    onPressed: () => Navigator.of(ctx).pop(false),
                   ),
-                  const Divider(height: 1),
-                  Flexible(
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: updatable.length,
-                      itemBuilder: (ctx, i) {
-                        final entry = updatable[i].key;
-                        final version = updatable[i].value;
-                        final meta = _metadata[entry.path];
-                        final name = (meta != null && meta.name.isNotEmpty)
-                            ? meta.name
-                            : entry.name;
-                        final oldVersion = meta?.version ?? '?';
-                        final newVersion = version.name.isEmpty
-                            ? version.versionNumber
-                            : version.name;
-                        return CheckboxListTile(
-                          value: selected[entry.path],
-                          onChanged: (v) {
-                            setDialogState(() {
-                              selected[entry.path] = v ?? false;
-                            });
-                          },
-                          title: Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            '$oldVersion → $newVersion',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        );
-                      },
+                  MiuixButton(
+                    onPressed: selectedCount == 0
+                        ? null
+                        : () => Navigator.of(ctx).pop(true),
+                    colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                    child: MiuixText(
+                      tr.get('modsPlugins.updateSelected', {
+                        'count': '$selectedCount',
+                      }),
                     ),
                   ),
                 ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text(tr.get('common.cancel')),
-              ),
-              FilledButton(
-                onPressed: selectedCount == 0
-                    ? null
-                    : () => Navigator.of(ctx).pop(true),
-                child: Text(
-                  tr.get('modsPlugins.updateSelected', {
-                    'count': '$selectedCount',
-                  }),
-                ),
               ),
             ],
           );
@@ -657,31 +680,45 @@ class _ContentTabState extends State<_ContentTab> {
   Future<void> _toggleEnabled(FileEntry entry) async {
     final tr = LocaleScope.of(context).translations;
     final lower = entry.name.toLowerCase();
-    final isDisabled = lower.endsWith('.jar.disabled') ||
-        lower.endsWith('.phar.disabled');
+    final isDisabled =
+        lower.endsWith('.jar.disabled') || lower.endsWith('.phar.disabled');
 
     // 弹窗确认
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showMiuixDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          isDisabled
-              ? tr.get('modsPlugins.confirmEnable')
-              : tr.get('modsPlugins.confirmDisable'),
-        ),
-        content: Text(entry.name),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(tr.get('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: MiuixText(
               isDisabled
-                  ? tr.get('modsPlugins.enable')
-                  : tr.get('modsPlugins.disable'),
+                  ? tr.get('modsPlugins.confirmEnable')
+                  : tr.get('modsPlugins.confirmDisable'),
+              textAlign: TextAlign.center,
+              style: MiuixTheme.of(context).textStyles.title4,
             ),
+          ),
+          const SizedBox(height: 12),
+          Text(entry.name),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                tr.get('common.cancel'),
+                onPressed: () => Navigator.of(ctx).pop(false),
+              ),
+              MiuixButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(
+                  isDisabled
+                      ? tr.get('modsPlugins.enable')
+                      : tr.get('modsPlugins.disable'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -746,19 +783,35 @@ class _ContentTabState extends State<_ContentTab> {
   Future<bool> _ensurePermission() async {
     if (await StoragePermission.isGranted()) return true;
     if (!mounted) return false;
-    final go = await showDialog<bool>(
+    final go = await showMiuixDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('fileBrowser.permissionTitle')),
-        content: Text(ctx.tr('fileBrowser.permissionContent')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: MiuixText(
+              ctx.tr('fileBrowser.permissionTitle'),
+              textAlign: TextAlign.center,
+              style: MiuixTheme.of(context).textStyles.title4,
+            ),
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('fileBrowser.grantPermission')),
+          const SizedBox(height: 12),
+          Text(ctx.tr('fileBrowser.permissionContent')),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                ctx.tr('common.cancel'),
+                onPressed: () => Navigator.of(ctx).pop(false),
+              ),
+              MiuixButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(ctx.tr('fileBrowser.grantPermission')),
+              ),
+            ],
           ),
         ],
       ),
@@ -775,21 +828,17 @@ class _ContentTabState extends State<_ContentTab> {
     final sourcePath = await pickFromSystem(
       context,
       mode: SystemPickMode.file,
-      allowedExtensions:
-          widget.isPmmp ? const ['.phar'] : const ['.jar'],
+      allowedExtensions: widget.isPmmp ? const ['.phar'] : const ['.jar'],
     );
     if (sourcePath == null) return;
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     final tr = LocaleScope.of(context).translations;
     setState(() => _importing = true);
     try {
       await _service.importFile(sourcePath, widget.folder);
       await _load();
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(tr.get('modsPlugins.importSuccess'))),
-      );
+      showMiuixSnackbar(tr.get('modsPlugins.importSuccess'));
     } catch (e) {
       if (!mounted) return;
       showErrorDialog(
@@ -804,26 +853,36 @@ class _ContentTabState extends State<_ContentTab> {
   // ── 删除文件 ──────────────────────────────────────────────────
 
   Future<void> _delete(FileEntry entry) async {
-    final theme = Theme.of(context);
     final tr = LocaleScope.of(context).translations;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showMiuixDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr.get('common.delete')),
-        content: Text(
-          tr.get('modsPlugins.deleteConfirm', {'name': entry.name}),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(tr.get('common.cancel')),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: theme.colorScheme.error,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: MiuixText(
+              tr.get('common.delete'),
+              textAlign: TextAlign.center,
+              style: MiuixTheme.of(context).textStyles.title4,
             ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(tr.get('common.delete')),
+          ),
+          const SizedBox(height: 12),
+          Text(tr.get('modsPlugins.deleteConfirm', {'name': entry.name})),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                tr.get('common.cancel'),
+                onPressed: () => Navigator.of(ctx).pop(false),
+              ),
+              MiuixButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(tr.get('common.delete')),
+              ),
+            ],
           ),
         ],
       ),
@@ -867,7 +926,7 @@ class _ContentTabState extends State<_ContentTab> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     if (_loading) return const Center(child: CircularProgressIndicator());
     return Column(
       children: [
@@ -893,14 +952,14 @@ class _ContentTabState extends State<_ContentTab> {
     );
   }
 
-  Widget _buildHeader(ThemeData theme) {
+  Widget _buildHeader(MiuixThemeData theme) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 4, 4),
       child: Row(
         children: [
           Text(
             context.tr('modsPlugins.count', {'count': '${_entries.length}'}),
-            style: theme.textTheme.titleSmall,
+            style: theme.textStyles.subtitle,
           ),
           const Spacer(),
           if (widget.isJarContent && !widget.isPmmp) ...[
@@ -910,20 +969,18 @@ class _ContentTabState extends State<_ContentTab> {
                 child: SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: MiuixInfiniteProgressIndicator(size: 20),
                 ),
               )
             else
-              IconButton(
-                icon: const Icon(Icons.system_update, size: 20),
-                tooltip: context.tr('modsPlugins.checkUpdates'),
+              MiuixIconButton(
                 onPressed: _checkUpdates,
+                child: MiuixIcon(icon: Icons.system_update, size: 20),
               ),
           ],
-          IconButton(
-            icon: const Icon(Icons.refresh, size: 20),
-            tooltip: context.tr('common.refresh'),
+          MiuixIconButton(
             onPressed: _load,
+            child: MiuixIcon(icon: Icons.refresh, size: 20),
           ),
           if (_importing)
             const Padding(
@@ -931,57 +988,56 @@ class _ContentTabState extends State<_ContentTab> {
               child: SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: MiuixInfiniteProgressIndicator(size: 20),
               ),
             )
           else
-            IconButton(
-              icon: const Icon(Icons.add, size: 20),
-              tooltip: context.tr('modsPlugins.import'),
+            MiuixIconButton(
               onPressed: _import,
+              child: MiuixIcon(icon: Icons.add, size: 20),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildUpdateBanner(ThemeData theme) {
+  Widget _buildUpdateBanner(MiuixThemeData theme) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer,
+        color: theme.colors.primaryContainer,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
-          Icon(Icons.update, size: 18, color: theme.colorScheme.primary),
+          Icon(Icons.update, size: 18, color: theme.colors.primary),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               context.tr('modsPlugins.updatesAvailable', {
                 'count': '${_updates.length}',
               }),
-              style: theme.textTheme.bodyMedium,
+              style: theme.textStyles.body2,
             ),
           ),
-          TextButton(
+          MiuixTextButton(
+            context.tr('modsPlugins.selectUpdates'),
             onPressed: _updatingPaths.isNotEmpty ? null : _showUpdateSelection,
-            child: Text(context.tr('modsPlugins.selectUpdates')),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildListTile(ThemeData theme, FileEntry entry) {
+  Widget _buildListTile(MiuixThemeData theme, FileEntry entry) {
     final meta = _metadata[entry.path];
     final iconUrl = _icons[entry.path];
     final hasUpdate = _updates.containsKey(entry.path);
     final isUpdating = _updatingPaths.contains(entry.path);
     final lower = entry.name.toLowerCase();
-    final isDisabled = lower.endsWith('.jar.disabled') ||
-        lower.endsWith('.phar.disabled');
+    final isDisabled =
+        lower.endsWith('.jar.disabled') || lower.endsWith('.phar.disabled');
     final isPluginFile = entry.isFile && _isPluginFile(entry.name);
 
     // 标题：模组名称 > 文件名（禁用时去掉 .disabled 后缀）
@@ -1011,77 +1067,91 @@ class _ContentTabState extends State<_ContentTab> {
       subtitle = _formatSize(entry.size);
     }
 
-    return Card(
-      color: isDisabled ? theme.colorScheme.surfaceContainerLow : null,
-      child: ListTile(
-        leading: _buildLeading(theme, entry, meta, iconUrl),
-        title: Text(
-          title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: isDisabled
-              ? theme.textTheme.bodyLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  decoration: TextDecoration.lineThrough,
-                )
-              : null,
+    return MiuixCard(
+      colors: MiuixCardColors(
+        color: isDisabled
+            ? theme.colors.surfaceContainer
+            : theme.colors.surface,
+        contentColor: theme.colors.onSurface,
+      ),
+      child: MiuixBasicComponent(
+        startAction: Padding(
+          padding: const EdgeInsets.only(right: 16),
+          child: _buildLeading(theme, entry, meta, iconUrl),
         ),
-        subtitle: subtitle != null
-            ? Text(
-                subtitle,
-                maxLines: 2,
+        content: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: isDisabled
-                      ? theme.colorScheme.onSurfaceVariant.withValues(
-                          alpha: 0.5,
-                        )
-                      : null,
-                ),
-              )
-            : null,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isPluginFile)
-              IconButton(
-                icon: Icon(
-                  isDisabled ? Icons.check_circle_outline : Icons.block,
-                  size: 20,
-                  color: isDisabled
-                      ? theme.colorScheme.onSurfaceVariant
-                      : theme.colorScheme.primary,
-                ),
-                tooltip: isDisabled
-                    ? context.tr('modsPlugins.enable')
-                    : context.tr('modsPlugins.disable'),
-                onPressed: () => _toggleEnabled(entry),
+                style: isDisabled
+                    ? theme.textStyles.body1.copyWith(
+                        color: theme.colors.onSurfaceVariantSummary,
+                        decoration: TextDecoration.lineThrough,
+                      )
+                    : null,
               ),
-            if (hasUpdate && !isDisabled)
-              isUpdating
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+              ?subtitle != null
+                  ? Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textStyles.footnote1.copyWith(
+                        color: isDisabled
+                            ? theme.colors.onSurfaceVariantSummary.withValues(
+                                alpha: 0.5,
+                              )
+                            : null,
                       ),
                     )
-                  : IconButton(
-                      icon: Icon(
-                        Icons.update,
-                        size: 20,
-                        color: theme.colorScheme.primary,
+                  : null,
+            ],
+          ),
+        ],
+        endActions: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isPluginFile)
+                MiuixIconButton(
+                  onPressed: () => _toggleEnabled(entry),
+                  child: MiuixIcon(
+                    icon: isDisabled ? Icons.check_circle_outline : Icons.block,
+                    size: 20,
+                    tint: isDisabled
+                        ? theme.colors.onSurfaceVariantSummary
+                        : theme.colors.primary,
+                  ),
+                ),
+              if (hasUpdate && !isDisabled)
+                isUpdating
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: MiuixInfiniteProgressIndicator(size: 20),
+                        ),
+                      )
+                    : MiuixIconButton(
+                        onPressed: () => _updateMod(entry),
+                        child: MiuixIcon(
+                          icon: Icons.update,
+                          size: 20,
+                          tint: theme.colors.primary,
+                        ),
                       ),
-                      tooltip: context.tr('modsPlugins.update'),
-                      onPressed: () => _updateMod(entry),
-                    ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, size: 20),
-              onPressed: () => _delete(entry),
-            ),
-          ],
-        ),
+              MiuixIconButton(
+                onPressed: () => _delete(entry),
+                child: MiuixIcon(icon: Icons.delete_outline, size: 20),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1091,7 +1161,7 @@ class _ContentTabState extends State<_ContentTab> {
   /// 优先显示从 Modrinth 获取的缓存图标，其次按加载器显示彩色方块，
   /// 最后回退到通用扩展图标。
   Widget _buildLeading(
-    ThemeData theme,
+    MiuixThemeData theme,
     FileEntry entry,
     ModMetadata? meta,
     String? iconUrl,
@@ -1114,7 +1184,7 @@ class _ContentTabState extends State<_ContentTab> {
     return const Icon(Icons.extension_outlined, size: 32);
   }
 
-  Widget _coloredBox(ThemeData theme, ModMetadata meta) {
+  Widget _coloredBox(MiuixThemeData theme, ModMetadata meta) {
     final color = switch (meta.loader) {
       ModLoader.fabric => const Color.fromARGB(255, 221, 170, 255),
       ModLoader.forge => const Color.fromARGB(255, 255, 170, 107),
@@ -1124,7 +1194,7 @@ class _ContentTabState extends State<_ContentTab> {
       ModLoader.bungeecord => const Color.fromARGB(255, 255, 221, 107),
       ModLoader.velocity => const Color.fromARGB(255, 107, 221, 255),
       ModLoader.pocketmine => const Color.fromARGB(255, 170, 255, 221),
-      ModLoader.unknown => theme.colorScheme.surfaceContainerHighest,
+      ModLoader.unknown => theme.colors.surfaceContainerHighest,
     };
     return Container(
       width: 40,
@@ -1139,22 +1209,27 @@ class _ContentTabState extends State<_ContentTab> {
 }
 
 /// 空白占位状态。
-Widget _emptyState(ThemeData theme, IconData icon, String title, String desc) {
+Widget _emptyState(
+  MiuixThemeData theme,
+  IconData icon,
+  String title,
+  String desc,
+) {
   return Center(
     child: Padding(
       padding: const EdgeInsets.all(32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 48, color: theme.colorScheme.onSurfaceVariant),
+          Icon(icon, size: 48, color: theme.colors.onSurfaceVariantSummary),
           const SizedBox(height: 12),
-          Text(title, style: theme.textTheme.titleMedium),
+          Text(title, style: theme.textStyles.title4),
           const SizedBox(height: 4),
           Text(
             desc,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: theme.textStyles.body2.copyWith(
+              color: theme.colors.onSurfaceVariantSummary,
             ),
           ),
         ],

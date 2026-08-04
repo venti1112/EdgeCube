@@ -69,8 +69,7 @@ class ProotRootfsInfo {
   String? get javaBin => envMainBin.isEmpty ? null : envMainBin;
 
   /// 是否已安装 Java（envType=java 且 envMainBin 非空）。
-  bool get hasJava =>
-      envType == 'java' && envMainBin.isNotEmpty;
+  bool get hasJava => envType == 'java' && envMainBin.isNotEmpty;
 
   factory ProotRootfsInfo.fromMap(Map<String, dynamic> m) {
     return ProotRootfsInfo(
@@ -80,9 +79,8 @@ class ProotRootfsInfo {
       envName: m['envName'] as String? ?? '',
       envVersionName: m['envVersionName'] as String? ?? '',
       envMainBin: m['envMainBin'] as String? ?? '',
-      envArgs: (m['envArgs'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
+      envArgs:
+          (m['envArgs'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
           const [],
       serverFileHint: m['serverFileHint'] as String? ?? '',
       description: m['description'] as String? ?? '',
@@ -129,10 +127,7 @@ class ProotService {
   ///
   /// [id] 为用户指定的 rootfs 标识；为空时从文件名推导。
   /// 解压耗时数十秒到数分钟，调用方应展示进度提示。
-  Future<ProotRootfsInfo> importRootfs(
-    String path, {
-    String? id,
-  }) async {
+  Future<ProotRootfsInfo> importRootfs(String path, {String? id}) async {
     final map = await _method.invokeMethod<Map<dynamic, dynamic>>(
       'importRootfs',
       {'path': path, 'id': id},

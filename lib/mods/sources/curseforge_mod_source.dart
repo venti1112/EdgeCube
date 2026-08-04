@@ -40,8 +40,12 @@ class CurseForgeModSource extends ModSource {
   bool supportsProjectType(String projectType) => projectType == 'mod';
 
   @override
-  List<String> supportedLoaders(String projectType) =>
-      const ['forge', 'fabric', 'quilt', 'neoforge'];
+  List<String> supportedLoaders(String projectType) => const [
+    'forge',
+    'fabric',
+    'quilt',
+    'neoforge',
+  ];
 
   /// CF 加载器筛选参数：Forge=1,Fabric=4,Quilt=5,NeoForge=6。
   static const _loaderTypeIds = {
@@ -113,9 +117,9 @@ class CurseForgeModSource extends ModSource {
     String projectId, {
     String projectType = 'mod',
   }) async {
-    final uri = Uri.parse('$_apiBase/v1/mods/$projectId/files').replace(
-      queryParameters: {'pageSize': '10000'},
-    );
+    final uri = Uri.parse(
+      '$_apiBase/v1/mods/$projectId/files',
+    ).replace(queryParameters: {'pageSize': '10000'});
     final json = await _getJson(uri) as Map<String, dynamic>;
     final data = (json['data'] as List? ?? []);
     final versions = data
@@ -271,8 +275,8 @@ class CurseForgeModSource extends ModSource {
       }
     }
     String? sha1;
-    for (final h in (f['hashes'] as List? ?? [])
-        .whereType<Map<String, dynamic>>()) {
+    for (final h
+        in (f['hashes'] as List? ?? []).whereType<Map<String, dynamic>>()) {
       // algo 1 = SHA1, 2 = MD5。
       if (h['algo'] == 1) sha1 = h['value'] as String?;
     }
@@ -291,12 +295,13 @@ class CurseForgeModSource extends ModSource {
     );
   }
 
-  static ModDependencyType _depType(int? relationType) => switch (relationType) {
-    1 => ModDependencyType.embedded,
-    2 => ModDependencyType.optional,
-    5 => ModDependencyType.incompatible,
-    _ => ModDependencyType.required, // 3 = requiredDependency
-  };
+  static ModDependencyType _depType(int? relationType) =>
+      switch (relationType) {
+        1 => ModDependencyType.embedded,
+        2 => ModDependencyType.optional,
+        5 => ModDependencyType.incompatible,
+        _ => ModDependencyType.required, // 3 = requiredDependency
+      };
 
   static String _releaseType(int? t) => switch (t) {
     2 => 'beta',

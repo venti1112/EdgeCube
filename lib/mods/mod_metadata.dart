@@ -113,7 +113,7 @@ class ModMetadataParser {
     // 1. 如果以 PK 开头，是 zip-based phar
     if (bytes.length >= 4 &&
         bytes[0] == 0x50 /* P */ &&
-        bytes[1] == 0x4B /* K */) {
+        bytes[1] == 0x4B /* K */ ) {
       try {
         archive = ZipDecoder().decodeBytes(bytes);
       } catch (_) {
@@ -131,7 +131,7 @@ class ModMetadataParser {
       while (dataStart < bytes.length &&
           (bytes[dataStart] == 0x28 /* ( */ ||
               bytes[dataStart] == 0x29 /* ) */ ||
-              bytes[dataStart] == 0x3B /* ; */)) {
+              bytes[dataStart] == 0x3B /* ; */ )) {
         dataStart += 1;
       }
       // 跳过 `?>` 和空白字符
@@ -142,7 +142,7 @@ class ModMetadataParser {
             b == 0x0D /* \r */ ||
             b == 0x0A /* \n */ ||
             b == 0x20 /* space */ ||
-            b == 0x09 /* \t */) {
+            b == 0x09 /* \t */ ) {
           dataStart += 1;
         } else {
           break;
@@ -166,7 +166,8 @@ class ModMetadataParser {
 
     // PocketMine-MP 插件元数据：plugin.yml（新）或 pocketmine.yml（旧）
     final pluginYml =
-        _readEntry(archive, 'plugin.yml') ?? _readEntry(archive, 'pocketmine.yml');
+        _readEntry(archive, 'plugin.yml') ??
+        _readEntry(archive, 'pocketmine.yml');
     if (pluginYml != null) {
       return _parsePmmpPluginYml(pluginYml);
     }

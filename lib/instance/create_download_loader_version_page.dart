@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../config/java_env_pref_store.dart';
 import '../i18n/locale_scope.dart';
@@ -6,6 +7,8 @@ import '../widgets/error_dialog.dart';
 import '../server/java_env_resolver.dart';
 import '../server/proot_service.dart';
 import '../server/server_service.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_dialog.dart';
 import 'create_download_install_loader_page.dart';
 import 'create_download_progress_page.dart';
 import 'download_session.dart';
@@ -79,8 +82,9 @@ class _SelectLoaderVersionPageState extends State<SelectLoaderVersionPage> {
       _versions = [];
     });
     try {
-      final versions =
-          await VersionFetchService.fetchFabricLoaderVersions(_stage.mcVersion);
+      final versions = await VersionFetchService.fetchFabricLoaderVersions(
+        _stage.mcVersion,
+      );
       if (!mounted) return;
       setState(() {
         _versions = versions;
@@ -90,24 +94,23 @@ class _SelectLoaderVersionPageState extends State<SelectLoaderVersionPage> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = context.tr('instance.fetchFabricLoaderVersionsFailed',
-            {'error': '$e'});
+        _error = context.tr('instance.fetchFabricLoaderVersionsFailed', {
+          'error': '$e',
+        });
       });
     }
   }
 
   String get _title => switch (_stage.loader) {
-        'forge' => context.tr('instance.titleSelectForgeVersion'),
-        'neoforge' => context.tr('instance.titleSelectNeoforgeVersion'),
-        _ => context.tr('instance.titleSelectFabricLoaderVersion'),
-      };
+    'forge' => context.tr('instance.titleSelectForgeVersion'),
+    'neoforge' => context.tr('instance.titleSelectNeoforgeVersion'),
+    _ => context.tr('instance.titleSelectFabricLoaderVersion'),
+  };
 
   Future<bool> _checkJavaEnvAvailable() async {
     final results = await Future.wait([
       ServerService().availableJreIds(),
-      const ProotService().listRootfs().catchError(
-            (_) => <ProotRootfsInfo>[],
-          ),
+      const ProotService().listRootfs().catchError((_) => <ProotRootfsInfo>[]),
       JavaEnvPrefStore.loadPriority(),
     ]);
     final env = resolveJavaEnv(
@@ -118,15 +121,16 @@ class _SelectLoaderVersionPageState extends State<SelectLoaderVersionPage> {
     );
     if (env != null) return true;
     if (!mounted) return false;
-    await showDialog<void>(
+    await showMiuixDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.noJavaEnvTitle')),
-        content: Text(ctx.tr('instance.noJavaEnvForInstall')),
-        actions: [
-          FilledButton(
+      title: context.tr('instance.noJavaEnvTitle'),
+      summary: context.tr('instance.noJavaEnvForInstall'),
+      builder: (ctx) => MiuixDialogActions(
+        children: [
+          MiuixButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(ctx.tr('common.ok')),
+            colors: MiuixButtonDefaults.buttonColorsPrimary(ctx),
+            child: MiuixText(ctx.tr('common.ok')),
           ),
         ],
       ),
@@ -135,31 +139,25 @@ class _SelectLoaderVersionPageState extends State<SelectLoaderVersionPage> {
   }
 
   Future<void> _onSelect(String loaderVersion) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.confirmVersionTitle')),
-        content: Text(
-          switch (_stage.loader) {
-            'forge' => ctx.tr('instance.confirmInstallForge',
-                {'version': _stage.mcVersion, 'loader': loaderVersion}),
-            'neoforge' => ctx.tr('instance.confirmInstallNeoforge',
-                {'version': _stage.mcVersion, 'loader': loaderVersion}),
-            _ => ctx.tr('instance.confirmDownloadFabric',
-                {'version': _stage.mcVersion, 'loader': loaderVersion}),
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('common.ok')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: context.tr('instance.confirmVersionTitle'),
+      message: switch (_stage.loader) {
+        'forge' => context.tr('instance.confirmInstallForge', {
+          'version': _stage.mcVersion,
+          'loader': loaderVersion,
+        }),
+        'neoforge' => context.tr('instance.confirmInstallNeoforge', {
+          'version': _stage.mcVersion,
+          'loader': loaderVersion,
+        }),
+        _ => context.tr('instance.confirmDownloadFabric', {
+          'version': _stage.mcVersion,
+          'loader': loaderVersion,
+        }),
+      },
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('common.ok'),
     );
     if (confirmed != true || !mounted) return;
 
@@ -188,8 +186,9 @@ class _SelectLoaderVersionPageState extends State<SelectLoaderVersionPage> {
       }
 
       // Forge / NeoForge：进入安装加载器页；成功后（pop true）结束整个流程。
-      _session.selectedForgeVersion =
-          _stage.loader == 'forge' ? loaderVersion : _session.selectedForgeVersion;
+      _session.selectedForgeVersion = _stage.loader == 'forge'
+          ? loaderVersion
+          : _session.selectedForgeVersion;
       _session.selectedNeoforgeVersion = _stage.loader == 'neoforge'
           ? loaderVersion
           : _session.selectedNeoforgeVersion;
@@ -216,20 +215,28 @@ class _SelectLoaderVersionPageState extends State<SelectLoaderVersionPage> {
     }
   }
 
-  Future<void> _showDuplicateDialog(String name) =>
-      showErrorDialog(context, context.tr('instance.duplicateName', {'name': name}));
+  Future<void> _showDuplicateDialog(String name) => showErrorDialog(
+    context,
+    context.tr('instance.duplicateName', {'name': name}),
+  );
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(_title)),
-      body: SafeArea(
-        child: VersionSelectStep(
-          versions: _versions,
-          loading: _loading,
-          error: _error,
-          onRetry: _load,
-          onSelect: _onSelect,
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: _title,
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: VersionSelectStep(
+            versions: _versions,
+            loading: _loading,
+            error: _error,
+            onRetry: _load,
+            onSelect: _onSelect,
+          ),
         ),
       ),
     );

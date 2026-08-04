@@ -1,10 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart';
 
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_dialog.dart';
 
 class PhotoAsset {
   const PhotoAsset({
@@ -102,19 +105,26 @@ Future<String?> pickPhoto(BuildContext context) async {
 }
 
 Future<bool> _requestPhotoPermission(BuildContext context) async {
-  final shouldRequest = await showDialog<bool>(
+  final shouldRequest = await showMiuixDialog<bool>(
     context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(context.tr('photoPicker.permissionTitle')),
-      content: Text(context.tr('photoPicker.permissionContent')),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: Text(context.tr('common.cancel')),
-        ),
-        FilledButton.tonal(
-          onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: Text(context.tr('photoPicker.allow')),
+    title: context.tr('photoPicker.permissionTitle'),
+    builder: (dialogContext) => Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(context.tr('photoPicker.permissionContent')),
+        const SizedBox(height: 20),
+        MiuixDialogActions(
+          children: [
+            MiuixTextButton(
+              context.tr('common.cancel'),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+            ),
+            MiuixButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: MiuixText(context.tr('photoPicker.allow')),
+            ),
+          ],
         ),
       ],
     ),
@@ -146,47 +156,52 @@ class _PhotoPickerPageState extends State<_PhotoPickerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(context.tr('photoPicker.selectPhoto')),
+    // 相册选取界面刻意固定黑底白字，不随明暗主题变化。
+    return MiuixScaffold(
+      containerColor: Colors.black,
+      topBar: MiuixSmallTopAppBar(
+        color: Colors.black,
+        titleColor: Colors.white,
+        title: context.tr('photoPicker.selectPhoto'),
+        navigationIcon: const EcBackButton(),
       ),
-      body: FutureBuilder<List<PhotoAsset>>(
-        future: _photosFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
+      content: (padding) => Padding(
+        padding: padding,
+        child: FutureBuilder<List<PhotoAsset>>(
+          future: _photosFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    context.tr('photoPicker.loadFailed', {
+                      'error': snapshot.error.toString(),
+                    }),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ),
+              );
+            }
+            final photos = snapshot.data ?? const <PhotoAsset>[];
+            if (photos.isEmpty) {
+              return Center(
                 child: Text(
-                  context.tr('photoPicker.loadFailed', {
-                    'error': snapshot.error.toString(),
-                  }),
-                  textAlign: TextAlign.center,
+                  context.tr('photoPicker.noPhotos'),
                   style: const TextStyle(color: Colors.white70),
                 ),
-              ),
+              );
+            }
+            return _PhotoGrid(
+              photos: photos,
+              onSelected: (index) => _openPreview(photos, index),
             );
-          }
-          final photos = snapshot.data ?? const <PhotoAsset>[];
-          if (photos.isEmpty) {
-            return Center(
-              child: Text(
-                context.tr('photoPicker.noPhotos'),
-                style: const TextStyle(color: Colors.white70),
-              ),
-            );
-          }
-          return _PhotoGrid(
-            photos: photos,
-            onSelected: (index) => _openPreview(photos, index),
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -222,50 +237,52 @@ class _PhotoPreviewPageState extends State<_PhotoPreviewPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text('${_index + 1}/${widget.photos.length}'),
+    return MiuixScaffold(
+      containerColor: Colors.black,
+      topBar: MiuixSmallTopAppBar(
+        color: Colors.black,
+        titleColor: Colors.white,
+        title: '${_index + 1}/${widget.photos.length}',
+        navigationIcon: const EcBackButton(),
         actions: [
-          TextButton(
+          MiuixTextButton(
+            context.tr('photoPicker.use'),
+            textStyle: const TextStyle(color: Colors.white),
             onPressed: () => Navigator.of(context).pop(_current),
-            child: Text(
-              context.tr('photoPicker.use'),
-              style: TextStyle(color: Colors.white),
-            ),
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          PageView.builder(
-            controller: _controller,
-            itemCount: widget.photos.length,
-            onPageChanged: (index) => setState(() => _index = index),
-            itemBuilder: (_, index) {
-              final photo = widget.photos[index];
-              return InteractiveViewer(
-                minScale: 1,
-                maxScale: 5,
-                child: Center(
-                  child: _OriginalBytesImage(
-                    key: ValueKey('large-${photo.uri}'),
-                    photo: photo,
-                    fit: BoxFit.contain,
+      content: (padding) => Padding(
+        padding: padding,
+        child: Stack(
+          children: [
+            PageView.builder(
+              controller: _controller,
+              itemCount: widget.photos.length,
+              onPageChanged: (index) => setState(() => _index = index),
+              itemBuilder: (_, index) {
+                final photo = widget.photos[index];
+                return InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 5,
+                  child: Center(
+                    child: _OriginalBytesImage(
+                      key: ValueKey('large-${photo.uri}'),
+                      photo: photo,
+                      fit: BoxFit.contain,
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 16,
-            child: SafeArea(top: false, child: _PhotoInfo(photo: _current)),
-          ),
-        ],
+                );
+              },
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16,
+              child: SafeArea(top: false, child: _PhotoInfo(photo: _current)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -361,7 +378,7 @@ class _OriginalBytesImage extends StatelessWidget {
         if (snapshot.connectionState != ConnectionState.done) {
           return const ColoredBox(
             color: Color(0xFF151515),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: MiuixInfiniteProgressIndicator(size: 20)),
           );
         }
         if (!snapshot.hasData) {
@@ -405,7 +422,7 @@ class _PhotoBytesImage extends StatelessWidget {
         if (snapshot.connectionState != ConnectionState.done) {
           return const ColoredBox(
             color: Color(0xFF151515),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: MiuixInfiniteProgressIndicator(size: 20)),
           );
         }
         if (!snapshot.hasData) {

@@ -1,11 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import '../instance/instance.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_dialog.dart';
 import 'create_download_loader_version_page.dart';
 import 'create_download_progress_page.dart';
 import 'download_runner.dart';
@@ -175,24 +178,25 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
     switch (widget.stage.kind) {
       case VersionKind.fabricMc:
         _session.selectedMcVersion = version;
-        _pushLoader(LoaderStage(
-          loader: 'fabric',
-          mcVersion: version,
-        ));
+        _pushLoader(LoaderStage(loader: 'fabric', mcVersion: version));
       case VersionKind.forgeMc:
         _session.selectedForgeMcVersion = version;
-        _pushLoader(LoaderStage(
-          loader: 'forge',
-          mcVersion: version,
-          versions: _session.forgeVersionMap[version] ?? const [],
-        ));
+        _pushLoader(
+          LoaderStage(
+            loader: 'forge',
+            mcVersion: version,
+            versions: _session.forgeVersionMap[version] ?? const [],
+          ),
+        );
       case VersionKind.neoforgeMc:
         _session.selectedNeoforgeMcVersion = version;
-        _pushLoader(LoaderStage(
-          loader: 'neoforge',
-          mcVersion: version,
-          versions: _session.neoforgeVersionMap[version] ?? const [],
-        ));
+        _pushLoader(
+          LoaderStage(
+            loader: 'neoforge',
+            mcVersion: version,
+            versions: _session.neoforgeVersionMap[version] ?? const [],
+          ),
+        );
       case VersionKind.survivalcraft:
         _confirmSurvivalcraft(version);
       case VersionKind.simple:
@@ -216,46 +220,51 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
     final mcpeVersion = isPocketmine
         ? _session.pocketmineMcpeVersions[version]
         : (isPowernukkitx ? _session.powernukkitxMcVersions[version] : null);
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showMiuixDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.confirmVersionTitle')),
-        content: Column(
+      title: context.tr('instance.confirmVersionTitle'),
+      // 主文案交给 summary（Miuix 会居中排版）；MCPE 版本号作为补充信息
+      // 放进 content，故此处不能直接用 showMiuixConfirm。
+      summary: isPocketmine
+          ? context.tr('instance.confirmDownloadPmmp', {'version': version})
+          : isPowernukkitx
+          ? context.tr('instance.confirmDownloadPowernukkitx', {
+              'version': version,
+            })
+          : isAllay
+          ? context.tr('instance.confirmDownloadAllay', {'version': version})
+          : context.tr('instance.confirmDownload', {'version': version}),
+      builder: (ctx) {
+        final theme = MiuixTheme.of(ctx);
+        return Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              isPocketmine
-                  ? ctx.tr('instance.confirmDownloadPmmp', {'version': version})
-                  : isPowernukkitx
-                      ? ctx.tr('instance.confirmDownloadPowernukkitx',
-                          {'version': version})
-                      : isAllay
-                          ? ctx.tr('instance.confirmDownloadAllay',
-                              {'version': version})
-                          : ctx.tr('instance.confirmDownload',
-                              {'version': version}),
-            ),
             if (mcpeVersion != null) ...[
-              const SizedBox(height: 8),
-              Text(
+              MiuixText(
                 ctx.tr('instance.mcpeVersionLabel', {'version': mcpeVersion}),
-                style: Theme.of(ctx).textTheme.bodySmall,
+                style: theme.textStyles.footnote1,
+                color: theme.colors.onSurfaceVariantSummary,
+                textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 12),
             ],
+            MiuixDialogActions(
+              children: [
+                MiuixTextButton(
+                  ctx.tr('common.cancel'),
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                ),
+                MiuixButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  colors: MiuixButtonDefaults.buttonColorsPrimary(ctx),
+                  child: MiuixText(ctx.tr('common.ok')),
+                ),
+              ],
+            ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('common.ok')),
-          ),
-        ],
-      ),
+        );
+      },
     );
     if (confirmed != true || !mounted) return;
 
@@ -265,10 +274,8 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
       _session.selectedVersion = version;
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => DownloadProgressPage(
-            session: _session,
-            instanceId: instance.id,
-          ),
+          builder: (_) =>
+              DownloadProgressPage(session: _session, instanceId: instance.id),
         ),
       );
     } on DuplicateInstanceNameException {
@@ -279,24 +286,14 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
   /// Survivalcraft：确认后创建实例并迁移到 proot 容器 rootfs 的 /opt/{id}，
   /// 设置 proot 运行环境与启动命令，随后进入下载并解压页。
   Future<void> _confirmSurvivalcraft(String version) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('instance.confirmVersionTitle')),
-        content: Text(
-          ctx.tr('instance.confirmDownloadSurvivalcraft', {'version': version}),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('common.ok')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: context.tr('instance.confirmVersionTitle'),
+      message: context.tr('instance.confirmDownloadSurvivalcraft', {
+        'version': version,
+      }),
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('common.ok'),
     );
     if (confirmed != true || !mounted) return;
 
@@ -344,10 +341,8 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
       if (!mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => DownloadProgressPage(
-            session: _session,
-            instanceId: instance.id,
-          ),
+          builder: (_) =>
+              DownloadProgressPage(session: _session, instanceId: instance.id),
         ),
       );
     } on DuplicateInstanceNameException {
@@ -355,8 +350,10 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
     }
   }
 
-  Future<void> _showDuplicateDialog(String name) =>
-      showErrorDialog(context, context.tr('instance.duplicateName', {'name': name}));
+  Future<void> _showDuplicateDialog(String name) => showErrorDialog(
+    context,
+    context.tr('instance.duplicateName', {'name': name}),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -366,28 +363,36 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
       subtitles = {
         for (final v in _versions)
           if (_session.pocketmineMcpeVersions.containsKey(v))
-            v: context.tr('instance.pmmpVersionLabel',
-                {'version': _session.pocketmineMcpeVersions[v]!}),
+            v: context.tr('instance.pmmpVersionLabel', {
+              'version': _session.pocketmineMcpeVersions[v]!,
+            }),
       };
     } else if (_serverType == 'powernukkitx') {
       subtitles = {
         for (final v in _versions)
           if (_session.powernukkitxMcVersions.containsKey(v))
-            v: context.tr('instance.pnxVersionLabel',
-                {'version': _session.powernukkitxMcVersions[v]!}),
+            v: context.tr('instance.pnxVersionLabel', {
+              'version': _session.powernukkitxMcVersions[v]!,
+            }),
       };
     }
 
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('instance.titleSelectVersion'))),
-      body: SafeArea(
-        child: VersionSelectStep(
-          versions: _versions,
-          loading: _loading,
-          error: _error,
-          subtitles: subtitles,
-          onRetry: _load,
-          onSelect: _onSelect,
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('instance.titleSelectVersion'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: VersionSelectStep(
+            versions: _versions,
+            loading: _loading,
+            error: _error,
+            subtitles: subtitles,
+            onRetry: _load,
+            onSelect: _onSelect,
+          ),
         ),
       ),
     );

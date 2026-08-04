@@ -1,12 +1,16 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
 import '../i18n/locale_scope.dart';
 import '../logging/log_service.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/miuix_snackbar.dart';
 
 /// 日志查看与导出页面。
 ///
@@ -99,7 +103,6 @@ class _LogViewerPageState extends State<LogViewerPage> {
   Future<void> _exportCurrent() async {
     if (_files.isEmpty || _exporting) return;
     setState(() => _exporting = true);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final file = _files[_selectedIndex];
       await SharePlus.instance.share(
@@ -109,9 +112,7 @@ class _LogViewerPageState extends State<LogViewerPage> {
         ),
       );
       if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text(context.tr('logViewer.exportSuccess'))),
-        );
+        showMiuixSnackbar(context.tr('logViewer.exportSuccess'));
       }
     } catch (e) {
       if (mounted) {
@@ -128,132 +129,98 @@ class _LogViewerPageState extends State<LogViewerPage> {
   /// 清除全部日志文件（带确认对话框）。
   Future<void> _clearAll() async {
     if (_files.isEmpty) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('logViewer.clearConfirmTitle')),
-        content: Text(ctx.tr('logViewer.clearConfirmMessage')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('common.confirm')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: context.tr('logViewer.clearConfirmTitle'),
+      message: context.tr('logViewer.clearConfirmMessage'),
     );
-    if (confirmed != true || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
+    if (!confirmed || !mounted) return;
     await LogService.instance.clearAllLogs();
     if (!mounted) return;
-    messenger.showSnackBar(
-      SnackBar(content: Text(context.tr('logViewer.clearSuccess'))),
-    );
+    showMiuixSnackbar(context.tr('logViewer.clearSuccess'));
     _selectedIndex = 0;
     await _loadFiles();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(context.tr('logViewer.title')),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('logViewer.title'),
+        navigationIcon: const EcBackButton(),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: context.tr('logViewer.refresh'),
+          MiuixIconButton(
             onPressed: _loading ? null : _loadFiles,
+            enabled: !_loading,
+            child: const MiuixIcon(icon: Icons.refresh),
           ),
-          IconButton(
-            icon: _exporting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.share_outlined),
-            tooltip: context.tr('logViewer.export'),
+          MiuixIconButton(
             onPressed: (_loading || _files.isEmpty || _exporting)
                 ? null
                 : _exportCurrent,
+            enabled: !(_loading || _files.isEmpty || _exporting),
+            child: _exporting
+                ? const MiuixInfiniteProgressIndicator(size: 20)
+                : const MiuixIcon(icon: Icons.share_outlined),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_sweep_outlined),
-            tooltip: context.tr('logViewer.clearAll'),
+          MiuixIconButton(
             onPressed: (_loading || _files.isEmpty) ? null : _clearAll,
+            enabled: !(_loading || _files.isEmpty),
+            child: const MiuixIcon(icon: Icons.delete_sweep_outlined),
           ),
         ],
       ),
-      body: _files.isEmpty
-          ? Center(child: Text(context.tr('logViewer.empty')))
-          : Column(
-              children: [
-                // 日期选择器
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Row(
-                    children: [
-                      Text(
-                        context.tr('logViewer.selectDate'),
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: DropdownButton<int>(
-                          isExpanded: true,
-                          value: _selectedIndex,
-                          items: [
-                            for (var i = 0; i < _files.length; i++)
-                              DropdownMenuItem(
-                                value: i,
-                                child: Text(_dateLabel(_files[i])),
-                              ),
-                          ],
-                          onChanged: (value) {
-                            if (value == null || value == _selectedIndex) {
-                              return;
-                            }
-                            setState(() => _selectedIndex = value);
-                            _loadContent();
-                          },
-                        ),
-                      ),
-                    ],
+      content: (padding) => Padding(
+        padding: padding,
+        child: _files.isEmpty
+            ? Center(child: MiuixText(context.tr('logViewer.empty')))
+            : Column(
+                children: [
+                  // 日期选择器
+                  MiuixOverlayDropdownPreference(
+                    title: context.tr('logViewer.selectDate'),
+                    items: [for (final f in _files) _dateLabel(f)],
+                    selectedIndex: _selectedIndex,
+                    onSelectedIndexChange: (value) {
+                      if (value == _selectedIndex) return;
+                      setState(() => _selectedIndex = value);
+                      _loadContent();
+                    },
                   ),
-                ),
-                const Divider(height: 1),
-                // 日志内容展示区
-                Expanded(
-                  child: _loading
-                      ? Center(
-                          child: Text(context.tr('logViewer.loading')),
-                        )
-                      : _content.isEmpty
-                          ? Center(child: Text(context.tr('logViewer.empty')))
-                          : Scrollbar(
-                              child: SingleChildScrollView(
-                                padding: const EdgeInsets.all(12),
-                                child: SelectableText(
-                                  _content,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    fontFamily: 'monospace',
-                                    fontFamilyFallback: const [
-                                      'Courier',
-                                      'Menlo',
-                                    ],
-                                    height: 1.4,
-                                  ),
+                  const MiuixHorizontalDivider(),
+                  // 日志内容展示区
+                  Expanded(
+                    child: _loading
+                        ? Center(
+                            child: MiuixText(context.tr('logViewer.loading')),
+                          )
+                        : _content.isEmpty
+                        ? Center(
+                            child: MiuixText(context.tr('logViewer.empty')),
+                          )
+                        : Scrollbar(
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.all(12),
+                              child: SelectableText(
+                                _content,
+                                style: theme.textStyles.footnote1.copyWith(
+                                  color: theme.colors.onBackground,
+                                  fontFamily: 'monospace',
+                                  fontFamilyFallback: const [
+                                    'Courier',
+                                    'Menlo',
+                                  ],
+                                  height: 1.4,
                                 ),
                               ),
                             ),
-                ),
-              ],
-            ),
+                          ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }

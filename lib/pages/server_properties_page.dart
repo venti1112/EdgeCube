@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
@@ -12,6 +13,10 @@ import '../instance/instance_scope.dart';
 import '../server/server_controller.dart';
 import '../server/server_properties.dart';
 import '../server/server_scope.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/ec_text_field.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/miuix_snackbar.dart';
 import 'server_icon_crop_page.dart';
 
 /// server.properties 可视化编辑页面。
@@ -685,12 +690,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
       _dirtyKeys.clear();
       _savedOnce = true;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.tr('serverProps.saved')),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        showMiuixSnackbar(context.tr('serverProps.saved'));
         setState(() => _saving = false);
       }
     } catch (e) {
@@ -733,19 +733,26 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
   Future<bool> _onWillPop() async {
     // 1. 有未保存的修改：先确认是否放弃，取消则不退出。
     if (_isDirty) {
-      final discard = await showDialog<bool>(
+      final discard = await showMiuixDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(context.tr('serverProps.unsavedChanges')),
-          content: Text(context.tr('serverProps.unsavedChangesMsg')),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(ctx.tr('common.cancel')),
-            ),
-            FilledButton.tonal(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(context.tr('serverProps.discard')),
+        title: context.tr('serverProps.unsavedChanges'),
+        builder: (ctx) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(context.tr('serverProps.unsavedChangesMsg')),
+            const SizedBox(height: 20),
+            MiuixDialogActions(
+              children: [
+                MiuixTextButton(
+                  ctx.tr('common.cancel'),
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                ),
+                MiuixButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: MiuixText(context.tr('serverProps.discard')),
+                ),
+              ],
             ),
           ],
         ),
@@ -768,22 +775,12 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
 
   /// 弹出「需重启生效」提示，用户可选立即重启或稍后重启。
   Future<void> _promptRestart(ServerController server) async {
-    final restartNow = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.tr('serverProps.restartRequiredTitle')),
-        content: Text(context.tr('serverProps.restartRequiredMsg')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(context.tr('serverProps.restartLater')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(context.tr('serverProps.restartNow')),
-          ),
-        ],
-      ),
+    final restartNow = await showMiuixConfirm(
+      context,
+      title: context.tr('serverProps.restartRequiredTitle'),
+      message: context.tr('serverProps.restartRequiredMsg'),
+      cancelLabel: context.tr('serverProps.restartLater'),
+      confirmLabel: context.tr('serverProps.restartNow'),
     );
     if (restartNow == true) {
       await server.restart();
@@ -803,9 +800,10 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
         final shouldPop = await _onWillPop();
         if (shouldPop && context.mounted) Navigator.of(context).pop();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(context.tr('serverProps.title')),
+      child: MiuixScaffold(
+        topBar: MiuixSmallTopAppBar(
+          title: context.tr('serverProps.title'),
+          navigationIcon: const EcBackButton(),
           actions: [
             if (!_loading && _error == null)
               IconButton(
@@ -813,7 +811,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: MiuixInfiniteProgressIndicator(size: 20),
                       )
                     : Icon(_isDirty ? Icons.save : Icons.save_outlined),
                 tooltip: context.tr('common.save'),
@@ -821,7 +819,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
               ),
           ],
         ),
-        body: _buildBody(),
+        content: (padding) => Padding(padding: padding, child: _buildBody()),
       ),
     );
   }
@@ -840,7 +838,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
               Icon(
                 Icons.error_outline,
                 size: 48,
-                color: Theme.of(context).colorScheme.error,
+                color: MiuixTheme.of(context).colors.error,
               ),
               const SizedBox(height: 16),
               Text(
@@ -849,7 +847,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),
-              FilledButton.tonal(
+              MiuixButton(
                 onPressed: () {
                   setState(() {
                     _loading = true;
@@ -857,7 +855,7 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
                   });
                   _load();
                 },
-                child: Text(context.tr('common.retry')),
+                child: MiuixText(context.tr('common.retry')),
               ),
             ],
           ),
@@ -883,36 +881,34 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
 
     return Padding(
       padding: const EdgeInsets.only(top: 16),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Row(
-                  children: [
-                    Icon(
-                      section.icon,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.primary,
+      child: MiuixCard(
+        insideMargin: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    section.icon,
+                    size: 20,
+                    color: MiuixTheme.of(context).colors.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    section.titleKey != null
+                        ? context.tr('serverProps.${section.titleKey}')
+                        : section.title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: MiuixTheme.of(context).colors.primary,
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      section.titleKey != null
-                          ? context.tr('serverProps.${section.titleKey}')
-                          : section.title,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              for (final prop in props) _buildProp(prop),
-            ],
-          ),
+            ),
+            for (final prop in props) _buildProp(prop),
+          ],
         ),
       ),
     );
@@ -936,11 +932,8 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
   Widget _buildToggle(_PropDef prop) {
     // 从内存编辑值读取，兼容 true/false/on/off，确保点击后即时更新。
     final value = _getBool(prop.key);
-    return SwitchListTile(
-      title: Text(context.tr('serverProps.label.${prop.key}')),
-      subtitle: prop.subtitle != null
-          ? Text(context.tr('serverProps.subtitle.${prop.key}'))
-          : null,
+    return MiuixSwitchPreference(
+      title: context.tr('serverProps.label.${prop.key}'),
       value: value,
       onChanged: (v) {
         final str = switch (prop.boolFormat) {
@@ -949,7 +942,6 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
         };
         _setValue(prop.key, str);
       },
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
     );
   }
 
@@ -959,25 +951,21 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
     final controller = _controllerFor(prop.key, prop);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: TextField(
+      child: EcTextField(
         controller: controller,
+        label: context.tr('serverProps.label.${prop.key}'),
+        helperText: prop.subtitle != null
+            ? context.tr('serverProps.subtitle.${prop.key}')
+            : null,
+        suffixIcon: _isDirtyKey(prop.key)
+            ? Icon(
+                Icons.edit_note,
+                color: MiuixTheme.of(context).colors.primary,
+                size: 20,
+              )
+            : null,
         keyboardType: TextInputType.number,
         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^-?\d*'))],
-        decoration: InputDecoration(
-          labelText: context.tr('serverProps.label.${prop.key}'),
-          helperText: prop.subtitle != null
-              ? context.tr('serverProps.subtitle.${prop.key}')
-              : null,
-          border: const OutlineInputBorder(),
-          isDense: true,
-          suffixIcon: _isDirtyKey(prop.key)
-              ? Icon(
-                  Icons.edit_note,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 20,
-                )
-              : null,
-        ),
         onChanged: (v) => _setValue(prop.key, v),
       ),
     );
@@ -989,23 +977,19 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
     final controller = _controllerFor(prop.key, prop);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: TextField(
+      child: EcTextField(
         controller: controller,
-        decoration: InputDecoration(
-          labelText: context.tr('serverProps.label.${prop.key}'),
-          helperText: prop.subtitle != null
-              ? context.tr('serverProps.subtitle.${prop.key}')
-              : null,
-          border: const OutlineInputBorder(),
-          isDense: true,
-          suffixIcon: _isDirtyKey(prop.key)
-              ? Icon(
-                  Icons.edit_note,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 20,
-                )
-              : null,
-        ),
+        label: context.tr('serverProps.label.${prop.key}'),
+        helperText: prop.subtitle != null
+            ? context.tr('serverProps.subtitle.${prop.key}')
+            : null,
+        suffixIcon: _isDirtyKey(prop.key)
+            ? Icon(
+                Icons.edit_note,
+                color: MiuixTheme.of(context).colors.primary,
+                size: 20,
+              )
+            : null,
         onChanged: (v) => _setValue(prop.key, v),
       ),
     );
@@ -1017,38 +1001,34 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
     final options = prop.options!;
     final currentValue = _getValue(prop.key);
     // 如果当前值不在选项中，保留原值作为额外选项。
-    final items = <DropdownMenuItem<String>>[
-      for (final entry in options.entries)
-        DropdownMenuItem(
-          value: entry.key,
-          child: Text(context.tr(entry.value)),
-        ),
+    // 值与展示文案分离：values 是写回配置的原始值，labels 是给用户看的译文。
+    final values = <String>[
+      ...options.keys,
       if (!options.containsKey(currentValue) && currentValue.isNotEmpty)
-        DropdownMenuItem(value: currentValue, child: Text(currentValue)),
+        currentValue,
+    ];
+    final labels = <String>[
+      for (final entry in options.entries) context.tr(entry.value),
+      if (!options.containsKey(currentValue) && currentValue.isNotEmpty)
+        currentValue,
     ];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: DropdownButtonFormField<String>(
-        initialValue: currentValue.isNotEmpty ? currentValue : null,
-        items: items,
-        onChanged: (v) {
-          if (v != null) _setValue(prop.key, v);
-        },
-        decoration: InputDecoration(
-          labelText: context.tr('serverProps.label.${prop.key}'),
-          helperText: prop.subtitle != null
-              ? context.tr('serverProps.subtitle.${prop.key}')
-              : null,
-          border: const OutlineInputBorder(),
-          isDense: true,
-          suffixIcon: _isDirtyKey(prop.key)
-              ? Icon(
-                  Icons.edit_note,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 20,
-                )
-              : null,
-        ),
+      child: EcDropdownField(
+        items: labels,
+        selectedIndex: values.indexOf(currentValue),
+        onSelected: (i) => _setValue(prop.key, values[i]),
+        label: context.tr('serverProps.label.${prop.key}'),
+        helperText: prop.subtitle != null
+            ? context.tr('serverProps.subtitle.${prop.key}')
+            : null,
+        suffixIcon: _isDirtyKey(prop.key)
+            ? MiuixIcon(
+                icon: Icons.edit_note,
+                tint: MiuixTheme.of(context).colors.primary,
+                size: 20,
+              )
+            : null,
       ),
     );
   }
@@ -1099,113 +1079,110 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
         final bytes = await iconFile.readAsBytes();
         if (mounted) {
           setState(() => _iconBytes = bytes);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(context.tr('serverProps.iconSaved')),
-              duration: const Duration(seconds: 2),
-            ),
-          );
+          showMiuixSnackbar(context.tr('serverProps.iconSaved'));
         }
       }
     }
   }
 
   Widget _buildServerIconCard() {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 16),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.image_outlined,
-                    size: 20,
-                    color: theme.colorScheme.primary,
+      child: MiuixCard(
+        insideMargin: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.image_outlined,
+                  size: 20,
+                  color: theme.colors.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  context.tr('serverProps.serverIcon'),
+                  style: theme.textStyles.subtitle.copyWith(
+                    color: theme.colors.primary,
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.tr('serverProps.serverIcon'),
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                    ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                // 图标预览
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: theme.colors.dividerLine),
+                    color: theme.colors.surfaceContainerHighest,
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  // 图标预览
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: theme.colorScheme.outlineVariant,
+                  child: _iconBytes != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Image.memory(
+                            _iconBytes!,
+                            filterQuality: FilterQuality.medium,
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      : Icon(
+                          Icons.image_not_supported_outlined,
+                          size: 32,
+                          color: theme.colors.onSurfaceVariantSummary
+                              .withValues(alpha: 0.5),
+                        ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'server-icon.png',
+                        style: theme.textStyles.footnote1.copyWith(
+                          color: theme.colors.onSurfaceVariantSummary,
+                        ),
                       ),
-                      color: theme.colorScheme.surfaceContainerHighest,
-                    ),
-                    child: _iconBytes != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.memory(
-                              _iconBytes!,
-                              filterQuality: FilterQuality.medium,
-                              fit: BoxFit.contain,
-                            ),
-                          )
-                        : Icon(
-                            Icons.image_not_supported_outlined,
-                            size: 32,
-                            color: theme.colorScheme.onSurfaceVariant
-                                .withValues(alpha: 0.5),
-                          ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'server-icon.png',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
+                      const SizedBox(height: 4),
+                      Text(
+                        context.tr('serverProps.serverIconDesc'),
+                        style: theme.textStyles.footnote1.copyWith(
+                          color: theme.colors.onSurfaceVariantSummary
+                              .withValues(alpha: 0.7),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          context.tr('serverProps.serverIconDesc'),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant
-                                .withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  FilledButton.tonalIcon(
-                    onPressed: _pickAndCropIcon,
-                    icon: Icon(
-                      _iconBytes != null
-                          ? Icons.edit_outlined
-                          : Icons.add_photo_alternate_outlined,
-                      size: 18,
-                    ),
-                    label: Text(
-                      _iconBytes != null
-                          ? context.tr('serverProps.replaceBtn')
-                          : context.tr('serverProps.importBtn'),
-                    ),
+                ),
+                MiuixButton(
+                  onPressed: _pickAndCropIcon,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      MiuixIcon(
+                        icon: _iconBytes != null
+                            ? Icons.edit_outlined
+                            : Icons.add_photo_alternate_outlined,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      MiuixText(
+                        _iconBytes != null
+                            ? context.tr('serverProps.replaceBtn')
+                            : context.tr('serverProps.importBtn'),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

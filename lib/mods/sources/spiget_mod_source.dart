@@ -62,7 +62,8 @@ class SpigetModSource extends ModSource {
       'size': '$limit',
       'page': '$page',
       'sort': _sortParam(sort),
-      'fields': 'id,name,tag,icon,downloads,rating,external,version,testedVersions,author',
+      'fields':
+          'id,name,tag,icon,downloads,rating,external,version,testedVersions,author',
     };
 
     final Uri uri;
@@ -77,7 +78,10 @@ class SpigetModSource extends ModSource {
 
     final json = await _getJson(uri);
     final list = (json as List? ?? []);
-    final hits = list.whereType<Map<String, dynamic>>().map(_hitFromJson).toList();
+    final hits = list
+        .whereType<Map<String, dynamic>>()
+        .map(_hitFromJson)
+        .toList();
     // Spiget 不返回总数；用「取满一页即可能有更多」估算。
     final total = list.length < limit
         ? offset + hits.length
@@ -102,14 +106,17 @@ class SpigetModSource extends ModSource {
     final resourceName = detail['name'] as String? ?? projectId;
     final fileInfo = detail['file'] as Map<String, dynamic>?;
 
-    final uri = Uri.parse('$_base/resources/$projectId/versions').replace(
-      queryParameters: {'size': '25', 'sort': '-releaseDate'},
-    );
+    final uri = Uri.parse(
+      '$_base/resources/$projectId/versions',
+    ).replace(queryParameters: {'size': '25', 'sort': '-releaseDate'});
     final json = await _getJson(uri);
     final list = (json as List? ?? []);
     return list
         .whereType<Map<String, dynamic>>()
-        .map((v) => _versionFromJson(v, projectId, resourceName, external, fileInfo))
+        .map(
+          (v) =>
+              _versionFromJson(v, projectId, resourceName, external, fileInfo),
+        )
         .toList();
   }
 
@@ -117,7 +124,13 @@ class SpigetModSource extends ModSource {
 
   Future<Object?> _getJson(Uri uri) async {
     final res = await http
-        .get(uri, headers: {'User-Agent': await CloudHeaders.userAgent, 'Accept': 'application/json'})
+        .get(
+          uri,
+          headers: {
+            'User-Agent': await CloudHeaders.userAgent,
+            'Accept': 'application/json',
+          },
+        )
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
       throw Exception('Spiget HTTP ${res.statusCode}');
@@ -171,7 +184,9 @@ class SpigetModSource extends ModSource {
       ],
       versionType: 'release',
       datePublished: j['releaseDate'] is int
-          ? DateTime.fromMillisecondsSinceEpoch((j['releaseDate'] as int) * 1000)
+          ? DateTime.fromMillisecondsSinceEpoch(
+              (j['releaseDate'] as int) * 1000,
+            )
           : DateTime.now(),
       projectId: resourceId,
     );

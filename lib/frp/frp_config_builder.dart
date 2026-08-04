@@ -36,11 +36,13 @@ class FrpConfigBuilder {
         );
       case FrpProvider.chmlFrp:
         final token = await _requireToken(FrpProvider.chmlFrp);
-        return _ensureConsoleLog(await ChmlFrpApi.tunnelConfig(
-          token,
-          node: tunnel.nodeName.isNotEmpty ? tunnel.nodeName : tunnel.nodeId,
-          tunnelName: tunnel.name,
-        ));
+        return _ensureConsoleLog(
+          await ChmlFrpApi.tunnelConfig(
+            token,
+            node: tunnel.nodeName.isNotEmpty ? tunnel.nodeName : tunnel.nodeId,
+            tunnelName: tunnel.name,
+          ),
+        );
       case FrpProvider.openFrp:
         return _buildOpenFrp(tunnel);
       case FrpProvider.meFrp:

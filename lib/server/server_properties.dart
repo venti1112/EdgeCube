@@ -131,8 +131,11 @@ class ServerProperties {
   /// 写入布尔值。`format` 决定序列化格式：
   /// - [BoolFormat.trueFalse]（默认）：写入 `true` / `false`（Java/PNX）
   /// - [BoolFormat.onOff]：写入 `on` / `off`（PMMP）
-  void setBool(String key, bool value,
-      [BoolFormat format = BoolFormat.trueFalse]) {
+  void setBool(
+    String key,
+    bool value, [
+    BoolFormat format = BoolFormat.trueFalse,
+  ]) {
     this[key] = switch (format) {
       BoolFormat.trueFalse => value.toString(),
       BoolFormat.onOff => value ? 'on' : 'off',

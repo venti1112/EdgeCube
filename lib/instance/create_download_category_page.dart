@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_preference.dart';
 import 'create_download_server_page.dart';
 import 'download_session.dart';
 import 'server_select_step.dart';
@@ -35,13 +37,17 @@ class SelectCategoryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(context.tr('instance.titleJavaServerCategory')),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('instance.titleJavaServerCategory'),
+        navigationIcon: const EcBackButton(),
       ),
-      body: SafeArea(
-        child: JavaServerCategoryStep(
-          onSelectCategory: (c) => _selectCategory(context, c),
+      content: (padding) => Padding(
+        padding: padding,
+        child: SafeArea(
+          child: JavaServerCategoryStep(
+            onSelectCategory: (c) => _selectCategory(context, c),
+          ),
         ),
       ),
     );

@@ -11,8 +11,18 @@ class ProxyProtocolV2 {
 
   /// 12 字节固定签名。
   static const List<int> signature = [
-    0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D,
-    0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A,
+    0x0D,
+    0x0A,
+    0x0D,
+    0x0A,
+    0x00,
+    0x0D,
+    0x0A,
+    0x51,
+    0x55,
+    0x49,
+    0x54,
+    0x0A,
   ];
 
   /// 构造一条 TCP 连接的 PROXY v2 头部。
@@ -26,7 +36,8 @@ class ProxyProtocolV2 {
     required InternetAddress dst,
     required int dstPort,
   }) {
-    final isIPv4 = src.type == InternetAddressType.IPv4 &&
+    final isIPv4 =
+        src.type == InternetAddressType.IPv4 &&
         dst.type == InternetAddressType.IPv4;
     final addressLength = isIPv4 ? 12 : 36;
     final header = Uint8List(16 + addressLength);

@@ -14,9 +14,9 @@ enum DdnsProvider {
   final String key;
 
   static DdnsProvider fromKey(String? key) => values.firstWhere(
-        (p) => p.key == key,
-        orElse: () => DdnsProvider.cloudflare,
-      );
+    (p) => p.key == key,
+    orElse: () => DdnsProvider.cloudflare,
+  );
 }
 
 /// DDNS 动态域名解析的配置，持久化到 `config/ddns.json`。

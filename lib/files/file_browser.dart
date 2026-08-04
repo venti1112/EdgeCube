@@ -1,12 +1,16 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
 import '../instance/instance_scope.dart';
 import '../widgets/error_dialog.dart';
 import '../widgets/loading_dialog.dart';
+import '../widgets/ec_text_field.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/miuix_snackbar.dart';
 import 'file_entry.dart';
 import 'file_search_bar.dart';
 import 'file_service.dart';
@@ -112,7 +116,8 @@ class FileBrowser extends StatefulWidget {
   static void exitSearch() => _FileBrowserState._active?._exitSearch();
 
   /// 检查当前目录的实际文件列表与已显示的是否一致，不一样则刷新（保留滚动位置）。
-  static void checkAndRefresh() => _FileBrowserState._active?._checkAndRefresh();
+  static void checkAndRefresh() =>
+      _FileBrowserState._active?._checkAndRefresh();
 
   @override
   State<FileBrowser> createState() => _FileBrowserState();
@@ -178,6 +183,19 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   bool get _atRoot => p.equals(_current.path, widget.rootDir.path);
+
+  /// 下拉刷新：MiuixPullToRefresh 的 isRefreshing 是受控参数，须自行置回。
+  bool _pullRefreshing = false;
+
+  Future<void> _handlePullRefresh() async {
+    if (_pullRefreshing) return;
+    setState(() => _pullRefreshing = true);
+    try {
+      await _load();
+    } finally {
+      if (mounted) setState(() => _pullRefreshing = false);
+    }
+  }
 
   Future<void> _load() async {
     // 首次加载时显示转圈；已有列表数据时静默刷新，不替换 ListView，
@@ -323,7 +341,6 @@ class _FileBrowserState extends State<FileBrowser> {
   Future<void> _importFile() async {
     if (!await _ensurePermission()) return;
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     final instances = InstanceScope.of(context);
     final importingMessage = context.tr('fileBrowser.importing');
     final successMessage = context.tr('fileBrowser.importSuccess');
@@ -336,7 +353,7 @@ class _FileBrowserState extends State<FileBrowser> {
       if (mounted) Navigator.of(context).pop();
       await _load();
       instances.notifyInstanceFilesChanged();
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+      showMiuixSnackbar(successMessage);
     } catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e);
@@ -346,12 +363,13 @@ class _FileBrowserState extends State<FileBrowser> {
   Future<void> _importFolder() async {
     if (!await _ensurePermission()) return;
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     final instances = InstanceScope.of(context);
     final importingMessage = context.tr('fileBrowser.importing');
     final successMessage = context.tr('fileBrowser.importFolderSuccess');
-    final sourcePath =
-        await pickFromSystem(context, mode: SystemPickMode.directory);
+    final sourcePath = await pickFromSystem(
+      context,
+      mode: SystemPickMode.directory,
+    );
     if (sourcePath == null) return;
     if (!mounted) return;
     _showLoadingDialog(importingMessage);
@@ -360,7 +378,7 @@ class _FileBrowserState extends State<FileBrowser> {
       if (mounted) Navigator.of(context).pop();
       await _load();
       instances.notifyInstanceFilesChanged();
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+      showMiuixSnackbar(successMessage);
     } catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e);
@@ -462,9 +480,7 @@ class _FileBrowserState extends State<FileBrowser> {
       disabledPath: entry.isDirectory ? entry.path : null,
     );
     if (dest == null || !mounted) return;
-    _showLoadingDialog(
-      context.tr(isMove ? 'common.moving' : 'common.copying'),
-    );
+    _showLoadingDialog(context.tr(isMove ? 'common.moving' : 'common.copying'));
     try {
       if (isMove) {
         await _service.move(entry.path, Directory(dest));
@@ -484,7 +500,6 @@ class _FileBrowserState extends State<FileBrowser> {
   Future<void> _export(FileEntry entry) async {
     if (!await _ensurePermission()) return;
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     final exportingMessage = context.tr('fileBrowser.exporting');
     final successMessage = context.tr('fileBrowser.exportSuccess');
     final destDir = await pickFromSystem(
@@ -497,7 +512,7 @@ class _FileBrowserState extends State<FileBrowser> {
     try {
       await _service.exportTo(entry.path, destDir);
       if (mounted) Navigator.of(context).pop();
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+      showMiuixSnackbar(successMessage);
     } catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e);
@@ -506,7 +521,6 @@ class _FileBrowserState extends State<FileBrowser> {
 
   /// 压缩单个文件或文件夹为同名 zip，输出到当前目录。
   Future<void> _compress(FileEntry entry) async {
-    final messenger = ScaffoldMessenger.of(context);
     final compressingMessage = context.tr('fileBrowser.compressing');
     final successMessage = context.tr('fileBrowser.compressSuccess');
     if (!mounted) return;
@@ -515,7 +529,7 @@ class _FileBrowserState extends State<FileBrowser> {
       await _service.compress(entry.path, _current);
       if (mounted) Navigator.of(context).pop();
       await _load();
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+      showMiuixSnackbar(successMessage);
     } catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e);
@@ -525,7 +539,6 @@ class _FileBrowserState extends State<FileBrowser> {
   /// 解压归档文件到以文件名（去全部归档扩展名）命名的子文件夹中。
   Future<void> _extract(FileEntry entry) async {
     final instances = InstanceScope.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     final extractingMessage = context.tr('fileBrowser.extracting');
     final successMessage = context.tr('fileBrowser.extractSuccess');
     final subfolderName = _archiveBaseName(entry.name);
@@ -537,7 +550,7 @@ class _FileBrowserState extends State<FileBrowser> {
       await _load();
       // 解压出的文件可能含 jar，通知服务器页重新扫描。
       instances.notifyInstanceFilesChanged();
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+      showMiuixSnackbar(successMessage);
     } catch (e) {
       if (mounted) Navigator.of(context).pop(); // 关闭加载对话框
       _showError(e);
@@ -545,7 +558,8 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   /// 显示不可取消的加载对话框，操作完成后由调用方 pop 关闭。
-  void _showLoadingDialog(String message) => showLoadingDialog(context, message);
+  void _showLoadingDialog(String message) =>
+      showLoadingDialog(context, message);
 
   /// 去掉归档文件名的全部扩展名作为解压子文件夹名。
   /// 复合扩展名（.tar.gz 等）整体去掉；单层扩展名去掉一层。
@@ -563,22 +577,12 @@ class _FileBrowserState extends State<FileBrowser> {
   Future<bool> _ensurePermission() async {
     if (await StoragePermission.isGranted()) return true;
     if (!mounted) return false;
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(context.tr('fileBrowser.permissionTitle')),
-        content: Text(context.tr('fileBrowser.permissionContent')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(context.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(context.tr('fileBrowser.grantPermission')),
-          ),
-        ],
-      ),
+    final go = await showMiuixConfirm(
+      context,
+      title: context.tr('fileBrowser.permissionTitle'),
+      message: context.tr('fileBrowser.permissionContent'),
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('fileBrowser.grantPermission'),
     );
     if (go == true) {
       await StoragePermission.request();
@@ -588,26 +592,33 @@ class _FileBrowserState extends State<FileBrowser> {
 
   Future<void> _delete(FileEntry entry) async {
     final instances = InstanceScope.of(context);
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showMiuixDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(context.tr('common.delete')),
-        content: Text(
-          context.tr('fileBrowser.deleteConfirm', {
-            'name': entry.name,
-            'extra': entry.isDirectory
-                ? context.tr('fileBrowser.deleteFolderExtra')
-                : '',
-          }),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(context.tr('common.cancel')),
+      title: context.tr('common.delete'),
+      builder: (dialogContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            context.tr('fileBrowser.deleteConfirm', {
+              'name': entry.name,
+              'extra': entry.isDirectory
+                  ? context.tr('fileBrowser.deleteFolderExtra')
+                  : '',
+            }),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(context.tr('common.delete')),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                context.tr('common.cancel'),
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+              ),
+              MiuixTextButton(
+                context.tr('common.delete'),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+              ),
+            ],
           ),
         ],
       ),
@@ -696,7 +707,7 @@ class _FileBrowserState extends State<FileBrowser> {
     if (!mounted) return;
     if (failed.isEmpty) {
       final msg = context.tr('fileBrowser.bulkSuccess', {'action': actionName});
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      showMiuixSnackbar(msg);
     } else {
       showErrorDialog(
         context,
@@ -714,23 +725,30 @@ class _FileBrowserState extends State<FileBrowser> {
     if (entries.isEmpty) return;
     final instances = InstanceScope.of(context);
     final deleteLabel = context.tr('common.delete');
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showMiuixDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(context.tr('common.delete')),
-        content: Text(
-          context.tr('fileBrowser.deleteSelectedConfirm', {
-            'count': entries.length.toString(),
-          }),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(context.tr('common.cancel')),
+      title: context.tr('common.delete'),
+      builder: (dialogContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            context.tr('fileBrowser.deleteSelectedConfirm', {
+              'count': entries.length.toString(),
+            }),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(context.tr('common.delete')),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                context.tr('common.cancel'),
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+              ),
+              MiuixTextButton(
+                context.tr('common.delete'),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+              ),
+            ],
           ),
         ],
       ),
@@ -840,7 +858,6 @@ class _FileBrowserState extends State<FileBrowser> {
   Future<void> _compressSelected() async {
     final entries = _selectedEntries;
     if (entries.isEmpty) return;
-    final messenger = ScaffoldMessenger.of(context);
     final compressingMessage = context.tr('fileBrowser.compressing');
     final successMessage = context.tr('fileBrowser.compressSuccess');
 
@@ -867,7 +884,7 @@ class _FileBrowserState extends State<FileBrowser> {
       if (mounted) Navigator.of(context).pop();
       _clearSelection();
       await _load();
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+      showMiuixSnackbar(successMessage);
     } catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e);
@@ -876,7 +893,7 @@ class _FileBrowserState extends State<FileBrowser> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     if (_searchMode) return _buildSearchView(theme);
     return Column(
       children: [
@@ -894,12 +911,15 @@ class _FileBrowserState extends State<FileBrowser> {
                 onNewFolder: _createFolder,
                 onNewFile: _createFile,
               ),
-        const Divider(height: 1),
+        const MiuixHorizontalDivider(),
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                  onRefresh: _load,
+              : MiuixPullToRefresh(
+                  // _load 只在首次加载时置 _loading（避免刷新时销毁列表丢失
+                  // 滚动位置），故下拉刷新需要一个独立的受控标志。
+                  isRefreshing: _pullRefreshing,
+                  onRefresh: _handlePullRefresh,
                   child: _entries.isEmpty
                       ? LayoutBuilder(
                           builder: (context, constraints) {
@@ -912,8 +932,9 @@ class _FileBrowserState extends State<FileBrowser> {
                                 child: Center(
                                   child: Text(
                                     context.tr('fileBrowser.emptyFolder'),
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
+                                    style: theme.textStyles.body2.copyWith(
+                                      color:
+                                          theme.colors.onSurfaceVariantSummary,
                                     ),
                                   ),
                                 ),
@@ -937,72 +958,82 @@ class _FileBrowserState extends State<FileBrowser> {
   /// 无多选/长按选择，点击目录会跳转到该目录（退出搜索），副标题显示相对路径。
   Widget _buildEntryTile(FileEntry entry, {bool inSearch = false}) {
     final selected = _selectedPaths.contains(entry.path);
-    return ListTile(
-      selected: _selectionMode && selected,
-      leading: _selectionMode
-          ? Checkbox(
-              value: selected,
-              onChanged: (_) => _toggleSelected(entry),
-            )
-          : Icon(_iconFor(entry)),
-      title: Text(entry.name),
-      subtitle: Text(inSearch ? _searchSubtitle(entry) : _subtitle(entry)),
-      onTap: _selectionMode
-          ? () => _toggleSelected(entry)
-          : entry.isDirectory
-          ? () => inSearch ? _openFromSearch(entry) : _enter(entry)
-          : _isEditableText(entry)
-          ? () => _openEditor(entry)
-          : null,
+    // MiuixBasicComponent 没有 onLongPress，而「长按进入多选」是本页核心交互，
+    // 故外面套一层 GestureDetector 补回（translucent 让内部点击照常生效）。
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
       onLongPress: _selectionMode || inSearch
           ? null
           : () => _enterSelection(entry),
-      trailing: _selectionMode
-          ? null
-          : PopupMenuButton<_FileAction>(
-              onSelected: (a) => _onAction(a, entry),
-              itemBuilder: (_) => [
-                if (!entry.isDirectory)
-                  PopupMenuItem(
-                    value: _FileAction.edit,
-                    child: Text(context.tr('common.edit')),
+      child: MiuixBasicComponent(
+        startAction: Padding(
+          padding: const EdgeInsets.only(right: 16),
+          child: _selectionMode
+              ? Checkbox(
+                  value: selected,
+                  onChanged: (_) => _toggleSelected(entry),
+                )
+              : Icon(_iconFor(entry)),
+        ),
+        title: entry.name,
+        summary: inSearch ? _searchSubtitle(entry) : _subtitle(entry),
+        endActions: [
+          if (!_selectionMode)
+            MiuixOverlayIconDropdownMenu(
+              entry: MiuixDropdownEntry(
+                items: [
+                  if (!entry.isDirectory)
+                    MiuixDropdownItem(
+                      text: context.tr('common.edit'),
+                      onClick: () => _onAction(_FileAction.edit, entry),
+                    ),
+                  MiuixDropdownItem(
+                    text: context.tr('common.rename'),
+                    onClick: () => _onAction(_FileAction.rename, entry),
                   ),
-                PopupMenuItem(
-                  value: _FileAction.rename,
-                  child: Text(context.tr('common.rename')),
-                ),
-                PopupMenuItem(
-                  value: _FileAction.move,
-                  child: Text(context.tr('fileBrowser.move')),
-                ),
-                PopupMenuItem(
-                  value: _FileAction.copy,
-                  child: Text(context.tr('common.copy')),
-                ),
-                PopupMenuItem(
-                  value: _FileAction.compress,
-                  child: Text(context.tr('fileBrowser.compress')),
-                ),
-                if (_isArchive(entry))
-                  PopupMenuItem(
-                    value: _FileAction.extract,
-                    child: Text(context.tr('fileBrowser.extract')),
+                  MiuixDropdownItem(
+                    text: context.tr('fileBrowser.move'),
+                    onClick: () => _onAction(_FileAction.move, entry),
                   ),
-                PopupMenuItem(
-                  value: _FileAction.export,
-                  child: Text(context.tr('fileBrowser.export')),
-                ),
-                PopupMenuItem(
-                  value: _FileAction.delete,
-                  child: Text(context.tr('common.delete')),
-                ),
-              ],
+                  MiuixDropdownItem(
+                    text: context.tr('common.copy'),
+                    onClick: () => _onAction(_FileAction.copy, entry),
+                  ),
+                  MiuixDropdownItem(
+                    text: context.tr('fileBrowser.compress'),
+                    onClick: () => _onAction(_FileAction.compress, entry),
+                  ),
+                  if (_isArchive(entry))
+                    MiuixDropdownItem(
+                      text: context.tr('fileBrowser.extract'),
+                      onClick: () => _onAction(_FileAction.extract, entry),
+                    ),
+                  MiuixDropdownItem(
+                    text: context.tr('fileBrowser.export'),
+                    onClick: () => _onAction(_FileAction.export, entry),
+                  ),
+                  MiuixDropdownItem(
+                    text: context.tr('common.delete'),
+                    onClick: () => _onAction(_FileAction.delete, entry),
+                  ),
+                ],
+              ),
+              child: const MiuixIcon(icon: Icons.more_vert),
             ),
+        ],
+        onClick: _selectionMode
+            ? () => _toggleSelected(entry)
+            : entry.isDirectory
+            ? () => inSearch ? _openFromSearch(entry) : _enter(entry)
+            : _isEditableText(entry)
+            ? () => _openEditor(entry)
+            : null,
+      ),
     );
   }
 
   /// 搜索模式视图：顶部搜索栏 + 结果列表。
-  Widget _buildSearchView(ThemeData theme) {
+  Widget _buildSearchView(MiuixThemeData theme) {
     return Column(
       children: [
         FileSearchBar(
@@ -1011,13 +1042,13 @@ class _FileBrowserState extends State<FileBrowser> {
           onRecursiveChanged: _toggleSearchRecursive,
           onClose: _exitSearch,
         ),
-        const Divider(height: 1),
+        const MiuixHorizontalDivider(),
         Expanded(child: _buildSearchBody(theme)),
       ],
     );
   }
 
-  Widget _buildSearchBody(ThemeData theme) {
+  Widget _buildSearchBody(MiuixThemeData theme) {
     if (_searching) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -1025,8 +1056,8 @@ class _FileBrowserState extends State<FileBrowser> {
       return Center(
         child: Text(
           context.tr('fileSearch.prompt'),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+          style: theme.textStyles.body2.copyWith(
+            color: theme.colors.onSurfaceVariantSummary,
           ),
         ),
       );
@@ -1035,16 +1066,15 @@ class _FileBrowserState extends State<FileBrowser> {
       return Center(
         child: Text(
           context.tr('fileSearch.noResults'),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+          style: theme.textStyles.body2.copyWith(
+            color: theme.colors.onSurfaceVariantSummary,
           ),
         ),
       );
     }
     return ListView.builder(
       itemCount: _searchResults.length,
-      itemBuilder: (_, i) =>
-          _buildEntryTile(_searchResults[i], inSearch: true),
+      itemBuilder: (_, i) => _buildEntryTile(_searchResults[i], inSearch: true),
     );
   }
 
@@ -1065,17 +1095,16 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   /// 多选模式下的顶部操作栏：退出、计数、全选、删除、更多（移动/复制/导出）。
-  Widget _buildSelectionBar(ThemeData theme) {
+  Widget _buildSelectionBar(MiuixThemeData theme) {
     final count = _selectedPaths.length;
     final allSelected = _entries.isNotEmpty && count == _entries.length;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: context.tr('fileBrowser.exitSelection'),
+          MiuixIconButton(
             onPressed: _clearSelection,
+            child: MiuixIcon(icon: Icons.close),
           ),
           Expanded(
             child: Text(
@@ -1083,43 +1112,42 @@ class _FileBrowserState extends State<FileBrowser> {
                 'count': count.toString(),
               }),
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleMedium,
+              style: theme.textStyles.title4,
             ),
           ),
-          IconButton(
-            icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
-            tooltip: allSelected
-                ? context.tr('fileBrowser.deselectAll')
-                : context.tr('fileBrowser.selectAll'),
+          MiuixIconButton(
             onPressed: _entries.isEmpty ? null : _toggleSelectAll,
+            child: MiuixIcon(
+              icon: allSelected ? Icons.deselect : Icons.select_all,
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: context.tr('common.delete'),
+          MiuixIconButton(
             onPressed: count == 0 ? null : _deleteSelected,
+            child: MiuixIcon(icon: Icons.delete_outline),
           ),
-          PopupMenuButton<_BulkAction>(
+          MiuixOverlayIconDropdownMenu(
             enabled: count > 0,
-            tooltip: context.tr('fileBrowser.moreActions'),
-            onSelected: _onBulkAction,
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: _BulkAction.move,
-                child: Text(context.tr('fileBrowser.move')),
-              ),
-              PopupMenuItem(
-                value: _BulkAction.copy,
-                child: Text(context.tr('common.copy')),
-              ),
-              PopupMenuItem(
-                value: _BulkAction.compress,
-                child: Text(context.tr('fileBrowser.compress')),
-              ),
-              PopupMenuItem(
-                value: _BulkAction.export,
-                child: Text(context.tr('fileBrowser.export')),
-              ),
-            ],
+            entry: MiuixDropdownEntry(
+              items: [
+                MiuixDropdownItem(
+                  text: context.tr('fileBrowser.move'),
+                  onClick: () => _onBulkAction(_BulkAction.move),
+                ),
+                MiuixDropdownItem(
+                  text: context.tr('common.copy'),
+                  onClick: () => _onBulkAction(_BulkAction.copy),
+                ),
+                MiuixDropdownItem(
+                  text: context.tr('fileBrowser.compress'),
+                  onClick: () => _onBulkAction(_BulkAction.compress),
+                ),
+                MiuixDropdownItem(
+                  text: context.tr('fileBrowser.export'),
+                  onClick: () => _onBulkAction(_BulkAction.export),
+                ),
+              ],
+            ),
+            child: const MiuixIcon(icon: Icons.more_vert),
           ),
         ],
       ),
@@ -1140,9 +1168,7 @@ class _FileBrowserState extends State<FileBrowser> {
   /// 条目图标：符号链接优先显示链接标识，其次目录/文件。
   IconData _iconFor(FileEntry entry) {
     if (entry.isLink) return Icons.link;
-    return entry.isDirectory
-        ? Icons.folder
-        : Icons.insert_drive_file_outlined;
+    return entry.isDirectory ? Icons.folder : Icons.insert_drive_file_outlined;
   }
 }
 
@@ -1185,10 +1211,9 @@ class _Toolbar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_upward),
-            tooltip: context.tr('fileBrowser.goUp'),
+          MiuixIconButton(
             onPressed: atRoot ? null : onUp,
+            child: MiuixIcon(icon: Icons.arrow_upward),
           ),
           Expanded(
             child: Text(
@@ -1197,30 +1222,25 @@ class _Toolbar extends StatelessWidget {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.search),
-            tooltip: context.tr('fileSearch.search'),
+          MiuixIconButton(
             onPressed: onSearch,
+            child: MiuixIcon(icon: Icons.search),
           ),
-          IconButton(
-            icon: const Icon(Icons.note_add_outlined),
-            tooltip: context.tr('fileBrowser.newFile'),
+          MiuixIconButton(
             onPressed: onNewFile,
+            child: MiuixIcon(icon: Icons.note_add_outlined),
           ),
-          IconButton(
-            icon: const Icon(Icons.create_new_folder_outlined),
-            tooltip: context.tr('fileBrowser.newFolder'),
+          MiuixIconButton(
             onPressed: onNewFolder,
+            child: MiuixIcon(icon: Icons.create_new_folder_outlined),
           ),
-          IconButton(
-            icon: const Icon(Icons.file_upload_outlined),
-            tooltip: context.tr('fileBrowser.importFile'),
+          MiuixIconButton(
             onPressed: onImport,
+            child: MiuixIcon(icon: Icons.file_upload_outlined),
           ),
-          IconButton(
-            icon: const Icon(Icons.drive_folder_upload_outlined),
-            tooltip: context.tr('fileBrowser.importFolder'),
+          MiuixIconButton(
             onPressed: onImportFolder,
+            child: MiuixIcon(icon: Icons.drive_folder_upload_outlined),
           ),
         ],
       ),
@@ -1236,25 +1256,32 @@ Future<String?> _promptText(
   String initialValue = '',
 }) async {
   final controller = TextEditingController(text: initialValue);
-  final result = await showDialog<String>(
+  final result = await showMiuixDialog<String>(
     context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(title),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        decoration: InputDecoration(labelText: label),
-        onSubmitted: (v) => Navigator.of(dialogContext).pop(v.trim()),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          child: Text(dialogContext.tr('common.cancel')),
+    title: title,
+    builder: (dialogContext) => Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        EcTextField(
+          controller: controller,
+          label: label,
+          onSubmitted: (v) => Navigator.of(dialogContext).pop(v.trim()),
+          autofocus: true,
         ),
-        TextButton(
-          onPressed: () =>
-              Navigator.of(dialogContext).pop(controller.text.trim()),
-          child: Text(dialogContext.tr('common.ok')),
+        const SizedBox(height: 20),
+        MiuixDialogActions(
+          children: [
+            MiuixTextButton(
+              dialogContext.tr('common.cancel'),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+            ),
+            MiuixTextButton(
+              dialogContext.tr('common.ok'),
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+            ),
+          ],
         ),
       ],
     ),

@@ -19,9 +19,9 @@ import 'frp_registry_store.dart';
 /// FrpTokenStore，不在此缓存。
 class FrpController extends ChangeNotifier {
   FrpController({required ServerController server, TunnelService? tunnel})
-      // ignore: prefer_initializing_formals
-      : _server = server,
-        _tunnel = tunnel ?? TunnelService() {
+    // ignore: prefer_initializing_formals
+    : _server = server,
+      _tunnel = tunnel ?? TunnelService() {
     _sub = _tunnel.events().listen(_onTunnelEvent);
   }
 
@@ -102,8 +102,9 @@ class FrpController extends ChangeNotifier {
       if (runtimes.isEmpty) {
         throw const FrpApiException('frpc-runtime-missing');
       }
-      final validRuntimeId =
-          runtimes.any((r) => r.id == runtimeId) ? runtimeId : runtimes.first.id;
+      final validRuntimeId = runtimes.any((r) => r.id == runtimeId)
+          ? runtimeId
+          : runtimes.first.id;
       await _server.runStandaloneTunnel(
         configPath: file.path,
         name: tunnel.name,

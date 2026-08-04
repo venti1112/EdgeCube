@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_scope.dart';
+import 'miuix_dialog.dart';
 
-/// 首次启动用户协议对话框。
+/// 首次启动用户协议对话框的内容体（标题由 [showMiuixDialog] 的 `title` 提供）。
 ///
 /// 加载 `assets/markdown/user_agreement.md` 全文并以 Markdown 格式渲染供用户阅读，
 /// 必须选择「同意」才能继续；选择「不同意」时调用方应退出应用。
@@ -77,7 +79,7 @@ class _UserAgreementDialogState extends State<UserAgreementDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final timerDone = _remaining <= 0;
     final canAgree = timerDone && _scrolledToBottom;
 
@@ -98,28 +100,29 @@ class _UserAgreementDialogState extends State<UserAgreementDialog> {
 
     return PopScope(
       canPop: false,
-      child: AlertDialog(
-        title: Text(context.tr('userAgreement.title')),
-        content: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.6,
-          ),
-          child: SizedBox(
-            width: double.maxFinite,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.6,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(
+                  child: MiuixText(
                     context.tr('userAgreement.intro'),
-                    style: theme.textTheme.bodySmall,
+                    style: theme.textStyles.footnote1,
+                    color: theme.colors.onSurfaceVariantSummary,
                   ),
                 ),
-                const Divider(height: 1),
+                const MiuixHorizontalDivider(),
                 const SizedBox(height: 8),
-                Expanded(
+                Flexible(
                   child: NotificationListener<ScrollNotification>(
                     onNotification: (_) {
                       _onScroll();
@@ -145,15 +148,22 @@ class _UserAgreementDialogState extends State<UserAgreementDialog> {
               ],
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(context.tr('userAgreement.declineAndExit')),
-          ),
-          FilledButton(
-            onPressed: canAgree ? () => Navigator.of(context).pop(true) : null,
-            child: Text(buttonLabel),
+          const SizedBox(height: 20),
+          MiuixDialogActions(
+            children: [
+              MiuixTextButton(
+                context.tr('userAgreement.declineAndExit'),
+                onPressed: () => Navigator.of(context).pop(false),
+              ),
+              MiuixButton(
+                enabled: canAgree,
+                onPressed: canAgree
+                    ? () => Navigator.of(context).pop(true)
+                    : null,
+                colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+                child: MiuixText(buttonLabel),
+              ),
+            ],
           ),
         ],
       ),

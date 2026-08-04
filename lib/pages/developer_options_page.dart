@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:logging/logging.dart';
 
 import '../config/developer_options_store.dart';
 import '../config/log_store.dart';
 import '../i18n/locale_scope.dart';
 import '../logging/log_service.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/miuix_dialog.dart';
 import 'log_viewer_page.dart';
 
 /// 「开发者选项」页面。
@@ -52,26 +55,12 @@ class _DeveloperOptionsPageState extends State<DeveloperOptionsPage> {
 
   /// 弹出日志等级选择对话框。
   Future<void> _pickLogLevel() async {
-    final selected = await showDialog<Level>(
+    final selected = await showMiuixSingleChoice<Level>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(ctx.tr('settings.logging.levelDialogTitle')),
-        children: [
-          for (final level in kSelectableLogLevels)
-            ListTile(
-              leading: Icon(
-                level == _logLevel
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked,
-                color: level == _logLevel
-                    ? Theme.of(ctx).colorScheme.primary
-                    : null,
-              ),
-              title: Text(_logLevelLabel(ctx, level)),
-              onTap: () => Navigator.of(ctx).pop(level),
-            ),
-        ],
-      ),
+      title: context.tr('settings.logging.levelDialogTitle'),
+      options: kSelectableLogLevels,
+      selected: _logLevel,
+      labelOf: _logLevelLabel,
     );
     if (selected != null && selected != _logLevel) {
       setState(() => _logLevel = selected);
@@ -84,24 +73,12 @@ class _DeveloperOptionsPageState extends State<DeveloperOptionsPage> {
   /// 关闭开发者模式：弹出确认对话框，确认后将开发者选项中的设置项恢复默认值，
   /// 持久化关闭状态后返回设置页。
   Future<void> _disableDevMode() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('settings.developer.disableDialogTitle')),
-        content: Text(ctx.tr('settings.developer.disableDialogMessage')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('common.confirm')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: context.tr('settings.developer.disableDialogTitle'),
+      message: context.tr('settings.developer.disableDialogMessage'),
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     // 将日志设置恢复默认（关闭 + INFO）
     await LogService.instance.setEnabled(false);
@@ -114,66 +91,44 @@ class _DeveloperOptionsPageState extends State<DeveloperOptionsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('settings.section.developer'))),
-      body: ListView(
-        children: [
-          _sectionHeader(theme, context.tr('settings.developer.enabled')),
-          SwitchListTile(
-            secondary: const Icon(Icons.developer_mode),
-            title: Text(context.tr('settings.developer.enabled')),
-            subtitle: Text(context.tr('settings.developer.disableHint')),
-            value: true,
-            onChanged: (_) => _disableDevMode(),
-          ),
-          const Divider(),
-          _sectionHeader(theme, context.tr('settings.section.logging')),
-          SwitchListTile(
-            secondary: const Icon(Icons.article_outlined),
-            title: Text(context.tr('settings.logging.enable')),
-            subtitle: Text(context.tr('settings.logging.enableDesc')),
-            value: _logEnabled,
-            onChanged: _saveLogEnabled,
-          ),
-          ListTile(
-            leading: const Icon(Icons.filter_list),
-            title: Text(context.tr('settings.logging.level')),
-            subtitle: Text(
-              context.tr('settings.logging.levelSubtitle', {
-                'value': _logLevelLabel(context, _logLevel),
-              }),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            enabled: _logEnabled,
-            onTap: _pickLogLevel,
-          ),
-          ListTile(
-            leading: const Icon(Icons.file_open_outlined),
-            title: Text(context.tr('settings.logging.viewer')),
-            subtitle: Text(context.tr('settings.logging.viewerSubtitle')),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const LogViewerPage()),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionHeader(ThemeData theme, String text) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        text,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
+    return EcSettingsPage(
+      title: context.tr('settings.section.developer'),
+      children: [
+        MiuixSmallTitle(context.tr('settings.developer.enabled')),
+        MiuixSwitchPreference(
+          startAction: prefIcon(Icons.developer_mode),
+          title: context.tr('settings.developer.enabled'),
+          summary: context.tr('settings.developer.disableHint'),
+          value: true,
+          onChanged: (_) => _disableDevMode(),
         ),
-      ),
+
+        MiuixSmallTitle(context.tr('settings.section.logging')),
+        MiuixSwitchPreference(
+          startAction: prefIcon(Icons.article_outlined),
+          title: context.tr('settings.logging.enable'),
+          summary: context.tr('settings.logging.enableDesc'),
+          value: _logEnabled,
+          onChanged: _saveLogEnabled,
+        ),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.filter_list),
+          title: context.tr('settings.logging.level'),
+          summary: context.tr('settings.logging.levelSubtitle', {
+            'value': _logLevelLabel(context, _logLevel),
+          }),
+          enabled: _logEnabled,
+          onClick: _pickLogLevel,
+        ),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.file_open_outlined),
+          title: context.tr('settings.logging.viewer'),
+          summary: context.tr('settings.logging.viewerSubtitle'),
+          onClick: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const LogViewerPage())),
+        ),
+      ],
     );
   }
 }

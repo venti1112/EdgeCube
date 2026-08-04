@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/network_store.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/ec_text_field.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/miuix_dialog.dart';
 import '../net/msl_mirror.dart';
 import '../online/online_service.dart';
 import '../server/proot_service.dart';
@@ -74,7 +78,10 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
 
   /// 校验 DNS 字符串：逗号分隔的 IP 地址，至少一个有效项。
   bool _validateDns(String text) {
-    final parts = text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty);
+    final parts = text
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty);
     final ips = parts.toList();
     if (ips.isEmpty) return false;
     final ipv4 = RegExp(r'^(\d{1,3}\.){3}\d{1,3}$');
@@ -181,44 +188,46 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
     required Future<void> Function(String value) onSave,
   }) async {
     final controller = TextEditingController(text: currentValue);
-    final result = await showDialog<String>(
+    final result = await showMiuixDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Column(
+      title: title,
+      builder: (ctx) {
+        final theme = MiuixTheme.of(ctx);
+        return Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              context.tr('network.urlEditHint'),
-              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(ctx).colorScheme.error,
-                  ),
+            MiuixText(
+              ctx.tr('network.urlEditHint'),
+              style: theme.textStyles.footnote1,
+              color: theme.colors.error,
             ),
             const SizedBox(height: 12),
-            TextField(
+            EcTextField(
               controller: controller,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                labelText: hint,
-              ),
+              label: hint,
               maxLines: 2,
               minLines: 1,
             ),
+            const SizedBox(height: 20),
+            MiuixDialogActions(
+              children: [
+                MiuixTextButton(
+                  ctx.tr('common.cancel'),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                ),
+                MiuixButton(
+                  onPressed: () => Navigator.of(ctx).pop(controller.text),
+                  colors: MiuixButtonDefaults.buttonColorsPrimary(ctx),
+                  child: MiuixText(ctx.tr('common.save')),
+                ),
+              ],
+            ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(context.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: Text(context.tr('common.save')),
-          ),
-        ],
-      ),
+        );
+      },
     );
+    controller.dispose();
     if (result != null && result != currentValue) {
       await onSave(result);
     }
@@ -232,148 +241,113 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('network.title'))),
-      body: ListView(
-        children: [
-          _sectionHeader(theme, context.tr('network.downloadSource')),
-          SwitchListTile(
-            secondary: const Icon(Icons.cloud_sync_outlined),
-            title: Text(context.tr('network.useMirror')),
-            subtitle: Text(context.tr('network.useMirrorDesc')),
-            value: _useMirror,
-            onChanged: _loaded ? _onToggle : null,
+    return EcSettingsPage(
+      title: context.tr('network.title'),
+      children: [
+        MiuixSmallTitle(context.tr('network.downloadSource')),
+        MiuixSwitchPreference(
+          startAction: prefIcon(Icons.cloud_sync_outlined),
+          title: context.tr('network.useMirror'),
+          summary: context.tr('network.useMirrorDesc'),
+          value: _useMirror,
+          enabled: _loaded,
+          onChanged: _onToggle,
+        ),
+
+        MiuixSmallTitle(context.tr('network.dns')),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(28, 0, 28, 8),
+          child: MiuixText(
+            context.tr('network.dnsDesc'),
+            style: theme.textStyles.footnote1,
+            color: theme.colors.onSurfaceVariantSummary,
           ),
-          const Divider(),
-          _sectionHeader(theme, context.tr('network.dns')),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: EcTextField(
+                  controller: _dnsController,
+                  label: context.tr('network.dns'),
+                  hint: context.tr('network.dnsHint'),
+                  enabled: _dnsLoaded,
+                  prefixIcon: prefIcon(Icons.dns_outlined),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 8),
+              MiuixButton(
+                enabled:
+                    _dnsLoaded && _dnsController.text.trim() != _dnsOriginal,
+                onPressed:
+                    (_dnsLoaded && _dnsController.text.trim() != _dnsOriginal)
+                    ? _saveDns
+                    : null,
+                child: MiuixText(context.tr('common.save')),
+              ),
+            ],
+          ),
+        ),
+        if (_dnsLoaded && _dnsController.text.trim() != '8.8.8.8,1.1.1.1')
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(
-              context.tr('network.dnsDesc'),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+            padding: const EdgeInsets.only(left: 16, top: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: MiuixTextButton(
+                context.tr('network.dnsReset'),
+                onPressed: _resetDns,
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _dnsController,
-                    decoration: InputDecoration(
-                      labelText: context.tr('network.dns'),
-                      hintText: context.tr('network.dnsHint'),
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                      prefixIcon: const Icon(Icons.dns_outlined),
-                    ),
-                    enabled: _dnsLoaded,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.tonal(
-                  onPressed: (_dnsLoaded &&
-                          _dnsController.text.trim() != _dnsOriginal)
-                      ? _saveDns
-                      : null,
-                  child: Text(context.tr('common.save')),
-                ),
-              ],
-            ),
+
+        MiuixSmallTitle(context.tr('network.updateSection')),
+        MiuixSwitchPreference(
+          startAction: prefIcon(Icons.science_outlined),
+          title: context.tr('settings.enableBetaUpdates'),
+          summary: context.tr('settings.enableBetaUpdatesDesc'),
+          value: _enableBetaUpdates,
+          enabled: _betaLoaded,
+          onChanged: _saveBetaUpdates,
+        ),
+        _urlPreference(
+          icon: Icons.system_update_outlined,
+          title: context.tr('network.updateCheckUrl'),
+          loaded: _updateCheckLoaded,
+          isCustom: _updateCheckIsCustom,
+          value: _updateCheckUrl,
+          onClear: () => _saveUpdateCheckUrl(null),
+          onEdit: () => _editUrl(
+            title: context.tr('network.updateCheckUrl'),
+            hint: 'URL',
+            currentValue: _updateCheckUrl,
+            onSave: (v) => _saveUpdateCheckUrl(v),
           ),
-          if (_dnsLoaded &&
-              _dnsController.text.trim() != '8.8.8.8,1.1.1.1')
-            Padding(
-              padding: const EdgeInsets.only(left: 16, top: 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: _resetDns,
-                  icon: const Icon(Icons.restore, size: 18),
-                  label: Text(context.tr('network.dnsReset')),
-                ),
-              ),
-            ),
-          const Divider(),
-          _sectionHeader(theme, context.tr('network.updateSection')),
-          SwitchListTile(
-            secondary: const Icon(Icons.science_outlined),
-            title: Text(context.tr('settings.enableBetaUpdates')),
-            subtitle: Text(context.tr('settings.enableBetaUpdatesDesc')),
-            value: _enableBetaUpdates,
-            onChanged: _betaLoaded ? _saveBetaUpdates : null,
+        ),
+        _urlPreference(
+          icon: Icons.download_outlined,
+          title: context.tr('network.ecpkgCatalogUrl'),
+          loaded: _ecpkgCatalogLoaded,
+          isCustom: _ecpkgCatalogIsCustom,
+          value: _ecpkgCatalogUrl,
+          onClear: () => _saveEcpkgCatalogUrl(null),
+          onEdit: () => _editUrl(
+            title: context.tr('network.ecpkgCatalogUrl'),
+            hint: 'URL',
+            currentValue: _ecpkgCatalogUrl,
+            onSave: (v) => _saveEcpkgCatalogUrl(v),
           ),
-          ListTile(
-            leading: const Icon(Icons.system_update_outlined),
-            title: Text(context.tr('network.updateCheckUrl')),
-            subtitle: Text(
-              _updateCheckLoaded
-                  ? (_updateCheckIsCustom
-                      ? _updateCheckUrl
-                      : context.tr('network.useDefaultUrl'))
-                  : context.tr('common.loading'),
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_updateCheckIsCustom)
-                  IconButton(
-                    icon: const Icon(Icons.clear, size: 18),
-                    onPressed: () => _saveUpdateCheckUrl(null),
-                  ),
-                const Icon(Icons.edit_outlined, size: 18),
-              ],
-            ),
-            onTap: _updateCheckLoaded
-                ? () => _editUrl(
-                      title: context.tr('network.updateCheckUrl'),
-                      hint: 'URL',
-                      currentValue: _updateCheckUrl,
-                      onSave: (v) => _saveUpdateCheckUrl(v),
-                    )
-                : null,
-          ),
-          ListTile(
-            leading: const Icon(Icons.download_outlined),
-            title: Text(context.tr('network.ecpkgCatalogUrl')),
-            subtitle: Text(
-              _ecpkgCatalogLoaded
-                  ? (_ecpkgCatalogIsCustom
-                      ? _ecpkgCatalogUrl
-                      : context.tr('network.useDefaultUrl'))
-                  : context.tr('common.loading'),
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_ecpkgCatalogIsCustom)
-                  IconButton(
-                    icon: const Icon(Icons.clear, size: 18),
-                    onPressed: () => _saveEcpkgCatalogUrl(null),
-                  ),
-                const Icon(Icons.edit_outlined, size: 18),
-              ],
-            ),
-            onTap: _ecpkgCatalogLoaded
-                ? () => _editUrl(
-                      title: context.tr('network.ecpkgCatalogUrl'),
-                      hint: 'URL',
-                      currentValue: _ecpkgCatalogUrl,
-                      onSave: (v) => _saveEcpkgCatalogUrl(v),
-                    )
-                : null,
-          ),
-          const Divider(),
-          _sectionHeader(theme, context.tr('network.aboutMirror')),
-          ListTile(
-            leading: ClipRRect(
+        ),
+
+        MiuixSmallTitle(context.tr('network.aboutMirror')),
+        MiuixBasicComponent(
+          startAction: Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.asset(
                 'assets/images/msl_logo.png',
@@ -381,28 +355,45 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
                 height: 40,
               ),
             ),
-            title: Text(context.tr('network.mirrorByMsl')),
-            subtitle: Text(context.tr('network.mirrorSite')),
-            trailing: const Icon(Icons.open_in_new, size: 18),
-            onTap: () => launchUrl(
-              Uri.parse(MslMirror.officialSite),
-              mode: LaunchMode.externalApplication,
-            ),
           ),
-        ],
-      ),
+          title: context.tr('network.mirrorByMsl'),
+          summary: context.tr('network.mirrorSite'),
+          endActions: [const MiuixIcon(icon: Icons.open_in_new, size: 18)],
+          onClick: () => launchUrl(
+            Uri.parse(MslMirror.officialSite),
+            mode: LaunchMode.externalApplication,
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _sectionHeader(ThemeData theme, String text) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        text,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
-        ),
-      ),
+  /// 可自定义 URL 的设置行：未自定义时显示「使用默认」，自定义后额外给一个清除按钮。
+  Widget _urlPreference({
+    required IconData icon,
+    required String title,
+    required bool loaded,
+    required bool isCustom,
+    required String value,
+    required VoidCallback onClear,
+    required VoidCallback onEdit,
+  }) {
+    return MiuixBasicComponent(
+      startAction: prefIcon(icon),
+      title: title,
+      summary: loaded
+          ? (isCustom ? value : context.tr('network.useDefaultUrl'))
+          : context.tr('common.loading'),
+      enabled: loaded,
+      endActions: [
+        if (isCustom)
+          MiuixIconButton(
+            onPressed: onClear,
+            child: const MiuixIcon(icon: Icons.clear, size: 18),
+          ),
+        const MiuixIcon(icon: Icons.edit_outlined, size: 18),
+      ],
+      onClick: loaded ? onEdit : null,
     );
   }
 }

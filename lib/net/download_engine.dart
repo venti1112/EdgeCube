@@ -175,74 +175,86 @@ class DownloadEngine {
     }
 
     final speedSamples = <(int receivedBytes, DateTime time)>[];
-    disposers.add(download.emitter.onType<ProgressEvent>((e) {
-      if (completer.isCompleted) return;
+    disposers.add(
+      download.emitter.onType<ProgressEvent>((e) {
+        if (completer.isCompleted) return;
 
-      final now = DateTime.now();
-      speedSamples.add((e.downloadedBytes, now));
-      final cutoff = now.subtract(const Duration(seconds: 3));
-      speedSamples.removeWhere((s) => s.$2.isBefore(cutoff));
+        final now = DateTime.now();
+        speedSamples.add((e.downloadedBytes, now));
+        final cutoff = now.subtract(const Duration(seconds: 3));
+        speedSamples.removeWhere((s) => s.$2.isBefore(cutoff));
 
-      double speed;
-      int? etaMs;
-      if (speedSamples.length >= 2) {
-        final dt = speedSamples.last.$2.difference(speedSamples.first.$2).inMilliseconds;
-        final dBytes = speedSamples.last.$1 - speedSamples.first.$1;
-        if (dt > 0 && dBytes > 0) {
-          speed = dBytes * 1000.0 / dt;
-          if (e.totalBytes != null && e.totalBytes! > 0) {
-            final remaining = e.totalBytes! - e.downloadedBytes;
-            if (remaining > 0) {
-              etaMs = (remaining / speed * 1000).round();
+        double speed;
+        int? etaMs;
+        if (speedSamples.length >= 2) {
+          final dt = speedSamples.last.$2
+              .difference(speedSamples.first.$2)
+              .inMilliseconds;
+          final dBytes = speedSamples.last.$1 - speedSamples.first.$1;
+          if (dt > 0 && dBytes > 0) {
+            speed = dBytes * 1000.0 / dt;
+            if (e.totalBytes != null && e.totalBytes! > 0) {
+              final remaining = e.totalBytes! - e.downloadedBytes;
+              if (remaining > 0) {
+                etaMs = (remaining / speed * 1000).round();
+              }
             }
+          } else {
+            speed = 0;
           }
         } else {
           speed = 0;
         }
-      } else {
-        speed = 0;
-      }
 
-      onProgress?.call(DownloadProgress(
-        receivedBytes: e.downloadedBytes,
-        totalBytes: e.totalBytes,
-        speedBytesPerSec: speed,
-        etaMs: etaMs,
-      ));
-    }));
+        onProgress?.call(
+          DownloadProgress(
+            receivedBytes: e.downloadedBytes,
+            totalBytes: e.totalBytes,
+            speedBytesPerSec: speed,
+            etaMs: etaMs,
+          ),
+        );
+      }),
+    );
 
-    disposers.add(download.emitter.onType<CompletedEvent>((e) {
-      if (!completer.isCompleted) completer.complete();
-    }));
+    disposers.add(
+      download.emitter.onType<CompletedEvent>((e) {
+        if (!completer.isCompleted) completer.complete();
+      }),
+    );
 
     // 携带 error 对象的事件优先（可映射 HTTP 状态码）。
-    disposers.add(download.emitter.onType<ErrorEvent>((e) {
-      if (!e.fatal || completer.isCompleted) return;
-      final err = e.error;
-      completer.completeError(
-        err is HttpStatusError
-            ? DownloadHttpError(err.status)
-            : DownloadFailed(err),
-      );
-    }));
+    disposers.add(
+      download.emitter.onType<ErrorEvent>((e) {
+        if (!e.fatal || completer.isCompleted) return;
+        final err = e.error;
+        completer.completeError(
+          err is HttpStatusError
+              ? DownloadHttpError(err.status)
+              : DownloadFailed(err),
+        );
+      }),
+    );
 
     // 兜底：部分失败路径（分片重试耗尽）只 setState 不 emit ErrorEvent。
     // 用 microtask 延迟，给同步的 ErrorEvent 先完成的机会（保留状态码映射）。
-    disposers.add(download.emitter.onType<StateChangeEvent>((e) {
-      if (e.current == DownloadState.cancelled) {
-        if (!completer.isCompleted) {
-          completer.completeError(const DownloadCancelled());
-        }
-      } else if (e.current == DownloadState.error) {
-        Future.microtask(() {
+    disposers.add(
+      download.emitter.onType<StateChangeEvent>((e) {
+        if (e.current == DownloadState.cancelled) {
           if (!completer.isCompleted) {
-            completer.completeError(
-              DownloadFailed(download.meta.errorMessage ?? 'download error'),
-            );
+            completer.completeError(const DownloadCancelled());
           }
-        });
-      }
-    }));
+        } else if (e.current == DownloadState.error) {
+          Future.microtask(() {
+            if (!completer.isCompleted) {
+              completer.completeError(
+                DownloadFailed(download.meta.errorMessage ?? 'download error'),
+              );
+            }
+          });
+        }
+      }),
+    );
 
     if (isCancelled != null) {
       cancelTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
@@ -298,7 +310,9 @@ class DownloadEngine {
     int? expectedSize,
   }) async {
     final sources = urls.where((u) => u.isNotEmpty).toList();
-    if (sources.isEmpty) throw ArgumentError('downloadToFileMultiSource: no urls');
+    if (sources.isEmpty) {
+      throw ArgumentError('downloadToFileMultiSource: no urls');
+    }
     Object? lastError;
     for (final url in sources) {
       if (isCancelled?.call() == true) throw const DownloadCancelled();
@@ -324,11 +338,7 @@ class DownloadEngine {
     throw lastError ?? const DownloadFailed('all sources failed');
   }
 
-  Future<void> _verifyHash(
-    String path, {
-    String? sha1,
-    String? sha256,
-  }) async {
+  Future<void> _verifyHash(String path, {String? sha1, String? sha256}) async {
     if (sha1 != null) {
       final actual = await computeFileSha1(path);
       if (actual.toLowerCase() != sha1.toLowerCase()) {

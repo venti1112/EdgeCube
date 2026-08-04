@@ -23,10 +23,10 @@ class MslFrpApi {
   static const String _appId = '3JAza1AwWgOQeBj2C2j7OODOPOv';
 
   static Future<Map<String, String>> _headers(String? token) async => {
-        'Content-Type': 'application/json',
-        'User-Agent': await CloudHeaders.userAgent,
-        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-      };
+    'Content-Type': 'application/json',
+    'User-Agent': await CloudHeaders.userAgent,
+    if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+  };
 
   /// 本地生成 32 位十六进制 csrf（授权与轮询需前后一致）。
   static String _randomCsrf() {
@@ -222,7 +222,9 @@ class MslFrpApi {
     String tunnelId, {
     String? userToken,
   }) async {
-    final params = StringBuffer('/frp/getTunnelConfig?id=$tunnelId&format=toml');
+    final params = StringBuffer(
+      '/frp/getTunnelConfig?id=$tunnelId&format=toml',
+    );
     if (userToken != null && userToken.isNotEmpty) {
       params.write('&userToken=$userToken');
     }

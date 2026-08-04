@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../config/locale_store.dart';
@@ -10,7 +11,10 @@ import '../i18n/app_language.dart';
 import '../i18n/i18n_service.dart';
 import '../i18n/locale_controller.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_preference.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/miuix_dialog.dart';
+import '../widgets/miuix_snackbar.dart';
 
 /// 语言设置页：选择内置/自定义语言，导入与删除自定义翻译，导出翻译模板。
 class LanguageSettingsPage extends StatelessWidget {
@@ -18,81 +22,70 @@ class LanguageSettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     // 经 LocaleScope 取控制器并建立依赖，语言或列表变化时本页自动重建。
     final controller = LocaleScope.of(context);
     final available = controller.available;
 
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('language.title'))),
-      body: ListView(
-        children: [
-          RadioGroup<String>(
-            groupValue: controller.selectedCode,
-            onChanged: (code) {
-              if (code != null) controller.setLanguage(code);
-            },
-            child: Column(
-              children: [
-                RadioListTile<String>(
-                  value: LocaleStore.systemCode,
-                  title: Text(context.tr('common.followSystem')),
-                  secondary: const Icon(Icons.translate),
-                ),
-                for (final lang in available) _languageTile(context, lang),
-              ],
-            ),
+    return EcSettingsPage(
+      title: context.tr('language.title'),
+      children: [
+        MiuixRadioButtonPreference(
+          title: context.tr('common.followSystem'),
+          selected: controller.selectedCode == LocaleStore.systemCode,
+          startAction: prefIcon(Icons.translate),
+          onClick: () => controller.setLanguage(LocaleStore.systemCode),
+        ),
+        for (final lang in available) _languageTile(context, controller, lang),
+
+        MiuixSmallTitle(context.tr('language.title')),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.file_download_outlined),
+          title: context.tr('language.import'),
+          summary: context.tr('language.importHint'),
+          onClick: () => _import(context, controller),
+        ),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.description_outlined),
+          title: context.tr('language.exportTemplate'),
+          onClick: () => _exportTemplate(context),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
+          child: MiuixText(
+            context.tr('language.importHint'),
+            style: theme.textStyles.footnote1,
+            color: theme.colors.onSurfaceVariantSummary,
           ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.file_download_outlined),
-            title: Text(context.tr('language.import')),
-            subtitle: Text(context.tr('language.importHint')),
-            onTap: () => _import(context, controller),
-          ),
-          ListTile(
-            leading: const Icon(Icons.description_outlined),
-            title: Text(context.tr('language.exportTemplate')),
-            onTap: () => _exportTemplate(context),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            child: Text(
-              context.tr('language.importHint'),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  /// 单个语言行。内置语言用 `b:<code>` 单选项；自定义语言用 `c:<code>` 额外带删除按钮。
-  Widget _languageTile(BuildContext context, AppLanguage lang) {
+  /// 单个语言行。内置语言只有单选；自定义语言额外带删除按钮。
+  Widget _languageTile(
+    BuildContext context,
+    LocaleController controller,
+    AppLanguage lang,
+  ) {
     final badge = context.tr(
       lang.isBuiltin ? 'language.builtin' : 'language.custom',
     );
     final value = '${lang.isBuiltin ? 'b' : 'c'}:${lang.code}';
-    if (lang.isBuiltin) {
-      return RadioListTile<String>(
-        value: value,
-        title: Text(lang.name),
-        subtitle: Text('${lang.code} · $badge'),
-        secondary: const Icon(Icons.language),
-      );
-    }
-    // 自定义语言：单选 + 右侧删除。
-    return RadioListTile<String>(
-      value: value,
-      title: Text(lang.name),
-      subtitle: Text('${lang.code} · $badge'),
-      secondary: IconButton(
-        icon: const Icon(Icons.delete_outline),
-        tooltip: context.tr('common.delete'),
-        onPressed: () => _confirmDelete(context, lang),
-      ),
+    return MiuixRadioButtonPreference(
+      title: lang.name,
+      summary: '${lang.code} · $badge',
+      selected: controller.selectedCode == value,
+      startAction: lang.isBuiltin ? prefIcon(Icons.language) : null,
+      endActions: lang.isBuiltin
+          ? null
+          : [
+              MiuixIconButton(
+                onPressed: () => _confirmDelete(context, lang),
+                child: const MiuixIcon(icon: Icons.delete_outline),
+              ),
+            ],
+      onClick: () => controller.setLanguage(value),
     );
   }
 
@@ -100,19 +93,20 @@ class LanguageSettingsPage extends StatelessWidget {
   Future<bool> _ensurePermission(BuildContext context) async {
     if (await StoragePermission.isGranted()) return true;
     if (!context.mounted) return false;
-    final go = await showDialog<bool>(
+    final go = await showMiuixDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('language.permissionTitle')),
-        content: Text(ctx.tr('language.permissionContent')),
-        actions: [
-          TextButton(
+      title: context.tr('language.permissionTitle'),
+      summary: context.tr('language.permissionContent'),
+      builder: (ctx) => MiuixDialogActions(
+        children: [
+          MiuixTextButton(
+            ctx.tr('common.cancel'),
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
           ),
-          FilledButton(
+          MiuixButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('language.grant')),
+            colors: MiuixButtonDefaults.buttonColorsPrimary(ctx),
+            child: MiuixText(ctx.tr('language.grant')),
           ),
         ],
       ),
@@ -133,14 +127,11 @@ class LanguageSettingsPage extends StatelessWidget {
       allowedExtensions: const ['.json'],
     );
     if (path == null || !context.mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     final successTpl = context.tr('language.importSuccess');
     final failed = context.tr('language.importFailed');
     try {
       final lang = await controller.importCustom(path);
-      messenger.showSnackBar(
-        SnackBar(content: Text(successTpl.replaceAll('{name}', lang.name))),
-      );
+      showMiuixSnackbar(successTpl.replaceAll('{name}', lang.name));
     } catch (_) {
       if (context.mounted) showErrorDialog(context, failed);
     }
@@ -151,16 +142,13 @@ class LanguageSettingsPage extends StatelessWidget {
     if (!context.mounted) return;
     final dir = await pickFromSystem(context, mode: SystemPickMode.directory);
     if (dir == null || !context.mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     final savedTpl = context.tr('language.exportTemplateSaved');
     final failedTpl = context.tr('language.exportTemplateFailed');
     try {
       final json = await I18nService.exportTemplate();
       final file = File(p.join(dir, 'edgecube_translation_template.json'));
       await file.writeAsString(json);
-      messenger.showSnackBar(
-        SnackBar(content: Text(savedTpl.replaceAll('{path}', file.path))),
-      );
+      showMiuixSnackbar(savedTpl.replaceAll('{path}', file.path));
     } catch (e) {
       // 写入失败（权限或路径问题）：弹窗提示。
       if (context.mounted) {
@@ -171,27 +159,14 @@ class LanguageSettingsPage extends StatelessWidget {
 
   Future<void> _confirmDelete(BuildContext context, AppLanguage lang) async {
     final controller = LocaleScope.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('language.deleteConfirmTitle')),
-        content: Text(
-          ctx
-              .tr('language.deleteConfirmContent')
-              .replaceAll('{name}', lang.name),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.tr('common.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(ctx.tr('common.delete')),
-          ),
-        ],
-      ),
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: context.tr('language.deleteConfirmTitle'),
+      message: context
+          .tr('language.deleteConfirmContent')
+          .replaceAll('{name}', lang.name),
+      confirmLabel: context.tr('common.delete'),
     );
-    if (confirmed == true) await controller.removeCustom(lang.code);
+    if (confirmed) await controller.removeCustom(lang.code);
   }
 }

@@ -78,7 +78,9 @@ class ModrinthModSource extends ModSource {
   Future<List<ModProjectInfo>> getProjects(List<String> projectIds) async {
     final projects = await ModrinthService.getProjects(projectIds);
     return projects
-        .map((p) => ModProjectInfo(id: p.id, title: p.title, iconUrl: p.iconUrl))
+        .map(
+          (p) => ModProjectInfo(id: p.id, title: p.title, iconUrl: p.iconUrl),
+        )
         .toList();
   }
 

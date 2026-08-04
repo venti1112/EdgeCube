@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/ec_text_field.dart';
 import 'server_type_tile.dart';
 
 class NameEntryStep extends StatelessWidget {
@@ -29,13 +30,10 @@ class NameEntryStep extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        TextField(
+        EcTextField(
           controller: controller,
-          decoration: InputDecoration(
-            labelText: context.tr('instance.nameLabel'),
-            hintText: context.tr('instance.nameHint'),
-            border: const OutlineInputBorder(),
-          ),
+          label: context.tr('instance.nameLabel'),
+          hint: context.tr('instance.nameHint'),
         ),
         const SizedBox(height: 24),
         ServerTypeTile(

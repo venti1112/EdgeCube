@@ -16,9 +16,9 @@ class MeFrpApi {
   static const Duration _timeout = Duration(seconds: 15);
 
   static Map<String, String> _headers(String? token) => {
-        'Content-Type': 'application/json',
-        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-      };
+    'Content-Type': 'application/json',
+    if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+  };
 
   static Future<Map<String, dynamic>> _get(String path, String token) async {
     final resp = await http
@@ -100,8 +100,8 @@ class MeFrpApi {
       final remoteAddress = (type == 'http' || type == 'https')
           ? domain
           : (hostname.isNotEmpty && remotePort != null
-              ? '$hostname:$remotePort'
-              : '');
+                ? '$hostname:$remotePort'
+                : '');
       return FrpRemoteTunnel(
         id: '${m['proxyId']}',
         name: m['proxyName'] as String? ?? '',

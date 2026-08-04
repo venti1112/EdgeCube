@@ -7,10 +7,7 @@ import '../online/cloud_headers.dart';
 
 /// Poggit 插件分类。
 class PoggitCategory {
-  const PoggitCategory({
-    required this.major,
-    required this.categoryName,
-  });
+  const PoggitCategory({required this.major, required this.categoryName});
 
   final bool major;
   final String categoryName;
@@ -137,7 +134,8 @@ class PoggitPlugin {
   /// 主要分类名（major 为 true 的第一个）。
   String get mainCategory {
     final major = categories.where((c) => c.major).firstOrNull;
-    return major?.categoryName ?? (categories.isNotEmpty ? categories.first.categoryName : '');
+    return major?.categoryName ??
+        (categories.isNotEmpty ? categories.first.categoryName : '');
   }
 
   /// 作者列表（所有角色的作者合并）。
@@ -150,7 +148,8 @@ class PoggitPlugin {
       id: json['id'] as int,
       name: json['name'] as String? ?? '',
       version: json['version'] as String? ?? '',
-      projectName: json['project_name'] as String? ?? json['name'] as String? ?? '',
+      projectName:
+          json['project_name'] as String? ?? json['name'] as String? ?? '',
       projectId: json['project_id'] as int? ?? 0,
       tagline: json['tagline'] as String? ?? '',
       artifactUrl: json['artifact_url'] as String? ?? '',
@@ -168,21 +167,24 @@ class PoggitPlugin {
       isAbandoned: json['is_abandoned'] as bool? ?? false,
       submissionDate: json['submission_date'] as int? ?? 0,
       stateName: json['state_name'] as String? ?? '',
-      categories: (json['categories'] as List?)
+      categories:
+          (json['categories'] as List?)
               ?.map((e) => PoggitCategory.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      api: (json['api'] as List?)
+      api:
+          (json['api'] as List?)
               ?.map((e) => PoggitApiRange.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      keywords: (json['keywords'] as List?)
-              ?.map((e) => e as String)
-              .toList() ??
+      keywords:
+          (json['keywords'] as List?)?.map((e) => e as String).toList() ??
           const [],
-      producers: (json['producers'] as Map<String, dynamic>?)?.map(
-              (role, list) => MapEntry(
-                  role, (list as List).map((e) => e as String).toList())) ??
+      producers:
+          (json['producers'] as Map<String, dynamic>?)?.map(
+            (role, list) =>
+                MapEntry(role, (list as List).map((e) => e as String).toList()),
+          ) ??
           const {},
     );
   }
@@ -219,7 +221,10 @@ class PoggitService {
 
     final url = '$_baseUrl/plugins.min.json?latest-only=true';
     final response = await http
-        .get(Uri.parse(url), headers: {'User-Agent': await CloudHeaders.userAgent})
+        .get(
+          Uri.parse(url),
+          headers: {'User-Agent': await CloudHeaders.userAgent},
+        )
         .timeout(const Duration(seconds: 30));
 
     if (response.statusCode != 200) {
@@ -240,7 +245,10 @@ class PoggitService {
   static Future<List<PoggitPlugin>> getPluginVersions(String name) async {
     final url = '$_baseUrl/plugins.min.json?name=${Uri.encodeComponent(name)}';
     final response = await http
-        .get(Uri.parse(url), headers: {'User-Agent': await CloudHeaders.userAgent})
+        .get(
+          Uri.parse(url),
+          headers: {'User-Agent': await CloudHeaders.userAgent},
+        )
         .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
@@ -254,10 +262,7 @@ class PoggitService {
   }
 
   /// 客户端模糊搜索：在插件名、项目名、描述、分类、关键词中匹配。
-  static List<PoggitPlugin> search(
-    List<PoggitPlugin> plugins,
-    String query,
-  ) {
+  static List<PoggitPlugin> search(List<PoggitPlugin> plugins, String query) {
     if (query.isEmpty) return plugins;
     final q = query.toLowerCase();
     return plugins.where((p) {
@@ -279,11 +284,12 @@ class PoggitService {
   static Future<String> fetchResourceMarkdown(String? resourceUrl) async {
     if (resourceUrl == null || resourceUrl.isEmpty) return '';
     // 将 /r/{id} 转换为 /r/{id}.md 获取 Markdown 原文
-    final mdUrl = resourceUrl.endsWith('.md')
-        ? resourceUrl
-        : '$resourceUrl.md';
+    final mdUrl = resourceUrl.endsWith('.md') ? resourceUrl : '$resourceUrl.md';
     final response = await http
-        .get(Uri.parse(mdUrl), headers: {'User-Agent': await CloudHeaders.userAgent})
+        .get(
+          Uri.parse(mdUrl),
+          headers: {'User-Agent': await CloudHeaders.userAgent},
+        )
         .timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) return '';
     return response.body;

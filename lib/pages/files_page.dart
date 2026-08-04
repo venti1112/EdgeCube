@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../files/file_browser.dart';
 import '../i18n/locale_scope.dart';
@@ -8,6 +9,7 @@ import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
 import '../widgets/placeholder_page.dart';
+import '../widgets/ec_preference.dart';
 
 class FilesPage extends StatelessWidget {
   const FilesPage({super.key});
@@ -17,26 +19,28 @@ class FilesPage extends StatelessWidget {
     final controller = InstanceScope.of(context);
     final selected = controller.selected;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          selected == null
-              ? context.tr('filesPage.title')
-              : context.tr('filesPage.titleWithName', {'name': selected.name}),
-        ),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: selected == null
+            ? context.tr('filesPage.title')
+            : context.tr('filesPage.titleWithName', {'name': selected.name}),
+        navigationIcon: const EcBackButton(),
       ),
-      body: selected == null
-          ? PlaceholderPage(
-              icon: Icons.folder_outlined,
-              title: context.tr('filesPage.emptyTitle'),
-              description: context.tr('filesPage.emptyDescription'),
-            )
-          : _InstanceFiles(
-              // 切换实例时重建浏览器，回到新实例根目录。
-              key: ValueKey(selected.id),
-              controller: controller,
-              instance: selected,
-            ),
+      content: (padding) => Padding(
+        padding: padding,
+        child: selected == null
+            ? PlaceholderPage(
+                icon: Icons.folder_outlined,
+                title: context.tr('filesPage.emptyTitle'),
+                description: context.tr('filesPage.emptyDescription'),
+              )
+            : _InstanceFiles(
+                // 切换实例时重建浏览器，回到新实例根目录。
+                key: ValueKey(selected.id),
+                controller: controller,
+                instance: selected,
+              ),
+      ),
     );
   }
 }

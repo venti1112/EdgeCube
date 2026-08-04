@@ -22,9 +22,9 @@ enum OverlayDotSource {
   final String key;
 
   static OverlayDotSource fromKey(String? key) => values.firstWhere(
-        (s) => s.key == key,
-        orElse: () => OverlayDotSource.status,
-      );
+    (s) => s.key == key,
+    orElse: () => OverlayDotSource.status,
+  );
 }
 
 /// 状态悬浮窗的展示与交互设置（原生 SharedPreferences 持久化）。

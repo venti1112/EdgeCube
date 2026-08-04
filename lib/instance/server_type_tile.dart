@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
+
+import '../widgets/ec_preference.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class ServerTypeTile extends StatelessWidget {
@@ -19,20 +22,11 @@ class ServerTypeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        leading: SizedBox(
-          width: 36,
-          height: 36,
-          child: _buildLeading(),
-        ),
-        title: Text(title, style: const TextStyle(fontSize: 16)),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        onTap: onTap,
-      ),
+    return EcCardTile(
+      leading: SizedBox(width: 36, height: 36, child: _buildLeading()),
+      title: title,
+      summary: subtitle,
+      onTap: onTap,
     );
   }
 
@@ -57,6 +51,6 @@ class ServerTypeTile extends StatelessWidget {
   }
 
   Widget _fallbackIcon() {
-    return Icon(icon ?? Icons.help_outline, size: 36);
+    return MiuixIcon(icon: icon ?? Icons.help_outline, size: 36);
   }
 }

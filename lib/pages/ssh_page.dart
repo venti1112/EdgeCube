@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../config/ssh_store.dart';
 import '../i18n/i18n_service.dart';
@@ -12,6 +13,9 @@ import '../ssh/ssh_controller.dart';
 import '../ssh/ssh_scope.dart';
 import '../ssh/ssh_service.dart';
 import '../widgets/expandable_address_list.dart';
+import '../widgets/miuix_snackbar.dart';
+import '../widgets/ec_preference.dart';
+import '../widgets/ec_text_field.dart';
 
 /// SSH 服务页：对外开放当前实例目录的 SFTP 文件访问与 SSH 远程终端。
 ///
@@ -140,15 +144,10 @@ class _SshPageState extends State<SshPage> {
       _showError(tr('ssh.operationFailed', {'error': e.toString()}));
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          ssh.isRunning
-              ? context.tr('ssh.savedAndRestarted')
-              : context.tr('ssh.saved'),
-        ),
-        duration: const Duration(seconds: 2),
-      ),
+    showMiuixSnackbar(
+      ssh.isRunning
+          ? context.tr('ssh.savedAndRestarted')
+          : context.tr('ssh.saved'),
     );
   }
 
@@ -159,28 +158,29 @@ class _SshPageState extends State<SshPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = MiuixTheme.of(context);
     final ssh = SshScope.of(context);
-    return Scaffold(
-      appBar: AppBar(title: Text(context.tr('ssh.title'))),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildStatusCard(theme, ssh),
-            const SizedBox(height: 16),
-            _buildConfigCard(theme),
-            const SizedBox(height: 16),
-            _buildInfoCard(theme),
-          ],
-        ),
+    return MiuixScaffold(
+      topBar: MiuixSmallTopAppBar(
+        title: context.tr('ssh.title'),
+        navigationIcon: const EcBackButton(),
+      ),
+      content: (padding) => ListView(
+        padding: padding + const EdgeInsets.all(16),
+        children: [
+          _buildStatusCard(theme, ssh),
+          const SizedBox(height: 16),
+          _buildConfigCard(theme),
+          const SizedBox(height: 16),
+          _buildInfoCard(theme),
+        ],
       ),
     );
   }
 
   // —— 状态卡片 ——
 
-  Widget _buildStatusCard(ThemeData theme, SshController ssh) {
+  Widget _buildStatusCard(MiuixThemeData theme, SshController ssh) {
     final running = ssh.isRunning;
     final port = ssh.config.port;
     final user = ssh.config.username;
@@ -193,202 +193,164 @@ class _SshPageState extends State<SshPage> {
     } else {
       subtitle = context.tr('ssh.rootDirCurrentInstance');
     }
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.dns_outlined,
-                    size: 20,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      context.tr('ssh.service'),
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                  if (running) _statusChip(theme, context.tr('ssh.running')),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: Text(subtitle, style: theme.textTheme.bodySmall),
-            ),
-            SwitchListTile(
-              title: Text(context.tr('ssh.enableSftp')),
-              subtitle: Text(context.tr('ssh.sftpHint')),
-              value: ssh.config.sftpEnabled,
-              onChanged: hasRoot ? _toggleSftp : null,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            ),
-            SwitchListTile(
-              title: Text(context.tr('ssh.enableShell')),
-              subtitle: Text(context.tr('ssh.shellHint')),
-              value: ssh.config.shellEnabled,
-              onChanged: hasRoot ? _toggleShell : null,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            ),
-            if (running) ...[
-              const SizedBox(height: 4),
-              ExpandableAddressList(
-                ips: _localIps ?? [],
-                ipv6: ssh.config.ipv6Enabled ? _localIpv6 : null,
-                itemBuilder: (ctx, ip, isPrimary) => [
-                  if (ssh.config.sftpEnabled)
-                    _addrRow(theme, 'sftp -P $port $user@$ip'),
-                  if (ssh.config.shellEnabled)
-                    _addrRow(theme, 'ssh -p $port $user@$ip'),
-                ],
-                ipv6Builder: (ctx, ipv6) => [
-                  if (ssh.config.sftpEnabled)
-                    _addrRow(theme, 'sftp -P $port $user@[$ipv6]'),
-                  if (ssh.config.shellEnabled)
-                    _addrRow(theme, 'ssh -p $port $user@[$ipv6]'),
-                ],
-              ),
-            ],
-            if (_fingerprint != null) _buildFingerprint(theme),
-          ],
+    return EcSectionCard(
+      icon: Icons.dns_outlined,
+      title: context.tr('ssh.service'),
+      trailing: running ? EcStatusChip(context.tr('ssh.running')) : null,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: MiuixText(subtitle, style: theme.textStyles.footnote1),
         ),
-      ),
+        MiuixSwitchPreference(
+          title: context.tr('ssh.enableSftp'),
+          summary: context.tr('ssh.sftpHint'),
+          value: ssh.config.sftpEnabled,
+          enabled: hasRoot,
+          onChanged: _toggleSftp,
+        ),
+        MiuixSwitchPreference(
+          title: context.tr('ssh.enableShell'),
+          summary: context.tr('ssh.shellHint'),
+          value: ssh.config.shellEnabled,
+          enabled: hasRoot,
+          onChanged: _toggleShell,
+        ),
+        if (running) ...[
+          const SizedBox(height: 4),
+          ExpandableAddressList(
+            ips: _localIps ?? [],
+            ipv6: ssh.config.ipv6Enabled ? _localIpv6 : null,
+            itemBuilder: (ctx, ip, isPrimary) => [
+              if (ssh.config.sftpEnabled)
+                _addrRow(theme, 'sftp -P $port $user@$ip'),
+              if (ssh.config.shellEnabled)
+                _addrRow(theme, 'ssh -p $port $user@$ip'),
+            ],
+            ipv6Builder: (ctx, ipv6) => [
+              if (ssh.config.sftpEnabled)
+                _addrRow(theme, 'sftp -P $port $user@[$ipv6]'),
+              if (ssh.config.shellEnabled)
+                _addrRow(theme, 'ssh -p $port $user@[$ipv6]'),
+            ],
+          ),
+        ],
+        if (_fingerprint != null) _buildFingerprint(theme),
+      ],
     );
   }
 
   // —— 配置卡片 ——
 
-  Widget _buildConfigCard(ThemeData theme) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(
-                context.tr('ssh.connectionConfig'),
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _field(_port, context.tr('ssh.port'), number: true),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _field(_username, context.tr('ssh.username')),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _field(
-                _password,
-                context.tr('ssh.password'),
-                obscure: true,
-              ),
-            ),
-            SwitchListTile(
-              title: Text(context.tr('ssh.allowWrite')),
-              subtitle: Text(context.tr('ssh.writeOffHint')),
-              value: _writable,
-              onChanged: (v) => setState(() => _writable = v),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            ),
-            SwitchListTile(
-              title: Text(context.tr('ssh.enableIpv6')),
-              subtitle: Text(context.tr('ssh.ipv6Hint')),
-              value: _ipv6,
-              onChanged: (v) => setState(() => _ipv6 = v),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.tonalIcon(
-                  onPressed: _saveConfig,
-                  icon: const Icon(Icons.save, size: 18),
-                  label: Text(context.tr('ssh.saveConfig')),
-                ),
-              ),
-            ),
-          ],
+  Widget _buildConfigCard(MiuixThemeData theme) {
+    return EcSectionCard(
+      title: context.tr('ssh.connectionConfig'),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _field(_port, context.tr('ssh.port'), number: true),
         ),
-      ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _field(_username, context.tr('ssh.username')),
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _field(_password, context.tr('ssh.password'), obscure: true),
+        ),
+        const SizedBox(height: 8),
+        MiuixSwitchPreference(
+          title: context.tr('ssh.allowWrite'),
+          summary: context.tr('ssh.writeOffHint'),
+          value: _writable,
+          onChanged: (v) => setState(() => _writable = v),
+        ),
+        MiuixSwitchPreference(
+          title: context.tr('ssh.enableIpv6'),
+          summary: context.tr('ssh.ipv6Hint'),
+          value: _ipv6,
+          onChanged: (v) => setState(() => _ipv6 = v),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: SizedBox(
+            // MiuixButton 贴内容尺寸，不会自动撑满，需显式给宽。
+            width: double.infinity,
+            child: MiuixButton(
+              onPressed: _saveConfig,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const MiuixIcon(icon: Icons.save, size: 18),
+                  const SizedBox(width: 8),
+                  MiuixText(context.tr('ssh.saveConfig')),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   // —— 说明卡片 ——
 
-  Widget _buildInfoCard(ThemeData theme) {
-    return Card(
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.info_outline,
-              size: 18,
-              color: theme.colorScheme.primary,
+  Widget _buildInfoCard(MiuixThemeData theme) {
+    return MiuixCard(
+      colors: MiuixCardColors(
+        color: theme.colors.surfaceContainerHighest,
+        contentColor: theme.colors.onSurfaceContainerHighest,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          MiuixIcon(
+            icon: Icons.info_outline,
+            size: 18,
+            tint: theme.colors.primary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: MiuixText(
+              context.tr('ssh.infoText'),
+              style: theme.textStyles.footnote1,
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                context.tr('ssh.infoText'),
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   // —— 主机密钥指纹 ——
 
-  Widget _buildFingerprint(ThemeData theme) {
+  Widget _buildFingerprint(MiuixThemeData theme) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          MiuixText(
             context.tr('ssh.fingerprintTitle'),
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            style: theme.textStyles.footnote2,
+            color: theme.colors.onSurfaceVariantSummary,
           ),
           Row(
             children: [
               Expanded(
                 child: SelectableText(
                   _fingerprint!,
-                  style: theme.textTheme.bodySmall?.copyWith(
+                  style: theme.textStyles.footnote1.copyWith(
+                    color: theme.colors.onSurface,
                     fontFamily: 'monospace',
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.copy, size: 18),
-                tooltip: context.tr('ssh.copyFingerprint'),
+              MiuixIconButton(
                 onPressed: () =>
                     Clipboard.setData(ClipboardData(text: _fingerprint!)),
+                child: const MiuixIcon(icon: Icons.copy, size: 18),
               ),
             ],
           ),
@@ -400,7 +362,7 @@ class _SshPageState extends State<SshPage> {
   // —— 工具 ——
 
   /// 单行连接命令展示（等宽字体 + 复制按钮）。IPv6 地址由调用方用方括号包裹。
-  Widget _addrRow(ThemeData theme, String addr) {
+  Widget _addrRow(MiuixThemeData theme, String addr) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Row(
@@ -408,34 +370,17 @@ class _SshPageState extends State<SshPage> {
           Expanded(
             child: SelectableText(
               addr,
-              style: theme.textTheme.bodyMedium?.copyWith(
+              style: theme.textStyles.body2.copyWith(
                 fontFamily: 'monospace',
-                color: theme.colorScheme.primary,
+                color: theme.colors.primary,
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.copy, size: 18),
-            tooltip: context.tr('ssh.copyCommand'),
+          MiuixIconButton(
             onPressed: () => Clipboard.setData(ClipboardData(text: addr)),
+            child: const MiuixIcon(icon: Icons.copy, size: 18),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _statusChip(ThemeData theme, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primary.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        text,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.primary,
-        ),
       ),
     );
   }
@@ -446,16 +391,12 @@ class _SshPageState extends State<SshPage> {
     bool number = false,
     bool obscure = false,
   }) {
-    return TextField(
+    return EcTextField(
       controller: c,
+      label: label,
       keyboardType: number ? TextInputType.number : TextInputType.text,
       inputFormatters: number ? [FilteringTextInputFormatter.digitsOnly] : null,
       obscureText: obscure,
-      decoration: InputDecoration(
-        labelText: label,
-        isDense: true,
-        border: const OutlineInputBorder(),
-      ),
     );
   }
 }
