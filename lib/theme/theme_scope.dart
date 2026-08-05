@@ -19,6 +19,8 @@ class ThemeScope extends InheritedWidget {
     required this.setSnowfallEnabled,
     required this.precipitationMode,
     required this.setPrecipitationMode,
+    required this.floatingNavBarEnabled,
+    required this.setFloatingNavBarEnabled,
     required super.child,
   });
 
@@ -37,6 +39,9 @@ class ThemeScope extends InheritedWidget {
   final PrecipitationEffectMode precipitationMode;
   final ValueChanged<PrecipitationEffectMode> setPrecipitationMode;
 
+  final bool floatingNavBarEnabled;
+  final ValueChanged<bool> setFloatingNavBarEnabled;
+
   static ThemeScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<ThemeScope>();
     assert(scope != null, 'ThemeScope 未在 widget 树中找到');
@@ -49,5 +54,6 @@ class ThemeScope extends InheritedWidget {
       seedColor != oldWidget.seedColor ||
       useDynamicColor != oldWidget.useDynamicColor ||
       snowfallEnabled != oldWidget.snowfallEnabled ||
-      precipitationMode != oldWidget.precipitationMode;
+      precipitationMode != oldWidget.precipitationMode ||
+      floatingNavBarEnabled != oldWidget.floatingNavBarEnabled;
 }

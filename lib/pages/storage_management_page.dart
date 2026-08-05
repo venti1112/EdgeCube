@@ -194,16 +194,19 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
           ? const Center(child: MiuixInfiniteProgressIndicator())
           // MiuixPullToRefresh 的 isRefreshing 是受控参数，需自持状态，
           // 不像 RefreshIndicator 那样靠 onRefresh 返回的 Future 自动收起。
-          : MiuixPullToRefresh(
-              isRefreshing: _refreshing,
-              onRefresh: _handleRefresh,
-              contentPadding: padding,
-              child: ListView(
-                padding: padding + const EdgeInsets.all(16),
-                children: [
-                  _buildUsageBar(theme, tr),
-                  const SizedBox(height: 24),
-                  _buildSectionHeader(theme, tr.get('storage.breakdown')),
+          // scaffold padding 用 Padding 包裹（不跟随滚动），避免 ListView
+          // 把顶栏高度叠到自身 padding 上产生顶部空白。
+          : Padding(
+              padding: padding,
+              child: MiuixPullToRefresh(
+                isRefreshing: _refreshing,
+                onRefresh: _handleRefresh,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _buildUsageBar(theme, tr),
+                    const SizedBox(height: 24),
+                    _buildSectionHeader(theme, tr.get('storage.breakdown')),
                   _buildSectionItem(
                     theme,
                     tr,
@@ -262,6 +265,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
                 ],
               ),
             ),
+          ),
     );
   }
 
@@ -620,11 +624,13 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
       ),
       content: (padding) => _loading
           ? const Center(child: MiuixInfiniteProgressIndicator())
-          : ListView(
-              padding: padding + const EdgeInsets.all(16),
-              children: [
-                // 总计卡片
-                MiuixCard(
+          : Padding(
+              padding: padding,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  // 总计卡片
+                  MiuixCard(
                   child: Row(
                     children: [
                       Expanded(
@@ -692,6 +698,7 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
                     ),
                 const SizedBox(height: 16),
               ],
+              ),
             ),
     );
   }

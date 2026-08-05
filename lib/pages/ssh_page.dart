@@ -162,15 +162,18 @@ class _SshPageState extends State<SshPage> {
     final ssh = SshScope.of(context);
     return MiuixScaffold(
       topBar: EcTopAppBar(title: context.tr('ssh.title'), showBack: true),
-      content: (padding) => ListView(
-        padding: padding + const EdgeInsets.all(16),
-        children: [
-          _buildStatusCard(theme, ssh),
-          const SizedBox(height: 16),
-          _buildConfigCard(theme),
-          const SizedBox(height: 16),
-          _buildInfoCard(theme),
-        ],
+      content: (padding) => Padding(
+        padding: padding,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _buildStatusCard(theme, ssh),
+            const SizedBox(height: 16),
+            _buildConfigCard(theme),
+            const SizedBox(height: 16),
+            _buildInfoCard(theme),
+          ],
+        ),
       ),
     );
   }

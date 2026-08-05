@@ -230,6 +230,7 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
       );
     }
     return ListView.builder(
+      padding: EdgeInsets.zero,
       itemCount: _searchResults.length,
       itemBuilder: (_, i) =>
           _buildFolderTile(_searchResults[i], theme, inSearch: true),
@@ -319,6 +320,7 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
                           ),
                         )
                       : ListView.builder(
+                          padding: EdgeInsets.zero,
                           itemCount: _folders.length,
                           itemBuilder: (_, i) =>
                               _buildFolderTile(_folders[i], theme),

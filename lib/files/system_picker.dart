@@ -364,6 +364,7 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
       );
     }
     return ListView.builder(
+      padding: EdgeInsets.zero,
       itemCount: _searchResults.length,
       itemBuilder: (_, i) => _buildEntryTile(_searchResults[i], inSearch: true),
     );
@@ -442,6 +443,7 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
       );
     }
     return ListView.builder(
+      padding: EdgeInsets.zero,
       itemCount: visible.length,
       itemBuilder: (_, i) => _buildEntryTile(visible[i]),
     );

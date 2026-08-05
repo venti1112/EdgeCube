@@ -945,6 +945,10 @@ class _FileBrowserState extends State<FileBrowser> {
                       : ListView.builder(
                           controller: _scrollController,
                           physics: const AlwaysScrollableScrollPhysics(),
+                          // MiuixScaffold 的 body 铺满整屏，MediaQuery.padding
+                          // 不会被自动消费；ListView 默认会把 MediaQuery.padding
+                          // 叠到顶部，导致列表首项上方多出一段跟随滚动的空白。
+                          padding: EdgeInsets.zero,
                           itemCount: _entries.length,
                           itemBuilder: (_, i) => _buildEntryTile(_entries[i]),
                         ),
@@ -1073,6 +1077,7 @@ class _FileBrowserState extends State<FileBrowser> {
       );
     }
     return ListView.builder(
+      padding: EdgeInsets.zero,
       itemCount: _searchResults.length,
       itemBuilder: (_, i) => _buildEntryTile(_searchResults[i], inSearch: true),
     );

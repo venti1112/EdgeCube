@@ -265,6 +265,7 @@ class _FrpRunPageState extends State<FrpRunPage> {
                       )
                     : ListView.builder(
                         controller: _logScroll,
+                        padding: EdgeInsets.zero,
                         itemCount: _logs.length,
                         itemBuilder: (_, i) => Text(
                           _logs[i],

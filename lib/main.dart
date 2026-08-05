@@ -100,6 +100,8 @@ Future<void> _bootstrap() async {
   final initialUseDynamicColor = await ThemeStore.loadUseDynamicColor();
   final initialSnowfallEnabled = await ThemeStore.loadSnowfallEnabled();
   final initialPrecipitationMode = await ThemeStore.loadPrecipitationMode();
+  final initialFloatingNavBarEnabled =
+      await ThemeStore.loadFloatingNavBarEnabled();
   final instanceController = InstanceController();
   await instanceController.init();
   // 预热全局下载引擎（懒初始化，fire-and-forget 不阻塞启动）。
@@ -158,6 +160,7 @@ Future<void> _bootstrap() async {
       initialUseDynamicColor: initialUseDynamicColor,
       initialSnowfallEnabled: initialSnowfallEnabled,
       initialPrecipitationMode: initialPrecipitationMode,
+      initialFloatingNavBarEnabled: initialFloatingNavBarEnabled,
       localeController: localeController,
       instanceController: instanceController,
       serverController: serverController,
@@ -209,6 +212,7 @@ class EdgeCubeApp extends StatefulWidget {
     this.initialUseDynamicColor = false,
     this.initialSnowfallEnabled = false,
     this.initialPrecipitationMode = PrecipitationEffectMode.snow,
+    this.initialFloatingNavBarEnabled = false,
     required this.localeController,
     required this.instanceController,
     required this.serverController,
@@ -225,6 +229,7 @@ class EdgeCubeApp extends StatefulWidget {
   final bool initialUseDynamicColor;
   final bool initialSnowfallEnabled;
   final PrecipitationEffectMode initialPrecipitationMode;
+  final bool initialFloatingNavBarEnabled;
   final LocaleController localeController;
   final InstanceController instanceController;
   final ServerController serverController;
@@ -246,6 +251,7 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
   late bool _snowfallEnabled = widget.initialSnowfallEnabled;
   late PrecipitationEffectMode _precipitationMode =
       widget.initialPrecipitationMode;
+  late bool _floatingNavBarEnabled = widget.initialFloatingNavBarEnabled;
 
   @override
   void initState() {
@@ -294,6 +300,12 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
     ThemeStore.savePrecipitationMode(mode);
   }
 
+  void _setFloatingNavBarEnabled(bool value) {
+    if (value == _floatingNavBarEnabled) return;
+    setState(() => _floatingNavBarEnabled = value);
+    ThemeStore.saveFloatingNavBarEnabled(value);
+  }
+
   @override
   Widget build(BuildContext context) {
     return LocaleScope(
@@ -309,6 +321,8 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
         setSnowfallEnabled: _setSnowfallEnabled,
         precipitationMode: _precipitationMode,
         setPrecipitationMode: _setPrecipitationMode,
+        floatingNavBarEnabled: _floatingNavBarEnabled,
+        setFloatingNavBarEnabled: _setFloatingNavBarEnabled,
         child: InstanceScope(
           controller: widget.instanceController,
           child: FtpScope(

@@ -99,6 +99,16 @@ class AppearanceSettingsPage extends StatelessWidget {
                 themeScope.setPrecipitationMode(_effectModes[i].mode),
           ),
         ),
+
+        // ── 布局 ──
+        MiuixSmallTitle(context.tr('appearance.layoutSection')),
+        MiuixSwitchPreference(
+          startAction: prefIcon(Icons.dock_rounded),
+          title: context.tr('appearance.floatingNavBar'),
+          summary: context.tr('appearance.floatingNavBarSubtitle'),
+          value: themeScope.floatingNavBarEnabled,
+          onChanged: themeScope.setFloatingNavBarEnabled,
+        ),
       ],
     );
   }

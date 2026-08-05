@@ -243,6 +243,7 @@ class ForgeInstallingStep extends StatelessWidget {
                       ),
                     )
                   : ListView.builder(
+                      padding: EdgeInsets.zero,
                       itemCount: logs.length,
                       itemBuilder: (_, i) => Text(
                         logs[i],

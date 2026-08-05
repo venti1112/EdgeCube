@@ -254,7 +254,11 @@ class PatchedTerminalViewState extends State<PatchedTerminalView> {
           terminal: widget.terminal,
           controller: _controller,
           offset: offset,
-          padding: MediaQuery.of(context).padding,
+          // MiuixScaffold 的 body 铺满整屏，MediaQuery.padding 未被消费；
+          // 若把它作为终端视口的 padding，会在内容顶部留一段跟随滚动的
+          // 空白（状态栏 + 顶栏高度）。外层 Padding 已处理顶栏偏移，
+          // 此处置零，避免双重 padding。
+          padding: EdgeInsets.zero,
           autoResize: widget.autoResize,
           textStyle: widget.textStyle,
           textScaler: widget.textScaler ?? MediaQuery.textScalerOf(context),

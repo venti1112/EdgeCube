@@ -860,6 +860,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
                 )
               : ListView.builder(
                   controller: _stunLogScroll,
+                  padding: EdgeInsets.zero,
                   itemCount: _stunLogs.length,
                   itemBuilder: (_, i) => Text(
                     _stunLogs[i],
@@ -1494,6 +1495,7 @@ class _PortMappingPageState extends State<PortMappingPage> {
                 )
               : ListView.builder(
                   controller: _logScroll,
+                  padding: EdgeInsets.zero,
                   itemCount: _logs.length,
                   itemBuilder: (_, i) => Text(
                     _logs[i],

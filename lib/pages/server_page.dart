@@ -1013,27 +1013,31 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                 _isProot &&
                 !isGenericRootfs &&
                 selectedRootfsInfo?.envType == 'java';
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  width: double.infinity,
-                  child: MiuixText(
-                    context.tr('server.instanceConfig'),
-                    textAlign: TextAlign.center,
-                    style: MiuixTheme.of(context).textStyles.title4,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      EcTextField(
-                        controller: nameController,
-                        label: context.tr('server.nameLabel'),
+            return ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight:
+                    (MediaQuery.sizeOf(context).height -
+                    MediaQuery.viewInsetsOf(context).bottom) *
+                    0.75,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: MiuixText(
+                        context.tr('server.instanceConfig'),
+                        textAlign: TextAlign.center,
+                        style: MiuixTheme.of(context).textStyles.title4,
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    EcTextField(
+                      controller: nameController,
+                      label: context.tr('server.nameLabel'),
+                    ),
                       const SizedBox(height: 16),
                       // 运行环境：Java（JVM 跑 .jar）/ PHP（PocketMine 跑 .phar）/
                       // proot（rootfs 内运行带元数据的环境或纯容器）。
@@ -1241,9 +1245,6 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                               : kLineEndingLf,
                         ),
                       ),
-                    ],
-                  ),
-                ),
                 const SizedBox(height: 20),
                 MiuixDialogActions(
                   children: [
@@ -1279,6 +1280,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                   ],
                 ),
               ],
+              ),
+              ),
             );
           },
         );

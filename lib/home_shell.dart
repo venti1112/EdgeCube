@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_miuix/miuix.dart';
@@ -23,6 +25,7 @@ import 'server/ecpkg_handler.dart';
 import 'server/power_service.dart';
 import 'server/server_controller.dart';
 import 'server/server_scope.dart';
+import 'theme/theme_scope.dart';
 import 'widgets/error_dialog.dart';
 import 'widgets/miuix_dialog.dart';
 import 'widgets/miuix_snackbar.dart';
@@ -365,6 +368,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final floatingNavBar = ThemeScope.of(context).floatingNavBarEnabled;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -393,28 +397,132 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         setState(() => _selectedIndex = 0);
       },
       child: MiuixScaffold(
-        bottomBar: MiuixNavigationBar(
-          children: [
-            _navItem(0, Icons.dns_outlined, Icons.dns, 'nav.server'),
-            _navItem(1, Icons.terminal_outlined, Icons.terminal, 'nav.console'),
-            _navItem(2, Icons.tune_outlined, Icons.tune, 'nav.manage'),
-            _navItem(3, Icons.folder_outlined, Icons.folder, 'nav.files'),
-            _navItem(
-              4,
-              Icons.settings_outlined,
-              Icons.settings,
-              'nav.settings',
-            ),
-          ],
-        ),
+        bottomBar: floatingNavBar
+            ? _buildLiquidGlassNavBar(context)
+            : MiuixNavigationBar(
+                children: [
+                  _navItem(0, Icons.dns_outlined, Icons.dns, 'nav.server'),
+                  _navItem(
+                    1,
+                    Icons.terminal_outlined,
+                    Icons.terminal,
+                    'nav.console',
+                  ),
+                  _navItem(2, Icons.tune_outlined, Icons.tune, 'nav.manage'),
+                  _navItem(3, Icons.folder_outlined, Icons.folder, 'nav.files'),
+                  _navItem(
+                    4,
+                    Icons.settings_outlined,
+                    Icons.settings,
+                    'nav.settings',
+                  ),
+                ],
+              ),
         // 只取底部内边距：各标签页目前仍是 Material Scaffold + AppBar，
         // 顶部安全区由它们各自处理，此处再套一遍会双重留白。
+        // 浮动底栏模式下仅保留系统安全区，让内容延伸到浮动栏背后以实现毛玻璃效果。
         content: (padding) => Padding(
-          padding: EdgeInsets.only(bottom: padding.bottom),
+          padding: EdgeInsets.only(
+            bottom: floatingNavBar
+                ? MediaQuery.viewPaddingOf(context).bottom
+                : padding.bottom,
+          ),
           child: IndexedStack(index: _selectedIndex, children: _tabPages),
         ),
       ),
     );
+  }
+
+  /// 构建浮动液态玻璃底部导航栏。
+  ///
+  /// 使用 [BackdropFilter] 对底栏背后的内容做实时高斯模糊，
+  /// 外层 [MiuixHighlight] 提供 bloom 高光描边，实现液态玻璃质感。
+  /// 导航项复用 [MiuixFloatingNavigationBarItem]，图标着色由 Miuix 主题驱动。
+  Widget _buildLiquidGlassNavBar(BuildContext context) {
+    final colors = MiuixTheme.of(context).colors;
+    final viewPadding = MediaQuery.viewPaddingOf(context);
+    final bottomPadding = defaultTargetPlatform == TargetPlatform.iOS
+        ? 36.0
+        : (viewPadding.bottom != 0 ? 26 + viewPadding.bottom : 36.0);
+    const cornerRadius = MiuixFloatingNavigationBarDefaults.cornerRadius;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: bottomPadding,
+        left: MiuixFloatingNavigationBarDefaults.horizontalOutSidePadding,
+        right: MiuixFloatingNavigationBarDefaults.horizontalOutSidePadding,
+      ),
+      child: Align(
+        alignment: Alignment.center,
+        heightFactor: 1.0,
+        child: MiuixHighlight(
+          highlight: Highlight.glassStrokeMiddleLight,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(cornerRadius),
+          ),
+          child: ClipPath(
+            clipper: ShapeBorderClipper(
+              shape: const MiuixSquircleBorder(cornerRadius: cornerRadius),
+            ),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(
+                sigmaX: 12,
+                sigmaY: 12,
+                tileMode: TileMode.clamp,
+              ),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.surfaceContainer.withValues(alpha: 0.55),
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 52),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal:
+                          MiuixFloatingNavigationBarDefaults.horizontalPadding,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: _buildFloatingNavItems(context),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildFloatingNavItems(BuildContext context) {
+    final items = <Widget>[];
+    final navItems = <(int, IconData, IconData, String)>[
+      (0, Icons.dns_outlined, Icons.dns, 'nav.server'),
+      (1, Icons.terminal_outlined, Icons.terminal, 'nav.console'),
+      (2, Icons.tune_outlined, Icons.tune, 'nav.manage'),
+      (3, Icons.folder_outlined, Icons.folder, 'nav.files'),
+      (4, Icons.settings_outlined, Icons.settings, 'nav.settings'),
+    ];
+    for (var i = 0; i < navItems.length; i++) {
+      if (i > 0) {
+        items.add(
+          const SizedBox(width: MiuixFloatingNavigationBarDefaults.itemSpacing),
+        );
+      }
+      final (index, icon, selectedIcon, labelKey) = navItems[i];
+      final selected = _selectedIndex == index;
+      items.add(
+        MiuixFloatingNavigationBarItem(
+          selected: selected,
+          onPressed: () => _onDestinationSelected(index),
+          icon: MiuixIcon(icon: selected ? selectedIcon : icon),
+          label: context.tr(labelKey),
+        ),
+      );
+    }
+    return items;
   }
 
   MiuixNavigationBarItem _navItem(

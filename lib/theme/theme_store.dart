@@ -11,6 +11,7 @@ class ThemeStore {
   static const String _useDynamicColorKey = 'useDynamicColor';
   static const String _snowfallEnabledKey = 'snowfallEnabled';
   static const String _precipitationModeKey = 'precipitationMode';
+  static const String _floatingNavBarEnabledKey = 'floatingNavBarEnabled';
 
   /// 默认种子色。
   static const Color defaultSeedColor = Colors.green;
@@ -86,6 +87,19 @@ class ThemeStore {
   ) async {
     final m = await ConfigStore.readConfig(_fileName);
     m[_precipitationModeKey] = mode.name;
+    await ConfigStore.writeConfig(_fileName, m);
+  }
+
+  /// 读取是否启用浮动液态玻璃底栏，未保存过时回退到 false。
+  static Future<bool> loadFloatingNavBarEnabled() async {
+    final m = await ConfigStore.readConfig(_fileName);
+    return m[_floatingNavBarEnabledKey] as bool? ?? false;
+  }
+
+  /// 持久化浮动液态玻璃底栏开关。
+  static Future<void> saveFloatingNavBarEnabled(bool value) async {
+    final m = await ConfigStore.readConfig(_fileName);
+    m[_floatingNavBarEnabledKey] = value;
     await ConfigStore.writeConfig(_fileName, m);
   }
 }
