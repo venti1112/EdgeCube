@@ -801,9 +801,9 @@ class _ServerPropertiesPageState extends State<ServerPropertiesPage> {
         if (shouldPop && context.mounted) Navigator.of(context).pop();
       },
       child: MiuixScaffold(
-        topBar: MiuixSmallTopAppBar(
+        topBar: EcTopAppBar(
           title: context.tr('serverProps.title'),
-          navigationIcon: const EcBackButton(),
+
           actions: [
             if (!_loading && _error == null)
               IconButton(

@@ -251,10 +251,7 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
       // 内嵌在「模组与插件」标签页中时不显示自己的顶栏。
       topBar: widget.embedded
           ? null
-          : MiuixSmallTopAppBar(
-              title: context.tr(widget.titleKey),
-              navigationIcon: const EcBackButton(),
-            ),
+          : EcTopAppBar(title: context.tr(widget.titleKey)),
       content: (padding) => Padding(
         padding: padding,
         child: Column(
@@ -933,10 +930,7 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
         .toList();
 
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
-        title: tr.get('modsPlugins.versionDetail'),
-        navigationIcon: const EcBackButton(),
-      ),
+      topBar: EcTopAppBar(title: tr.get('modsPlugins.versionDetail')),
       content: (padding) => ListView(
         padding: padding + const EdgeInsets.all(16),
         children: [

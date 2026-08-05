@@ -43,9 +43,9 @@ class ServerPage extends StatelessWidget {
     final selected = controller.selected;
 
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: context.tr('server.title'),
-        navigationIcon: const EcBackButton(),
+        showBack: false,
         actions: [
           _InstanceSelectorButton(controller: controller, selected: selected),
           const SizedBox(width: 4),

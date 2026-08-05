@@ -128,13 +128,13 @@ class _FrpCustomConfigPageState extends State<FrpCustomConfigPage> {
   @override
   Widget build(BuildContext context) {
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
-        title: context.tr('frp.provider.custom'),
-        navigationIcon: const EcBackButton(),
-      ),
+      topBar: EcTopAppBar(title: context.tr('frp.provider.custom')),
       content: (padding) => Padding(
         padding: padding,
+        // padding.top 已含顶栏（连同状态栏）高度，故这里的 SafeArea 只保留
+        // 左右与底部，top 置 false，否则状态栏高度会被重复计入。
         child: SafeArea(
+          top: false,
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [

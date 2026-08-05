@@ -261,10 +261,7 @@ class _PoggitDownloadPageState extends State<PoggitDownloadPage> {
       // 内嵌在「模组与插件」标签页中时不显示自己的顶栏。
       topBar: widget.embedded
           ? null
-          : MiuixSmallTopAppBar(
-              title: context.tr('poggit.title'),
-              navigationIcon: const EcBackButton(),
-            ),
+          : EcTopAppBar(title: context.tr('poggit.title')),
       content: (padding) => Padding(
         padding: padding,
         child: Column(

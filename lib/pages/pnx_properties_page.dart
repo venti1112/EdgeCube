@@ -480,9 +480,9 @@ class _PnxPropertiesPageState extends State<PnxPropertiesPage> {
         if (shouldPop && context.mounted) Navigator.of(context).pop();
       },
       child: MiuixScaffold(
-        topBar: MiuixSmallTopAppBar(
+        topBar: EcTopAppBar(
           title: context.tr('pnxProps.title'),
-          navigationIcon: const EcBackButton(),
+
           actions: [
             if (!_loading && _error == null)
               IconButton(

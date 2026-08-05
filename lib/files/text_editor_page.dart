@@ -235,9 +235,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
         if (discard && context.mounted) Navigator.of(context).pop();
       },
       child: MiuixScaffold(
-        topBar: MiuixSmallTopAppBar(
+        topBar: EcTopAppBar(
           title: _dirty ? '${widget.name} •' : widget.name,
-          navigationIcon: const EcBackButton(),
+
           actions: [
             MiuixIconButton(
               onPressed: _canUndo ? _controller.undo : null,

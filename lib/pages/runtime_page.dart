@@ -776,9 +776,9 @@ class _RuntimePageState extends State<RuntimePage> {
     final theme = MiuixTheme.of(context);
     final showProotSection = _prootAvailable || _prootRootfs.isNotEmpty;
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: context.tr('runtime.title'),
-        navigationIcon: const EcBackButton(),
+
         actions: [
           MiuixIconButton(
             onPressed: () => Navigator.of(context).push(

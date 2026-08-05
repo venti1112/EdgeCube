@@ -617,9 +617,9 @@ class _AllayPropertiesPageState extends State<AllayPropertiesPage> {
         if (shouldPop && context.mounted) Navigator.of(context).pop();
       },
       child: MiuixScaffold(
-        topBar: MiuixSmallTopAppBar(
+        topBar: EcTopAppBar(
           title: context.tr('allayProps.title'),
-          navigationIcon: const EcBackButton(),
+
           actions: [
             if (!_loading && _error == null)
               IconButton(

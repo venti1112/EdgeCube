@@ -189,10 +189,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
     final theme = MiuixTheme.of(context);
     final tr = LocaleScope.of(context).translations;
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
-        title: tr.get('storage.title'),
-        navigationIcon: const EcBackButton(),
-      ),
+      topBar: EcTopAppBar(title: tr.get('storage.title'), showBack: true),
       content: (padding) => _loading
           ? const Center(child: MiuixInfiniteProgressIndicator())
           // MiuixPullToRefresh 的 isRefreshing 是受控参数，需自持状态，
@@ -617,9 +614,9 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
     final grandTotal = nativeTotal + prootTotal;
 
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: tr.get('storage.runtimeDetail'),
-        navigationIcon: const EcBackButton(),
+        showBack: true,
       ),
       content: (padding) => _loading
           ? const Center(child: MiuixInfiniteProgressIndicator())

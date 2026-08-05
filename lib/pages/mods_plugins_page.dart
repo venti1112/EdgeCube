@@ -114,9 +114,9 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
   Widget build(BuildContext context) {
     final theme = MiuixTheme.of(context);
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: context.tr('modsPlugins.title'),
-        navigationIcon: const EcBackButton(),
+
         // 只换有 Material 观感的标签条；TabController + TabBarView 保留。
         bottomContent: _tabCtrl == null
             ? null

@@ -20,11 +20,11 @@ class FilesPage extends StatelessWidget {
     final selected = controller.selected;
 
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: selected == null
             ? context.tr('filesPage.title')
             : context.tr('filesPage.titleWithName', {'name': selected.name}),
-        navigationIcon: const EcBackButton(),
+        showBack: false,
       ),
       content: (padding) => Padding(
         padding: padding,

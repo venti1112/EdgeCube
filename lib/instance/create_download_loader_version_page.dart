@@ -223,13 +223,13 @@ class _SelectLoaderVersionPageState extends State<SelectLoaderVersionPage> {
   @override
   Widget build(BuildContext context) {
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
-        title: _title,
-        navigationIcon: const EcBackButton(),
-      ),
+      topBar: EcTopAppBar(title: _title, showBack: true),
       content: (padding) => Padding(
         padding: padding,
+        // padding.top 已含顶栏（连同状态栏）高度，这里的 SafeArea 必须
+        // top: false，否则状态栏高度被重复计入，内容会整体下移一截。
         child: SafeArea(
+          top: false,
           child: VersionSelectStep(
             versions: _versions,
             loading: _loading,

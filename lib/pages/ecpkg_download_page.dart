@@ -283,9 +283,9 @@ class _EcpkgDownloadPageState extends State<EcpkgDownloadPage>
     final theme = MiuixTheme.of(context);
 
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: context.tr('ecpkgDownload.title'),
-        navigationIcon: const EcBackButton(),
+
         // 只换有 Material 观感的标签条；TabController + TabBarView 保留。
         bottomContent: _tabCtrl == null || _catalog == null
             ? null

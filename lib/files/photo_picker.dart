@@ -159,11 +159,10 @@ class _PhotoPickerPageState extends State<_PhotoPickerPage> {
     // 相册选取界面刻意固定黑底白字，不随明暗主题变化。
     return MiuixScaffold(
       containerColor: Colors.black,
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         color: Colors.black,
         titleColor: Colors.white,
         title: context.tr('photoPicker.selectPhoto'),
-        navigationIcon: const EcBackButton(),
       ),
       content: (padding) => Padding(
         padding: padding,
@@ -239,11 +238,11 @@ class _PhotoPreviewPageState extends State<_PhotoPreviewPage> {
   Widget build(BuildContext context) {
     return MiuixScaffold(
       containerColor: Colors.black,
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         color: Colors.black,
         titleColor: Colors.white,
         title: '${_index + 1}/${widget.photos.length}',
-        navigationIcon: const EcBackButton(),
+
         actions: [
           MiuixTextButton(
             context.tr('photoPicker.use'),

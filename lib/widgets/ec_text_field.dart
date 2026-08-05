@@ -44,10 +44,13 @@ class EcTextField extends StatefulWidget {
   final TextEditingController? controller;
   final FocusNode? focusNode;
 
-  /// 未输入内容时显示的占位文案（对应原 `InputDecoration.labelText`）。
+  /// 字段名称，常驻显示在输入框**上方**（对应原 `InputDecoration.labelText`）。
+  ///
+  /// Miuix 的输入框没有 Material 的浮动标签，若把名称当占位符用，一旦输入内容
+  /// 就看不到字段用途了，故这里独立成一行常驻标签。
   final String? label;
 
-  /// 占位文案；[label] 为空时生效。
+  /// 框内占位文案（输入后消失）。
   final String? hint;
 
   /// 输入框下方的辅助说明（对应原 `InputDecoration.helperText`）。
@@ -128,10 +131,21 @@ class _EcTextFieldState extends State<EcTextField>
   @override
   Widget build(BuildContext context) {
     final theme = MiuixTheme.of(context);
-    final colors = MiuixTextFieldDefaults.textFieldColors(context);
+    // MiuixTextFieldDefaults 的背景是 secondaryContainer，在 Monet 取色下
+    // 本身带主题色调（种子色为绿时整框发绿）。改用中性的 surfaceContainerHigh。
+    final base = MiuixTextFieldDefaults.textFieldColors(context);
+    final colors = MiuixTextFieldColors(
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      labelColor: theme.colors.onSurfaceVariantSummary,
+      borderColor: base.borderColor,
+    );
     final hasError = widget.errorText != null;
-    final focusColor = hasError ? theme.colors.error : colors.borderColor;
-    final placeholder = widget.label ?? widget.hint;
+    // Miuix 默认把聚焦描边设成 primary，整个输入框会随主题色发绿。这里改用
+    // 中性的分隔线色，只做「聚焦了」的轻提示；出错时才用醒目的错误色。
+    final focusColor = hasError ? theme.colors.error : theme.colors.dividerLine;
+    // 光标仍用主色，保证输入位置足够醒目。
+    final caretColor = hasError ? theme.colors.error : theme.colors.primary;
+    final placeholder = widget.hint;
 
     final field = AnimatedBuilder(
       animation: _borderController,
@@ -187,7 +201,7 @@ class _EcTextFieldState extends State<EcTextField>
                     inputFormatters: widget.inputFormatters,
                     onChanged: widget.onChanged,
                     onSubmitted: widget.onSubmitted,
-                    cursorColor: focusColor,
+                    cursorColor: caretColor,
                     style: (widget.textStyle ?? theme.textStyles.main).copyWith(
                       color: theme.colors.onBackground,
                     ),
@@ -216,23 +230,33 @@ class _EcTextFieldState extends State<EcTextField>
     );
 
     final footnote = widget.errorText ?? widget.helperText;
-    if (footnote == null) return field;
+    if (footnote == null && widget.label == null) return field;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        field,
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
-          child: MiuixText(
-            footnote,
-            style: theme.textStyles.footnote1,
-            color: hasError
-                ? theme.colors.error
-                : theme.colors.onSurfaceVariantSummary,
+        if (widget.label != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+            child: MiuixText(
+              widget.label!,
+              style: theme.textStyles.footnote1,
+              color: theme.colors.onSurfaceVariantSummary,
+            ),
           ),
-        ),
+        field,
+        if (footnote != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+            child: MiuixText(
+              footnote,
+              style: theme.textStyles.footnote1,
+              color: hasError
+                  ? theme.colors.error
+                  : theme.colors.onSurfaceVariantSummary,
+            ),
+          ),
       ],
     );
   }

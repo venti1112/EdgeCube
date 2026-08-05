@@ -341,9 +341,9 @@ class _LicenseViewerPageState extends State<_LicenseViewerPage> {
   @override
   Widget build(BuildContext context) {
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: 'GNU General Public License v3.0',
-        navigationIcon: const EcBackButton(),
+        showBack: true,
       ),
       content: (padding) => Markdown(
         data: _text,
@@ -382,9 +382,9 @@ class _UserAgreementViewerPageState extends State<_UserAgreementViewerPage> {
   @override
   Widget build(BuildContext context) {
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: context.tr('userAgreement.title'),
-        navigationIcon: const EcBackButton(),
+        showBack: true,
       ),
       content: (padding) => Markdown(
         data: _text,

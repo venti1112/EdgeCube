@@ -342,10 +342,7 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
               ? context.tr('instance.titleInstallNeoforge')
               : context.tr('instance.titleInstallForge'));
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
-        title: title,
-        navigationIcon: const EcBackButton(),
-      ),
+      topBar: EcTopAppBar(title: title),
       content: (padding) => Padding(
         padding: padding,
         child: downloading

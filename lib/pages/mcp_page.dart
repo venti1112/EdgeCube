@@ -159,10 +159,7 @@ class _McpPageState extends State<McpPage> {
     final theme = MiuixTheme.of(context);
     final mcp = McpScope.of(context);
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
-        title: context.tr('mcpPage.title'),
-        navigationIcon: const EcBackButton(),
-      ),
+      topBar: EcTopAppBar(title: context.tr('mcpPage.title'), showBack: true),
       content: (padding) => ListView(
         padding: padding + const EdgeInsets.all(16),
         children: [

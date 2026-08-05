@@ -147,9 +147,8 @@ class _LogViewerPageState extends State<LogViewerPage> {
     final theme = MiuixTheme.of(context);
 
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: context.tr('logViewer.title'),
-        navigationIcon: const EcBackButton(),
         actions: [
           MiuixIconButton(
             onPressed: _loading ? null : _loadFiles,
@@ -171,6 +170,7 @@ class _LogViewerPageState extends State<LogViewerPage> {
             child: const MiuixIcon(icon: Icons.delete_sweep_outlined),
           ),
         ],
+        showBack: true,
       ),
       content: (padding) => Padding(
         padding: padding,

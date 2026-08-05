@@ -161,10 +161,7 @@ class _SshPageState extends State<SshPage> {
     final theme = MiuixTheme.of(context);
     final ssh = SshScope.of(context);
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
-        title: context.tr('ssh.title'),
-        navigationIcon: const EcBackButton(),
-      ),
+      topBar: EcTopAppBar(title: context.tr('ssh.title'), showBack: true),
       content: (padding) => ListView(
         padding: padding + const EdgeInsets.all(16),
         children: [

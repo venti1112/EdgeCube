@@ -81,13 +81,12 @@ class _SelectProotContainerPageState extends State<SelectProotContainerPage> {
   Widget build(BuildContext context) {
     final theme = MiuixTheme.of(context);
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: context.tr('instance.titleSelectProotContainer'),
-        navigationIcon: const EcBackButton(),
       ),
       content: (padding) => Padding(
         padding: padding,
-        child: SafeArea(child: _buildBody(theme)),
+        child: SafeArea(top: false, child: _buildBody(theme)),
       ),
     );
   }

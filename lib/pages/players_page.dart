@@ -50,9 +50,9 @@ class _PlayersPageState extends State<PlayersPage>
   Widget build(BuildContext context) {
     final instance = InstanceScope.of(context).selected;
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: context.tr('players.title'),
-        navigationIcon: const EcBackButton(),
+
         // 只换有 Material 观感的标签条；TabController + TabBarView 作为
         // 不可见的翻页管道保留（它们不绘制任何 Material 装饰）。
         bottomContent: Padding(

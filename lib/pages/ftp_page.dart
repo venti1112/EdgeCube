@@ -147,10 +147,7 @@ class _FtpPageState extends State<FtpPage> {
     final theme = MiuixTheme.of(context);
     final ftp = FtpScope.of(context);
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
-        title: context.tr('ftp.title'),
-        navigationIcon: const EcBackButton(),
-      ),
+      topBar: EcTopAppBar(title: context.tr('ftp.title'), showBack: true),
       content: (padding) => ListView(
         padding: padding + const EdgeInsets.all(16),
         children: [

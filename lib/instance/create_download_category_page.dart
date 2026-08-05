@@ -38,13 +38,15 @@ class SelectCategoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: context.tr('instance.titleJavaServerCategory'),
-        navigationIcon: const EcBackButton(),
       ),
       content: (padding) => Padding(
         padding: padding,
+        // padding.top 已含顶栏（连同状态栏）高度，故这里的 SafeArea 只保留
+        // 左右与底部，top 置 false，否则状态栏高度会被重复计入。
         child: SafeArea(
+          top: false,
           child: JavaServerCategoryStep(
             onSelectCategory: (c) => _selectCategory(context, c),
           ),

@@ -14,6 +14,7 @@ import '../server/server_scope.dart';
 import '../widgets/terminal_keys_bar.dart';
 import '../widgets/terminal_zoom.dart';
 import '../widgets/miuix_snackbar.dart';
+import '../widgets/ec_preference.dart';
 
 /// 控制台终端页：直接交互的伪终端（PTY + xterm）+ Termux 式扩展按键栏。
 ///
@@ -95,7 +96,9 @@ class _ConsolePageState extends State<ConsolePage> {
     final hasLog = server.log.isNotEmpty;
 
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
+        // 控制台是 HomeShell 的标签页，无可弹出路由。
+        showBack: false,
         title: context.tr('console.title'),
         // 原先塞进标题的第二行状态文案，正好对应 Miuix 的 subtitle 槽。
         subtitle:

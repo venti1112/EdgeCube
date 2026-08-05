@@ -82,11 +82,8 @@ class EcSettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return MiuixScaffold(
       contentWindowInsets: isTab ? EdgeInsets.zero : null,
-      topBar: MiuixSmallTopAppBar(
-        title: title,
-        navigationIcon: isTab ? null : const EcBackButton(),
-        actions: actions,
-      ),
+      // 标签页在 IndexedStack 里，没有可弹出的路由，不能显示返回键。
+      topBar: EcTopAppBar(title: title, actions: actions, showBack: !isTab),
       content: (padding) => ListView(
         padding: padding.copyWith(bottom: padding.bottom + 24),
         children: children,
@@ -396,7 +393,9 @@ class EcDropdownField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = MiuixTheme.of(context);
-    final colors = MiuixTextFieldDefaults.textFieldColors(context);
+    // 与 EcTextField 一致：用中性底色，不随主题色染绿。
+    final bgColor = theme.colors.surfaceContainerHigh;
+    final labelColor = theme.colors.onSurfaceVariantSummary;
     final hasValue = selectedIndex >= 0 && selectedIndex < items.length;
 
     // 用 IconDropdownMenu 而非 DropdownMenu：后者是自带标题的整行组件，
@@ -419,7 +418,7 @@ class EcDropdownField extends StatelessWidget {
       ),
       child: DecoratedBox(
         decoration: ShapeDecoration(
-          color: colors.backgroundColor,
+          color: bgColor,
           shape: const MiuixSquircleBorder(
             cornerRadius: MiuixTextFieldDefaults.cornerRadius,
           ),
@@ -430,39 +429,145 @@ class EcDropdownField extends StatelessWidget {
             children: [
               Expanded(
                 child: MiuixText(
-                  hasValue ? items[selectedIndex] : (label ?? ''),
+                  hasValue ? items[selectedIndex] : '',
                   style: theme.textStyles.main,
-                  color: hasValue
-                      ? theme.colors.onBackground
-                      : colors.labelColor,
+                  color: hasValue ? theme.colors.onBackground : labelColor,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               ?suffixIcon,
               const SizedBox(width: 4),
-              MiuixIcon(icon: Icons.arrow_drop_down, tint: colors.labelColor),
+              MiuixIcon(icon: Icons.arrow_drop_down, tint: labelColor),
             ],
           ),
         ),
       ),
     );
 
-    if (helperText == null) return field;
+    if (helperText == null && label == null) return field;
+    // 与 EcTextField 一致：字段名常驻在框**上方**，否则选中后就看不出用途。
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (label != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+            child: MiuixText(
+              label!,
+              style: theme.textStyles.footnote1,
+              color: theme.colors.onSurfaceVariantSummary,
+            ),
+          ),
         field,
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
-          child: MiuixText(
-            helperText!,
-            style: theme.textStyles.footnote1,
-            color: theme.colors.onSurfaceVariantSummary,
+        if (helperText != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+            child: MiuixText(
+              helperText!,
+              style: theme.textStyles.footnote1,
+              color: theme.colors.onSurfaceVariantSummary,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 统一的顶栏：标题**左对齐**，导航键与操作按钮各占一侧。
+///
+/// 不复用 [MiuixSmallTopAppBar] 的原因：它把标题作为 Stack 的最后一层**居中**
+/// 绘制（画在导航图标与 actions 之上），标题一长就盖住两侧按钮；而唯一的调节
+/// 手段 `titlePadding` 是左右对称的，按钮多时要撑到很大，会把同样受它约束的
+/// 副标题挤到几乎没有宽度（表现为文字逐字竖排）。
+///
+/// 这里改用 Row 布局：返回键 / 标题（Expanded）/ 操作按钮三段横排，标题自然
+/// 左对齐、超长省略号截断，既不会重叠也不会挤压副标题。
+class EcTopAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const EcTopAppBar({
+    super.key,
+    required this.title,
+    this.subtitle = '',
+    this.subtitleColor,
+    this.actions,
+    this.showBack = true,
+    this.bottomContent,
+    this.color,
+    this.titleColor,
+  });
+
+  final String title;
+  final String subtitle;
+  final Color? subtitleColor;
+  final List<Widget>? actions;
+  final bool showBack;
+  final Widget? bottomContent;
+  final Color? color;
+  final Color? titleColor;
+
+  @override
+  Size get preferredSize =>
+      Size.fromHeight(MiuixTopAppBarDefaults.smallTopAppBarCenterHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = MiuixTheme.of(context);
+    final hasSubtitle = subtitle.isNotEmpty;
+
+    return MiuixSurface(
+      color: color ?? theme.colors.surface,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: MiuixTopAppBarDefaults.smallTopAppBarCenterHeight,
+                child: Row(
+                  children: [
+                    if (showBack) const EcBackButton(),
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(left: showBack ? 4 : 8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            MiuixText(
+                              title,
+                              style: theme.textStyles.title3,
+                              color: titleColor ?? theme.colors.onSurface,
+                              fontWeight: FontWeight.w500,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (hasSubtitle)
+                              MiuixText(
+                                subtitle,
+                                style: theme.textStyles.footnote1,
+                                color:
+                                    subtitleColor ??
+                                    theme.colors.onSurfaceVariantSummary,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    ...?actions,
+                  ],
+                ),
+              ),
+              ?bottomContent,
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }

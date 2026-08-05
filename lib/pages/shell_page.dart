@@ -82,7 +82,7 @@ class _ShellPageState extends State<ShellPage> {
     final shell = ShellScope.of(context);
     final theme = MiuixTheme.of(context);
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: context.tr('shell.title'),
         // 原先塞在标题里的第二行状态文案，正好对应 Miuix 的 subtitle 槽。
         subtitle: shell.isRunning
@@ -95,7 +95,7 @@ class _ShellPageState extends State<ShellPage> {
         subtitleColor: shell.isRunning
             ? theme.colors.primary
             : theme.colors.onSurfaceVariantSummary,
-        navigationIcon: const EcBackButton(),
+
         actions: [
           // Shell 选择器：列出系统 sh 与已导入的 proot rootfs。
           // 仅在有多于一个选项时显示，避免单一 shell 时浪费空间。

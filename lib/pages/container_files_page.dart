@@ -47,9 +47,8 @@ class ContainerFilesPage extends StatelessWidget {
         Navigator.of(context).pop();
       },
       child: MiuixScaffold(
-        topBar: MiuixSmallTopAppBar(
+        topBar: EcTopAppBar(
           title: context.tr('containerFiles.title', {'name': title}),
-          navigationIcon: const EcBackButton(),
         ),
         content: (padding) => Padding(
           padding: padding,

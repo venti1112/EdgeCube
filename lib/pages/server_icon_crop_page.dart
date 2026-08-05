@@ -181,11 +181,11 @@ class _ServerIconCropPageState extends State<ServerIconCropPage> {
     // 裁剪页刻意固定为黑底白字（与相册取景一致），不随明暗主题变化。
     return MiuixScaffold(
       containerColor: Colors.black,
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         color: Colors.black,
         titleColor: Colors.white,
         title: context.tr('serverIcon.cropIcon'),
-        navigationIcon: const EcBackButton(),
+
         actions: [
           if (!_loading && _error == null)
             _saving

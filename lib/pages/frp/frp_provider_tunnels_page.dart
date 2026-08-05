@@ -238,9 +238,9 @@ class _FrpProviderTunnelsPageState extends State<FrpProviderTunnelsPage> {
   Widget build(BuildContext context) {
     final theme = MiuixTheme.of(context);
     return MiuixScaffold(
-      topBar: MiuixSmallTopAppBar(
+      topBar: EcTopAppBar(
         title: widget.provider.displayName,
-        navigationIcon: const EcBackButton(),
+
         actions: [
           MiuixIconButton(
             onPressed: _logout,

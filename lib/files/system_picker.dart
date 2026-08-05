@@ -254,11 +254,11 @@ class _SystemPickerPageState extends State<_SystemPickerPage> {
         _goUp();
       },
       child: MiuixScaffold(
-        topBar: MiuixSmallTopAppBar(
+        topBar: EcTopAppBar(
           title: pickingDir
               ? context.tr('picker.selectTargetFolder')
               : context.tr('picker.selectFileToImport'),
-          navigationIcon: const EcBackButton(),
+
           actions: [
             MiuixIconButton(
               onPressed: _enterSearch,
