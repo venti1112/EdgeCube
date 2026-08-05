@@ -12,23 +12,25 @@ import 'package:flutter_miuix/miuix.dart';
 /// 异步回调里拿不到（或拿到已失效的）messenger 的老问题。
 final MiuixSnackbarHostState miuixSnackbarHost = MiuixSnackbarHostState();
 
+/// 当前底部需要为 Snackbar 预留的高度（底部导航栏高度 + 间距）。
+///
+/// [HomeShell] 在成为顶层路由时更新此值为导航栏高度，压入子路由时归零。
+/// [MiuixSnackbarOverlay] 监听此值动态调整 Snackbar 位置，避免遮挡导航栏。
+final ValueNotifier<double> snackbarBottomPadding = ValueNotifier<double>(0);
+
 /// 把全局 Snackbar 宿主叠在**整个 Navigator 之上**。
 ///
 /// 不能把宿主挂进首页 [MiuixScaffold] 的 `snackbarHost` 槽：那样它只是首页路由
 /// 里的一个普通 widget，一旦压入不透明的子路由（关于页、FTP 页等），消息会被整个
 /// 盖住而静默失效——不报错、只是看不见。故改为在 `MaterialApp.builder` 里包一层，
 /// 位置高于所有路由。
-///
-/// [bottomPadding] 用于在有底部导航栏时把消息抬到栏上方。
 class MiuixSnackbarOverlay extends StatelessWidget {
   const MiuixSnackbarOverlay({
     super.key,
     required this.child,
-    this.bottomPadding = 0,
   });
 
   final Widget child;
-  final double bottomPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -39,8 +41,21 @@ class MiuixSnackbarOverlay extends StatelessWidget {
         Positioned(
           left: 0,
           right: 0,
-          bottom: bottomPadding,
-          child: MiuixSnackbarHost(state: miuixSnackbarHost),
+          bottom: 0,
+          top: 0,
+          child: ValueListenableBuilder<double>(
+            valueListenable: snackbarBottomPadding,
+            builder: (context, padding, _) => AnimatedPadding(
+              padding: EdgeInsets.only(bottom: padding),
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                heightFactor: 1.0,
+                child: MiuixSnackbarHost(state: miuixSnackbarHost),
+              ),
+            ),
+          ),
         ),
       ],
     );

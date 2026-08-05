@@ -21,6 +21,7 @@ import 'pages/manage_page.dart';
 import 'pages/runtime_page.dart';
 import 'pages/server_page.dart';
 import 'pages/settings_page.dart';
+import 'route_observer.dart';
 import 'server/ecpkg_handler.dart';
 import 'server/power_service.dart';
 import 'server/server_controller.dart';
@@ -41,11 +42,13 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
+class _HomeShellState extends State<HomeShell>
+    with WidgetsBindingObserver, RouteAware {
   int _selectedIndex = 0;
   late final List<Widget> _tabPages;
   Completer<void>? _resumeWaiter;
   bool _checkingStoragePermission = false;
+  bool _isTopRoute = true;
 
   @override
   void initState() {
@@ -64,12 +67,54 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      appRouteObserver.subscribe(this, route);
+    }
+    // 只在 HomeShell 是顶层路由时才更新 padding。push 子路由后
+    // didChangeDependencies 仍会被触发，但此时不应恢复导航栏 padding。
+    if (_isTopRoute) {
+      _updateSnackbarPadding();
+    }
+  }
+
+  @override
   void dispose() {
+    appRouteObserver.unsubscribe(this);
+    snackbarBottomPadding.value = 0;
     WidgetsBinding.instance.removeObserver(this);
     EcpkgHandler.onOpenEcpkg = null;
     EcpkgHandler.onError = null;
     _resumeWaiter?.complete();
     super.dispose();
+  }
+
+  @override
+  void didPushNext() {
+    _isTopRoute = false;
+    snackbarBottomPadding.value = 0;
+  }
+
+  @override
+  void didPopNext() {
+    _isTopRoute = true;
+    _updateSnackbarPadding();
+  }
+
+  /// 根据当前导航栏模式计算底部预留高度，避免 Snackbar 遮挡导航栏。
+  void _updateSnackbarPadding() {
+    final viewPadding = MediaQuery.viewPaddingOf(context);
+    final floating = ThemeScope.of(context).floatingNavBarEnabled;
+    if (floating) {
+      final bottomPadding = defaultTargetPlatform == TargetPlatform.iOS
+          ? 36.0
+          : (viewPadding.bottom != 0 ? 26 + viewPadding.bottom : 36.0);
+      snackbarBottomPadding.value = bottomPadding + 52 + 8;
+    } else {
+      snackbarBottomPadding.value = 72 + viewPadding.bottom + 8;
+    }
   }
 
   void _handleOpenEcpkg(String path) {
