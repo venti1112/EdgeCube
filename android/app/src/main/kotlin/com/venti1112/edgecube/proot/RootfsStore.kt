@@ -2,6 +2,7 @@ package com.venti1112.edgecube.proot
 
 import android.content.Context
 import com.venti1112.edgecube.security.PackageSignatureVerifier
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
@@ -12,10 +13,24 @@ import java.util.zip.ZipFile
 /**
  * rootfs 的发现、导入与删除。
  *
- * rootfs 存放在 `filesDir/proot_rootfs/<id>/`，用户导入 `rootfs.tar.zst` 解压得到。
- * 解压与 passwd 修补的做法来自 tiny_container 的 `ContainerManageViewModel.kt`。
+ * rootfs 存放在 `filesDir/proot_rootfs/<id>/`，用户导入 rootfs 包解压得到。
+ * 支持两种包格式：裸 tar 压缩包（rootfs.tar.zst / .tar.xz / .tar.gz / .tgz），
+ * 以及 ZIP 包装包（`.zip` 或 `.ecpkg`，内含 `rootfs.tar.zst`）。ZIP 包与运行
+ * 时 .ecpkg 复用同一签名体系（META-INF/edgecube.sig），通过 magic 识别而非后缀。
+ * 导入与修补的做法来自 tiny_container 的 `ContainerManageViewModel.kt`。
  */
 object RootfsStore {
+
+    /** rootfs tar 压缩包条目的常见后缀（用于识别 ZIP/.ecpkg 包中的内层 tar）。 */
+    private val TAR_SUFFIXES = listOf(
+        ".tar.zst", ".tar.xz", ".tar.gz", ".tgz", ".tar",
+    )
+
+    /** ZIP 层的包清单文件名；rootfs 包中 `type` 字段为 `"proot"`。 */
+    const val PACKAGE_MANIFEST_FILE = "edgecube-package.json"
+
+    /** rootfs 包清单中的 type 值，用于区分 rootfs 包与运行时包。 */
+    const val PACKAGE_TYPE_PROOT = "proot"
 
     /** rootfs 根目录：其下每个子目录是一个独立的 Linux 容器根。 */
     fun rootfsBaseDir(context: Context): File = File(context.filesDir, "proot_rootfs")
@@ -58,8 +73,10 @@ object RootfsStore {
     }
 
     /**
-     * 导入 rootfs.tar.zst（或 .tar.xz / .tar.gz）：用 proot --link2symlink 包住
-     * busybox/GNU tar 解压到临时目录，成功后原子重命名到目标目录。
+     * 导入 rootfs 包：裸 tar 压缩包（.tar.zst / .tar.xz / .tar.gz / .tgz）
+     * 或 ZIP 包装（`.zip` / `.ecpkg`，内含 `rootfs.tar.zst`）。
+     * 用 proot --link2symlink 包住 busybox/GNU tar 解压到临时目录，
+     * 成功后原子重命名到目标目录。
      *
      * @param id 用户指定的 rootfs 标识（用作目录名）；为空时从文件名推导。
      * @param onProgress 可选进度回调 (已处理字节数, 总字节数)；总字节数未知时为 -1。
@@ -203,10 +220,58 @@ object RootfsStore {
     }
 
     /**
+     * 判断指定文件是否为 rootfs 包。
+     *
+     * 用于统一导入入口区分 rootfs 包与运行时包：
+     * - 裸 tar 压缩包（非 ZIP，扩展名为 .tar.zst / .tar.xz / .tar.gz / .tgz / .tar）返回 true；
+     * - ZIP 内含 `edgecube-package.json` 且 `type` 为 `"proot"` 时返回 true；
+     * - ZIP 内含 `edgecube-package.json` 但 `type` 为其他值（jre/php/frpc）时返回 false；
+     * - 旧格式 rootfs ZIP（无 `edgecube-package.json` 但内含 tar 条目）回退返回 true。
+     *
+     * 识别规则与 [extractInnerTarball] 保持一致。
+     */
+    fun isRootfsPackage(path: String): Boolean {
+        val file = File(path)
+        if (!file.isFile) return false
+        // 裸 tar 压缩包（非 ZIP）：直接按扩展名识别为 rootfs。
+        if (!PackageSignatureVerifier.isZipFile(path)) {
+            return TAR_SUFFIXES.any { path.lowercase().endsWith(it) }
+        }
+        return try {
+            ZipFile(file).use { zf ->
+                // 优先读取 edgecube-package.json 的 type 字段路由。
+                val manifestEntry = zf.getEntry(PACKAGE_MANIFEST_FILE)
+                if (manifestEntry != null) {
+                    val json = zf.getInputStream(manifestEntry).use {
+                        it.readBytes().toString(Charsets.UTF_8)
+                    }
+                    return@use JSONObject(json).optString("type") == PACKAGE_TYPE_PROOT
+                }
+                // 旧格式 rootfs ZIP（无清单）：回退到 tar 条目探测。
+                var hasTarEntry = false
+                val entries = zf.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    if (entry.isDirectory || entry.name.startsWith("META-INF/")) continue
+                    if (entry.name == "rootfs.tar.zst" ||
+                        TAR_SUFFIXES.any { entry.name.endsWith(it) }
+                    ) {
+                        hasTarEntry = true
+                        break
+                    }
+                }
+                hasTarEntry
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
      * 从 ZIP 包装的 rootfs 包中提取内层 tar 压缩包到临时文件。
      *
-     * 新格式 `rootfs.zip` 内含 `rootfs.tar.zst`（或唯一非 `META-INF/` 条目）；
-     * 本方法将其提取到 cacheDir 下的临时文件，供后续 proot tar 解压使用。
+     * 新格式 `rootfs.zip` / `.ecpkg` 内含 `rootfs.tar.zst`（或唯一非 `META-INF/`
+     * 条目）；本方法将其提取到 cacheDir 下的临时文件，供后续 proot tar 解压使用。
      */
     private fun extractInnerTarball(context: Context, zipFile: File): File {
         val tempFile = File(
@@ -221,7 +286,12 @@ object RootfsStore {
                 val entry = entries.nextElement()
                 if (entry.isDirectory) continue
                 if (entry.name.startsWith("META-INF/")) continue
-                if (entry.name == "rootfs.tar.zst") {
+                // 跳过包清单与版本标记等非 tar 条目（rootfs ZIP 的 edgecube-package.json
+                // 中 type=proot，仅用于路由识别，不应进入 tar 解压流）。
+                if (entry.name == PACKAGE_MANIFEST_FILE || entry.name == "version") continue
+                if (entry.name == "rootfs.tar.zst" ||
+                    TAR_SUFFIXES.any { entry.name.endsWith(it) }
+                ) {
                     targetEntry = entry
                     break
                 }

@@ -14,7 +14,7 @@ import '../widgets/ec_text_field.dart';
 import '../widgets/miuix_dialog.dart';
 import '../widgets/ec_preference.dart';
 
-/// 玩家管理页：在线玩家、白名单、封禁名单、OP 名单的可视化管理。
+/// 玩家管理页：在线玩家、白名单、封禁名单、OP 名单的可视化管理
 class PlayersPage extends StatefulWidget {
   const PlayersPage({super.key});
 
@@ -26,7 +26,7 @@ class _PlayersPageState extends State<PlayersPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabCtrl;
 
-  /// MiuixTabRow 是受控组件，需自持选中项；滑动 TabBarView 时反向同步。
+  /// MiuixTabRow 是受控组件，需自持选中项；滑动 TabBarView 时反向同步
   int _tabIndex = 0;
 
   @override
@@ -53,8 +53,8 @@ class _PlayersPageState extends State<PlayersPage>
       topBar: EcTopAppBar(
         title: context.tr('players.title'),
 
-        // 只换有 Material 观感的标签条；TabController + TabBarView 作为
-        // 不可见的翻页管道保留（它们不绘制任何 Material 装饰）。
+        // 只换Material 观感的标签条；TabController + TabBarView 作为
+        // 不可见的翻页管道保留（它们不绘制任何 Material 装饰）
         bottomContent: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: MiuixTabRow(
@@ -110,9 +110,9 @@ class _OnlineTabState extends State<_OnlineTab> {
   @override
   void initState() {
     super.initState();
-    // _loadContextSets 内会调用 InstanceScope.of(context)，依赖 inherited widget，
-    // 不能在 initState 中直接同步调用，否则触发
-    // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
+    // _loadContextSets 内会调用 InstanceScope.of(context)，依inherited widget
+    // 不能initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误。改post-frame 回调延迟启动
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadContextSets());
   }
 
@@ -183,9 +183,10 @@ class _OnlineTabState extends State<_OnlineTab> {
         context.tr('players.online.waiting'),
       );
     } else {
-      body = ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+      body = ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: players.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
         itemBuilder: (ctx, i) {
           final name = players[i];
           final lower = name.toLowerCase();
@@ -433,7 +434,7 @@ class _OnlineTabState extends State<_OnlineTab> {
   }
 }
 
-// ───────────────────────────── 白名单 ─────────────────────────────
+// ───────────────────────────── 白名─────────────────────────────
 
 class _WhitelistTab extends StatefulWidget {
   const _WhitelistTab({required this.instance});
@@ -448,9 +449,9 @@ class _WhitelistTabState extends State<_WhitelistTab> {
   @override
   void initState() {
     super.initState();
-    // _loadWhitelist 内会调用 InstanceScope.of(context)，依赖 inherited widget，
-    // 不能在 initState 中直接同步调用，否则触发
-    // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
+    // _loadWhitelist 内会调用 InstanceScope.of(context)，依inherited widget
+    // 不能initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误。改post-frame 回调延迟启动
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         setState(() => _future = _loadWhitelist());
@@ -461,7 +462,7 @@ class _WhitelistTabState extends State<_WhitelistTab> {
   Future<List<_NamedEntry>> _loadWhitelist() async {
     final dir = await InstanceScope.of(context).directoryFor(widget.instance);
 
-    // 优先读取 Java 版 whitelist.json
+    // 优先读取 Java whitelist.json
     final jsonFile = File(p.join(dir.path, 'whitelist.json'));
     if (await jsonFile.exists()) {
       try {
@@ -477,7 +478,7 @@ class _WhitelistTabState extends State<_WhitelistTab> {
       } catch (_) {}
     }
 
-    // 回退到 PNX white-list.txt
+    // 回退PNX white-list.txt
     final txtFile = File(p.join(dir.path, 'white-list.txt'));
     if (await txtFile.exists()) {
       try {
@@ -550,9 +551,13 @@ class _WhitelistTabState extends State<_WhitelistTab> {
                       context.tr('players.whitelist.empty'),
                       context.tr('players.whitelist.emptyHint'),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       itemCount: entries.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (ctx, i) {
                         final e = entries[i];
                         return MiuixCard(
@@ -629,9 +634,9 @@ class _BansTabState extends State<_BansTab> {
   @override
   void initState() {
     super.initState();
-    // _loadBans 内会调用 InstanceScope.of(context)，依赖 inherited widget，
-    // 不能在 initState 中直接同步调用，否则触发
-    // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
+    // _loadBans 内会调用 InstanceScope.of(context)，依inherited widget
+    // 不能initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误。改post-frame 回调延迟启动
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         setState(() => _future = _loadBans());
@@ -642,7 +647,7 @@ class _BansTabState extends State<_BansTab> {
   Future<List<_BanEntry>> _loadBans() async {
     final dir = await InstanceScope.of(context).directoryFor(widget.instance);
 
-    // 优先读取 Java/PNX 的 banned-players.json
+    // 优先读取 Java/PNX banned-players.json
     final jsonFile = File(p.join(dir.path, 'banned-players.json'));
     if (await jsonFile.exists()) {
       try {
@@ -664,7 +669,7 @@ class _BansTabState extends State<_BansTab> {
       } catch (_) {}
     }
 
-    // 回退到 PMMP 的 banned-players.txt（每行一个玩家名，无元数据）
+    // 回退PMMP banned-players.txt（每行一个玩家名，无元数据）
     final txtFile = File(p.join(dir.path, 'banned-players.txt'));
     if (await txtFile.exists()) {
       try {
@@ -747,9 +752,13 @@ class _BansTabState extends State<_BansTab> {
                       context.tr('players.bans.empty'),
                       context.tr('players.bans.emptyHint'),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       itemCount: entries.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (ctx, i) {
                         final e = entries[i];
                         return MiuixCard(
@@ -843,9 +852,9 @@ class _BanIpsTabState extends State<_BanIpsTab> {
   @override
   void initState() {
     super.initState();
-    // _loadBanIps 内会调用 InstanceScope.of(context)，依赖 inherited widget，
-    // 不能在 initState 中直接同步调用，否则触发
-    // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
+    // _loadBanIps 内会调用 InstanceScope.of(context)，依inherited widget
+    // 不能initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误。改post-frame 回调延迟启动
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         setState(() => _future = _loadBanIps());
@@ -856,7 +865,7 @@ class _BanIpsTabState extends State<_BanIpsTab> {
   Future<List<_IpBanEntry>> _loadBanIps() async {
     final dir = await InstanceScope.of(context).directoryFor(widget.instance);
 
-    // Java 版 banned-ips.json
+    // Java banned-ips.json
     final jsonFile = File(p.join(dir.path, 'banned-ips.json'));
     if (await jsonFile.exists()) {
       try {
@@ -875,7 +884,7 @@ class _BanIpsTabState extends State<_BanIpsTab> {
       } catch (_) {}
     }
 
-    // PMMP/Java 通用 banned-ips.txt（每行一个 IP）
+    // PMMP/Java 通用 banned-ips.txt（每行一IP
     final txtFile = File(p.join(dir.path, 'banned-ips.txt'));
     if (await txtFile.exists()) {
       try {
@@ -957,9 +966,13 @@ class _BanIpsTabState extends State<_BanIpsTab> {
                       context.tr('players.banIps.empty'),
                       context.tr('players.banIps.emptyHint'),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       itemCount: entries.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (ctx, i) {
                         final e = entries[i];
                         return MiuixCard(
@@ -1033,9 +1046,9 @@ class _OpsTabState extends State<_OpsTab> {
   @override
   void initState() {
     super.initState();
-    // _loadOps 内会调用 InstanceScope.of(context)，依赖 inherited widget，
-    // 不能在 initState 中直接同步调用，否则触发
-    // dependOnInheritedWidgetOfExactType 断言错误。改用 post-frame 回调延迟启动。
+    // _loadOps 内会调用 InstanceScope.of(context)，依inherited widget
+    // 不能initState 中直接同步调用，否则触发
+    // dependOnInheritedWidgetOfExactType 断言错误。改post-frame 回调延迟启动
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         setState(() => _future = _loadOps());
@@ -1046,7 +1059,7 @@ class _OpsTabState extends State<_OpsTab> {
   Future<List<_NamedEntry>> _loadOps() async {
     final dir = await InstanceScope.of(context).directoryFor(widget.instance);
 
-    // 优先读取 Java 版 ops.json
+    // 优先读取 Java ops.json
     final jsonFile = File(p.join(dir.path, 'ops.json'));
     if (await jsonFile.exists()) {
       try {
@@ -1062,7 +1075,7 @@ class _OpsTabState extends State<_OpsTab> {
       } catch (_) {}
     }
 
-    // 回退到 PNX ops.txt
+    // 回退PNX ops.txt
     final txtFile = File(p.join(dir.path, 'ops.txt'));
     if (await txtFile.exists()) {
       try {
@@ -1135,9 +1148,13 @@ class _OpsTabState extends State<_OpsTab> {
                       context.tr('players.ops.empty'),
                       context.tr('players.ops.emptyHint'),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       itemCount: entries.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (ctx, i) {
                         final e = entries[i];
                         return MiuixCard(
@@ -1196,7 +1213,7 @@ class _OpsTabState extends State<_OpsTab> {
 
 // ───────────────────────────── 通用组件 ─────────────────────────────
 
-/// 玩家状态标签（用于在线玩家列表中显示 OP/白名单等状态）。
+/// 玩家状态标签（用于在线玩家列表中显OP/白名单等状态）
 class _PlayerTag extends StatelessWidget {
   const _PlayerTag({required this.label, required this.color});
   final String label;
@@ -1226,7 +1243,7 @@ class _PlayerTag extends StatelessWidget {
   }
 }
 
-/// 列表头部：标题 + 刷新 + 操作按钮。
+/// 列表头部：标+ 刷新 + 操作按钮
 class _ListHeader extends StatelessWidget {
   const _ListHeader({
     required this.title,
@@ -1240,7 +1257,7 @@ class _ListHeader extends StatelessWidget {
   final String title;
   final String tooltip;
 
-  /// 刷新回调；为 null 时刷新按钮禁用（如在线页未运行时）。
+  /// 刷新回调；为 null 时刷新按钮禁用（如在线页未运行时）
   final VoidCallback? onRefresh;
   final String? actionLabel;
   final IconData? actionIcon;
@@ -1270,7 +1287,7 @@ class _ListHeader extends StatelessWidget {
   }
 }
 
-/// 空白占位状态。
+/// 空白占位状态
 Widget _emptyState(
   MiuixThemeData theme,
   IconData icon,
@@ -1300,7 +1317,7 @@ Widget _emptyState(
   );
 }
 
-/// 弹出输入对话框，发送命令并回调刷新。
+/// 弹出输入对话框，发送命令并回调刷新
 Future<void> _promptAndSend(
   BuildContext context,
   ServerController server, {
@@ -1336,7 +1353,7 @@ Future<void> _promptAndSend(
                 label: hint,
                 onSubmitted: (_) {
                   if (withReason) {
-                    // 有原因字段时，不在此处提交
+                    // 有原因字段时，不在此处提
                   } else {
                     Navigator.of(ctx).pop({'name': nameCtrl.text.trim()});
                   }
@@ -1386,7 +1403,7 @@ Future<void> _promptAndSend(
       ? '$commandPrefix $name'
       : '$commandPrefix $name $reason';
   server.sendCommand(cmd);
-  // 延迟刷新，给服务端处理时间
+  // 延迟刷新，给服务端处理时
   Future.delayed(const Duration(milliseconds: 500), onDone);
 }
 
@@ -1415,8 +1432,8 @@ class _BanEntry {
   final String created;
 }
 
-/// IP 封禁条目。Java 版 banned-ips.json 含完整元数据，PMMP/通用 banned-ips.txt
-/// 仅含 IP，其余字段为空字符串。
+/// IP 封禁条目。Java banned-ips.json 含完整元数据，PMMP/通用 banned-ips.txt
+/// 仅含 IP，其余字段为空字符串
 class _IpBanEntry {
   const _IpBanEntry({
     required this.ip,

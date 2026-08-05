@@ -299,6 +299,7 @@ class _SshPageState extends State<SshPage> {
 
   Widget _buildInfoCard(MiuixThemeData theme) {
     return MiuixCard(
+      insideMargin: const EdgeInsets.all(12),
       colors: MiuixCardColors(
         color: theme.colors.surfaceContainerHighest,
         contentColor: theme.colors.onSurfaceContainerHighest,

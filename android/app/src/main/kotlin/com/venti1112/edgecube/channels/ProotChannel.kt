@@ -13,7 +13,7 @@ import java.io.File
 /**
  * proot 容器通道：rootfs 导入、列表、删除。
  *
- * 与 runtime 通道分离，因 rootfs.tar.zst 与 .ecpkg 是不同的产物类型，
+ * 与 runtime 通道分离：rootfs 包（裸 tar 或 ZIP/.ecpkg 包装）的
  * 校验/解压/布局逻辑由 proot 包独立实现。
  */
 internal object ProotChannel {
@@ -93,6 +93,19 @@ internal object ProotChannel {
                                 // 旧格式裸 tar 包（非 ZIP），无内嵌签名。
                                 mapOf("hasSignature" to false, "valid" to false)
                             }
+                        }
+                    }
+                }
+
+                // 判断文件是否为 rootfs 包（ZIP/.ecpkg 内含 rootfs.tar.zst 等 tar 条目）。
+                // .ecpkg 文件关联打开时用于区分 rootfs 包与运行时包。
+                "isRootfsPackage" -> {
+                    val path = call.argument<String>("path")
+                    if (path == null) {
+                        result.error("BAD_ARGS", "缺少 path", null)
+                    } else {
+                        ChannelIo.runAsync(result, "PROOT_PACKAGE_PROBE_FAILED") {
+                            RootfsStore.isRootfsPackage(path)
                         }
                     }
                 }

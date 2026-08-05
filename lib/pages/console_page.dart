@@ -146,7 +146,9 @@ class _ConsolePageState extends State<ConsolePage> {
         ],
       ),
       // 键盘弹出时缩小终端区域；扩展按键栏紧贴键盘上方（Termux 式布局）。
-      // 本页是标签页，底部留白由 HomeShell 统一处理，此处只取顶栏高度。
+      // 本页是 HomeShell 的标签页，IndexedStack 已在 HomeShell 层收缩到键盘
+      // 上方（取底栏高度与键盘高度的较大者），此处只需顶栏偏移，不再重复
+      // 预留 viewInsets，否则按键栏会被多顶起一个底栏/键盘高度。
       content: (padding) => Padding(
         padding: EdgeInsets.only(top: padding.top),
         child: SafeArea(

@@ -94,8 +94,9 @@ class ProotRootfsInfo {
 ///
 /// 对应 [MainActivity] 中注册的 MethodChannel `com.venti1112.edgecube/proot`。
 ///
-/// rootfs.tar.zst 与 `.ecpkg` 是不同的产物类型（rootfs 内嵌 edgecube-rootfs.json
-/// 清单、含完整 Linux 根文件系统），故独立通道管理，不走 RuntimeService。
+/// rootfs 支持裸 tar 压缩包（rootfs.tar.zst 等）与 ZIP 包装包（`.zip` / `.ecpkg`，
+/// 内含 `rootfs.tar.zst`、内嵌 edgecube-rootfs.json 清单、含完整 Linux 根文件系统），
+/// 故独立通道管理，不走 RuntimeService。
 class ProotService {
   const ProotService();
 
@@ -123,7 +124,8 @@ class ProotService {
         const [];
   }
 
-  /// 导入 rootfs.tar.zst（也接受 .tar.xz / .tar.gz）。
+  /// 导入 rootfs 包：裸 tar（.tar.zst / .tar.xz / .tar.gz / .tgz / .tar）
+  /// 或 ZIP 包装（`.zip` / `.ecpkg`，内含 rootfs.tar.zst）。
   ///
   /// [id] 为用户指定的 rootfs 标识；为空时从文件名推导。
   /// 解压耗时数十秒到数分钟，调用方应展示进度提示。
@@ -150,7 +152,7 @@ class ProotService {
 
   /// 验证 rootfs 包的内嵌签名是否与当前 APK 签名一致。
   ///
-  /// 新格式 `rootfs.zip`（ZIP 包装）验证内嵌签名；旧格式裸 tar 包无签名，
+  /// 新格式 ZIP/`.ecpkg` 包（ZIP 包装）验证内嵌签名；旧格式裸 tar 包无签名，
   /// 返回 `hasSignature=false`。调用方据 [SignatureVerifyResult.isTrusted]
   /// 判断是否允许导入。
   Future<SignatureVerifyResult> verifyRootfsSignature(String path) async {
@@ -159,5 +161,15 @@ class ProotService {
       {'path': path},
     );
     return SignatureVerifyResult.fromMap(map ?? {});
+  }
+
+  /// 判断文件是否为 rootfs 包（ZIP/`.ecpkg` 内含 rootfs.tar.zst 等 tar 条目）。
+  ///
+  /// `.ecpkg` 文件关联打开时用于区分 rootfs 包与运行时包。
+  Future<bool> isRootfsPackage(String path) async {
+    final ok = await _method.invokeMethod<bool>('isRootfsPackage', {
+      'path': path,
+    });
+    return ok ?? false;
   }
 }

@@ -21,14 +21,14 @@ import '../widgets/ec_preference.dart';
 import 'mod_download_page.dart';
 import 'poggit_download_page.dart';
 
-/// 模组/插件管理页：根据实例目录下是否存在 plugins / mods 文件夹，
-/// 动态显示对应选项卡。
+/// 模组/插件管理页：根据实例目录下是否存plugins / mods 文件夹，
+/// 动态显示对应选项卡
 ///
-/// - plugins 文件夹 → 插件管理选项卡
-/// - mods 文件夹 → 模组管理选项卡 + 模组下载选项卡
+/// - plugins 文件插件管理选项
+/// - mods 文件模组管理选项+ 模组下载选项
 ///
-/// 模组管理支持：识别 .jar 元数据、从 Modrinth 获取图标、检查并执行更新。
-/// 模组下载支持：搜索/浏览 Modrinth、筛选、分页。
+/// 模组管理支持：识.jar 元数据、从 Modrinth 获取图标、检查并执行更新
+/// 模组下载支持：搜浏览 Modrinth、筛选、分页
 class ModsPluginsPage extends StatefulWidget {
   const ModsPluginsPage({super.key});
 
@@ -50,7 +50,7 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
   Directory? _modsDir;
   TabController? _tabCtrl;
 
-  /// MiuixTabRow 是受控组件，需自持选中项；滑动 TabBarView 时反向同步。
+  /// MiuixTabRow 是受控组件，需自持选中项；滑动 TabBarView 时反向同步
   int _tabIndex = 0;
 
   @override
@@ -83,7 +83,7 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
     final isPmmp = instance.isPhp;
 
     _tabCtrl?.dispose();
-    // plugins → 管理选项卡 + 下载选项卡；mods → 管理选项卡 + 下载选项卡
+    // plugins 管理选项+ 下载选项卡；mods 管理选项+ 下载选项
     final count = (hasPlugins ? 2 : 0) + (hasMods ? 2 : 0);
     _tabIndex = 0;
     _tabCtrl = count > 0 ? TabController(length: count, vsync: this) : null;
@@ -117,7 +117,7 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
       topBar: EcTopAppBar(
         title: context.tr('modsPlugins.title'),
 
-        // 只换有 Material 观感的标签条；TabController + TabBarView 保留。
+        // 只换Material 观感的标签条；TabController + TabBarView 保留
         bottomContent: _tabCtrl == null
             ? null
             : Padding(
@@ -183,10 +183,10 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
   }
 }
 
-/// 单个选项卡内容。
+/// 单个选项卡内容
 ///
-/// [isJarContent] 为 true 时启用模组/插件识别、图标获取与更新功能。
-/// [isPmmp] 为 true 时识别 .phar 文件（PocketMine-MP 插件），否则识别 .jar。
+/// [isJarContent] true 时启用模插件识别、图标获取与更新功能
+/// [isPmmp] true 时识.phar 文件（PocketMine-MP 插件），否则识别 .jar
 class _ContentTab extends StatefulWidget {
   const _ContentTab({
     required this.folder,
@@ -212,12 +212,12 @@ class _ContentTabState extends State<_ContentTab> {
   // 模组识别
   final Map<String, ModMetadata?> _metadata = {};
 
-  // 模组图标（path → iconUrl）
+  // 模组图标（path iconUrl
   final Map<String, String?> _icons = {};
 
-  // 更新检查
-  final Map<String, String> _sha1Hashes = {}; // path → sha1
-  final Map<String, ModrinthVersion> _updates = {}; // path → 最新版本
+  // 更新检
+  final Map<String, String> _sha1Hashes = {}; // path sha1
+  final Map<String, ModrinthVersion> _updates = {}; // path 最新版
   bool _checkingUpdates = false;
   final Set<String> _updatingPaths = {};
 
@@ -245,8 +245,8 @@ class _ContentTabState extends State<_ContentTab> {
       _sha1Hashes.clear();
       _updates.clear();
     });
-    // 元数据识别（.jar 和 .phar 都支持）
-    // PMMP 模式下仅识别元数据，不走 Modrinth 图标获取和更新检查
+    // 元数据识别（.jar .phar 都支持）
+    // PMMP 模式下仅识别元数据，不走 Modrinth 图标获取和更新检
     if (widget.isJarContent) {
       _identifyMods();
     }
@@ -254,7 +254,7 @@ class _ContentTabState extends State<_ContentTab> {
 
   // ── 模组识别 ──────────────────────────────────────────────────
 
-  /// 单个文件解析失败时返回 null，避免异常中断批量处理。
+  /// 单个文件解析失败时返null，避免异常中断批量处理
   Future<ModMetadata?> _safeParse(String path) async {
     try {
       return await ModMetadataParser.parse(path);
@@ -263,15 +263,15 @@ class _ContentTabState extends State<_ContentTab> {
     }
   }
 
-  /// 分批并行解析模组元数据，每批完成后统一 setState，避免频繁重建列表。
+  /// 分批并行解析模组元数据，每批完成后统一 setState，避免频繁重建列表
   Future<void> _identifyMods() async {
-    // 使用 _isPluginFile 而非 _isJar，使 .phar 文件也能被识别
+    // 使用 _isPluginFile 而非 _isJar，使 .phar 文件也能被识
     final plugins = _entries
         .where((e) => e.isFile && _isPluginFile(e.name))
         .toList();
     if (plugins.isEmpty) return;
 
-    // 每批并行解析 6 个：平衡 isolate 开销与 UI 响应
+    // 每批并行解析 6 个：平衡 isolate 开销UI 响应
     const batchSize = 6;
     for (var i = 0; i < plugins.length; i += batchSize) {
       final end = (i + batchSize).clamp(0, plugins.length);
@@ -284,13 +284,13 @@ class _ContentTabState extends State<_ContentTab> {
         }
       });
     }
-    // 仅 Java 模组通过 SHA1 查询 Modrinth 获取图标（Poggit 不支持 SHA1 查询）
+    // Java 模组通过 SHA1 查询 Modrinth 获取图标（Poggit 不支SHA1 查询
     if (mounted && !widget.isPmmp) _fetchModIcons(plugins);
   }
 
   // ── 获取模组图标 ──────────────────────────────────────────────
 
-  /// 安全计算 SHA1，失败时返回空串占位。
+  /// 安全计算 SHA1，失败时返回空串占位
   Future<(String, String)> _safeSha1(String path) async {
     try {
       final hash = await ModrinthService.computeSha1(path);
@@ -300,7 +300,7 @@ class _ContentTabState extends State<_ContentTab> {
     }
   }
 
-  /// 分批并行计算 SHA1，限制并发度避免同时打开过多文件 / 创建过多 isolate。
+  /// 分批并行计算 SHA1，限制并发度避免同时打开过多文件 / 创建过多 isolate
   Future<List<(String, String)>> _computeHashesBatched(
     List<FileEntry> jars,
   ) async {
@@ -327,12 +327,12 @@ class _ContentTabState extends State<_ContentTab> {
         hashToPath[hash] = path;
       }
 
-      // 通过 SHA1 查询 Modrinth 版本信息（获取 project_id）
+      // 通过 SHA1 查询 Modrinth 版本信息（获project_id
       final versionMap = await ModrinthService.getVersionsByHashes(
         _sha1Hashes.values.toList(),
       );
 
-      // 收集所有 project_id
+      // 收集所project_id
       final projectIdToPath = <String, String>{};
       for (final entry in versionMap.entries) {
         final hash = entry.key;
@@ -345,7 +345,7 @@ class _ContentTabState extends State<_ContentTab> {
 
       if (projectIdToPath.isEmpty) return;
 
-      // 批量获取项目信息（含图标 URL）
+      // 批量获取项目信息（含图标 URL
       final projects = await ModrinthService.getProjects(
         projectIdToPath.keys.toList(),
       );
@@ -359,11 +359,11 @@ class _ContentTabState extends State<_ContentTab> {
         }
       });
     } catch (_) {
-      // 图标获取失败不影响使用
+      // 图标获取失败不影响使
     }
   }
 
-  // ── 更新检查 ──────────────────────────────────────────────────
+  // ── 更新检──────────────────────────────────────────────────
 
   Future<void> _checkUpdates() async {
     final jars = _entries.where((e) => e.isFile && _isJar(e.name)).toList();
@@ -375,7 +375,7 @@ class _ContentTabState extends State<_ContentTab> {
     });
 
     try {
-      // 复用已计算的 SHA1，未计算则现算（分批并行）
+      // 复用已计算的 SHA1，未计算则现算（分批并行
       if (_sha1Hashes.isEmpty) {
         final hashResults = await _computeHashesBatched(jars);
         for (final (path, hash) in hashResults) {
@@ -393,7 +393,7 @@ class _ContentTabState extends State<_ContentTab> {
         _sha1Hashes.values.toList(),
       );
 
-      // 对比哈希判断是否需要更新
+      // 对比哈希判断是否需要更
       for (final entry in updateResults.entries) {
         final localHash = entry.key;
         final latestVersion = entry.value;
@@ -433,10 +433,10 @@ class _ContentTabState extends State<_ContentTab> {
 
   // ── 更新单个模组 ──────────────────────────────────────────────
 
-  /// 将模组更新任务加入下载队列。
+  /// 将模组更新任务加入下载队列
   ///
   /// 下载完成后队列会自动替换旧文件，并通过 [_refreshAfterUpdate]
-  /// 就地更新列表条目，避免全列表刷新导致图标/元数据重新加载。
+  /// 就地更新列表条目，避免全列表刷新导致图标/元数据重新加载
   void _updateMod(FileEntry entry) {
     final version = _updates[entry.path];
     if (version == null) return;
@@ -461,28 +461,28 @@ class _ContentTabState extends State<_ContentTab> {
     setState(() => _updatingPaths.add(entry.path));
   }
 
-  /// 更新完成后就地刷新列表，不触发全列表重载。
+  /// 更新完成后就地刷新列表，不触发全列表重载
   ///
-  /// 下载成功时：旧文件已被队列删除，新文件位于 [destPath]，
-  /// 替换条目并仅对新文件重新识别元数据/图标/哈希。
-  /// 下载失败/取消时：旧文件仍在，仅清理更新状态。
+  /// 下载成功时：旧文件已被队列删除，新文件位[destPath]
+  /// 替换条目并仅对新文件重新识别元数图标/哈希
+  /// 下载失败/取消时：旧文件仍在，仅清理更新状态
   Future<void> _refreshAfterUpdate(String oldPath, String destPath) async {
     if (!mounted) return;
     final newFile = File(destPath);
 
     if (!newFile.existsSync()) {
-      // 下载失败或取消，旧文件仍在 → 仅清理状态
+      // 下载失败或取消，旧文件仍仅清理状
       setState(() {
         _updatingPaths.remove(oldPath);
       });
       return;
     }
 
-    // 下载成功：旧文件已删除，新文件存在
+    // 下载成功：旧文件已删除，新文件存
     final newName = p.basename(destPath);
     final newEntry = entryFromEntity(newFile, newName);
 
-    // 清理旧路径缓存
+    // 清理旧路径缓
     _metadata.remove(oldPath);
     _icons.remove(oldPath);
     _sha1Hashes.remove(oldPath);
@@ -502,7 +502,7 @@ class _ContentTabState extends State<_ContentTab> {
     await _identifySingleMod(newEntry);
   }
 
-  /// 对单个 jar 文件重新识别元数据、计算 SHA1 并获取图标。
+  /// 对单jar 文件重新识别元数据、计SHA1 并获取图标
   Future<void> _identifySingleMod(FileEntry entry) async {
     final meta = await _safeParse(entry.path);
     if (!mounted) return;
@@ -522,13 +522,13 @@ class _ContentTabState extends State<_ContentTab> {
         setState(() => _icons[entry.path] = projects.first.iconUrl);
       }
     } catch (_) {
-      // 图标获取失败不影响使用
+      // 图标获取失败不影响使
     }
   }
 
   // ── 选择更新 ──────────────────────────────────────────────────
 
-  /// 弹出更新选择对话框，让用户勾选要更新的模组。
+  /// 弹出更新选择对话框，让用户勾选要更新的模组
   Future<void> _showUpdateSelection() async {
     final tr = LocaleScope.of(context).translations;
 
@@ -623,7 +623,7 @@ class _ContentTabState extends State<_ContentTab> {
                               setDialogState(() => selected[entry.path] = v);
                             },
                             title: name,
-                            summary: '$oldVersion → $newVersion',
+                            summary: '$oldVersion $newVersion',
                             insideMargin: const EdgeInsets.symmetric(
                               horizontal: 16,
                               vertical: 8,
@@ -672,11 +672,11 @@ class _ContentTabState extends State<_ContentTab> {
 
   // ── 启用/禁用 ────────────────────────────────────────────────
 
-  /// 切换模组/插件的启用状态。
+  /// 切换模组/插件的启用状态
   ///
-  /// `.jar`/`.phar` → `.jar.disabled`/`.phar.disabled`（禁用），
-  /// `.jar.disabled`/`.phar.disabled` → `.jar`/`.phar`（启用）。
-  /// 原地更新条目，保留已获取的元数据/图标/哈希（迁移到新路径）。
+  /// `.jar`/`.phar` `.jar.disabled`/`.phar.disabled`（禁用）
+  /// `.jar.disabled`/`.phar.disabled` `.jar`/`.phar`（启用）
+  /// 原地更新条目，保留已获取的元数据/图标/哈希（迁移到新路径）
   Future<void> _toggleEnabled(FileEntry entry) async {
     final tr = LocaleScope.of(context).translations;
     final lower = entry.name.toLowerCase();
@@ -734,7 +734,7 @@ class _ContentTabState extends State<_ContentTab> {
     try {
       await File(entry.path).rename(newPath);
       if (!mounted) return;
-      // 原地更新条目，迁移已缓存的数据到新路径
+      // 原地更新条目，迁移已缓存的数据到新路
       setState(() {
         final idx = _entries.indexWhere((e) => e.path == entry.path);
         if (idx >= 0) {
@@ -761,7 +761,7 @@ class _ContentTabState extends State<_ContentTab> {
     }
   }
 
-  /// 将旧路径的缓存数据迁移到新路径。
+  /// 将旧路径的缓存数据迁移到新路径
   void _transferCache(String oldPath, String newPath) {
     if (_metadata.containsKey(oldPath)) {
       _metadata[newPath] = _metadata.remove(oldPath);
@@ -902,8 +902,8 @@ class _ContentTabState extends State<_ContentTab> {
 
   // ── 辅助方法 ──────────────────────────────────────────────────
 
-  /// 判断文件是否为当前实例类型的插件文件。
-  /// PMMP 识别 .phar / .phar.disabled，Java 识别 .jar / .jar.disabled。
+  /// 判断文件是否为当前实例类型的插件文件
+  /// PMMP 识别 .phar / .phar.disabled，Java 识别 .jar / .jar.disabled
   bool _isPluginFile(String name) {
     final lower = name.toLowerCase();
     if (widget.isPmmp) {
@@ -942,9 +942,13 @@ class _ContentTabState extends State<_ContentTab> {
                   context.tr('modsPlugins.empty.title'),
                   context.tr('modsPlugins.empty.desc'),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   itemCount: _entries.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (ctx, i) => _buildListTile(theme, _entries[i]),
                 ),
         ),
@@ -1040,7 +1044,7 @@ class _ContentTabState extends State<_ContentTab> {
         lower.endsWith('.jar.disabled') || lower.endsWith('.phar.disabled');
     final isPluginFile = entry.isFile && _isPluginFile(entry.name);
 
-    // 标题：模组名称 > 文件名（禁用时去掉 .disabled 后缀）
+    // 标题：模组名> 文件名（禁用时去.disabled 后缀
     String title;
     if (meta != null && meta.name.isNotEmpty) {
       title = meta.name;
@@ -1050,7 +1054,7 @@ class _ContentTabState extends State<_ContentTab> {
       title = entry.name;
     }
 
-    // 副标题
+    // 副标
     String? subtitle;
     if (meta != null) {
       final parts = <String>[];
@@ -1156,17 +1160,17 @@ class _ContentTabState extends State<_ContentTab> {
     );
   }
 
-  /// 构建列表项前导图标。
+  /// 构建列表项前导图标
   ///
-  /// 优先显示从 Modrinth 获取的缓存图标，其次按加载器显示彩色方块，
-  /// 最后回退到通用扩展图标。
+  /// 优先显示Modrinth 获取的缓存图标，其次按加载器显示彩色方块
+  /// 最后回退到通用扩展图标
   Widget _buildLeading(
     MiuixThemeData theme,
     FileEntry entry,
     ModMetadata? meta,
     String? iconUrl,
   ) {
-    // 有 Modrinth 图标 URL 时显示缓存图标（加载中/失败回退到彩色方块）
+    // Modrinth 图标 URL 时显示缓存图标（加载失败回退到彩色方块）
     if (iconUrl != null && iconUrl.isNotEmpty) {
       return CachedModIcon(
         url: iconUrl,
@@ -1175,12 +1179,12 @@ class _ContentTabState extends State<_ContentTab> {
       );
     }
 
-    // 图标仍在加载中且有元数据 → 显示彩色方块
+    // 图标仍在加载中且有元数据 显示彩色方块
     if (meta != null) {
       return _coloredBox(theme, meta);
     }
 
-    // 无元数据 → 通用图标
+    // 无元数据 通用图标
     return const Icon(Icons.extension_outlined, size: 32);
   }
 
@@ -1208,7 +1212,7 @@ class _ContentTabState extends State<_ContentTab> {
   }
 }
 
-/// 空白占位状态。
+/// 空白占位状态
 Widget _emptyState(
   MiuixThemeData theme,
   IconData icon,

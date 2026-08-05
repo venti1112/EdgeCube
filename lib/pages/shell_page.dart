@@ -131,8 +131,16 @@ class _ShellPageState extends State<ShellPage> {
         ],
       ),
       // 键盘弹出时缩小终端区域；扩展按键栏紧贴键盘上方（Termux 式布局）。
-      content: (padding) => Padding(
-        padding: EdgeInsets.only(top: padding.top),
+      // MiuixScaffold 不消费 viewInsets（edge-to-edge 下窗口不再被压缩，
+      // 键盘高度只会出现在 MediaQuery.viewInsets），需自行预留键盘高度，
+      // 否则按键栏会被输入法盖住。
+      content: (padding) => AnimatedPadding(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(
+          top: padding.top,
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
         child: SafeArea(
           top: false,
           child: Column(

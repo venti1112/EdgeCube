@@ -24,6 +24,9 @@ import 'container_files_page.dart';
 import 'ecpkg_download_page.dart';
 
 /// 「运行环境」管理页：列出已安装运行时，导入/删除/更新 .ecpkg。
+///
+/// 也管理 proot rootfs：支持导入裸 tar 压缩包与 ZIP 包装包
+/// （`.zip` / `.ecpkg`，内含 rootfs.tar.zst）。
 class RuntimePage extends StatefulWidget {
   const RuntimePage({super.key, this.initialEcpkgPath});
 
@@ -70,13 +73,20 @@ class _RuntimePageState extends State<RuntimePage> {
     if (mounted) _load();
   }
 
-  void _handleOpenEcpkg(String path) {
+  Future<void> _handleOpenEcpkg(String path) async {
     if (!mounted) return;
     if (!path.toLowerCase().endsWith('.ecpkg')) {
       showErrorDialog(context, context.tr('runtime.notEcpkg'));
       return;
     }
-    _doImport(path);
+    // .ecpkg 也可能是 rootfs 包（ZIP 内含 rootfs.tar.zst），先探测再路由。
+    final isRootfs = await _prootService.isRootfsPackage(path);
+    if (!mounted) return;
+    if (isRootfs) {
+      await _importRootfsFromPath(path);
+    } else {
+      _doImport(path);
+    }
   }
 
   Future<void> _load() async {
@@ -99,37 +109,64 @@ class _RuntimePageState extends State<RuntimePage> {
     }
   }
 
-  Future<void> _import() async {
-    if (!await StoragePermission.isGranted()) {
-      if (!mounted) return;
-      final go = await showMiuixConfirm(
-        context,
-        title: context.tr('fileBrowser.permissionTitle'),
-        message: context.tr('fileBrowser.permissionContent'),
-        cancelLabel: context.tr('common.cancel'),
-        confirmLabel: context.tr('fileBrowser.grantPermission'),
-      );
-      if (go != true) return;
-      await StoragePermission.request();
-      if (!mounted) return;
-      return _import();
-    }
+  /// 确保存储权限已授予；未授予时弹出确认对话框引导用户授权。
+  /// 返回 true 表示权限已就绪，可以继续后续文件选择。
+  Future<bool> _ensureStoragePermission() async {
+    if (await StoragePermission.isGranted()) return true;
+    if (!mounted) return false;
+    final go = await showMiuixConfirm(
+      context,
+      title: context.tr('fileBrowser.permissionTitle'),
+      message: context.tr('fileBrowser.permissionContent'),
+      cancelLabel: context.tr('common.cancel'),
+      confirmLabel: context.tr('fileBrowser.grantPermission'),
+    );
+    if (go != true) return false;
+    await StoragePermission.request();
+    if (!mounted) return false;
+    return _ensureStoragePermission();
+  }
 
+  /// 统一导入入口：选择文件后根据包类型自动路由到运行时或 rootfs 导入流程。
+  ///
+  /// 支持的文件格式：
+  /// - `.ecpkg` / `.zip`：通过 [ProotService.isRootfsPackage] 探测包清单
+  ///   `edgecube-package.json` 的 `type` 字段（`proot` → rootfs，其他 → 运行时）。
+  /// - 裸 tar 压缩包（`.tar.zst` / `.tar.xz` / `.tar.gz` / `.tgz`）：直接走 rootfs 导入。
+  Future<void> _importUnified() async {
+    if (!await _ensureStoragePermission()) return;
     if (!mounted) return;
-    final tr = LocaleScope.of(context).translations;
+
     final path = await pickFromSystem(
       context,
       mode: SystemPickMode.file,
-      allowedExtensions: const ['.ecpkg'],
+      allowedExtensions: const [
+        '.ecpkg',
+        '.zip',
+        '.tar.zst',
+        '.tar.xz',
+        '.tar.gz',
+        '.tgz',
+      ],
     );
-    if (path == null || !path.toLowerCase().endsWith('.ecpkg')) {
-      if (mounted && path != null) {
-        showErrorDialog(context, tr.get('runtime.notEcpkg'));
-      }
-      return;
-    }
+    if (path == null || !mounted) return;
 
-    await _doImport(path);
+    // 探测包类型并路由：rootfs 包走 proot 流程，其余走运行时流程。
+    final isRootfs = await _prootService.isRootfsPackage(path);
+    if (!mounted) return;
+    if (isRootfs) {
+      if (!_prootAvailable) {
+        showErrorDialog(context, context.tr('runtime.proot.notAvailable'));
+        return;
+      }
+      await _importRootfsFromPath(path);
+    } else {
+      if (!path.toLowerCase().endsWith('.ecpkg')) {
+        showErrorDialog(context, context.tr('runtime.notEcpkg'));
+        return;
+      }
+      await _doImport(path);
+    }
   }
 
   /// 验证包签名，根据验证模式和开发者选项决定是否允许导入。
@@ -193,8 +230,13 @@ class _RuntimePageState extends State<RuntimePage> {
       // 导入前验证签名
       final sigResult = await _service.verifyEcpkgSignature(path);
       if (!await _checkSignature(sigResult)) return;
+      if (!mounted) return;
 
-      await _service.importPackage(path, force: force);
+      await runWithLoadingDialog(
+        context,
+        tr.get('runtime.importing'),
+        () => _service.importPackage(path, force: force),
+      );
       if (!mounted) return;
       await _load();
       if (!mounted) return;
@@ -263,41 +305,9 @@ class _RuntimePageState extends State<RuntimePage> {
 
   // —— proot rootfs 导入/删除 ——
 
-  Future<void> _importRootfs() async {
-    if (!_prootAvailable) {
-      if (!mounted) return;
-      showErrorDialog(context, context.tr('runtime.proot.notAvailable'));
-      return;
-    }
-
-    if (!await StoragePermission.isGranted()) {
-      if (!mounted) return;
-      final go = await showMiuixConfirm(
-        context,
-        title: context.tr('fileBrowser.permissionTitle'),
-        message: context.tr('fileBrowser.permissionContent'),
-        cancelLabel: context.tr('common.cancel'),
-        confirmLabel: context.tr('fileBrowser.grantPermission'),
-      );
-      if (go != true) return;
-      await StoragePermission.request();
-      if (!mounted) return;
-      return _importRootfs();
-    }
-
-    if (!mounted) return;
-    final path = await pickFromSystem(
-      context,
-      mode: SystemPickMode.file,
-      allowedExtensions: const [
-        '.zip',
-        '.tar.zst',
-        '.tar.xz',
-        '.tar.gz',
-        '.tgz',
-      ],
-    );
-    if (path == null) return;
+  /// 从文件挑选/文件关联得到的路径进入 rootfs 导入：弹名称输入框（默认去扩展名），
+  /// 确认后执行导入。文件关联打开 .ecpkg 时路径已在应用缓存/可读目录，无需再请求存储权限。
+  Future<void> _importRootfsFromPath(String path) async {
     if (!mounted) return;
 
     // 始终弹出名称输入框，默认为去掉压缩包扩展名的文件名
@@ -314,7 +324,15 @@ class _RuntimePageState extends State<RuntimePage> {
   /// 从文件路径推导 rootfs 名称：取 basename 并剥离已知压缩包扩展名。
   String _rootfsNameFromPath(String path) {
     var name = p.basename(path);
-    const exts = ['.tar.zst', '.tar.xz', '.tar.gz', '.tgz', '.tar', '.zip'];
+    const exts = [
+      '.ecpkg',
+      '.zip',
+      '.tar.zst',
+      '.tar.xz',
+      '.tar.gz',
+      '.tgz',
+      '.tar',
+    ];
     for (final ext in exts) {
       if (name.toLowerCase().endsWith(ext)) {
         name = name.substring(0, name.length - ext.length);
@@ -330,8 +348,13 @@ class _RuntimePageState extends State<RuntimePage> {
       // 导入前验证签名
       final sigResult = await _prootService.verifyRootfsSignature(path);
       if (!await _checkSignature(sigResult)) return;
+      if (!mounted) return;
 
-      await _prootService.importRootfs(path, id: id);
+      await runWithLoadingDialog(
+        context,
+        context.tr('runtime.importing'),
+        () => _prootService.importRootfs(path, id: id),
+      );
       if (!mounted) return;
       await _load();
       if (!mounted) return;
@@ -820,7 +843,7 @@ class _RuntimePageState extends State<RuntimePage> {
                       ],
                     ),
                   ),
-                  for (final rt in _runtimes)
+                  for (final rt in _runtimes) ...[
                     MiuixCard(
                       child: MiuixBasicComponent(
                         startAction: Padding(
@@ -893,38 +916,35 @@ class _RuntimePageState extends State<RuntimePage> {
                         ],
                       ),
                     ),
-                  MiuixCard(
-                    child: MiuixBasicComponent(
-                      startAction: Padding(
-                        padding: const EdgeInsets.only(right: 16),
-                        child: _importing
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: MiuixInfiniteProgressIndicator(size: 20),
-                              )
-                            : const Icon(Icons.add),
-                      ),
-                      content: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: 8),
+                  ],
+                  if (_runtimes.isEmpty && _prootRootfs.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 32),
+                      child: Center(
+                        child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              _importing
-                                  ? context.tr('runtime.importing')
-                                  : context.tr('runtime.import'),
+                            Icon(
+                              Icons.inventory_2_outlined,
+                              size: 48,
+                              color: theme.colors.onSurfaceVariantSummary,
                             ),
+                            const SizedBox(height: 12),
                             Text(
-                              context.tr('runtime.importDescription'),
+                              context.tr('runtime.emptyTitle'),
+                              style: theme.textStyles.title4,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              context.tr('runtime.emptyDescription'),
                               style: theme.textStyles.footnote1,
+                              textAlign: TextAlign.center,
                             ),
                           ],
                         ),
-                      ],
-                      onClick: _importing ? null : _import,
+                      ),
                     ),
-                  ),
                   // —— proot rootfs 区 ——
                   if (showProotSection) ...[
                     const SizedBox(height: 8),
@@ -977,7 +997,8 @@ class _RuntimePageState extends State<RuntimePage> {
                           ],
                         ),
                       ),
-                    for (final rootfs in _prootRootfs)
+                      const SizedBox(height: 8),
+                    for (final rootfs in _prootRootfs) ...[
                       MiuixCard(
                         child: MiuixBasicComponent(
                           startAction: Padding(
@@ -1034,48 +1055,18 @@ class _RuntimePageState extends State<RuntimePage> {
                           ],
                         ),
                       ),
-                    if (_prootAvailable)
-                      MiuixCard(
-                        child: MiuixBasicComponent(
-                          startAction: Padding(
-                            padding: const EdgeInsets.only(right: 16),
-                            child: _importingRootfs
-                                ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: MiuixInfiniteProgressIndicator(
-                                      size: 20,
-                                    ),
-                                  )
-                                : const Icon(Icons.add),
-                          ),
-                          content: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  _importingRootfs
-                                      ? context.tr('runtime.importing')
-                                      : context.tr(
-                                          'runtime.proot.importRootfs',
-                                        ),
-                                ),
-                                Text(
-                                  context.tr(
-                                    'runtime.proot.importRootfsDescription',
-                                  ),
-                                  style: theme.textStyles.footnote1,
-                                ),
-                              ],
-                            ),
-                          ],
-                          onClick: _importingRootfs ? null : _importRootfs,
-                        ),
-                      ),
+                      const SizedBox(height: 8),
+                    ],
                   ],
                 ],
               ),
+      ),
+      floatingActionButton: Tooltip(
+        message: context.tr('runtime.importTooltip'),
+        child: MiuixFloatingActionButton(
+          onPressed: (_importing || _importingRootfs) ? null : _importUnified,
+          child: MiuixIcon(icon: Icons.add),
+        ),
       ),
     );
   }

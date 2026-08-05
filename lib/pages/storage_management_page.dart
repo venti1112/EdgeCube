@@ -219,6 +219,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
                     onAction: _clearing ? null : _clearCache,
                     actionInProgress: _clearing,
                   ),
+                  const SizedBox(height: 12),
                   _buildSectionItem(
                     theme,
                     tr,
@@ -228,6 +229,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
                     size: _instancesSize,
                     path: _instancesPath,
                   ),
+                  const SizedBox(height: 12),
                   _buildSectionItem(
                     theme,
                     tr,
@@ -242,6 +244,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
                   _buildSectionItem(
                     theme,
                     tr,
@@ -251,6 +254,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
                     size: _appDataSize,
                     path: _appDataPath,
                   ),
+                  const SizedBox(height: 12),
                   _buildSectionItem(
                     theme,
                     tr,
@@ -260,7 +264,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
                     size: _appSize,
                     path: '',
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   _buildDeviceInfo(theme, tr),
                 ],
               ),
@@ -474,6 +478,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
 
   Widget _buildDeviceInfo(MiuixThemeData theme, Translations tr) {
     return MiuixCard(
+      insideMargin: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -665,14 +670,19 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
                 if (_nativeRuntimes.isEmpty)
                   _buildEmptyHint(theme, tr.get('storage.noRuntime'))
                 else
-                  for (final rt in _nativeRuntimes)
+                  for (var i = 0; i < _nativeRuntimes.length; i++) ...[
                     _buildSizeItem(
                       theme,
-                      icon: _iconForType(rt.type),
-                      title: rt.name,
-                      subtitle: '${_typeLabel(rt.type)} · ${rt.displayVersion}',
-                      size: _nativeSizes[rt.id],
+                      icon: _iconForType(_nativeRuntimes[i].type),
+                      title: _nativeRuntimes[i].name,
+                      subtitle:
+                          '${_typeLabel(_nativeRuntimes[i].type)} · '
+                          '${_nativeRuntimes[i].displayVersion}',
+                      size: _nativeSizes[_nativeRuntimes[i].id],
                     ),
+                    if (i != _nativeRuntimes.length - 1)
+                      const SizedBox(height: 8),
+                  ],
                 const SizedBox(height: 16),
                 // —— proot 容器区 ——
                 _buildSubHeader(
@@ -683,19 +693,23 @@ class _RuntimeDetailPageState extends State<RuntimeDetailPage> {
                 if (_prootRootfs.isEmpty)
                   _buildEmptyHint(theme, tr.get('storage.noRuntime'))
                 else
-                  for (final r in _prootRootfs)
+                  for (var i = 0; i < _prootRootfs.length; i++) ...[
                     _buildSizeItem(
                       theme,
                       icon: Icons.terminal,
-                      title: r.envName.isNotEmpty
-                          ? '${r.envName} (${r.id})'
-                          : r.id,
-                      subtitle: r.isGeneric
+                      title: _prootRootfs[i].envName.isNotEmpty
+                          ? '${_prootRootfs[i].envName} (${_prootRootfs[i].id})'
+                          : _prootRootfs[i].id,
+                      subtitle: _prootRootfs[i].isGeneric
                           ? 'generic · ${tr.get('storage.genericContainer')}'
-                          : '${r.envType}: ${r.envMainBin}'
-                                '${r.envVersionName.isNotEmpty ? ' (${r.envVersionName})' : ''}',
-                      size: _prootSizes[r.id],
+                          : '${_prootRootfs[i].envType}: '
+                                '${_prootRootfs[i].envMainBin}'
+                                '${_prootRootfs[i].envVersionName.isNotEmpty ? ' (${_prootRootfs[i].envVersionName})' : ''}',
+                      size: _prootSizes[_prootRootfs[i].id],
                     ),
+                    if (i != _prootRootfs.length - 1)
+                      const SizedBox(height: 8),
+                  ],
                 const SizedBox(height: 16),
               ],
               ),

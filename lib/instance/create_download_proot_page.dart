@@ -119,6 +119,7 @@ class _SelectProotContainerPageState extends State<SelectProotContainerPage> {
       children: [
         const SizedBox(height: 8),
         MiuixCard(
+          insideMargin: const EdgeInsets.all(12),
           child: Row(
             children: [
               MiuixIcon(icon: Icons.info_outline, tint: theme.colors.primary),

@@ -262,6 +262,7 @@ class _FtpPageState extends State<FtpPage> {
 
   Widget _buildInfoCard(MiuixThemeData theme) {
     return MiuixCard(
+      insideMargin: const EdgeInsets.all(12),
       colors: MiuixCardColors(
         color: theme.colors.surfaceContainerHighest,
         contentColor: theme.colors.onSurfaceContainerHighest,

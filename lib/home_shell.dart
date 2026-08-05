@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -466,11 +467,19 @@ class _HomeShellState extends State<HomeShell>
         // 只取底部内边距：各标签页目前仍是 Material Scaffold + AppBar，
         // 顶部安全区由它们各自处理，此处再套一遍会双重留白。
         // 浮动底栏模式下仅保留系统安全区，让内容延伸到浮动栏背后以实现毛玻璃效果。
-        content: (padding) => Padding(
+        // 键盘弹出时（edge-to-edge 下窗口不压缩、键盘高度只在 viewInsets 里），
+        // IndexedStack 需收缩到键盘上方——取「底栏/安全区高度」与「键盘高度」
+        // 的较大者，否则标签页底部内容（如控制台扩展按键栏）会被输入法盖住。
+        content: (padding) => AnimatedPadding(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
           padding: EdgeInsets.only(
-            bottom: floatingNavBar
-                ? MediaQuery.viewPaddingOf(context).bottom
-                : padding.bottom,
+            bottom: math.max(
+              floatingNavBar
+                  ? MediaQuery.viewPaddingOf(context).bottom
+                  : padding.bottom,
+              MediaQuery.viewInsetsOf(context).bottom,
+            ),
           ),
           child: IndexedStack(index: _selectedIndex, children: _tabPages),
         ),
