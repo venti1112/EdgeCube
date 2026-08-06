@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:logging/logging.dart';
+import 'package:mcp_dart/mcp_dart.dart' show LogLevel, setMcpLogHandler;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -20,6 +21,9 @@ const String _kLogFileSuffix = '.txt';
 /// 基于 [logging](https://pub.dev/packages/logging) 包，将日志同时输出到：
 /// - **文件**：`<documents>/logs/log_YYYY-MM-DD.txt`，按日期轮转。
 /// - **Android logcat**：通过 `dart:developer` log()，在 Android 上自动输出。
+///
+/// 同时通过 [`setMcpLogHandler`] 桥接 MCP SDK（mcp_dart）的内部日志，
+/// 使其传输/协议/会话日志一并汇入本系统（随日志开关过滤）。
 ///
 /// 日志开关与等级由 [LogStore] 持久化，默认关闭。在 [main] 中调用 [init]
 /// 完成初始化；设置页面通过 [setEnabled] / [setLevel] 运行时切换。
@@ -52,6 +56,11 @@ class LogService {
     _enabled = await LogStore.loadEnabled();
     _level = await LogStore.loadLevel();
     _applyConfig();
+    // 桥接 MCP SDK（mcp_dart）内部日志到本日志系统。该 handler 全局注册一次，
+    // 之后 MCP 传输/协议/会话产生的日志统一汇入软件日志（文件 + logcat）。
+    // 日志开关关闭时 Logger.root.level 为 OFF，记录会被直接丢弃；同时不再由
+    // SDK 默认 handler 输出到 stderr，与「关闭日志即不产生日志」的语义一致。
+    setMcpLogHandler(_onMcpRecord);
     await _cleanOldLogs();
   }
 
@@ -89,6 +98,23 @@ class LogService {
       _subscription = null;
       _closeSink();
     }
+  }
+
+  // ── 内部：MCP SDK 日志桥接 ────────────────────────────────
+
+  /// MCP SDK（mcp_dart）日志桥接：[setMcpLogHandler] 的回调。
+  ///
+  /// 把 mcp_dart 的 [LogLevel] 映射为 package:logging 的 [Level]，并以
+  /// `Mcp.<loggerName>` 作为 logger 名，使日志行形如 `[INFO] [Mcp.mcp_dart.server] ...`，
+  /// 与 MCP 相关会话日志在日志中可统一检索。
+  void _onMcpRecord(String loggerName, LogLevel level, String message) {
+    final mapped = switch (level) {
+      LogLevel.debug => Level.FINE,
+      LogLevel.info => Level.INFO,
+      LogLevel.warn => Level.WARNING,
+      LogLevel.error => Level.SEVERE,
+    };
+    Logger('Mcp.$loggerName').log(mapped, message);
   }
 
   // ── 内部：日志记录处理 ──────────────────────────────────────

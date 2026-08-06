@@ -417,10 +417,9 @@ packages:
   mcp_dart:
     dependency: "direct main"
     description:
-      name: mcp_dart
-      sha256: "66a17878b76faee9655b8f74e9852fa9f2811e26a9aa8ec2ac2637f0324be3e8"
-      url: "https://pub.dev"
-    source: hosted
+      path: "D:/Project/mcp_dart"
+      relative: false
+    source: path
     version: "2.4.0"
   meta:
     dependency: transitive

@@ -25,7 +25,6 @@ dependencies:
   downloadx: ^0.3.0
   share_plus: ^13.3.0
   xterm: ^4.0.0
-  mcp_dart: ^2.4.0
   image: ^4.8.0
   archive: ^4.0.9
   flutter_markdown_plus: ^1.0.12
@@ -33,11 +32,15 @@ dependencies:
   re_highlight: ^0.0.3
   flutter_svg: ^2.3.0
   pinenacl: ^0.6.0
+  logging: ^1.3.0
   flutter_miuix:
     git:
       url: https://github.com/venti1112/flutter_miuix
       ref: main
-  logging: ^1.3.0
+  mcp_dart:
+    git:
+      url: https://github.com/venti1112/mcp_dart
+      ref: main
 
 dev_dependencies:
   flutter_test:
