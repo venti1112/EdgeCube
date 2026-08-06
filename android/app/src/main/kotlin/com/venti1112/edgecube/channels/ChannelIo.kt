@@ -18,18 +18,19 @@ internal object ChannelIo {
     /**
      * 在后台线程执行 [block]，成功把返回值经 success 回传主线程；
      * 抛异常时按 [errorCode]（或 [errorCodeOf] 的映射结果）报错。
+     * 捕获 [Throwable]：NoClassDefFoundError 等 Error 同样回传而不是让进程崩溃。
      */
     fun runAsync(
         result: MethodChannel.Result,
         errorCode: String,
-        errorCodeOf: ((Exception) -> String)? = null,
+        errorCodeOf: ((Throwable) -> String)? = null,
         block: () -> Any?,
     ) {
         thread {
             try {
                 val value = block()
                 mainHandler.post { result.success(value) }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 val code = errorCodeOf?.invoke(e) ?: errorCode
                 mainHandler.post { result.error(code, e.message, null) }
             }

@@ -116,7 +116,11 @@ class _SshPageState extends State<SshPage> {
         () => sftp ? ssh.setSftpEnabled(value) : ssh.setShellEnabled(value),
       );
     } catch (e) {
-      _showError(tr('ssh.operationFailed', {'error': e.toString()}));
+      _showError(
+        e is SshUnsupportedApiException
+            ? tr('ssh.requiresApi26')
+            : tr('ssh.operationFailed', {'error': e.toString()}),
+      );
     }
   }
 
@@ -141,7 +145,11 @@ class _SshPageState extends State<SshPage> {
       if (!mounted) return;
       setState(() => _localIpv6 = ipv6);
     } catch (e) {
-      _showError(tr('ssh.operationFailed', {'error': e.toString()}));
+      _showError(
+        e is SshUnsupportedApiException
+            ? tr('ssh.requiresApi26')
+            : tr('ssh.operationFailed', {'error': e.toString()}),
+      );
       return;
     }
     showMiuixSnackbar(

@@ -1159,6 +1159,7 @@
   "ssh.operationFailed": "操作失败：{error}",
   "ssh.password": "密码",
   "ssh.port": "端口",
+  "ssh.requiresApi26": "SSH 服务需要 Android 8.0（API 26）及以上版本",
   "ssh.rootDirCurrentInstance": "根目录：当前实例文件夹",
   "ssh.running": "运行中",
   "ssh.saveConfig": "保存配置",

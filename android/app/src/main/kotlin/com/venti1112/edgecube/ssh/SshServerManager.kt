@@ -1,6 +1,7 @@
 package com.venti1112.edgecube.ssh
 
 import android.content.Context
+import android.os.Build
 import org.apache.sshd.common.config.keys.KeyUtils
 import org.apache.sshd.common.digest.BuiltinDigests
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
@@ -76,6 +77,11 @@ object SshServerManager {
         shellEnabled: Boolean,
         ipv6Enabled: Boolean,
     ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            // Apache MINA SSHD 完全基于 java.nio.file（API 26+ 才提供），
+            // Android 7.x 上任何调用都会抛 NoClassDefFoundError，直接拒绝启动。
+            throw IllegalStateException("SSH_NEEDS_API26")
+        }
         if (isRunning) throw IllegalStateException("SSH 服务已在运行")
         require(sftpEnabled || shellEnabled) { "SFTP 与 SSH 终端至少需启用其一" }
         require(username.isNotBlank() && password.isNotBlank()) { "SSH 服务要求设置用户名与密码" }
@@ -148,6 +154,7 @@ object SshServerManager {
      * 若主机密钥尚不存在会先生成并落盘（与服务启动时使用的是同一密钥）。失败时返回 null。
      */
     fun hostKeyFingerprint(context: Context): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
         initSecurity(context)
         return try {
             val keyPair = hostKeyProvider(context).loadKeys(null).firstOrNull() ?: return null

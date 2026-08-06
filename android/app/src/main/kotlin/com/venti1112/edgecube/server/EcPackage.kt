@@ -8,7 +8,6 @@ import org.apache.commons.compress.archivers.zip.ZipFile
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.file.Files
 
 /**
  * `.ecpkg` 清单模型与解析。

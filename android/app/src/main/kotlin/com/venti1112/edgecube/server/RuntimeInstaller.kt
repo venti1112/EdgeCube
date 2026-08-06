@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.system.Os
+import android.system.OsConstants
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipFile
 import java.io.File
@@ -283,7 +284,7 @@ object RuntimeInstaller {
         for (f in libDir.listFiles() ?: emptyArray()) {
             val name = f.name
             val soIdx = name.indexOf(".so.")
-            if (soIdx < 0 || !f.isFile || Files.isSymbolicLink(f.toPath())) continue
+            if (soIdx < 0 || !f.isFile || isSymlink(f)) continue
             val base = name.substring(0, soIdx + 3) // "libfoo.so"
             val versionPart = name.substring(soIdx + 4) // "16.1.1"
             val parts = versionPart.split(".")
@@ -298,6 +299,25 @@ object RuntimeInstaller {
             val baseFile = File(libDir, base)
             if (!baseFile.exists() && parts.size > 1) {
                 try { Os.symlink(name, baseFile.absolutePath) } catch (_: Throwable) {}
+            }
+        }
+    }
+
+    /**
+     * 判断文件是否为符号链接。
+     *
+     * `java.nio.file` 是 API 26+ 才提供的 API，Android 7.x（API 24/25）上
+     * 调用会抛 NoClassDefFoundError；低版本改用 API 21+ 的 [Os.lstat]
+     * 直接取 stat 信息判断，比 canonical 路径比较更准确可靠。
+     */
+    private fun isSymlink(f: File): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Files.isSymbolicLink(f.toPath())
+        } else {
+            try {
+                OsConstants.S_ISLNK(Os.lstat(f.absolutePath).st_mode)
+            } catch (_: Throwable) {
+                false
             }
         }
     }

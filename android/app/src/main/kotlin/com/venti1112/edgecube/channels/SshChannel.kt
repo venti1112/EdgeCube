@@ -29,7 +29,14 @@ internal object SshChannel {
                         result.error("BAD_ARGS", "缺少 rootDir/port", null)
                     } else {
                         // 首次启动需生成 RSA 主机密钥（数百 ms），放后台线程；完成后回主线程返回。
-                        ChannelIo.runAsync(result, "SSH_START_FAILED") {
+                        ChannelIo.runAsync(
+                            result,
+                            "SSH_START_FAILED",
+                            errorCodeOf = { e ->
+                                // Android < 8.0 时 SSHD 无法运行，映射为语义化 code 供 UI 提示。
+                                if (e.message == "SSH_NEEDS_API26") "SSH_NEEDS_API26" else "SSH_START_FAILED"
+                            },
+                        ) {
                             SshServerManager.start(
                                 context, rootDir, port, username, password,
                                 writable, sftpEnabled, shellEnabled, ipv6Enabled,

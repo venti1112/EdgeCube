@@ -1159,6 +1159,7 @@
   "ssh.operationFailed": "Operation failed: {error}",
   "ssh.password": "Password",
   "ssh.port": "Port",
+  "ssh.requiresApi26": "SSH service requires Android 8.0 (API 26) or higher",
   "ssh.rootDirCurrentInstance": "Root directory: current instance folder",
   "ssh.running": "Running",
   "ssh.saveConfig": "Save Configuration",
