@@ -50,6 +50,8 @@ class _HomeShellState extends State<HomeShell>
   Completer<void>? _resumeWaiter;
   bool _checkingStoragePermission = false;
   bool _isTopRoute = true;
+  /// 挂在底部导航栏上，用于帧后测量其真实渲染高度（含安全区内边距）。
+  final GlobalKey _bottomBarKey = GlobalKey();
 
   @override
   void initState() {
@@ -104,18 +106,37 @@ class _HomeShellState extends State<HomeShell>
     _updateSnackbarPadding();
   }
 
-  /// 根据当前导航栏模式计算底部预留高度，避免 Snackbar 遮挡导航栏。
+  /// 根据导航栏实际渲染高度计算底部预留高度，避免 Snackbar 遮挡导航栏。
+  ///
+  /// 优先在帧后测量 [_bottomBarKey] 上导航栏的真实高度（含底栏自身的安全区
+  /// 内边距与浮动栏离底间距），测量不到时再退回固定高度估算，避免旧值坐死。
   void _updateSnackbarPadding() {
-    final viewPadding = MediaQuery.viewPaddingOf(context);
-    final floating = ThemeScope.of(context).floatingNavBarEnabled;
-    if (floating) {
-      final bottomPadding = defaultTargetPlatform == TargetPlatform.iOS
-          ? 36.0
-          : (viewPadding.bottom != 0 ? 26 + viewPadding.bottom : 36.0);
-      snackbarBottomPadding.value = bottomPadding + 52 + 8;
-    } else {
-      snackbarBottomPadding.value = 72 + viewPadding.bottom + 8;
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final renderBox = _bottomBarKey.currentContext?.findRenderObject();
+      final navBarHeight =
+          renderBox is RenderBox && renderBox.hasSize
+              ? renderBox.size.height
+              : 0.0;
+      if (navBarHeight > 0) {
+        // MiuixSnackbarHost 在气泡下方自带 12px 底部间距，故需从测得高度里
+        // 扣掉它，Snackbar 气泡才会恰好贴住导航栏顶缘而非总多出一截。
+        snackbarBottomPadding.value =
+            (navBarHeight - 12).clamp(0.0, double.infinity);
+        return;
+      }
+      // 测量不可用（例如首帧尚未完成布局）时退回固定估算值。
+      final viewPadding = MediaQuery.viewPaddingOf(context);
+      final floating = ThemeScope.of(context).floatingNavBarEnabled;
+      if (floating) {
+        final bottomPadding = defaultTargetPlatform == TargetPlatform.iOS
+            ? 36.0
+            : (viewPadding.bottom != 0 ? 26 + viewPadding.bottom : 36.0);
+        snackbarBottomPadding.value = bottomPadding + 52 + 8;
+      } else {
+        snackbarBottomPadding.value = 72 + viewPadding.bottom + 8;
+      }
+    });
   }
 
   void _handleOpenEcpkg(String path) {
@@ -443,9 +464,11 @@ class _HomeShellState extends State<HomeShell>
         setState(() => _selectedIndex = 0);
       },
       child: MiuixScaffold(
-        bottomBar: floatingNavBar
-            ? _buildLiquidGlassNavBar(context)
-            : MiuixNavigationBar(
+        bottomBar: KeyedSubtree(
+          key: _bottomBarKey,
+          child: floatingNavBar
+              ? _buildLiquidGlassNavBar(context)
+              : MiuixNavigationBar(
                 children: [
                   _navItem(0, Icons.dns_outlined, Icons.dns, 'nav.server'),
                   _navItem(
@@ -464,6 +487,7 @@ class _HomeShellState extends State<HomeShell>
                   ),
                 ],
               ),
+        ),
         // 只取底部内边距：各标签页目前仍是 Material Scaffold + AppBar，
         // 顶部安全区由它们各自处理，此处再套一遍会双重留白。
         // 浮动底栏模式下仅保留系统安全区，让内容延伸到浮动栏背后以实现毛玻璃效果。
