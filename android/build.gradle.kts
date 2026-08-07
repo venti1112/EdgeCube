@@ -48,6 +48,13 @@ gradle.beforeProject {
             externalNativeBuild { cmake { version = "4.1.2" } }
         }
     }
+    afterEvaluate {
+        val libExt = extensions.findByType<com.android.build.api.dsl.LibraryExtension>()
+        if (libExt != null) {
+            libExt.compileSdk = 37
+            libExt.compileSdkMinor = 1
+        }
+    }
 }
 
 subprojects {

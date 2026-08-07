@@ -3,6 +3,7 @@ package com.venti1112.edgecube.proot
 import android.content.Context
 import android.os.Environment
 import java.io.File
+import java.util.TimeZone
 
 /** proot 启动命令的完整描述。 */
 data class ProotCommand(
@@ -110,6 +111,8 @@ object ProotCommandBuilder {
         // 尝试执行 "sh" 时会在宿主 PATH 中查找，而宿主路径在容器内不可见。
         env["PATH"] = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         env["HOME"] = "/root"
+        // 容器内无 /etc/localtime，默认时区为 UTC；注入系统时区使日志时间戳正确。
+        env["TZ"] = TimeZone.getDefault().id
         return ProotCommand(argv.first(), argv, env, work.absolutePath)
     }
 
@@ -151,6 +154,8 @@ object ProotCommandBuilder {
         // 会导致 sh -c "chmod ..." 报「未找到命令」。
         env["PATH"] = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         env["HOME"] = "/root"
+        // 容器内无 /etc/localtime，默认时区为 UTC；注入系统时区使日志时间戳正确。
+        env["TZ"] = TimeZone.getDefault().id
         return ProotCommand(argv.first(), argv, env, work.absolutePath)
     }
 
@@ -190,6 +195,8 @@ object ProotCommandBuilder {
         env["LANG"] = "zh_CN.UTF-8"
         env["HOME"] = guestCwd
         env["PATH"] = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        // 容器内无 /etc/localtime，默认时区为 UTC；注入系统时区使日志时间戳正确。
+        env["TZ"] = TimeZone.getDefault().id
         return ProotCommand(argv.first(), argv, env, guestCwd)
     }
 

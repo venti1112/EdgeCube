@@ -6,6 +6,7 @@ import com.venti1112.edgecube.proot.ProotCommandBuilder
 import com.venti1112.edgecube.proot.ProotDns
 import com.venti1112.edgecube.proot.RootfsStore
 import java.io.File
+import java.util.TimeZone
 
 /**
  * 服务端启动命令构造：把「实例配置」翻译成可直接交给 [EcPty] 的
@@ -30,7 +31,7 @@ object ServerLauncher {
      * 运行时不存在，故必须用 PHPRC 显式指定。
      */
     private const val DEFAULT_PHP_INI = """memory_limit=1024M
-date.timezone=UTC
+date.timezone={TIMEZONE}
 short_open_tag=0
 asp_tags=0
 phar.require_hash=1
@@ -40,6 +41,9 @@ error_reporting=-1
 display_errors=1
 display_startup_errors=1
 recursionguard.enabled=0"""
+
+    /** Android 系统时区 ID（IANA 格式，如 Asia/Shanghai），可用于 PHP date.timezone 与 TZ 环境变量。 */
+    private fun systemTimeZoneId(): String = TimeZone.getDefault().id
 
     /** 一次启动的完整描述：可执行文件、argv、环境变量与 proot 标记。 */
     data class LaunchSpec(
@@ -129,16 +133,15 @@ recursionguard.enabled=0"""
             throw IllegalStateException("未找到 libphp-cli.so，请确认其已随 APK 打包到 lib 目录")
         }
 
-        // php.ini：首次启动写入 filesDir/php/php.ini。PHP CLI 的
-        // --with-config-file-path 指向构建机器路径（运行时不存在），须用 PHPRC
-        // 显式指定。ConsoleReaderChildProcessDaemon 用 proc_open([PHP_BINARY, '-r', ...])
+        // php.ini：首次启动写入 filesDir/php/php.ini；每次启动时校正其中的
+        // date.timezone 为系统时区（旧版本写死 UTC，会导致服务端日志时间戳慢 8 小时）。
+        // PHP CLI 的 --with-config-file-path 指向构建机器路径（运行时不存在），须用
+        // PHPRC 显式指定。ConsoleReaderChildProcessDaemon 用 proc_open([PHP_BINARY, '-r', ...])
         // fork 子进程时会继承 PHPRC，确保子进程也用同一 php.ini。
         val phpIniDir = File(context.filesDir, "php")
         phpIniDir.mkdirs()
         val phpIni = File(phpIniDir, "php.ini")
-        if (!phpIni.exists()) {
-            phpIni.writeText(DEFAULT_PHP_INI)
-        }
+        ensurePhpIni(phpIni, systemTimeZoneId())
 
         // DNS：PMMP 的 musl libc patch（sdcard-resolv-conf.diff）把 resolv.conf
         // 路径从 /etc/resolv.conf 改到 /sdcard/resolv.conf（Android /etc 不可写）。
@@ -227,6 +230,9 @@ recursionguard.enabled=0"""
         argv.add("-XX:ErrorFile=/proc/self/fd/2")
         // Android 上 /tmp 不可写，全局指定可写的 tmpdir
         argv.add("-Djava.io.tmpdir=${context.cacheDir.absolutePath}")
+        // Android 无 /etc/localtime 且未设 TZ 时 JVM 默认时区回退为 UTC，
+        // 需显式注入系统时区，否则服务端日志时间戳会慢 8 小时。
+        argv.add("-Duser.timezone=${systemTimeZoneId()}")
         // 用户自定义 DNS：Android 无 /etc/resolv.conf，JVM 默认 DNS 解析可能
         // 失败或使用系统 DNS。通过该属性显式注入用户配置的 DNS 服务器列表。
         val dnsServers = ProotDns.loadCustomDnsServers(context)
@@ -247,6 +253,8 @@ recursionguard.enabled=0"""
         env["LANG"] = "en_US.UTF-8"
         // JLine/终端能力依赖 TERM；给一个广泛支持的 256 色终端类型。
         env["TERM"] = "xterm-256color"
+        // 显式注入系统时区（Android 无 /etc/localtime），JVM 与服务器派生的命令均生效。
+        env["TZ"] = systemTimeZoneId()
         // FCL/Pojav 修改过的 JRE 需通过这些变量定位 app 的原生库目录
         env["FCL_NATIVEDIR"] = nativeDir
         env["POJAV_NATIVEDIR"] = nativeDir
@@ -258,6 +266,33 @@ recursionguard.enabled=0"""
     // ──────────────────────────────────────────────────────
     // 参数与配置辅助
     // ──────────────────────────────────────────────────────
+
+    /**
+     * 生成并校正 PHP 配置文件。
+     *
+     * 文件不存在时写入完整默认配置；已存在时仅把 date.timezone 校正为系统时区，
+     * 保留用户可能的手动修改。写坏或不可读时回退为完整重写。
+     */
+    private fun ensurePhpIni(phpIni: File, timezoneId: String) {
+        val line = "date.timezone=$timezoneId"
+        if (!phpIni.exists()) {
+            phpIni.writeText(DEFAULT_PHP_INI.replace("{TIMEZONE}", timezoneId))
+            return
+        }
+        try {
+            val content = phpIni.readText()
+            val updated = if ("date.timezone=" in content) {
+                content.lines().joinToString("\n") { l ->
+                    if (l.startsWith("date.timezone=")) line else l
+                }
+            } else {
+                content.trimEnd('\n') + "\n" + line + "\n"
+            }
+            if (updated != content) phpIni.writeText(updated)
+        } catch (_: Exception) {
+            phpIni.writeText(DEFAULT_PHP_INI.replace("{TIMEZONE}", timezoneId))
+        }
+    }
 
     /**
      * 从 JVM 参数中解析 -Xmx 最大堆（MB）；无 -Xmx 或不可解析返回 -1。
