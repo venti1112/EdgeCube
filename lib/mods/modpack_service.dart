@@ -5,7 +5,6 @@ import 'package:path/path.dart' as p;
 
 import '../i18n/i18n_service.dart';
 import '../net/download_engine.dart';
-import '../net/mod_mirror.dart';
 import 'modpack/modpack_provider.dart';
 import 'modpack/modpack_registry.dart';
 import 'modpack/modpack_utils.dart';
@@ -33,7 +32,6 @@ class ModpackService {
   /// [onProgress] 回调 (current, total, currentFileName)。
   /// [isCancelled] 返回 true 时中断并删除当前不完整文件。
   /// 已存在且大小匹配的文件会被跳过，便于失败重试。
-  /// 镜像开启时各文件的下载 URL 会追加镜像候选（多源顺序回退）。
   static Future<void> downloadServerFiles(
     ParsedModpack modpack,
     Directory destDir, {
@@ -64,8 +62,7 @@ class ModpackService {
         continue;
       }
 
-      // 追加镜像候选后多源顺序回退。
-      final urls = await ModMirror.expandDownloads(file.downloads);
+            final urls = file.downloads;
       await DownloadEngine.instance.downloadToFileMultiSource(
         urls,
         targetPath,

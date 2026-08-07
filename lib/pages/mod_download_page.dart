@@ -11,7 +11,6 @@ import '../mods/modrinth_service.dart';
 import '../mods/sources/mod_source.dart';
 import '../mods/sources/mod_source_registry.dart';
 import '../net/download_format.dart';
-import '../net/mod_mirror.dart';
 import '../widgets/ec_text_field.dart';
 import '../widgets/miuix_dialog.dart';
 import '../widgets/miuix_snackbar.dart';
@@ -253,7 +252,9 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
           ? null
           : EcTopAppBar(title: context.tr(widget.titleKey)),
       content: (padding) => Padding(
-        padding: padding,
+        // 内嵌时顶栏/底栏安全区已由外层脚手架处理，这里不再重复内缩，
+        // 否则内容被双重留白压矮。
+        padding: widget.embedded ? EdgeInsets.zero : padding,
         child: Column(
           children: [
             if (_sources.length > 1) _buildSourceBar(theme),
@@ -268,23 +269,17 @@ class _ModDownloadPageState extends State<ModDownloadPage> {
   }
 
   /// 平台切换条（仅当可用平台 > 1 时显示）。
+  ///
+  /// 复用 [MiuixTabRow]（与玩家管理页同一套分段切换器）：标签较多放不下时
+  /// 自动变为左右滑动，选中项自动居中。
   Widget _buildSourceBar(MiuixThemeData theme) {
-    return SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
-        children: [
-          for (final s in _sources)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: ChoiceChip(
-                label: Text(s.displayName),
-                selected: s.type == _source?.type,
-                onSelected: (_) => _switchSource(s),
-              ),
-            ),
-        ],
+    final selected = _sources.indexWhere((s) => s.type == _source?.type);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+      child: MiuixTabRow(
+        tabs: [for (final s in _sources) s.displayName],
+        selectedTabIndex: selected < 0 ? 0 : selected,
+        onTabSelected: (i) => _switchSource(_sources[i]),
       ),
     );
   }
@@ -844,7 +839,6 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
   /// 加入下载队列。退出页面后下载仍会继续。
   ///
   /// 外链文件（如 SpigotMC 部分资源）无法直连下载，改为提示前往官网。
-  /// 镜像开启时用镜像 URL（[ModMirror.downloadCandidates] 首选项）加速。
   Future<void> _enqueueDownload() async {
     final file = widget.version.primaryFile;
     if (file == null) return;
@@ -857,10 +851,9 @@ class _VersionDetailPageState extends State<_VersionDetailPage> {
     }
 
     final url = file.url!;
-    final candidates = await ModMirror.downloadCandidates(url);
     final destPath = p.join(widget.modsFolder.path, file.filename);
     DownloadQueue.instance.enqueue(
-      url: candidates.first,
+      url: url,
       destPath: destPath,
       filename: file.filename,
       projectTitle: widget.title,

@@ -3,15 +3,14 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../online/cloud_headers.dart';
-import '../../net/mod_mirror.dart';
+import '../../net/app_secrets.dart';
 import 'mod_source.dart';
 
 /// CurseForge 平台实现。
 ///
 /// CurseForge 官方 API 取下载链接必须携带 `X-API-KEY`（编译期由
-/// `--dart-define=CURSEFORGE_API_KEY` 注入），或经镜像源访问（镜像侧持 Key）。
-/// 可用性由 [ModMirror.isCurseForgeAvailable] 判定：无 Key 且未开镜像时不可用，
-/// UI 据此隐藏本平台。
+/// `--dart-define=CURSEFORGE_API_KEY` 注入）。可用性由
+/// [AppSecrets.hasCurseForgeKey] 判定：无 Key 时不可用，UI 据此隐藏本平台。
 ///
 /// 端点（gameId=432 为 Minecraft）：
 /// - `GET /v1/mods/search`（classId=6 模组）
@@ -34,7 +33,7 @@ class CurseForgeModSource extends ModSource {
   String get displayName => 'CurseForge';
 
   @override
-  Future<bool> get isAvailable => ModMirror.isCurseForgeAvailable();
+  Future<bool> get isAvailable async => AppSecrets.hasCurseForgeKey;
 
   @override
   bool supportsProjectType(String projectType) => projectType == 'mod';
@@ -170,14 +169,13 @@ class CurseForgeModSource extends ModSource {
   // ── HTTP ────────────────────────────────────────────────────
 
   Future<Object?> _getJson(Uri uri) async {
-    final target = await ModMirror.rewriteApi(uri);
     final headers = {
       'User-Agent': await CloudHeaders.userAgent,
       'Accept': 'application/json',
-      ...await ModMirror.curseForgeHeaders(),
+      if (AppSecrets.hasCurseForgeKey) 'X-API-KEY': AppSecrets.curseForgeApiKey,
     };
     final res = await http
-        .get(target, headers: headers)
+        .get(uri, headers: headers)
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
       throw Exception('CurseForge HTTP ${res.statusCode}');
@@ -186,15 +184,14 @@ class CurseForgeModSource extends ModSource {
   }
 
   Future<Object?> _postJson(Uri uri, Map<String, dynamic> body) async {
-    final target = await ModMirror.rewriteApi(uri);
     final headers = {
       'User-Agent': await CloudHeaders.userAgent,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      ...await ModMirror.curseForgeHeaders(),
+      if (AppSecrets.hasCurseForgeKey) 'X-API-KEY': AppSecrets.curseForgeApiKey,
     };
     final res = await http
-        .post(target, headers: headers, body: jsonEncode(body))
+        .post(uri, headers: headers, body: jsonEncode(body))
         .timeout(const Duration(seconds: 20));
     if (res.statusCode != 200) {
       throw Exception('CurseForge HTTP ${res.statusCode}');

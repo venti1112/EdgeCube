@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:archive/archive.dart';
 
 import '../../i18n/i18n_service.dart';
-import '../../net/mod_mirror.dart';
+import '../../net/app_secrets.dart';
 import '../sources/curseforge_mod_source.dart';
 import 'modpack_provider.dart';
 import 'modpack_utils.dart';
@@ -11,8 +11,8 @@ import 'modpack_utils.dart';
 /// CurseForge 整合包（manifest.json，无 addons 键）解析器。
 ///
 /// CF 整合包只存 projectID/fileID，需经 [CurseForgeModSource.resolveFiles]
-/// 批量解析出下载链接（含 CDN 回退）。因此**依赖 CF 可用**（编译期 Key 或
-/// 已开镜像）；不可用时 [parse] 抛可读错误。
+/// 批量解析出下载链接（含 CDN 回退）。因此**依赖 CF 可用**（编译期注入
+/// API Key）；不可用时 [parse] 抛可读错误。
 ///
 /// 注意：与 MCBBS 同用 manifest.json，靠**无 addons 键**区分——注册表中
 /// MCBBS 必须排在本 provider 之前。
@@ -47,7 +47,7 @@ class CurseForgeModpackProvider extends ModpackProvider {
     Archive archive, {
     required String baseFolder,
   }) async {
-    if (!await ModMirror.isCurseForgeAvailable()) {
+    if (!AppSecrets.hasCurseForgeKey) {
       throw ModpackParseException(tr('modpack.curseForgeUnavailable'));
     }
 
@@ -110,7 +110,7 @@ class CurseForgeModpackProvider extends ModpackProvider {
       }
       final required = f['required'] as bool? ?? true;
       // CF 整合包的 mod 文件默认落到 mods/。
-      final urls = await ModMirror.expandDownloads(info.downloads);
+      final urls = info.downloads;
       files.add(
         ModpackFileEntry(
           path: 'mods/${info.filename}',

@@ -263,7 +263,8 @@ class _PoggitDownloadPageState extends State<PoggitDownloadPage> {
           ? null
           : EcTopAppBar(title: context.tr('poggit.title')),
       content: (padding) => Padding(
-        padding: padding,
+        // 内嵌时顶栏/底栏安全区已由外层脚手架处理，不再重复内缩。
+        padding: widget.embedded ? EdgeInsets.zero : padding,
         child: Column(
           children: [
             _buildSearchBar(theme),

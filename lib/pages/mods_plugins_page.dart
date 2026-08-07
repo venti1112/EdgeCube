@@ -118,11 +118,14 @@ class _ModsPluginsPageState extends State<ModsPluginsPage>
         title: context.tr('modsPlugins.title'),
 
         // 只换Material 观感的标签条；TabController + TabBarView 保留
+        // minWidth 拉宽让「插件管理/插件下载/模组管理/模组下载」四卡在手机宽度下
+        // 放不下，从而像玩家管理页那样触发左右滑动（默认值 76 恰好塞满不滚）。
         bottomContent: _tabCtrl == null
             ? null
             : Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: MiuixTabRow(
+                  minWidth: 96,
                   tabs: [
                     if (_hasPlugins) context.tr('modsPlugins.tab.plugins'),
                     if (_hasPlugins)
