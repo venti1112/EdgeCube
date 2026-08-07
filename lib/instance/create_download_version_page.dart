@@ -268,10 +268,25 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
     );
     if (confirmed != true || !mounted) return;
 
+    _session.selectedVersion = version;
+
+    // 更新模式：不创建新实例，直接用已有实例 id 进入下载页。
+    if (_session.updateMode) {
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => DownloadProgressPage(
+            session: _session,
+            instanceId: _session.updateInstanceId,
+          ),
+        ),
+      );
+      return;
+    }
+
     try {
       final instance = await _controller.createInstance(_session.name);
       if (!mounted) return;
-      _session.selectedVersion = version;
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) =>
@@ -285,6 +300,8 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
 
   /// Survivalcraft：确认后创建实例并迁移到 proot 容器 rootfs 的 /opt/{id}，
   /// 设置 proot 运行环境与启动命令，随后进入下载并解压页。
+  ///
+  /// 更新模式下跳过实例创建、路径迁移与配置写入，仅替换服务端文件。
   Future<void> _confirmSurvivalcraft(String version) async {
     final confirmed = await showMiuixConfirm(
       context,
@@ -297,10 +314,25 @@ class _SelectVersionPageState extends State<SelectVersionPage> {
     );
     if (confirmed != true || !mounted) return;
 
+    _session.selectedVersion = version;
+
+    // 更新模式：不创建新实例、不迁移路径、不改配置，直接下载并解压到已有目录。
+    if (_session.updateMode) {
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => DownloadProgressPage(
+            session: _session,
+            instanceId: _session.updateInstanceId,
+          ),
+        ),
+      );
+      return;
+    }
+
     try {
       final instance = await _controller.createInstance(_session.name);
       if (!mounted) return;
-      _session.selectedVersion = version;
 
       // 将实例目录从默认 sdcard 路径迁移到 proot 容器 rootfs 的 /opt/{id}。
       // Android 内部存储（/sdcard）有 noexec 挂载标志，ELF/.so 无法执行；

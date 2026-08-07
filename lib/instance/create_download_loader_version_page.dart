@@ -168,6 +168,48 @@ class _SelectLoaderVersionPageState extends State<SelectLoaderVersionPage> {
       if (!ok || !mounted) return;
     }
 
+    // 更新模式：不创建新实例，直接用已有实例 id。
+    if (_session.updateMode) {
+      final instanceId = _session.updateInstanceId!;
+      if (_stage.loader == 'fabric') {
+        _session.selectedLoaderVersion = loaderVersion;
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => DownloadProgressPage(
+              session: _session,
+              instanceId: instanceId,
+            ),
+          ),
+        );
+        return;
+      }
+
+      _session.selectedForgeVersion = _stage.loader == 'forge'
+          ? loaderVersion
+          : _session.selectedForgeVersion;
+      _session.selectedNeoforgeVersion = _stage.loader == 'neoforge'
+          ? loaderVersion
+          : _session.selectedNeoforgeVersion;
+      final result = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => InstallLoaderPage(
+            instanceController: _controller,
+            instanceId: instanceId,
+            mcVersion: _stage.mcVersion,
+            loaderVersion: loaderVersion,
+            installerType: _stage.loader,
+            updateMode: true,
+          ),
+        ),
+      );
+      if (result == true && mounted) {
+        finishDownloadFlow(context);
+      }
+      return;
+    }
+
     try {
       final instance = await _controller.createInstance(_session.name);
       if (!mounted) return;

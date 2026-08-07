@@ -228,7 +228,11 @@ class _RuntimePageState extends State<RuntimePage> {
     setState(() => _importing = true);
     try {
       // 导入前验证签名
-      final sigResult = await _service.verifyEcpkgSignature(path);
+      final sigResult = await runWithLoadingDialog(
+        context,
+        tr.get('runtime.signature.verifying'),
+        () => _service.verifyEcpkgSignature(path),
+      );
       if (!await _checkSignature(sigResult)) return;
       if (!mounted) return;
 
@@ -346,7 +350,11 @@ class _RuntimePageState extends State<RuntimePage> {
     setState(() => _importingRootfs = true);
     try {
       // 导入前验证签名
-      final sigResult = await _prootService.verifyRootfsSignature(path);
+      final sigResult = await runWithLoadingDialog(
+        context,
+        context.tr('runtime.signature.verifying'),
+        () => _prootService.verifyRootfsSignature(path),
+      );
       if (!await _checkSignature(sigResult)) return;
       if (!mounted) return;
 

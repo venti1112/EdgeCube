@@ -5,9 +5,15 @@ import 'package:flutter_miuix/miuix.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/locale_scope.dart';
+import '../instance/create_download_edition_page.dart';
+import '../instance/create_instance_page.dart';
+import '../instance/download_session.dart';
+import '../instance/instance.dart';
 import '../instance/instance_controller.dart';
 import '../instance/instance_scope.dart';
+import '../server/server_service.dart';
 import '../widgets/ec_preference.dart';
+import '../widgets/error_dialog.dart';
 import 'allay_properties_page.dart';
 import 'instance_export_page.dart';
 import 'mods_plugins_page.dart';
@@ -121,9 +127,132 @@ class ManagePage extends StatelessWidget {
                   MaterialPageRoute(builder: (_) => const InstanceExportPage()),
                 ),
               ),
+              const SizedBox(height: 12),
+              const _UpdateServerTile(),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 服务端更新器入口：复用下载流程的「选择版本」页，在更新模式下替换已有实例
+/// 的服务端文件，不创建新实例、不改配置，强制走官方源。
+///
+/// 点击后进入独立的实例选择页，选择要更新的实例后进入下载流程。
+/// 更新前会检查服务端是否正在运行（运行中提示先停止）。
+class _UpdateServerTile extends StatelessWidget {
+  const _UpdateServerTile();
+
+  Future<void> _startUpdate(BuildContext context) async {
+    final ctrl = InstanceScope.of(context);
+
+    // 无实例时提示。
+    if (ctrl.instances.isEmpty) {
+      showErrorDialog(context, context.tr('manage.updateServer.noInstance'));
+      return;
+    }
+
+    // 服务端运行时不允许更新，提示先停止。
+    if (await ServerService().isRunning()) {
+      if (!context.mounted) return;
+      showErrorDialog(
+        context,
+        context.tr('manage.updateServer.serverRunning'),
+      );
+      return;
+    }
+
+    if (!context.mounted) return;
+    // 本页注册为下载流程根路由：finishDownloadFlow 的 popUntil 会弹回本页，
+    // 再 pop 一次回到管理页根。
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        settings: const RouteSettings(name: kDownloadFlowRootRouteName),
+        builder: (_) => const SelectInstanceForUpdatePage(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _ManageEntryTile(
+      icon: Icons.system_update_alt,
+      title: context.tr('manage.updateServer.title'),
+      subtitle: context.tr('manage.updateServer.subtitle'),
+      onTap: () => _startUpdate(context),
+    );
+  }
+}
+
+/// 服务端更新器第 1 页：选择要更新的实例。
+///
+/// 以卡片列表展示全部实例，当前选中实例以单选图标高亮。选定后创建更新模式的
+/// [DownloadSession] 并进入下载流程的「选择版本」页。
+class SelectInstanceForUpdatePage extends StatelessWidget {
+  const SelectInstanceForUpdatePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final ctrl = InstanceScope.of(context);
+    final theme = MiuixTheme.of(context);
+    final selectedId = ctrl.selected?.id;
+    final instances = ctrl.instances;
+
+    return MiuixScaffold(
+      topBar: EcTopAppBar(
+        title: context.tr('manage.updateServer.selectInstance'),
+        showBack: true,
+      ),
+      content: (padding) => Padding(
+        padding: padding,
+        // padding.top 已含顶栏（连同状态栏）高度，故这里的 SafeArea 只保留
+        // 左右与底部，top 置 false，否则状态栏高度会被重复计入。
+        child: SafeArea(
+          top: false,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              const SizedBox(height: 8),
+              for (final instance in instances) ...[
+                EcCardTile(
+                  leading: Icon(
+                    instance.id == selectedId
+                        ? Icons.radio_button_checked
+                        : Icons.dns_outlined,
+                    size: 36,
+                    color: instance.id == selectedId
+                        ? theme.colors.primary
+                        : null,
+                  ),
+                  title: instance.name,
+                  summary: instance.id,
+                  onTap: () => _enterUpdateFlow(context, ctrl, instance),
+                ),
+                const SizedBox(height: 12),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _enterUpdateFlow(
+    BuildContext context,
+    InstanceController ctrl,
+    InstanceSummary instance,
+  ) async {
+    final session = DownloadSession.forUpdate(
+      controller: ctrl,
+      updateInstanceId: instance.id,
+    );
+    // SelectEditionPage 不再注册为流程根路由；本页（实例选择页）才是根路由，
+    // 这样 finishDownloadFlow 的 popUntil 会弹回本页，再 pop 一次回到管理页。
+    await Navigator.of(context).push<CreateInstanceResult>(
+      MaterialPageRoute(
+        builder: (_) => SelectEditionPage(session: session),
       ),
     );
   }

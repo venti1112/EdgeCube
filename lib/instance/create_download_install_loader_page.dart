@@ -40,6 +40,7 @@ class InstallLoaderPage extends StatefulWidget {
     required this.mcVersion,
     required this.loaderVersion,
     required this.installerType,
+    this.updateMode = false,
   });
 
   final InstanceController instanceController;
@@ -47,6 +48,9 @@ class InstallLoaderPage extends StatefulWidget {
   final String mcVersion;
   final String loaderVersion;
   final String installerType; // 'forge' or 'neoforge'
+
+  /// 更新模式：强制走官方源、不写实例配置（仅替换服务端文件）。
+  final bool updateMode;
 
   @override
   State<InstallLoaderPage> createState() => _InstallLoaderPageState();
@@ -98,6 +102,8 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
   }
 
   Future<DownloadInfo?> _tryMirrorDownloadInfo() async {
+    // 更新模式强制走官方源，跳过镜像。
+    if (widget.updateMode) return null;
     if (!await NetworkStore.loadUseMirror()) return null;
     final key = widget.installerType == 'neoforge'
         ? _neoforgeMcToMslVersion(widget.mcVersion)
@@ -249,12 +255,15 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
       // 用哪种环境装的，就把实例配置写成用同一种环境启动：
       //  - 原生：runtime=java，runtimeEnvId=JRE 标识。
       //  - proot：runtime=proot，runtimeEnvId=rootfs 标识。
-      await widget.instanceController.updateConfig(
-        widget.instanceId,
-        serverFile: serverJar,
-        runtime: env.kind == JavaEnvKind.proot ? kRuntimeProot : kRuntimeJava,
-        runtimeEnvId: env.id,
-      );
+      // 更新模式跳过配置写入，保留原有实例配置不变。
+      if (!widget.updateMode) {
+        await widget.instanceController.updateConfig(
+          widget.instanceId,
+          serverFile: serverJar,
+          runtime: env.kind == JavaEnvKind.proot ? kRuntimeProot : kRuntimeJava,
+          runtimeEnvId: env.id,
+        );
+      }
 
       try {
         await File(
@@ -262,6 +271,10 @@ class _InstallLoaderPageState extends State<InstallLoaderPage> {
         ).delete();
       } catch (_) {}
 
+      // 更新模式：文件已替换，通知监听方重新扫描实例目录。
+      if (widget.updateMode) {
+        widget.instanceController.notifyInstanceFilesChanged();
+      }
       if (mounted) {
         setState(() => _installing = false);
         Navigator.of(context).pop(true);

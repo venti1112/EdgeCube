@@ -63,10 +63,14 @@ class DownloadRunner {
   // —— 下载信息 ——
 
   /// 镜像开启且成功时返回 MSL 下载信息，否则返回 null（调用方回退官方源）。
+  ///
+  /// [forceOfficial] 为 true 时跳过镜像源，强制走官方源（用于更新模式）。
   static Future<DownloadInfo?> tryMirrorDownloadInfo(
     String serverType,
-    String version,
-  ) async {
+    String version, {
+    bool forceOfficial = false,
+  }) async {
+    if (forceOfficial) return null;
     if (!await NetworkStore.loadUseMirror()) return null;
     final info = await MslMirror.fetchDownloadInfo(serverType, version);
     if (info == null) return null;
@@ -164,6 +168,9 @@ class DownloadRunner {
   ///
   /// 进度经 [onProgress] 回传（0..1）。HTTP 非 200 抛 [DownloadHttpException]，
   /// 哈希不匹配抛 [HashMismatchException]，其余 IO 错误原样抛出。
+  ///
+  /// [configure] 为 false 时仅下载文件不写配置（用于更新模式：替换服务端文件
+  /// 但保留原有实例配置不变）。
   static Future<void> downloadAndConfigure({
     required InstanceController controller,
     required String instanceId,
@@ -172,6 +179,7 @@ class DownloadRunner {
     String serverFileName = 'server.jar',
     String? selectedVersion,
     String? selectedMcVersion,
+    bool configure = true,
     void Function(DownloadProgress progress)? onProgress,
   }) async {
     final dir = await controller.directoryForId(instanceId);
@@ -191,6 +199,9 @@ class DownloadRunner {
     } on DownloadHttpError catch (e) {
       throw DownloadHttpException(e.statusCode);
     }
+
+    // 更新模式：仅替换服务端文件，不修改实例配置。
+    if (!configure) return;
 
     // 按服务端类型写入运行环境与运行环境 id。
     if (serverType == 'pocketmine') {

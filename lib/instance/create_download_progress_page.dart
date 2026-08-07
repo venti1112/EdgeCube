@@ -66,13 +66,21 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
   @override
   void dispose() {
     // 未完成且已创建实例：清理空实例。
-    if (!_completed && _instanceId != null) {
+    // 更新模式下不清理（实例是已有的，不能删除）。
+    if (!_completed && _instanceId != null && !_session.updateMode) {
       _controller.deleteInstance(_instanceId!);
     }
     super.dispose();
   }
 
   Future<void> _start() async {
+    // 更新模式：直接使用已有实例 id，不创建新实例。
+    if (_session.updateMode) {
+      _instanceId = _session.updateInstanceId;
+      if (!mounted) return;
+      await _run();
+      return;
+    }
     // BungeeCord 直接在本页创建实例；其余类型由上一页创建并传入。
     if (widget.instanceId == null) {
       try {
@@ -118,7 +126,11 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
     DownloadInfo info;
     try {
       info =
-          await DownloadRunner.tryMirrorDownloadInfo(_serverType, version) ??
+          await DownloadRunner.tryMirrorDownloadInfo(
+            _serverType,
+            version,
+            forceOfficial: _session.updateMode,
+          ) ??
           await DownloadRunner.fetchDownloadInfo(
             _serverType,
             version,
@@ -152,6 +164,7 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
           await DownloadRunner.tryMirrorDownloadInfo(
             'fabric',
             _session.selectedMcVersion!,
+            forceOfficial: _session.updateMode,
           ) ??
           await DownloadRunner.fetchFabricDownloadInfo(
             _session.selectedMcVersion!,
@@ -171,7 +184,11 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
     DownloadInfo info;
     try {
       info =
-          await DownloadRunner.tryMirrorDownloadInfo('bungeecord', 'latest') ??
+          await DownloadRunner.tryMirrorDownloadInfo(
+            'bungeecord',
+            'latest',
+            forceOfficial: _session.updateMode,
+          ) ??
           await DownloadInfoService.fetchBungeeCordDownloadInfo();
     } catch (e) {
       if (!mounted) return;
@@ -194,10 +211,15 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
         serverFileName: serverFileName,
         selectedVersion: _session.selectedVersion,
         selectedMcVersion: _session.selectedMcVersion,
+        configure: !_session.updateMode,
         onProgress: (prog) {
           if (mounted) setState(() => _downloadProgress = prog);
         },
       );
+      // 更新模式：文件已替换，通知监听方重新扫描实例目录。
+      if (_session.updateMode) {
+        _controller.notifyInstanceFilesChanged();
+      }
       _completed = true;
       if (mounted) finishDownloadFlow(context);
     } on DownloadHttpException catch (e) {
@@ -319,11 +341,13 @@ class _DownloadProgressPageState extends State<DownloadProgressPage> {
   }
 
   /// 出错后「重新选择」：删除已创建的空实例并返回上一页（版本/加载器页）。
+  ///
+  /// 更新模式下实例是已有的，不能删除，仅返回上一页。
   void _reselect() {
-    if (_instanceId != null) {
+    if (_instanceId != null && !_session.updateMode) {
       _controller.deleteInstance(_instanceId!);
-      _instanceId = null;
     }
+    _instanceId = null;
     if (mounted) Navigator.of(context).pop();
   }
 

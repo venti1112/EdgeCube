@@ -630,7 +630,7 @@ class _InstallDialogState extends State<_InstallDialog> {
       if (!mounted) return;
 
       setState(() {
-        _stage = tr('runtime.update.installing');
+        _stage = tr('runtime.signature.verifying');
         _progress = null;
       });
 
@@ -640,6 +640,12 @@ class _InstallDialogState extends State<_InstallDialog> {
         // 用户拒绝或严格模式下拒绝，中止安装
         return;
       }
+
+      if (!mounted) return;
+      setState(() {
+        _stage = tr('runtime.update.installing');
+        _progress = null;
+      });
 
       await _service.importPackage(path, force: true);
       if (!mounted) return;

@@ -16,13 +16,30 @@ const String kDownloadFlowRootRouteName = 'download_flow_root';
 /// （服务端类型、版本、加载器版本等）与拉取到的版本映射缓存。页面本身只负责
 /// 展示与导航，具体的下载/安装逻辑在 `download_runner.dart` 中。
 class DownloadSession {
-  DownloadSession({required this.controller, required this.name});
+  /// 新建实例流程：输入名称后下载服务端并创建实例配置。
+  DownloadSession({required this.controller, required this.name})
+    : updateMode = false,
+      updateInstanceId = null;
+
+  /// 更新模式：替换已有实例的服务端文件，不创建新实例、不修改实例配置，
+  /// 强制走官方源以保证获取最新版本。
+  DownloadSession.forUpdate({
+    required this.controller,
+    required this.updateInstanceId,
+  }) : name = '',
+       updateMode = true;
 
   /// 实例控制器，用于创建/删除实例、写配置。
   final InstanceController controller;
 
-  /// 用户在名称页输入的实例名。
+  /// 用户在名称页输入的实例名（更新模式下为空）。
   final String name;
+
+  /// 是否为更新模式：替换已有实例的服务端文件，不创建新实例、不改配置。
+  final bool updateMode;
+
+  /// 更新模式下要替换服务端文件的已有实例 id；非更新模式为 null。
+  final String? updateInstanceId;
 
   // —— 用户选择 ——
 
