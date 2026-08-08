@@ -47,6 +47,12 @@ internal object PowerChannel {
                     KeepAliveManager.setKeepScreenOnEnabled(appContext, enabled)
                     result.success(null)
                 }
+                // 熄屏页强制常亮（临时覆盖，不写"防息屏"开关）。
+                "setKeepScreenOnOverride" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    KeepAliveManager.setKeepScreenOnOverride(appContext, enabled)
+                    result.success(null)
+                }
                 "isOverlayEnabled" ->
                     result.success(KeepAliveManager.isOverlayEnabled(appContext))
                 "setOverlayEnabled" -> {

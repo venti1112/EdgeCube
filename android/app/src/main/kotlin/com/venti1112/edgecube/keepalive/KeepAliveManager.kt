@@ -36,6 +36,9 @@ object KeepAliveManager {
     /** 当前前台 Activity 的弱引用，用于防息屏（FLAG_KEEP_SCREEN_ON 须挂在窗口上）。 */
     private var activityRef: WeakReference<Activity>? = null
 
+    /** 熄屏页运行期间的强制常亮覆盖（不写偏好，随熄屏页进出）。 */
+    private var keepScreenOnOverride = false
+
     // —— 开关读写（持久化见 KeepAlivePrefs；运行中修改立即生效）——
 
     /** 锁屏保活（WakeLock + WifiLock）是否启用；默认启用。 */
@@ -80,7 +83,14 @@ object KeepAliveManager {
     @Synchronized
     fun setKeepScreenOnEnabled(context: Context, enabled: Boolean) {
         KeepAlivePrefs.setKeepScreenOnEnabled(context, enabled)
-        if (active) applyKeepScreenOn(enabled)
+        syncKeepScreenOn(context)
+    }
+
+    /** 设置熄屏页强制常亮覆盖（不持久化，不依赖服务端运行状态）；熄屏页关闭时置 false。 */
+    @Synchronized
+    fun setKeepScreenOnOverride(context: Context, enabled: Boolean) {
+        keepScreenOnOverride = enabled
+        syncKeepScreenOn(context)
     }
 
     /** 设置状态悬浮窗开关；服务端运行中立即生效。 */
@@ -98,7 +108,7 @@ object KeepAliveManager {
     @Synchronized
     fun bindActivity(activity: Activity) {
         activityRef = WeakReference(activity)
-        if (active && isKeepScreenOnEnabled(activity)) applyKeepScreenOn(true)
+        syncKeepScreenOn(activity)
     }
 
     /** 是否已授予悬浮窗（SYSTEM_ALERT_WINDOW）权限。 */
@@ -114,7 +124,7 @@ object KeepAliveManager {
         instanceName = name
         applyLocks(context, isWakeLockEnabled(context))
         applyOverlay(context, isOverlayEnabled(context))
-        applyKeepScreenOn(isKeepScreenOnEnabled(context))
+        syncKeepScreenOn(context)
     }
 
     /** 服务端停止：释放全部锁并移除悬浮窗。 */
@@ -123,7 +133,7 @@ object KeepAliveManager {
         active = false
         applyLocks(context, false)
         applyOverlay(context, false)
-        applyKeepScreenOn(false)
+        syncKeepScreenOn(context)
     }
 
     // —— WakeLock / WifiLock ——
@@ -172,9 +182,20 @@ object KeepAliveManager {
     // —— 防息屏（FLAG_KEEP_SCREEN_ON，须挂在 Activity 窗口上）——
 
     /**
+     * 按覆盖标志与「防息屏」开关的服务端运行期状态，统一裁决是否挂屏幕常亮标志。
+     * 熄屏页覆盖优先（即使服务端未在运行也会亮屏），其次防息屏开关仅在服务端
+     * 运行期间生效。
+     */
+    private fun syncKeepScreenOn(context: Context) {
+        val want = keepScreenOnOverride ||
+            (active && isKeepScreenOnEnabled(context))
+        applyKeepScreenOn(want)
+    }
+
+    /**
      * 在当前前台 Activity 的窗口上添加/移除 [WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON]。
      * 仅在该窗口可见时生效（App 在前台时），无需额外权限。
-     * 服务端停止或开关关闭时清除标志，恢复正常息屏。
+     * 服务端停止、开关关闭或熄屏页退出时清除标志，恢复正常息屏。
      */
     private fun applyKeepScreenOn(enabled: Boolean) {
         val activity = activityRef?.get()

@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'config/config_store.dart';
 import 'config/network_store.dart' show NetworkStore;
+import 'config/sleep_screen_store.dart';
 import 'config/user_agreement_store.dart';
 import 'files/file_browser.dart';
 import 'files/storage_permission.dart';
@@ -24,6 +25,7 @@ import 'pages/manage_page.dart';
 import 'pages/runtime_page.dart';
 import 'pages/server_page.dart';
 import 'pages/settings_page.dart';
+import 'pages/sleep_screen_page.dart';
 import 'route_observer.dart';
 import 'server/ecpkg_handler.dart';
 import 'server/power_service.dart';
@@ -55,6 +57,12 @@ class _HomeShellState extends State<HomeShell>
   /// 挂在底部导航栏上，用于帧后测量其真实渲染高度（含安全区内边距）。
   final GlobalKey _bottomBarKey = GlobalKey();
 
+  /// 熄屏自动进入所需的上下文（服务端控制器与会话状态）。
+  ServerController? _server;
+  DateTime _lastInteraction = DateTime.now();
+  Timer? _idleTimer;
+  bool _sleepScreenShowing = false;
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +77,12 @@ class _HomeShellState extends State<HomeShell>
     EcpkgHandler.onOpenEcpkg = _handleOpenEcpkg;
     EcpkgHandler.onError = _handleEcpkgError;
     WidgetsBinding.instance.addPostFrameCallback((_) => _runStartupTasks());
+    // 温热熄屏自动进入的缓存配置，并启动轮询检查。
+    SleepScreenStore.loadIdleTimeoutMinutes();
+    _idleTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _maybeAutoSleep(),
+    );
   }
 
   @override
@@ -78,6 +92,11 @@ class _HomeShellState extends State<HomeShell>
     if (route != null) {
       appRouteObserver.subscribe(this, route);
     }
+    // 熄屏自动进入需要服务端状态；用 getInheritedWidgetOfExactType 只取引用
+    // 不建依赖，避免服务端频繁通知导致整个壳重复构建。
+    _server ??= context
+        .getInheritedWidgetOfExactType<ServerScope>()
+        ?.notifier;
     // 只在 HomeShell 是顶层路由时才更新 padding。push 子路由后
     // didChangeDependencies 仍会被触发，但此时不应恢复导航栏 padding。
     if (_isTopRoute) {
@@ -92,6 +111,7 @@ class _HomeShellState extends State<HomeShell>
     WidgetsBinding.instance.removeObserver(this);
     EcpkgHandler.onOpenEcpkg = null;
     EcpkgHandler.onError = null;
+    _idleTimer?.cancel();
     _resumeWaiter?.complete();
     super.dispose();
   }
@@ -171,6 +191,8 @@ class _HomeShellState extends State<HomeShell>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // 回前台视为一次交互，重置熄屏计时，避免刚点亮屏幕就跳熄屏页。
+      _lastInteraction = DateTime.now();
       final waiter = _resumeWaiter;
       _resumeWaiter = null;
       if (waiter != null && !waiter.isCompleted) waiter.complete();
@@ -180,6 +202,41 @@ class _HomeShellState extends State<HomeShell>
         });
       }
     }
+  }
+
+  /// 无操作超时自动进入熄屏页。
+  ///
+  /// 仅当同时满足以下条件时才自动进入：
+  /// - 服务端处于运行相关状态（未停止）；
+  /// - 用户在 App 内无触摸操作超过设定时长；
+  /// - 已开启「防息屏」（否则让系统按正常超时息屏，不强行常亮）；
+  /// - HomeShell 是顶层路由且软键盘未弹出（避免盖住正在进行的操作）。
+  void _maybeAutoSleep() {
+    if (!mounted || _sleepScreenShowing || !_isTopRoute) return;
+    final server = _server;
+    if (server == null || server.status == ServerStatus.stopped) return;
+    final idleMinutes = SleepScreenStore.cachedIdleMinutes;
+    if (idleMinutes == null || idleMinutes <= 0) return;
+    // 软键盘弹出时用户可能在输入，不做自动熄屏。
+    if (MediaQuery.viewInsetsOf(context).bottom > 0) return;
+    final idle = DateTime.now().difference(_lastInteraction);
+    if (idle < Duration(minutes: idleMinutes)) return;
+    PowerService.isKeepScreenOnEnabled().then((keepScreenOn) {
+      // 防息屏关闭时让系统自然息屏；异步间隙内可能已恢复交互/变化。
+      if (!mounted || !keepScreenOn || _sleepScreenShowing) return;
+      if (!_isTopRoute) return;
+      if (DateTime.now().difference(_lastInteraction) <
+          Duration(minutes: idleMinutes)) {
+        return;
+      }
+      _sleepScreenShowing = true;
+      Navigator.of(context)
+          .push(MaterialPageRoute<void>(builder: (_) => const SleepScreenPage()))
+          .whenComplete(() {
+        _sleepScreenShowing = false;
+        _lastInteraction = DateTime.now();
+      });
+    });
   }
 
   Future<void> _runStartupTasks() async {
@@ -526,7 +583,11 @@ class _HomeShellState extends State<HomeShell>
               MediaQuery.viewInsetsOf(context).bottom,
             ),
           ),
-          child: IndexedStack(index: _selectedIndex, children: _tabPages),
+          child: Listener(
+            // 跟踪最后一次触摸交互，供熄屏自动进入计时。
+            onPointerDown: (_) => _lastInteraction = DateTime.now(),
+            child: IndexedStack(index: _selectedIndex, children: _tabPages),
+          ),
         ),
       ),
     );

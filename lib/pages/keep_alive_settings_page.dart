@@ -4,6 +4,7 @@ import 'package:battery_optimization_helper/battery_optimization_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_miuix/miuix.dart';
 
+import '../config/sleep_screen_store.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/ec_preference.dart';
 import '../widgets/error_dialog.dart';
@@ -31,6 +32,10 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
   bool _canDrawOverlays = false;
   bool _loaded = false;
   OverlayOptions _overlayOptions = const OverlayOptions();
+
+  /// 熄屏偏好（跟随防息屏显示）：时钟开关 / 无操作自动进入时长。
+  bool _sleepShowClock = SleepScreenStore.defaultShowClock;
+  int? _sleepIdleMinutes = SleepScreenStore.defaultIdleTimeoutMinutes;
 
   /// 厂商自启动设置页是否可打开（仅部分 OEM ROM 支持）。
   bool _canOpenAutoStart = false;
@@ -70,6 +75,8 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
     final overlayOptions = await PowerService.getOverlayOptions();
     final snapshot =
         await BatteryOptimizationHelper.getBatteryRestrictionSnapshot();
+    final sleepShowClock = await SleepScreenStore.loadShowClock();
+    final sleepIdleMinutes = await SleepScreenStore.loadIdleTimeoutMinutes();
     if (!mounted) return;
     setState(() {
       _wakeLockEnabled = wakeLock;
@@ -78,6 +85,8 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
       _canDrawOverlays = canDraw;
       _overlayOptions = overlayOptions;
       _canOpenAutoStart = snapshot.canOpenAutoStartSettings;
+      _sleepShowClock = sleepShowClock;
+      _sleepIdleMinutes = sleepIdleMinutes;
       _loaded = true;
     });
   }
@@ -184,6 +193,10 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
           enabled: _loaded,
           onChanged: _setKeepScreenOn,
         ),
+        // 熄屏设置跟随防息屏：仅在防息屏开启时显示（熄屏依赖常亮，
+        // 不开防息屏时系统会自然息屏，无需熄屏页）。
+        if (_keepScreenOnEnabled)
+          ..._buildSleepTiles(context),
 
         MiuixSmallTitle(context.tr('settings.keepAlive.overlaySection')),
         MiuixSwitchPreference(
@@ -239,6 +252,73 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
           ? null
           : _requestIgnoreBattery,
     );
+  }
+
+  /// 熄屏偏好子设置（相对「防息屏」缩进，仅防息屏开启时显示）。
+  ///
+  /// - 显示时钟：熄屏时黑底上显示极暗时分与日期，关闭后为纯黑屏；
+  /// - 无操作自动进入：服务端运行中无操作达到时长后自动进入熄屏，
+  ///   防止界面长时间常亮烧屏。
+  /// 相对上一级开关缩进，与悬浮窗子设置一致。
+  List<Widget> _buildSleepTiles(BuildContext context) {
+    const indent = EdgeInsets.only(left: 38);
+
+    String timeoutLabel(int? minutes) {
+      return minutes == null
+          ? context.tr('sleep.timeout.off')
+          : context.tr('sleep.timeout.minutes', {'minutes': '$minutes'});
+    }
+
+    return [
+      Padding(
+        padding: indent,
+        child: MiuixSwitchPreference(
+          title: context.tr('sleep.showClock'),
+          summary: context.tr('sleep.showClockSummary'),
+          value: _sleepShowClock,
+          enabled: _loaded,
+          onChanged: (v) async {
+            setState(() => _sleepShowClock = v);
+            await SleepScreenStore.save(showClock: v);
+          },
+        ),
+      ),
+      Padding(
+        padding: indent,
+        child: MiuixArrowPreference(
+          title: context.tr('sleep.autoEnter'),
+          summary: timeoutLabel(_sleepIdleMinutes),
+          enabled: _loaded,
+          onClick: () => _pickSleepTimeout(timeoutLabel),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.only(left: 54, right: 16, bottom: 8),
+        child: MiuixText(
+          context.tr('sleep.autoEnterHint'),
+          style: MiuixTheme.of(context).textStyles.footnote1,
+          color: MiuixTheme.of(context).colors.onSurfaceVariantSummary,
+        ),
+      ),
+    ];
+  }
+
+  /// 弹出无操作自动进入时长选择。
+  Future<void> _pickSleepTimeout(
+    String Function(int?) label,
+  ) async {
+    final selected = await showMiuixSingleChoice<int>(
+      context: context,
+      title: context.tr('sleep.autoEnter'),
+      options: SleepScreenStore.idleTimeoutOptions,
+      // 关闭（0）与未配置（null）等价展示。
+      selected: _sleepIdleMinutes ?? 0,
+      labelOf: (c, m) => label(m == 0 ? null : m),
+    );
+    if (selected == null || !mounted) return;
+    final minutes = selected == 0 ? null : selected;
+    setState(() => _sleepIdleMinutes = minutes);
+    await SleepScreenStore.save(idleTimeoutMinutes: minutes);
   }
 
   /// 悬浮窗子设置：显示内容、仅状态点、点颜色绑定、穿透模式。

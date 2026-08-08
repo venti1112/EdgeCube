@@ -23,7 +23,10 @@ import '../server/proot_service.dart';
 import '../server/runtime_service.dart';
 import '../server/server_controller.dart';
 import '../server/server_scope.dart';
+import '../route_observer.dart' show appRouteObserver;
 import 'runtime_page.dart';
+import 'sleep_screen_page.dart';
+import '../server/power_service.dart';
 import '../net/network_address.dart';
 import '../server/system_monitor_scope.dart';
 import '../widgets/expandable_address_list.dart';
@@ -118,7 +121,8 @@ class _ServerControlPanel extends StatefulWidget {
   State<_ServerControlPanel> createState() => _ServerControlPanelState();
 }
 
-class _ServerControlPanelState extends State<_ServerControlPanel> {
+class _ServerControlPanelState extends State<_ServerControlPanel>
+    with WidgetsBindingObserver, RouteAware {
   late final TextEditingController _memController;
   late final TextEditingController _jvmArgsController;
   late final TextEditingController _prootStartupCommandController;
@@ -129,6 +133,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
   bool _autoRestartOnExit = false;
   String _lineEnding = kLineEndingLf;
   Future<_LaunchContext>? _ctxFuture;
+
+  /// 防息屏开关是否开启：开着才显示熄屏按钮（熄屏依赖常亮）。
+  bool _keepScreenOnEnabled = false;
 
   /// proot 模式下选中的 rootfs id（作为 runtimeId 传给原生侧）。
   String _prootRootfsId = '';
@@ -166,9 +173,19 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     // 监听运行时导入/删除，自动刷新可用运行时列表。
     RuntimeService.refreshSignal.addListener(_onRuntimesChanged);
     ProotService.refreshSignal.addListener(_onRuntimesChanged);
+    // 在后台保活页切换防息屏、或 App 回前台后刷新熄屏按钮的显隐。
+    WidgetsBinding.instance.addObserver(this);
+    _refreshKeepScreenOn();
     // 注意：ServerScope.of(context) 不能在 initState 中调用
     // （dependOnInheritedWidgetOfExactType 未就绪），相关回调注册移至
     // didChangeDependencies。
+  }
+
+  /// 读取防息屏开关状态，决定是否显示熄屏按钮。
+  Future<void> _refreshKeepScreenOn() async {
+    final enabled = await PowerService.isKeepScreenOnEnabled();
+    if (!mounted || enabled == _keepScreenOnEnabled) return;
+    setState(() => _keepScreenOnEnabled = enabled);
   }
 
   /// 运行时列表变化时重新加载上下文。
@@ -247,6 +264,9 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
     super.didChangeDependencies();
     // key 绑定实例 id，State 在实例不变期间复用，故只加载一次。
     _ctxFuture ??= _loadContext();
+    // 从后台保活等子页面返回时刷新防息屏开关，驱动熄屏按钮显隐。
+    final route = ModalRoute.of(context);
+    if (route != null) appRouteObserver.subscribe(this, route);
     // ServerScope.of(context) 必须在 didChangeDependencies 中调用
     // （initState 中 dependOnInheritedWidgetOfExactType 尚未就绪）。
     // 用标志位保证回调只注册一次。
@@ -306,12 +326,27 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
 
   @override
   void dispose() {
+    appRouteObserver.unsubscribe(this);
+    WidgetsBinding.instance.removeObserver(this);
     RuntimeService.refreshSignal.removeListener(_onRuntimesChanged);
     ProotService.refreshSignal.removeListener(_onRuntimesChanged);
     _memController.dispose();
     _jvmArgsController.dispose();
     _prootStartupCommandController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshKeepScreenOn();
+    }
+  }
+
+  @override
+  void didPopNext() {
+    // 从后台保活设置页返回：防息屏可能刚被打开/关闭。
+    _refreshKeepScreenOn();
   }
 
   /// 把当前表单值持久化到实例。
@@ -1426,7 +1461,8 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         // 第一行：启动 / 停止（整行）。
         primaryButton,
         const SizedBox(height: 12),
-        // 第二行：重启（左半） | 强制停止（右半），等分。
+        // 第二行：重启（左） | 强制停止（右），等分；
+        // 启用防息屏时右侧再放一个方形熄屏按钮（仅月亮图标）。
         Row(
           children: [
             Expanded(
@@ -1458,6 +1494,22 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
                 ),
               ),
             ),
+            // 熄屏按钮：仅防息屏开启时显示（熄屏依赖常亮），服务端运行时可用。
+            if (_keepScreenOnEnabled) ...[
+              const SizedBox(width: 12),
+              Tooltip(
+                message: context.tr('sleep.button'),
+                child: MiuixIconButton(
+                  onPressed:
+                      status != ServerStatus.stopped ? _openSleepScreen : null,
+                  minWidth: 48,
+                  minHeight: 48,
+                  cornerRadius: 14,
+                  backgroundColor: theme.colors.surfaceContainerHigh,
+                  child: MiuixIcon(icon: Icons.nightlight_outlined),
+                ),
+              ),
+            ],
           ],
         ),
         if (hint != null) ...[
@@ -1471,6 +1523,13 @@ class _ServerControlPanelState extends State<_ServerControlPanel> {
         ],
       ],
     );
+  }
+
+  /// 打开熄屏页（全黑睡眠时钟）。
+  Future<void> _openSleepScreen() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const SleepScreenPage()));
   }
 
   /// 确认后强制结束服务端进程。

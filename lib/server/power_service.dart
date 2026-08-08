@@ -148,6 +148,15 @@ class PowerService {
     await _channel.invokeMethod('setKeepScreenOnEnabled', {'enabled': enabled});
   }
 
+  /// 设置熄屏页的临时强制常亮。
+  ///
+  /// 不持久化、不依赖服务端运行状态与「防息屏」开关（不污染用户设置），
+  /// 熄屏页退出时传入 `false` 复位。
+  static Future<void> setKeepScreenOnOverride(bool enabled) async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod('setKeepScreenOnOverride', {'enabled': enabled});
+  }
+
   // —— 状态悬浮窗 ——
 
   /// 状态悬浮窗开关是否启用（默认关闭）。非 Android 平台恒为 false。
