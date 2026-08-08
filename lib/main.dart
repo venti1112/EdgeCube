@@ -14,6 +14,7 @@ import 'config/network_store.dart';
 import 'config/stun_store.dart';
 import 'config/version_store.dart';
 import 'server/runtime_migration.dart';
+import 'files/storage_permission.dart';
 import 'route_observer.dart';
 import 'ftp/ftp_controller.dart';
 import 'ftp/ftp_scope.dart';
@@ -90,13 +91,13 @@ Future<void> _bootstrap() async {
   // 旧版内置于 assets 的运行时与新版 .ecpkg 管理系统冲突，
   // 升级时清除旧 runtimes 目录，让用户重新导入所需运行时。
   if (RuntimeMigration.shouldClearRuntimes(lastVersion)) {
-    await RuntimeMigration.clearOldRuntimes();
+    await _bootSafe('旧运行时清理', RuntimeMigration.clearOldRuntimes);
   }
   // 记录本次启动的版本到 config/version.json（更新 lastVersion 并追加历史）。
-  await VersionStore.recordOpen();
+  await _bootSafe('版本记录', VersionStore.recordOpen);
   // 多语言：加载已选语言与内置/自定义翻译表，须先于首帧渲染。
   final localeController = LocaleController();
-  await localeController.init();
+  await _bootSafe('多语言', localeController.init);
   final initialThemeMode = await ThemeStore.load();
   final initialSeedColor = await ThemeStore.loadSeedColor();
   final initialUseDynamicColor = await ThemeStore.loadUseDynamicColor();
@@ -105,7 +106,14 @@ Future<void> _bootstrap() async {
   final initialFloatingNavBarEnabled =
       await ThemeStore.loadFloatingNavBarEnabled();
   final instanceController = InstanceController();
-  await instanceController.init();
+  // 外部存储权限未授予时跳过实例目录遍历：低版本 Android 上对未授权的
+  // /storage/emulated/0 目录做 list() 会直接抛 EACCES 权限异常（而非静默
+  // 返回空），若任其向上抛，_bootstrap 中断、runApp 永远执行不到，设备上
+  // 就只剩启动白屏。授权完成后由 HomeShell 启动流程补扫（见
+  // _syncInstancesAfterPermissionGrant）。
+  if (await StoragePermission.isGranted()) {
+    await _bootSafe('实例索引', instanceController.init);
+  }
   // 预热全局下载引擎（懒初始化，fire-and-forget 不阻塞启动）。
   DownloadEngine.instance.ensureInitialized();
   final serverController = ServerController();
@@ -130,7 +138,7 @@ Future<void> _bootstrap() async {
   serverController.localeResolver = () => localeController.activeLocaleCode;
   final systemMonitorController = SystemMonitorController();
   final ftpController = FtpController();
-  await ftpController.init();
+  await _bootSafe('FTP', ftpController.init);
   await _syncFtpRootDir(instanceController, ftpController);
   instanceController.addListener(() {
     _syncFtpRootDir(instanceController, ftpController);
@@ -142,13 +150,13 @@ Future<void> _bootstrap() async {
     instanceController: instanceController,
     systemMonitorController: systemMonitorController,
   );
-  await mcpController.init();
+  await _bootSafe('MCP 服务', mcpController.init);
   // 交互式 shell 终端：进程在原生侧为单例，控制器只负责终端 I/O 与状态同步。
   final shellController = ShellController();
-  await shellController.init();
+  await _bootSafe('交互式 Shell', shellController.init);
   // SSH 服务：同一服务器提供 SFTP 文件访问与 SSH 终端，根目录跟随当前实例目录。
   final sshController = SshController();
-  await sshController.init();
+  await _bootSafe('SSH 服务', sshController.init);
   await _syncSshRootDir(instanceController, sshController);
   instanceController.addListener(() {
     _syncSshRootDir(instanceController, sshController);
@@ -159,7 +167,7 @@ Future<void> _bootstrap() async {
   final backupController = BackupController(
     instanceController: instanceController,
   );
-  await backupController.init();
+  await _bootSafe('定时备份', backupController.init);
   runApp(
     EdgeCubeApp(
       initialThemeMode: initialThemeMode,
@@ -180,6 +188,21 @@ Future<void> _bootstrap() async {
       backupController: backupController,
     ),
   );
+}
+
+/// 执行一步启动初始化；单个组件失败只记日志、不中断启动流程。
+///
+/// 启动阶段任何一步抛异常而未被捕获，都会让 [_bootstrap] 中断、[runApp]
+/// 永远执行不到——设备上只有一片白屏。所有组件初始化统一走这里兜底。
+Future<void> _bootSafe(
+  String component,
+  Future<void> Function() action,
+) async {
+  try {
+    await action();
+  } catch (e, s) {
+    Logger('Boot').severe('$component 初始化失败，已跳过', e, s);
+  }
 }
 
 /// 将当前选中实例的工作目录同步为 FTP 根目录。

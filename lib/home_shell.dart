@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_miuix/miuix.dart';
+import 'package:logging/logging.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'config/config_store.dart';
@@ -15,6 +16,7 @@ import 'config/user_agreement_store.dart';
 import 'files/file_browser.dart';
 import 'files/storage_permission.dart';
 import 'i18n/locale_scope.dart';
+import 'instance/instance_scope.dart';
 import 'online/update_service.dart';
 import 'pages/console_page.dart';
 import 'pages/files_page.dart';
@@ -192,6 +194,10 @@ class _HomeShellState extends State<HomeShell>
     if (!mounted) return;
     final storageReady = await _ensureStoragePermissionGuard();
     if (!storageReady || !mounted) return;
+    // 启动阶段若外部存储未授权，会跳过实例目录扫描（未授权遍历在低版本
+    // Android 上会抛权限异常），这里在授权完成后补扫一次。
+    await _syncInstancesAfterPermissionGrant();
+    if (!mounted) return;
     await _showFirstLaunchDialog();
     if (!mounted) return;
     await _checkUpdatesInBackground();
@@ -296,6 +302,21 @@ class _HomeShellState extends State<HomeShell>
     for (var i = 0; mounted && i < 25; i++) {
       if (await StoragePermission.isGranted()) return;
       await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+  }
+
+  /// 外部存储权限授权完成后补扫实例目录。
+  ///
+  /// [_bootstrap] 在权限未授予时会跳过实例目录遍历（见 main.dart 的
+  /// _bootSafe / StoragePermission 守卫），此处授权成功后重试，保证实例列表可用；
+  /// 若仍失败仅记日志，不影响其余启动流程。
+  Future<void> _syncInstancesAfterPermissionGrant() async {
+    final controller = InstanceScope.of(context);
+    if (controller.isInitialized) return;
+    try {
+      await controller.init();
+    } catch (e, s) {
+      Logger('Boot').severe('授权后实例目录扫描失败，已跳过', e, s);
     }
   }
 

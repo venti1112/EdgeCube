@@ -2,11 +2,14 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n/i18n_service.dart';
 import 'instance.dart';
 import 'instance_store.dart';
+
+final _log = Logger('InstanceController');
 
 /// 当新建或重命名导致出现同名实例时抛出。
 class DuplicateInstanceNameException implements Exception {
@@ -80,11 +83,27 @@ class InstanceController extends ChangeNotifier {
     final root = await _rootResolver();
 
     final existingDirIds = <String>{};
-    if (await root.exists()) {
-      await for (final entity in root.list(followLinks: false)) {
-        if (entity is Directory) {
-          existingDirIds.add(p.basename(entity.path));
+    bool rootExists;
+    try {
+      rootExists = await root.exists();
+    } catch (e, s) {
+      _log.warning('检查实例目录失败，跳过清理：${root.path}', e, s);
+      return preservedSelectedId;
+    }
+    if (rootExists) {
+      try {
+        await for (final entity in root
+            .list(followLinks: false)
+            .timeout(const Duration(seconds: 5))) {
+          if (entity is Directory) {
+            existingDirIds.add(p.basename(entity.path));
+          }
         }
+      } catch (e, s) {
+        // 权限未授予（EACCES）或枚举超时：跳过清理。既不误删索引，也绝不能
+        // 让异常中断启动流程（未受保护时会导致 runApp 永远不执行、白屏）。
+        _log.warning('遍历实例目录失败，跳过清理：${root.path}', e, s);
+        return preservedSelectedId;
       }
     } else {
       // 根目录不存在时尝试创建：若创建成功说明父目录可写，实例目录确实已被
@@ -135,20 +154,34 @@ class InstanceController extends ChangeNotifier {
     String? preservedSelectedId,
   ) async {
     final root = await _rootResolver();
-    if (!await root.exists()) return;
+    bool rootExists;
+    try {
+      rootExists = await root.exists();
+    } catch (_) {
+      return;
+    }
+    if (!rootExists) return;
     final existingIds = _summaries.map((s) => s.id).toSet();
     final newSummaries = <InstanceSummary>[];
     final newConfigs = <Instance>[];
 
-    await for (final entity in root.list(followLinks: false)) {
-      if (entity is! Directory) continue;
-      final id = p.basename(entity.path);
-      if (id.startsWith('.')) continue; // 跳过隐藏文件夹（含迁移临时目录）
-      if (existingIds.contains(id) || newSummaries.any((s) => s.id == id)) {
-        continue;
+    try {
+      await for (final entity in root
+          .list(followLinks: false)
+          .timeout(const Duration(seconds: 5))) {
+        if (entity is! Directory) continue;
+        final id = p.basename(entity.path);
+        if (id.startsWith('.')) continue; // 跳过隐藏文件夹（含迁移临时目录）
+        if (existingIds.contains(id) || newSummaries.any((s) => s.id == id)) {
+          continue;
+        }
+        newSummaries.add(InstanceSummary(id: id, name: id));
+        newConfigs.add(Instance(id: id, name: id));
       }
-      newSummaries.add(InstanceSummary(id: id, name: id));
-      newConfigs.add(Instance(id: id, name: id));
+    } catch (e, s) {
+      // 权限未授予或枚举异常：跳过自动补全，不中断启动。
+      _log.warning('自动补全实例目录失败，跳过补全：${root.path}', e, s);
+      return;
     }
 
     if (newSummaries.isEmpty) return;
