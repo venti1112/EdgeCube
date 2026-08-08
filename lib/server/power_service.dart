@@ -157,6 +157,15 @@ class PowerService {
     await _channel.invokeMethod('setKeepScreenOnOverride', {'enabled': enabled});
   }
 
+  /// 设置熄屏页期间的悬浮窗临时隐藏。
+  ///
+  /// 不持久化、不改动「悬浮窗」开关本身（避免熄屏页退出后忘记恢复），
+  /// 熄屏页退出时传入 `false` 复位，由原生按原条件重新裁决。
+  static Future<void> setOverlayHidden(bool hidden) async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod('setOverlayHidden', {'hidden': hidden});
+  }
+
   // —— 状态悬浮窗 ——
 
   /// 状态悬浮窗开关是否启用（默认关闭）。非 Android 平台恒为 false。

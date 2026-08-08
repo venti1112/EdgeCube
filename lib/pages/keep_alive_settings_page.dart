@@ -8,6 +8,7 @@ import '../config/sleep_screen_store.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/ec_preference.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/miuix_dialog.dart';
 import '../server/power_service.dart';
 
 /// 后台保活设置子页面（仅 Android）。
@@ -33,9 +34,18 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
   bool _loaded = false;
   OverlayOptions _overlayOptions = const OverlayOptions();
 
-  /// 熄屏偏好（跟随防息屏显示）：时钟开关 / 无操作自动进入时长。
-  bool _sleepShowClock = SleepScreenStore.defaultShowClock;
+  /// 熄屏偏好（跟随防息屏显示）：信息总开关 / 信息逐项开关（时间 /
+  /// 服务端状态 / CPU / 设备内存 / 服务端内存）/ 文字颜色与透明度 /
+  /// 无操作自动进入时长。
+  bool _sleepShowInfo = SleepScreenStore.defaultShowInfo;
+  bool _sleepShowTime = SleepScreenStore.defaultShowTime;
+  int _sleepTextColor = SleepScreenStore.defaultTextColor;
+  int _sleepTextOpacity = SleepScreenStore.defaultTextOpacity;
   int? _sleepIdleMinutes = SleepScreenStore.defaultIdleTimeoutMinutes;
+  bool _sleepShowServerStatus = SleepScreenStore.defaultShowServerStatus;
+  bool _sleepShowCpu = SleepScreenStore.defaultShowCpu;
+  bool _sleepShowMem = SleepScreenStore.defaultShowMem;
+  bool _sleepShowServerMem = SleepScreenStore.defaultShowServerMem;
 
   /// 厂商自启动设置页是否可打开（仅部分 OEM ROM 支持）。
   bool _canOpenAutoStart = false;
@@ -75,8 +85,15 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
     final overlayOptions = await PowerService.getOverlayOptions();
     final snapshot =
         await BatteryOptimizationHelper.getBatteryRestrictionSnapshot();
-    final sleepShowClock = await SleepScreenStore.loadShowClock();
+    final sleepShowInfo = await SleepScreenStore.loadShowInfo();
+    final sleepShowTime = await SleepScreenStore.loadShowTime();
+    final sleepTextColor = await SleepScreenStore.loadTextColor();
+    final sleepTextOpacity = await SleepScreenStore.loadTextOpacity();
     final sleepIdleMinutes = await SleepScreenStore.loadIdleTimeoutMinutes();
+    final sleepShowServerStatus = await SleepScreenStore.loadShowServerStatus();
+    final sleepShowCpu = await SleepScreenStore.loadShowCpu();
+    final sleepShowMem = await SleepScreenStore.loadShowMem();
+    final sleepShowServerMem = await SleepScreenStore.loadShowServerMem();
     if (!mounted) return;
     setState(() {
       _wakeLockEnabled = wakeLock;
@@ -85,8 +102,15 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
       _canDrawOverlays = canDraw;
       _overlayOptions = overlayOptions;
       _canOpenAutoStart = snapshot.canOpenAutoStartSettings;
-      _sleepShowClock = sleepShowClock;
+      _sleepShowInfo = sleepShowInfo;
+      _sleepShowTime = sleepShowTime;
+      _sleepTextColor = sleepTextColor;
+      _sleepTextOpacity = sleepTextOpacity;
       _sleepIdleMinutes = sleepIdleMinutes;
+      _sleepShowServerStatus = sleepShowServerStatus;
+      _sleepShowCpu = sleepShowCpu;
+      _sleepShowMem = sleepShowMem;
+      _sleepShowServerMem = sleepShowServerMem;
       _loaded = true;
     });
   }
@@ -256,7 +280,10 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
 
   /// 熄屏偏好子设置（相对「防息屏」缩进，仅防息屏开启时显示）。
   ///
-  /// - 显示时钟：熄屏时黑底上显示极暗时分与日期，关闭后为纯黑屏；
+  /// - 显示信息：熄屏时黑底上的信息总开关，关闭后为纯黑屏；
+  /// - 信息逐项开关：时间 / 服务端状态 / CPU / 设备内存 / 服务端内存，
+  ///   与状态悬浮窗各调各的，互不影响；
+  /// - 文字颜色与透明度：可自定义信息显示的颜色与亮度；
   /// - 无操作自动进入：服务端运行中无操作达到时长后自动进入熄屏，
   ///   防止界面长时间常亮烧屏。
   /// 相对上一级开关缩进，与悬浮窗子设置一致。
@@ -269,20 +296,105 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
           : context.tr('sleep.timeout.minutes', {'minutes': '$minutes'});
     }
 
+    Widget check(String titleKey, bool value, ValueChanged<bool> onChanged) {
+      return Padding(
+        padding: indent,
+        child: MiuixCheckboxPreference(
+          title: context.tr(titleKey),
+          value: value,
+          onChanged: onChanged,
+          insideMargin: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 10,
+          ),
+        ),
+      );
+    }
+
     return [
       Padding(
         padding: indent,
         child: MiuixSwitchPreference(
-          title: context.tr('sleep.showClock'),
-          summary: context.tr('sleep.showClockSummary'),
-          value: _sleepShowClock,
+          title: context.tr('sleep.showInfo'),
+          summary: context.tr('sleep.showInfoSummary'),
+          value: _sleepShowInfo,
           enabled: _loaded,
           onChanged: (v) async {
-            setState(() => _sleepShowClock = v);
-            await SleepScreenStore.save(showClock: v);
+            setState(() => _sleepShowInfo = v);
+            await SleepScreenStore.save(showInfo: v);
           },
         ),
       ),
+      check(
+        'sleep.showTime',
+        _sleepShowTime,
+        (v) async {
+          setState(() => _sleepShowTime = v);
+          await SleepScreenStore.save(showTime: v);
+        },
+      ),
+      check(
+        'sleep.showServerStatus',
+        _sleepShowServerStatus,
+        (v) async {
+          setState(() => _sleepShowServerStatus = v);
+          await SleepScreenStore.save(showServerStatus: v);
+        },
+      ),
+      check(
+        'sleep.showCpu',
+        _sleepShowCpu,
+        (v) async {
+          setState(() => _sleepShowCpu = v);
+          await SleepScreenStore.save(showCpu: v);
+        },
+      ),
+      check(
+        'sleep.showMem',
+        _sleepShowMem,
+        (v) async {
+          setState(() => _sleepShowMem = v);
+          await SleepScreenStore.save(showMem: v);
+        },
+      ),
+      check(
+        'sleep.showServerMem',
+        _sleepShowServerMem,
+        (v) async {
+          setState(() => _sleepShowServerMem = v);
+          await SleepScreenStore.save(showServerMem: v);
+        },
+      ),
+      // 文字颜色 / 透明度，仅在显示信息时可用。
+      if (_sleepShowInfo) ...[
+        Padding(
+          padding: indent,
+          child: MiuixArrowPreference(
+            title: context.tr('sleep.textColor'),
+            summary: _sleepColorLabel(context),
+            enabled: _loaded,
+            endActions: [_SleepColorDot(color: Color(_sleepTextColor))],
+            onClick: () => _pickSleepTextColor(context),
+          ),
+        ),
+        Padding(
+          padding: indent,
+          child: MiuixSliderPreference(
+            startAction: prefIcon(Icons.opacity),
+            title: context.tr('sleep.textOpacity'),
+            value: _sleepTextOpacity.toDouble(),
+            valueText: '$_sleepTextOpacity%',
+            min: 5,
+            max: 100,
+            steps: 19,
+            enabled: _loaded,
+            onValueChange: (v) =>
+                setState(() => _sleepTextOpacity = v.round()),
+            onValueChangeFinished: () =>
+                SleepScreenStore.save(textOpacity: _sleepTextOpacity),
+          ),
+        ),
+      ],
       Padding(
         padding: indent,
         child: MiuixArrowPreference(
@@ -301,6 +413,25 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
         ),
       ),
     ];
+  }
+
+  /// 当前文字颜色显示名：命中预设则显示名称，否则显示「自定义」。
+  String _sleepColorLabel(BuildContext context) {
+    for (final option in _sleepColorPresets) {
+      if (option.color.toARGB32() ==
+          Color(_sleepTextColor).toARGB32()) {
+        return context.tr(option.labelKey);
+      }
+    }
+    return context.tr('sleep.color.custom');
+  }
+
+  /// 弹出文字颜色选择对话框（预设色板 + 自由取色）。
+  Future<void> _pickSleepTextColor(BuildContext context) async {
+    final picked = await _showSleepColorPicker(context);
+    if (picked == null || !mounted) return;
+    setState(() => _sleepTextColor = picked.toARGB32());
+    await SleepScreenStore.save(textColor: _sleepTextColor);
   }
 
   /// 弹出无操作自动进入时长选择。
@@ -420,5 +551,174 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage>
         _overlayOptions.copyWith(dotColorSource: selected),
       );
     }
+  }
+
+  /// 弹出熄屏文字颜色选择对话框（预设色板 + 自由取色）。
+  Future<Color?> _showSleepColorPicker(BuildContext context) {
+    return showMiuixDialog<Color>(
+      context: context,
+      title: context.tr('sleep.textColor'),
+      builder: (ctx) => _SleepColorPickerContent(
+        initialColor: Color(_sleepTextColor),
+      ),
+    );
+  }
+
+  /// 熄屏文字颜色预设（标签存翻译 key）。
+  static const List<({String labelKey, Color color})> _sleepColorPresets = [
+    (labelKey: 'sleep.color.white', color: Colors.white),
+    (labelKey: 'sleep.color.green', color: Color(0xFF7CFC96)),
+    (labelKey: 'sleep.color.blue', color: Color(0xFF8AC8FF)),
+    (labelKey: 'sleep.color.purple', color: Color(0xFFD4A5FF)),
+    (labelKey: 'sleep.color.red', color: Color(0xFFFF8A80)),
+    (labelKey: 'sleep.color.orange', color: Color(0xFFFFCC80)),
+    (labelKey: 'sleep.color.teal', color: Color(0xFF80DEEA)),
+    (labelKey: 'sleep.color.pink', color: Color(0xFFFFB3C1)),
+    (labelKey: 'sleep.color.indigo', color: Color(0xFFB3C6FF)),
+  ];
+}
+
+/// 熄屏文字颜色选择弹窗内容：预设色板 + 自由取色两个分段页。
+class _SleepColorPickerContent extends StatefulWidget {
+  const _SleepColorPickerContent({required this.initialColor});
+
+  final Color initialColor;
+
+  @override
+  State<_SleepColorPickerContent> createState() =>
+      _SleepColorPickerContentState();
+}
+
+class _SleepColorPickerContentState extends State<_SleepColorPickerContent> {
+  late Color _pickedColor = widget.initialColor;
+  int _tab = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Miuix 没有 TabBarView 的对应物，分段控制器 + IndexedStack，
+        // 两页等高避免切换时对话框高度跳变。
+        MiuixTabRow(
+          tabs: [
+            context.tr('sleep.color.tabPreset'),
+            context.tr('sleep.color.tabWheel'),
+          ],
+          selectedTabIndex: _tab,
+          onTabSelected: (i) => setState(() => _tab = i),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 280,
+          child: IndexedStack(
+            index: _tab,
+            children: [
+              SingleChildScrollView(
+                child: Wrap(
+                  spacing: 14,
+                  runSpacing: 14,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final option
+                        in _KeepAliveSettingsPageState._sleepColorPresets)
+                      _SleepColorSwatch(
+                        color: option.color,
+                        selected: _pickedColor.toARGB32() ==
+                            option.color.toARGB32(),
+                        onTap: () =>
+                            setState(() => _pickedColor = option.color),
+                      ),
+                  ],
+                ),
+              ),
+              SingleChildScrollView(
+                child: MiuixColorPicker(
+                  color: _pickedColor,
+                  onColorChanged: (c) => setState(() => _pickedColor = c),
+                  colorSpace: MiuixColorSpace.hsv,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        MiuixDialogActions(
+          children: [
+            MiuixTextButton(
+              context.tr('common.cancel'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            MiuixButton(
+              onPressed: () => Navigator.of(context).pop(_pickedColor),
+              colors: MiuixButtonDefaults.buttonColorsPrimary(context),
+              child: MiuixText(context.tr('common.confirm')),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// 预设色板中的单个色块。
+class _SleepColorSwatch extends StatelessWidget {
+  const _SleepColorSwatch({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: selected
+              ? Border.all(
+                  color: MiuixTheme.of(context).colors.surface,
+                  width: 3,
+                )
+              : null,
+          boxShadow: selected
+              ? [BoxShadow(color: color.withValues(alpha: 0.6), blurRadius: 8)]
+              : null,
+        ),
+        child: selected
+            ? const MiuixIcon(icon: Icons.check, size: 22, tint: Colors.black54)
+            : null,
+      ),
+    );
+  }
+}
+
+/// 设置行尾部展示当前文字颜色的小圆点。
+class _SleepColorDot extends StatelessWidget {
+  const _SleepColorDot({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 26,
+      height: 26,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: MiuixTheme.of(context).colors.dividerLine),
+      ),
+    );
   }
 }

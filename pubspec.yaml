@@ -8,7 +8,7 @@ publish_to: 'none'
 platforms:
   android:
 
-version: 1.0.0-beta25+25
+version: 1.0.0-beta26+26
 
 environment:
   sdk: ">=3.12.2 <4.0.0"
@@ -57,6 +57,8 @@ dependencies:
     git:
       url: https://github.com/venti1112/webdav_client
       ref: main
+  ftpconnect: ^2.0.10
+  dartssh2: ^2.22.5
 
 dev_dependencies:
   flutter_test:

@@ -29,7 +29,8 @@ const List<int> kBackupRetentionOptions = [1, 3, 5, 10];
 /// 备份配置的本地持久化。
 ///
 /// 存储于 `config/backup.json`，遵循 [ConfigStore] 的 read-modify-write 原子写入模式。
-/// WebDav 密码单独存于 [FlutterSecureStorage]（Android Keystore），不写入明文 JSON。
+/// WebDav / FTP / SFTP 密码单独存于 [FlutterSecureStorage]（Android Keystore），不写入明文 JSON。
+/// SFTP 已信任的主机密钥指纹同样写入 `backup.json`（非敏感，仅用于校验）。
 class BackupStore {
   BackupStore._();
 
@@ -45,11 +46,25 @@ class BackupStore {
   static const String _webdavUrlKey = 'webdavUrl';
   static const String _webdavUserKey = 'webdavUsername';
   static const String _webdavRemoteKey = 'webdavRemotePath';
+  static const String _ftpEnabledKey = 'ftpEnabled';
+  static const String _ftpHostKey = 'ftpHost';
+  static const String _ftpPortKey = 'ftpPort';
+  static const String _ftpUserKey = 'ftpUsername';
+  static const String _ftpRemoteKey = 'ftpRemotePath';
+  static const String _ftpSecurityKey = 'ftpSecurityType';
+  static const String _sftpEnabledKey = 'sftpEnabled';
+  static const String _sftpHostKey = 'sftpHost';
+  static const String _sftpPortKey = 'sftpPort';
+  static const String _sftpUserKey = 'sftpUsername';
+  static const String _sftpRemoteKey = 'sftpRemotePath';
+  static const String _sftpTrustedKeysKey = 'sftpTrustedHostKeys';
   static const String _retentionKey = 'retentionSets';
   static const String _lastBackupKey = 'lastBackupTime';
 
   static const _storage = FlutterSecureStorage();
   static const _webdavPasswordKey = 'backup_webdav_password';
+  static const _ftpPasswordKey = 'backup_ftp_password';
+  static const _sftpPasswordKey = 'backup_sftp_password';
 
   // ── 总开关 ────────────────────────────────────────────────
 
@@ -196,6 +211,179 @@ class BackupStore {
 
   static Future<void> saveWebdavPassword(String password) async {
     await _storage.write(key: _webdavPasswordKey, value: password);
+  }
+
+  // ── FTP 备份目标 ──────────────────────────────────────────
+
+  static Future<bool> loadFtpEnabled() async {
+    final config = await ConfigStore.readConfig(_fileName);
+    final raw = config[_ftpEnabledKey];
+    return raw is bool ? raw : false;
+  }
+
+  static Future<void> saveFtpEnabled(bool value) async {
+    final config = await ConfigStore.readConfig(_fileName);
+    config[_ftpEnabledKey] = value;
+    await ConfigStore.writeConfig(_fileName, config);
+  }
+
+  static Future<String> loadFtpHost() async {
+    final config = await ConfigStore.readConfig(_fileName);
+    final raw = config[_ftpHostKey];
+    return raw is String ? raw : '';
+  }
+
+  static Future<void> saveFtpHost(String host) async {
+    final config = await ConfigStore.readConfig(_fileName);
+    config[_ftpHostKey] = host;
+    await ConfigStore.writeConfig(_fileName, config);
+  }
+
+  static Future<int> loadFtpPort() async {
+    final config = await ConfigStore.readConfig(_fileName);
+    final raw = config[_ftpPortKey];
+    return raw is int && raw > 0 ? raw : 21;
+  }
+
+  static Future<void> saveFtpPort(int port) async {
+    final config = await ConfigStore.readConfig(_fileName);
+    config[_ftpPortKey] = port;
+    await ConfigStore.writeConfig(_fileName, config);
+  }
+
+  static Future<String> loadFtpUsername() async {
+    final config = await ConfigStore.readConfig(_fileName);
+    final raw = config[_ftpUserKey];
+    return raw is String ? raw : '';
+  }
+
+  static Future<void> saveFtpUsername(String username) async {
+    final config = await ConfigStore.readConfig(_fileName);
+    config[_ftpUserKey] = username;
+    await ConfigStore.writeConfig(_fileName, config);
+  }
+
+  static Future<String> loadFtpRemotePath() async {
+    final config = await ConfigStore.readConfig(_fileName);
+    final raw = config[_ftpRemoteKey];
+    return raw is String && raw.isNotEmpty ? raw : '/EdgeCube';
+  }
+
+  static Future<void> saveFtpRemotePath(String path) async {
+    final config = await ConfigStore.readConfig(_fileName);
+    config[_ftpRemoteKey] = path;
+    await ConfigStore.writeConfig(_fileName, config);
+  }
+
+  /// FTP 加密方式：`ftp` / `ftpes` / `ftps`，默认 `ftp`。
+  static Future<String> loadFtpSecurityType() async {
+    final config = await ConfigStore.readConfig(_fileName);
+    final raw = config[_ftpSecurityKey];
+    return raw is String && raw.isNotEmpty ? raw : 'ftp';
+  }
+
+  static Future<void> saveFtpSecurityType(String type) async {
+    final config = await ConfigStore.readConfig(_fileName);
+    config[_ftpSecurityKey] = type;
+    await ConfigStore.writeConfig(_fileName, config);
+  }
+
+  static Future<String> loadFtpPassword() async {
+    final value = await _storage.read(key: _ftpPasswordKey);
+    return value ?? '';
+  }
+
+  static Future<void> saveFtpPassword(String password) async {
+    await _storage.write(key: _ftpPasswordKey, value: password);
+  }
+
+  // ── SFTP 备份目标 ─────────────────────────────────────────
+
+  static Future<bool> loadSftpEnabled() async {
+    final config = await ConfigStore.readConfig(_fileName);
+    final raw = config[_sftpEnabledKey];
+    return raw is bool ? raw : false;
+  }
+
+  static Future<void> saveSftpEnabled(bool value) async {
+    final config = await ConfigStore.readConfig(_fileName);
+    config[_sftpEnabledKey] = value;
+    await ConfigStore.writeConfig(_fileName, config);
+  }
+
+  static Future<String> loadSftpHost() async {
+    final config = await ConfigStore.readConfig(_fileName);
+    final raw = config[_sftpHostKey];
+    return raw is String ? raw : '';
+  }
+
+  static Future<void> saveSftpHost(String host) async {
+    final config = await ConfigStore.readConfig(_fileName);
+    config[_sftpHostKey] = host;
+    await ConfigStore.writeConfig(_fileName, config);
+  }
+
+  static Future<int> loadSftpPort() async {
+    final config = await ConfigStore.readConfig(_fileName);
+    final raw = config[_sftpPortKey];
+    return raw is int && raw > 0 ? raw : 22;
+  }
+
+  static Future<void> saveSftpPort(int port) async {
+    final config = await ConfigStore.readConfig(_fileName);
+    config[_sftpPortKey] = port;
+    await ConfigStore.writeConfig(_fileName, config);
+  }
+
+  static Future<String> loadSftpUsername() async {
+    final config = await ConfigStore.readConfig(_fileName);
+    final raw = config[_sftpUserKey];
+    return raw is String ? raw : '';
+  }
+
+  static Future<void> saveSftpUsername(String username) async {
+    final config = await ConfigStore.readConfig(_fileName);
+    config[_sftpUserKey] = username;
+    await ConfigStore.writeConfig(_fileName, config);
+  }
+
+  static Future<String> loadSftpRemotePath() async {
+    final config = await ConfigStore.readConfig(_fileName);
+    final raw = config[_sftpRemoteKey];
+    return raw is String && raw.isNotEmpty ? raw : '/EdgeCube';
+  }
+
+  static Future<void> saveSftpRemotePath(String path) async {
+    final config = await ConfigStore.readConfig(_fileName);
+    config[_sftpRemoteKey] = path;
+    await ConfigStore.writeConfig(_fileName, config);
+  }
+
+  static Future<String> loadSftpPassword() async {
+    final value = await _storage.read(key: _sftpPasswordKey);
+    return value ?? '';
+  }
+
+  static Future<void> saveSftpPassword(String password) async {
+    await _storage.write(key: _sftpPasswordKey, value: password);
+  }
+
+  // ── SFTP 已信任主机密钥（首次信任 TOFU）──────────────────
+
+  /// key: `host:port`，value: `SHA256:...` 指纹。
+  static Future<Map<String, String>> loadSftpTrustedHostKeys() async {
+    final config = await ConfigStore.readConfig(_fileName);
+    final raw = config[_sftpTrustedKeysKey];
+    if (raw is! Map) return {};
+    return raw.map(
+      (k, v) => MapEntry(k.toString(), v.toString()),
+    );
+  }
+
+  static Future<void> saveSftpTrustedHostKeys(Map<String, String> keys) async {
+    final config = await ConfigStore.readConfig(_fileName);
+    config[_sftpTrustedKeysKey] = keys;
+    await ConfigStore.writeConfig(_fileName, config);
   }
 
   // ── 保留组数 ──────────────────────────────────────────────

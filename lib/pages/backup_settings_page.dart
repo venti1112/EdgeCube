@@ -32,10 +32,26 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
   final _webdavPathController = TextEditingController();
   bool _webdavLoaded = false;
 
+  final _ftpHostController = TextEditingController();
+  final _ftpPortController = TextEditingController();
+  final _ftpUserController = TextEditingController();
+  final _ftpPassController = TextEditingController();
+  final _ftpPathController = TextEditingController();
+  bool _ftpLoaded = false;
+
+  final _sftpHostController = TextEditingController();
+  final _sftpPortController = TextEditingController();
+  final _sftpUserController = TextEditingController();
+  final _sftpPassController = TextEditingController();
+  final _sftpPathController = TextEditingController();
+  bool _sftpLoaded = false;
+
   @override
   void initState() {
     super.initState();
     _loadWebdavFields();
+    _loadFtpFields();
+    _loadSftpFields();
   }
 
   @override
@@ -44,6 +60,16 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
     _webdavUserController.dispose();
     _webdavPassController.dispose();
     _webdavPathController.dispose();
+    _ftpHostController.dispose();
+    _ftpPortController.dispose();
+    _ftpUserController.dispose();
+    _ftpPassController.dispose();
+    _ftpPathController.dispose();
+    _sftpHostController.dispose();
+    _sftpPortController.dispose();
+    _sftpUserController.dispose();
+    _sftpPassController.dispose();
+    _sftpPathController.dispose();
     super.dispose();
   }
 
@@ -57,6 +83,34 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
       _webdavPassController.text = password;
       _webdavPathController.text = controller.webdavRemotePath;
       _webdavLoaded = true;
+    });
+  }
+
+  Future<void> _loadFtpFields() async {
+    final controller = BackupScope.of(context);
+    final password = await controller.loadFtpPassword();
+    if (!mounted) return;
+    setState(() {
+      _ftpHostController.text = controller.ftpHost;
+      _ftpPortController.text = '${controller.ftpPort}';
+      _ftpUserController.text = controller.ftpUsername;
+      _ftpPassController.text = password;
+      _ftpPathController.text = controller.ftpRemotePath;
+      _ftpLoaded = true;
+    });
+  }
+
+  Future<void> _loadSftpFields() async {
+    final controller = BackupScope.of(context);
+    final password = await controller.loadSftpPassword();
+    if (!mounted) return;
+    setState(() {
+      _sftpHostController.text = controller.sftpHost;
+      _sftpPortController.text = '${controller.sftpPort}';
+      _sftpUserController.text = controller.sftpUsername;
+      _sftpPassController.text = password;
+      _sftpPathController.text = controller.sftpRemotePath;
+      _sftpLoaded = true;
     });
   }
 
@@ -291,13 +345,130 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
     }
   }
 
+  String _ftpSecurityLabel(String type) {
+    return switch (type) {
+      'ftpes' => tr('backup.ftp.security.ftpes'),
+      'ftps' => tr('backup.ftp.security.ftps'),
+      _ => tr('backup.ftp.security.ftp'),
+    };
+  }
+
+  Future<void> _pickFtpSecurity() async {
+    final controller = BackupScope.of(context);
+    const options = ['ftp', 'ftpes', 'ftps'];
+    final selected = await showMiuixSingleChoice<String>(
+      context: context,
+      title: tr('backup.ftp.security.title'),
+      options: options,
+      selected: controller.ftpSecurityType,
+      labelOf: (_, type) => _ftpSecurityLabel(type),
+    );
+    if (selected != null && mounted) {
+      // 切换加密方式时同步调整默认端口。
+      if (selected == 'ftps' && _ftpPortController.text.trim() == '21') {
+        _ftpPortController.text = '990';
+      } else if (selected != 'ftps' &&
+          _ftpPortController.text.trim() == '990') {
+        _ftpPortController.text = '21';
+      }
+      await controller.setFtpSecurityType(selected);
+    }
+  }
+
+  /// SFTP 首次信任弹窗：展示指纹，用户确认后持久化并允许连接。
+  Future<bool> _confirmTrustSftpHostKey(String fingerprint) async {
+    final confirmed = await showMiuixConfirm(
+      context,
+      title: tr('backup.sftp.hostKey.title'),
+      message: tr('backup.sftp.hostKey.content', {'fingerprint': fingerprint}),
+      cancelLabel: tr('backup.sftp.hostKey.reject'),
+      confirmLabel: tr('backup.sftp.hostKey.trust'),
+    );
+    return confirmed == true;
+  }
+
+  Future<void> _testFtp() async {
+    final controller = BackupScope.of(context);
+    final host = _ftpHostController.text.trim();
+    if (host.isEmpty) {
+      showMiuixSnackbar(tr('backup.ftp.hostEmpty'));
+      return;
+    }
+    final port = int.tryParse(_ftpPortController.text.trim()) ?? 21;
+    if (!mounted) return;
+    showLoadingDialog(context, tr('backup.ftp.testing'));
+    try {
+      final ok = await controller.testFtpConnection(
+        host: host,
+        port: port,
+        username: _ftpUserController.text.trim(),
+        password: _ftpPassController.text,
+        remotePath: _ftpPathController.text.trim().isEmpty
+            ? '/EdgeCube'
+            : _ftpPathController.text.trim(),
+        securityType: controller.ftpSecurityType,
+      );
+      if (mounted) Navigator.of(context).pop();
+      showMiuixSnackbar(
+        ok ? tr('backup.ftp.testSuccess') : tr('backup.ftp.testFailed'),
+      );
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        showErrorDialog(context, '${tr('backup.ftp.testFailed')}: $e');
+      }
+    }
+  }
+
+  Future<void> _testSftp() async {
+    final controller = BackupScope.of(context);
+    final host = _sftpHostController.text.trim();
+    if (host.isEmpty) {
+      showMiuixSnackbar(tr('backup.sftp.hostEmpty'));
+      return;
+    }
+    final port = int.tryParse(_sftpPortController.text.trim()) ?? 22;
+    if (!mounted) return;
+    showLoadingDialog(context, tr('backup.sftp.testing'));
+    try {
+      final ok = await controller.testSftpConnection(
+        host: host,
+        port: port,
+        username: _sftpUserController.text.trim(),
+        password: _sftpPassController.text,
+        remotePath: _sftpPathController.text.trim().isEmpty
+            ? '/EdgeCube'
+            : _sftpPathController.text.trim(),
+        onUnknownHostKey: (fingerprint) async {
+          final trust = await _confirmTrustSftpHostKey(fingerprint);
+          if (trust) {
+            await controller.trustSftpHostKey(host, port, fingerprint);
+          }
+          return trust;
+        },
+      );
+      if (mounted) Navigator.of(context).pop();
+      showMiuixSnackbar(
+        ok ? tr('backup.sftp.testSuccess') : tr('backup.sftp.testFailed'),
+      );
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        showErrorDialog(context, '${tr('backup.sftp.testFailed')}: $e');
+      }
+    }
+  }
+
   Future<void> _backupNow() async {
     final controller = BackupScope.of(context);
     if (controller.selectedInstanceIds.isEmpty) {
       showMiuixSnackbar(tr('backup.noInstance'));
       return;
     }
-    if (!controller.localEnabled && !controller.webdavEnabled) {
+    if (!controller.localEnabled &&
+        !controller.webdavEnabled &&
+        !controller.ftpEnabled &&
+        !controller.sftpEnabled) {
       showMiuixSnackbar(tr('backup.noTarget'));
       return;
     }
@@ -464,6 +635,164 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
             child: MiuixButton(
               onPressed: _testWebdav,
               child: MiuixText(context.tr('backup.webdav.test')),
+            ),
+          ),
+        ],
+
+        // ── FTP ────────────────────────────────────────────
+        MiuixSmallTitle(context.tr('backup.section.ftp')),
+        MiuixSwitchPreference(
+          startAction: prefIcon(Icons.lan_outlined),
+          title: context.tr('backup.ftp.enabled'),
+          summary: context.tr('backup.ftp.enabledDescription'),
+          value: controller.ftpEnabled,
+          onChanged: controller.setFtpEnabled,
+        ),
+        if (_ftpLoaded) ...[
+          MiuixArrowPreference(
+            startAction: prefIcon(Icons.lock_outline),
+            title: context.tr('backup.ftp.security.title'),
+            summary: _ftpSecurityLabel(controller.ftpSecurityType),
+            onClick: _pickFtpSecurity,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: EcTextField(
+                    controller: _ftpHostController,
+                    label: context.tr('backup.ftp.host'),
+                    hint: 'ftp.example.com',
+                    keyboardType: TextInputType.url,
+                    onChanged: (v) => controller.setFtpHost(v.trim()),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: EcTextField(
+                    controller: _ftpPortController,
+                    label: context.tr('backup.ftp.port'),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: (v) =>
+                        controller.setFtpPort(int.tryParse(v.trim()) ?? 21),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: EcTextField(
+              controller: _ftpUserController,
+              label: context.tr('backup.ftp.username'),
+              onChanged: (v) => controller.setFtpUsername(v.trim()),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: EcTextField(
+              controller: _ftpPassController,
+              label: context.tr('backup.ftp.password'),
+              obscureText: true,
+              onChanged: (v) => controller.setFtpPassword(v),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: EcTextField(
+              controller: _ftpPathController,
+              label: context.tr('backup.ftp.remotePath'),
+              hint: '/EdgeCube',
+              onChanged: (v) => controller.setFtpRemotePath(
+                v.trim().isEmpty ? '/EdgeCube' : v.trim(),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: MiuixButton(
+              onPressed: _testFtp,
+              child: MiuixText(context.tr('backup.ftp.test')),
+            ),
+          ),
+        ],
+
+        // ── SFTP ───────────────────────────────────────────
+        MiuixSmallTitle(context.tr('backup.section.sftp')),
+        MiuixSwitchPreference(
+          startAction: prefIcon(Icons.terminal_outlined),
+          title: context.tr('backup.sftp.enabled'),
+          summary: context.tr('backup.sftp.enabledDescription'),
+          value: controller.sftpEnabled,
+          onChanged: controller.setSftpEnabled,
+        ),
+        if (_sftpLoaded) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: EcTextField(
+                    controller: _sftpHostController,
+                    label: context.tr('backup.sftp.host'),
+                    hint: 'sftp.example.com',
+                    keyboardType: TextInputType.url,
+                    onChanged: (v) => controller.setSftpHost(v.trim()),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: EcTextField(
+                    controller: _sftpPortController,
+                    label: context.tr('backup.sftp.port'),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: (v) =>
+                        controller.setSftpPort(int.tryParse(v.trim()) ?? 22),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: EcTextField(
+              controller: _sftpUserController,
+              label: context.tr('backup.sftp.username'),
+              onChanged: (v) => controller.setSftpUsername(v.trim()),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: EcTextField(
+              controller: _sftpPassController,
+              label: context.tr('backup.sftp.password'),
+              obscureText: true,
+              onChanged: (v) => controller.setSftpPassword(v),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: EcTextField(
+              controller: _sftpPathController,
+              label: context.tr('backup.sftp.remotePath'),
+              hint: '/EdgeCube',
+              onChanged: (v) => controller.setSftpRemotePath(
+                v.trim().isEmpty ? '/EdgeCube' : v.trim(),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: MiuixButton(
+              onPressed: _testSftp,
+              child: MiuixText(context.tr('backup.sftp.test')),
             ),
           ),
         ],

@@ -39,6 +39,9 @@ object KeepAliveManager {
     /** 熄屏页运行期间的强制常亮覆盖（不写偏好，随熄屏页进出）。 */
     private var keepScreenOnOverride = false
 
+    /** 熄屏页运行期间的悬浮窗隐藏覆盖（不写偏好，随熄屏页进出）。 */
+    private var overlayHiddenOverride = false
+
     // —— 开关读写（持久化见 KeepAlivePrefs；运行中修改立即生效）——
 
     /** 锁屏保活（WakeLock + WifiLock）是否启用；默认启用。 */
@@ -61,7 +64,7 @@ object KeepAliveManager {
     @Synchronized
     fun setOverlayOptions(context: Context, map: Map<*, *>) {
         KeepAlivePrefs.putOverlayOptions(context, map)
-        if (active && isOverlayEnabled(context)) {
+        if (active && isOverlayEnabled(context) && !overlayHiddenOverride) {
             // 重建悬浮窗应用新样式（位置按保存的比例还原）。
             val app = context.applicationContext
             val name = instanceName
@@ -97,7 +100,14 @@ object KeepAliveManager {
     @Synchronized
     fun setOverlayEnabled(context: Context, enabled: Boolean) {
         KeepAlivePrefs.setOverlayEnabled(context, enabled)
-        if (active) applyOverlay(context, enabled)
+        if (active) syncOverlay(context)
+    }
+
+    /** 设置熄屏页期间的悬浮窗隐藏覆盖（不持久化）；熄屏页关闭时置 false。 */
+    @Synchronized
+    fun setOverlayHidden(context: Context, hidden: Boolean) {
+        overlayHiddenOverride = hidden
+        syncOverlay(context)
     }
 
     /**
@@ -123,7 +133,7 @@ object KeepAliveManager {
         active = true
         instanceName = name
         applyLocks(context, isWakeLockEnabled(context))
-        applyOverlay(context, isOverlayEnabled(context))
+        syncOverlay(context)
         syncKeepScreenOn(context)
     }
 
@@ -132,7 +142,7 @@ object KeepAliveManager {
     fun release(context: Context) {
         active = false
         applyLocks(context, false)
-        applyOverlay(context, false)
+        syncOverlay(context)
         syncKeepScreenOn(context)
     }
 
@@ -217,6 +227,16 @@ object KeepAliveManager {
     }
 
     // —— 状态悬浮窗 ——
+
+    /**
+     * 按覆盖标志与「悬浮窗」开关统一裁决是否显示悬浮窗：
+     * 仅服务端运行中 + 开关开启 + 未被熄屏页隐藏覆盖时显示。
+     * 熄屏页覆盖优先（熄屏期间即使开关开启也隐藏，避免双层遮罩）。
+     */
+    private fun syncOverlay(context: Context) {
+        val want = active && isOverlayEnabled(context) && !overlayHiddenOverride
+        applyOverlay(context, want)
+    }
 
     private fun applyOverlay(context: Context, enabled: Boolean) {
         val app = context.applicationContext

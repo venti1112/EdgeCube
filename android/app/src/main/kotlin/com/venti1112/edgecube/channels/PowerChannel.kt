@@ -53,6 +53,12 @@ internal object PowerChannel {
                     KeepAliveManager.setKeepScreenOnOverride(appContext, enabled)
                     result.success(null)
                 }
+                // 熄屏页期间隐藏状态悬浮窗（临时覆盖，不写"悬浮窗"开关）。
+                "setOverlayHidden" -> {
+                    val hidden = call.argument<Boolean>("hidden") ?: false
+                    KeepAliveManager.setOverlayHidden(appContext, hidden)
+                    result.success(null)
+                }
                 "isOverlayEnabled" ->
                     result.success(KeepAliveManager.isOverlayEnabled(appContext))
                 "setOverlayEnabled" -> {
