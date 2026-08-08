@@ -23,6 +23,7 @@ import '../instance/instance_store.dart';
 import '../theme/theme_scope.dart';
 import 'about_page.dart';
 import 'appearance_settings_page.dart';
+import 'backup_settings_page.dart';
 import 'developer_options_page.dart';
 import 'keep_alive_settings_page.dart';
 import 'language_settings_page.dart';
@@ -165,6 +166,14 @@ class _SettingsPageState extends State<SettingsPage> {
           title: context.tr('storage.title'),
           summary: context.tr('storage.subtitle'),
           onClick: () => _push(const StorageManagementPage()),
+        ),
+
+        MiuixSmallTitle(context.tr('settings.section.backup')),
+        MiuixArrowPreference(
+          startAction: prefIcon(Icons.backup_outlined),
+          title: context.tr('backup.settings.title'),
+          summary: context.tr('backup.settings.subtitle'),
+          onClick: () => _push(const BackupSettingsPage()),
         ),
 
         MiuixSmallTitle(context.tr('settings.section.runtime')),

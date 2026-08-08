@@ -7,6 +7,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_miuix/miuix.dart';
 import 'package:logging/logging.dart';
 
+import 'backup/backup_controller.dart';
+import 'backup/backup_scope.dart';
 import 'config/ddns_store.dart';
 import 'config/network_store.dart';
 import 'config/stun_store.dart';
@@ -153,6 +155,11 @@ Future<void> _bootstrap() async {
   });
   // FRP 映射隧道：多供应商隧道管理；进程仍由 serverController 独占。
   final frpController = FrpController(server: serverController);
+  // 定时备份：前台定时检查 + 启动时补做，依赖实例控制器解析目录。
+  final backupController = BackupController(
+    instanceController: instanceController,
+  );
+  await backupController.init();
   runApp(
     EdgeCubeApp(
       initialThemeMode: initialThemeMode,
@@ -170,6 +177,7 @@ Future<void> _bootstrap() async {
       shellController: shellController,
       sshController: sshController,
       frpController: frpController,
+      backupController: backupController,
     ),
   );
 }
@@ -222,6 +230,7 @@ class EdgeCubeApp extends StatefulWidget {
     required this.shellController,
     required this.sshController,
     required this.frpController,
+    required this.backupController,
   });
 
   final ThemeMode initialThemeMode;
@@ -239,6 +248,7 @@ class EdgeCubeApp extends StatefulWidget {
   final ShellController shellController;
   final SshController sshController;
   final FrpController frpController;
+  final BackupController backupController;
 
   @override
   State<EdgeCubeApp> createState() => _EdgeCubeAppState();
@@ -325,7 +335,9 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
         setFloatingNavBarEnabled: _setFloatingNavBarEnabled,
         child: InstanceScope(
           controller: widget.instanceController,
-          child: FtpScope(
+          child: BackupScope(
+            controller: widget.backupController,
+            child: FtpScope(
             controller: widget.ftpController,
             child: ServerScope(
               controller: widget.serverController,
@@ -431,6 +443,7 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                 ),
               ),
             ),
+          ),
           ),
         ),
       ),
