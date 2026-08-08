@@ -50,6 +50,9 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
   String _modpackCurrentFile = '';
   String? _modpackError;
 
+  /// 下载任务列表快照（仅 downloading 阶段填充），用于渲染下载列表。
+  List<ModDownloadTask> _modpackTasks = const [];
+
   /// 整合包 Vanilla 服务端下载所需的版本详情 URL 映射。
   Map<String, String> _vanillaVersionUrls = {};
 
@@ -120,6 +123,7 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
         _modpackCurrent = 0;
         _modpackTotal = modpack.serverFiles.length;
         _modpackError = null;
+        _modpackTasks = const [];
       });
       await ModpackService.downloadServerFiles(
         modpack,
@@ -131,6 +135,10 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
             _modpackTotal = total;
             _modpackCurrentFile = fileName;
           });
+        },
+        onTaskUpdate: (tasks) {
+          if (!mounted) return;
+          setState(() => _modpackTasks = tasks);
         },
       );
 
@@ -375,6 +383,7 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
             currentFile: _modpackCurrentFile,
             error: _modpackError,
             onCancel: _cancel,
+            tasks: _modpackTasks,
           ),
         ),
       ),

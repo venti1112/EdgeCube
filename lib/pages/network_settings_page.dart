@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_miuix/miuix.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config/download_store.dart';
 import '../config/network_store.dart';
 import '../i18n/locale_scope.dart';
 import '../widgets/ec_preference.dart';
 import '../widgets/ec_text_field.dart';
 import '../widgets/error_dialog.dart';
 import '../widgets/miuix_dialog.dart';
+import '../net/download_engine.dart';
 import '../net/msl_mirror.dart';
 import '../online/online_service.dart';
 import '../server/proot_service.dart';
@@ -42,6 +44,13 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
   bool _ecpkgCatalogLoaded = false;
   bool _ecpkgCatalogIsCustom = false;
 
+  int _maxParallel = DownloadStore.defaultMaxParallel;
+  int _targetChunkCount = DownloadStore.defaultTargetChunkCount;
+  int _minChunkSizeMiB = 1;
+  int _requestTimeoutSec = 30;
+  int _speedLimitKiBps = 0;
+  bool _downloadLoaded = false;
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +59,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
     _loadBetaUpdates();
     _loadUpdateCheckUrl();
     _loadEcpkgCatalogUrl();
+    _loadDownloadSettings();
   }
 
   Future<void> _load() async {
@@ -179,6 +189,59 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
     await _loadEcpkgCatalogUrl();
   }
 
+  // ── 下载设置 ──
+
+  Future<void> _loadDownloadSettings() async {
+    final results = await Future.wait([
+      DownloadStore.loadMaxParallel(),
+      DownloadStore.loadTargetChunkCount(),
+      DownloadStore.loadMinChunkSize(),
+      DownloadStore.loadRequestTimeout(),
+      DownloadStore.loadSpeedLimit(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _maxParallel = results[0];
+      _targetChunkCount = results[1];
+      _minChunkSizeMiB = (results[2] ~/ (1024 * 1024)).clamp(1, 16);
+      _requestTimeoutSec = (results[3] ~/ 1000).clamp(1, 300);
+      _speedLimitKiBps = results[4] ~/ 1024;
+      _downloadLoaded = true;
+    });
+  }
+
+  Future<void> _saveMaxParallel(int value) async {
+    setState(() => _maxParallel = value);
+    await DownloadStore.saveMaxParallel(value);
+    await DownloadEngine.instance.applyMaxParallel(value);
+  }
+
+  Future<void> _saveTargetChunkCount(int value) async {
+    setState(() => _targetChunkCount = value);
+    await DownloadStore.saveTargetChunkCount(value);
+    await DownloadEngine.instance.applyTargetChunkCount(value);
+  }
+
+  Future<void> _saveMinChunkSize(int mib) async {
+    setState(() => _minChunkSizeMiB = mib);
+    final bytes = mib * 1024 * 1024;
+    await DownloadStore.saveMinChunkSize(bytes);
+    await DownloadEngine.instance.applyMinChunkSize(bytes);
+  }
+
+  Future<void> _saveSpeedLimit(int kibps) async {
+    setState(() => _speedLimitKiBps = kibps);
+    final bytes = kibps * 1024;
+    await DownloadStore.saveSpeedLimit(bytes);
+    await DownloadEngine.instance.applySpeedLimit(bytes);
+  }
+
+  Future<void> _saveRequestTimeout(int sec) async {
+    setState(() => _requestTimeoutSec = sec);
+    await DownloadStore.saveRequestTimeout(sec * 1000);
+    // requestTimeout 无运行时 setter，仅重启后生效。
+  }
+
   // ── URL 编辑对话框 ──
 
   Future<void> _editUrl({
@@ -233,6 +296,65 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
     }
   }
 
+  // ── 数值编辑对话框（下载参数） ──
+
+  Future<void> _editNumber({
+    required String title,
+    required int currentValue,
+    String suffix = '',
+    String? zeroLabel,
+    int min = 0,
+    int max = 0,
+    required Future<void> Function(int value) onSave,
+  }) async {
+    final controller = TextEditingController(text: '$currentValue');
+    final result = await showMiuixDialog<String>(
+      context: context,
+      title: title,
+      builder: (ctx) {
+        final theme = MiuixTheme.of(ctx);
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (zeroLabel != null)
+              MiuixText(
+                ctx.tr('network.downloadNumberHint', {'zero': zeroLabel}),
+                style: theme.textStyles.footnote1,
+                color: theme.colors.onSurfaceVariantSummary,
+              ),
+            const SizedBox(height: 12),
+            EcTextField(
+              controller: controller,
+              label: suffix,
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 20),
+            MiuixDialogActions(
+              children: [
+                MiuixTextButton(
+                  ctx.tr('common.cancel'),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                ),
+                MiuixButton(
+                  onPressed: () => Navigator.of(ctx).pop(controller.text),
+                  colors: MiuixButtonDefaults.buttonColorsPrimary(ctx),
+                  child: MiuixText(ctx.tr('common.save')),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    if (result == null) return;
+    final v = int.tryParse(result.trim());
+    if (v == null) return;
+    final clamped = (max > min) ? v.clamp(min, max) : (v < min ? min : v);
+    if (clamped != currentValue) await onSave(clamped);
+  }
+
   @override
   void dispose() {
     _dnsController.dispose();
@@ -254,6 +376,86 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
           value: _useMirror,
           enabled: _loaded,
           onChanged: _onToggle,
+        ),
+
+        MiuixSmallTitle(context.tr('network.downloadSection')),
+        MiuixSliderPreference(
+          startAction: prefIcon(Icons.sync_alt),
+          title: context.tr('network.downloadMaxParallel'),
+          summary: context.tr('network.downloadMaxParallelDesc'),
+          value: _maxParallel.toDouble(),
+          valueText: '$_maxParallel',
+          min: 1,
+          max: 16,
+          steps: 15,
+          enabled: _downloadLoaded,
+          onValueChange: (v) => setState(() => _maxParallel = v.round()),
+          onValueChangeFinished: () => _saveMaxParallel(_maxParallel),
+        ),
+        MiuixSliderPreference(
+          startAction: prefIcon(Icons.grain),
+          title: context.tr('network.downloadTargetChunkCount'),
+          summary: context.tr('network.downloadTargetChunkCountDesc'),
+          value: _targetChunkCount.toDouble(),
+          valueText: '$_targetChunkCount',
+          min: 1,
+          max: 8,
+          steps: 7,
+          enabled: _downloadLoaded,
+          onValueChange: (v) => setState(() => _targetChunkCount = v.round()),
+          onValueChangeFinished: () => _saveTargetChunkCount(_targetChunkCount),
+        ),
+        MiuixSliderPreference(
+          startAction: prefIcon(Icons.straighten),
+          title: context.tr('network.downloadMinChunkSize'),
+          summary: context.tr('network.downloadMinChunkSizeDesc'),
+          value: _minChunkSizeMiB.toDouble(),
+          valueText: '$_minChunkSizeMiB MiB',
+          min: 1,
+          max: 16,
+          steps: 15,
+          enabled: _downloadLoaded,
+          onValueChange: (v) => setState(() => _minChunkSizeMiB = v.round()),
+          onValueChangeFinished: () => _saveMinChunkSize(_minChunkSizeMiB),
+        ),
+        MiuixBasicComponent(
+          startAction: prefIcon(Icons.speed),
+          title: context.tr('network.downloadSpeedLimit'),
+          summary: _downloadLoaded
+              ? (_speedLimitKiBps == 0
+                  ? context.tr('network.downloadUnlimited')
+                  : '$_speedLimitKiBps KiB/s')
+              : context.tr('common.loading'),
+          enabled: _downloadLoaded,
+          endActions: [const MiuixIcon(icon: Icons.edit_outlined, size: 18)],
+          onClick: _downloadLoaded
+              ? () => _editNumber(
+                    title: context.tr('network.downloadSpeedLimit'),
+                    currentValue: _speedLimitKiBps,
+                    suffix: 'KiB/s',
+                    zeroLabel: context.tr('network.downloadUnlimited'),
+                    onSave: _saveSpeedLimit,
+                  )
+              : null,
+        ),
+        MiuixBasicComponent(
+          startAction: prefIcon(Icons.timer_outlined),
+          title: context.tr('network.downloadRequestTimeout'),
+          summary: _downloadLoaded
+              ? '$_requestTimeoutSec s · ${context.tr('network.downloadRequestTimeoutDesc')}'
+              : context.tr('common.loading'),
+          enabled: _downloadLoaded,
+          endActions: [const MiuixIcon(icon: Icons.edit_outlined, size: 18)],
+          onClick: _downloadLoaded
+              ? () => _editNumber(
+                    title: context.tr('network.downloadRequestTimeout'),
+                    currentValue: _requestTimeoutSec,
+                    suffix: 's',
+                    min: 1,
+                    max: 300,
+                    onSave: _saveRequestTimeout,
+                  )
+              : null,
         ),
 
         MiuixSmallTitle(context.tr('network.dns')),

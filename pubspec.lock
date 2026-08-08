@@ -133,10 +133,10 @@ packages:
     dependency: transitive
     description:
       name: dynamic_color
-      sha256: "43a5a6679649a7731ab860334a5812f2067c2d9ce6452cf069c5e0c25336c17c"
+      sha256: "4aeb76de323e8eb660bab5557d826ad7ebbf1434a598f0c6aa8a11a9696a6757"
       url: "https://pub.dev"
     source: hosted
-    version: "1.8.1"
+    version: "1.9.0"
   equatable:
     dependency: transitive
     description:
@@ -216,7 +216,7 @@ packages:
     description:
       path: "."
       ref: main
-      resolved-ref: e1be4fa86305c1cd07b34301b02f568c39e58742
+      resolved-ref: c3c4877b301c3fb062e1cf97a3c60c82bb3baa33
       url: "https://github.com/venti1112/flutter_miuix"
     source: git
     version: "1.1.0"
@@ -613,7 +613,7 @@ packages:
     description:
       path: "."
       ref: main
-      resolved-ref: "402f3cd3a568be3130c844716e9031900d032f40"
+      resolved-ref: "4fbec14362ff4eb3b8e73cda0296e00eef9f589d"
       url: "https://github.com/venti1112/re-editor"
     source: git
     version: "0.10.0"
@@ -833,10 +833,11 @@ packages:
   webdav_client_plus:
     dependency: "direct main"
     description:
-      name: webdav_client_plus
-      sha256: "0f992fe05a46674a800d9fd8fdc5c54952ff739da155c558776a62ca0c2bed3a"
-      url: "https://pub.dev"
-    source: hosted
+      path: "."
+      ref: main
+      resolved-ref: f1444b644f5a21b8540a2b9a723b5b101c14110f
+      url: "https://github.com/venti1112/webdav_client"
+    source: git
     version: "1.0.2"
   win32:
     dependency: transitive
@@ -855,7 +856,7 @@ packages:
     source: hosted
     version: "1.1.0"
   xml:
-    dependency: "direct overridden"
+    dependency: transitive
     description:
       name: xml
       sha256: "67f0aff7be013d107995e9b75bf4e7f2c3ef2dfdb2c8e68024bba0a7fd5756a4"

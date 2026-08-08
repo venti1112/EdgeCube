@@ -6,6 +6,7 @@ import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../config/download_store.dart';
 import '../online/cloud_headers.dart';
 import 'download_exceptions.dart';
 import 'download_hash.dart';
@@ -84,13 +85,22 @@ class DownloadEngine {
       headers = {'User-Agent': 'EdgeCube'};
     }
 
+    // 从持久化读取下载参数（用户可在「网络设置 → 下载设置」调整）。
+    final maxParallel = await DownloadStore.loadMaxParallel();
+    final targetChunkCount = await DownloadStore.loadTargetChunkCount();
+    final minChunkSize = await DownloadStore.loadMinChunkSize();
+    final requestTimeout = await DownloadStore.loadRequestTimeout();
+    final speedLimit = await DownloadStore.loadSpeedLimit();
+
     _manager = await createDownloadX(
       DownloadXConfig(
         targetPath: root.path,
         cachePath: root.path,
-        maxParallel: 3,
-        targetChunkCount: 4,
-        minChunkSize: 1024 * 1024,
+        maxParallel: maxParallel,
+        targetChunkCount: targetChunkCount,
+        minChunkSize: minChunkSize,
+        requestTimeout: requestTimeout,
+        speedLimit: speedLimit,
         headers: headers,
         journal: false,
       ),
@@ -337,6 +347,32 @@ class DownloadEngine {
     }
     throw lastError ?? const DownloadFailed('all sources failed');
   }
+
+  /// 运行时调整最大并发下载数（downloadx manager 级，即时生效）。
+  Future<void> applyMaxParallel(int n) async {
+    await ensureInitialized();
+    _manager?.setMaxParallel(n < 1 ? 1 : n);
+  }
+
+  /// 运行时调整单文件分片数（即时生效，override:true 同步到已注册下载）。
+  Future<void> applyTargetChunkCount(int n) async {
+    await ensureInitialized();
+    _manager?.setTargetChunkCount(n < 1 ? 1 : n, override: true);
+  }
+
+  /// 运行时调整最小分片大小（字节，即时生效）。
+  Future<void> applyMinChunkSize(int bytes) async {
+    await ensureInitialized();
+    _manager?.setMinChunkSize(bytes < 1 ? 1 : bytes, override: true);
+  }
+
+  /// 运行时调整全局下载限速（字节/秒，0/负值=不限速，即时生效）。
+  Future<void> applySpeedLimit(int bytesPerSec) async {
+    await ensureInitialized();
+    _manager?.setSpeedLimit(bytesPerSec > 0 ? bytesPerSec : null);
+  }
+
+  // 注：requestTimeout 无运行时 setter，修改后仅在下一次 _init（重启应用）生效。
 
   Future<void> _verifyHash(String path, {String? sha1, String? sha256}) async {
     if (sha1 != null) {
