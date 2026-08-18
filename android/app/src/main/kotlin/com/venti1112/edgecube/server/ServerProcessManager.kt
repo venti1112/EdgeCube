@@ -5,6 +5,8 @@ import android.os.Handler
 import android.os.Looper
 import android.system.Os
 import android.system.OsConstants
+import com.venti1112.edgecube.keepalive.KeepAlivePrefs
+import com.venti1112.edgecube.widget.WidgetUpdater
 import io.flutter.plugin.common.EventChannel
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -95,7 +97,17 @@ class ServerProcessManager private constructor(private val appContext: Context) 
     @Volatile private var runningInstanceName: String? = null
     @Volatile private var runningRuntimeId: String? = null
     @Volatile private var currentStatus: String? = null
-    /** 当前启动是否为 proot 模式（顶层进程是 proot，实际服务端在其子进程中）。 */
+    /** 在线玩家数；由 Dart 侧 ServerController 通过 widget 通道上报，供小组件渲染。 */
+    @Volatile private var playerCount: Int = 0
+    /** 在线玩家数 setter：Dart 侧每秒解析日志后调用；同步落入 prefs 快照。 */
+    fun setPlayerCount(count: Int) {
+        playerCount = count.coerceAtLeast(0)
+        KeepAlivePrefs.putWidgetSnapshot(appContext, playerCount = playerCount)
+        WidgetUpdater.requestUpdate(appContext)
+    }
+    /** 在线玩家数 getter（仅供 AAppWidgetProvider 渲染时读取)。 */
+    fun getPlayerCount(): Int = playerCount
+    /** 本次启动是否为 proot 模式（顶层进程是 proot，实际服务端在其子进程中）。 */
     @Volatile private var runningIsProot: Boolean = false
     /** 本次启动解析到的 JVM 最大堆（-Xmx，MB）；未配置为 -1。 */
     @Volatile private var runningMaxHeapMb: Long = -1
@@ -219,6 +231,35 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         runningInstanceName = instanceName
         runningRuntimeId = runtimeId
         currentStatus = STATUS_STARTING
+
+        // 缓存最近一次启动参数，供桌面小组件「启动」按钮异步拉起。
+        // 用 \u241f 分隔在 SharedPreferences 中存储字符串数组（NUL 在 prefs 受限）。
+        KeepAlivePrefs.putLastStartArgs(
+            appContext,
+            instanceId = instanceId,
+            instanceName = instanceName,
+            workingDir = workingDir,
+            runtimeId = runtimeId,
+            runtime = runtime,
+            runtimeArgs = runtimeArgs,
+            programArgs = programArgs,
+            compatMode = false, // Dart 侧负责；这里是兜底，无需 compat 信息
+            directExecute = directExecute,
+            lineEnding = lineEnding,
+        )
+
+        playerCount = 0
+        KeepAlivePrefs.putWidgetSnapshot(
+            appContext,
+            status = STATUS_STARTING,
+            instanceName = instanceName,
+            playerCount = 0,
+            // 记录服务端 PID：App 进程被杀后重启时凭它校验服务端是否还在运行，
+            // 避免小组件停留在「运行中」而实际进程早已消亡。
+            pid = processId,
+        )
+        WidgetUpdater.requestUpdate(appContext)
+
         emitState(STATUS_STARTING, instanceId, instanceName, null)
 
         // 拉起前台 Service 保活。
@@ -270,6 +311,9 @@ class ServerProcessManager private constructor(private val appContext: Context) 
                     runningRuntimeId = null
                     runningIsProot = false
                     currentStatus = null
+                    playerCount = 0
+                    KeepAlivePrefs.clearWidgetSnapshot(appContext)
+                    WidgetUpdater.requestUpdate(appContext)
                     emitState(null, id, name, code)
                 }
             }
@@ -331,7 +375,7 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         try {
             if (runningIsProot) {
                 // proot 模式：顶层 proot 进程不向子孙传播信号，且其子进程
-                //（sh / 容器内二进制）会变孤儿继续运行、占用端口。PTY 子进程
+                //（sh / 容器内二进制）会变孤继续运行、占用端口。PTY 子进程
                 // 已 setsid 成为新进程组首（PGID = pid），杀整个进程组才能连子进程
                 // 一起清理。用 SIGKILL 确保彻底结束（SIGTERM 可能被忽略或不传播）。
                 Os.kill(-p, OsConstants.SIGKILL)
@@ -342,6 +386,90 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         } catch (e: Exception) {
             emitNotice("[EdgeCube] 强制结束失败：${e.message}")
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 桌面小组件专用：无 Flutter 引擎也能起停
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * 用 [KeepAlivePrefs] 缓存的最近一次启动参数重新拉起服务端。
+     *
+     * 供桌面小组件的「启动」按钮使用：这条路径不在 Flutter 引擎上下文，
+     * 无法走 Dart 侧的 [ServerController.start]。本方法直接复用 [start] 的核心
+     * 逻辑，参数来自用户最后一次在 App 内启动服务端时的缓存。
+     *
+     * 返回：
+     * - `null` 表示已成功调用 [start]（实际启动结果仍异步通过 EventChannel
+     *   返回，但 WidgetProvider 不会等待，只依赖后续的 [requestUpdate]）；
+     * - 非空字符串表示失败原因（如未缓存过参数、目录不存在、已有服务端运行等）。
+     */
+    fun startFromWidgetSnapshot(): String? {
+        if (isRunning) return "已有服务端正在运行"
+        val args = KeepAlivePrefs.lastStartArgs(appContext)
+        if (!args.isComplete) return "尚未启动过任何实例"
+        val work = args.workingDir ?: return "工作目录缺失"
+        if (!File(work).isDirectory) return "工作目录不存在：$work"
+        val runtimeId = args.runtimeId ?: return "运行时 id 缺失"
+        val instanceId = args.instanceId ?: return "实例 id 缺失"
+        // 在后台线程同步执行；start 内部已 thread off。但 start 本身 @Synchronized
+        // 含耗时操作（解压等），不能在主线程调用，因此这里需切换线程。
+        Thread {
+            try {
+                start(
+                    instanceId = instanceId,
+                    instanceName = args.instanceName ?: instanceId,
+                    workingDir = work,
+                    runtimeId = runtimeId,
+                    runtime = args.runtime,
+                    runtimeArgs = args.runtimeArgs,
+                    programArgs = args.programArgs,
+                    directExecute = args.directExecute,
+                    lineEnding = args.lineEnding,
+                )
+            } catch (e: Exception) {
+                // 失败信息无处告知（无引擎），写入 prefs 状态以备下次 onUpdate 渲染。
+                KeepAlivePrefs.putWidgetSnapshot(
+                    appContext,
+                    status = "stopped",
+                    instanceName = args.instanceName ?: instanceId,
+                )
+                WidgetUpdater.requestUpdate(appContext)
+            }
+        }.start()
+        return null
+    }
+
+    /** 桌面小组件调用的「停止」入口；与 [stop] 一致（发送 stop 命令）。 */
+    fun stopFromWidget() {
+        if (!isRunning) return
+        stop()
+    }
+
+    /**
+     * 由 [WidgetChannel] 转发 Dart 侧 ServerController 的公网地址（UPnP/STUN/DDNS）
+     * 写入 prefs 快照，使小组件能在 onUpdate 时机读到最新的连接信息。
+     */
+    fun setPublicAddressForWidget(address: String?) {
+        KeepAlivePrefs.putWidgetSnapshot(appContext, publicAddress = address)
+        WidgetUpdater.requestUpdate(appContext)
+    }
+
+    /**
+     * 由 [WidgetChannel] 转发 Dart 侧检测到的内网 IPv4 地址写入 prefs 快照；
+     * 无公网地址时小组件用它兜底展示连接入口。
+     */
+    fun setLocalAddressForWidget(address: String?) {
+        KeepAlivePrefs.putWidgetSnapshot(appContext, localAddress = address)
+        WidgetUpdater.requestUpdate(appContext)
+    }
+
+    /**
+     * 由 [WidgetChannel] 转发 Dart 侧的 serverPort 写入 prefs 快照。
+     */
+    fun setServerPortForWidget(port: Int) {
+        KeepAlivePrefs.putWidgetSnapshot(appContext, serverPort = port)
+        WidgetUpdater.requestUpdate(appContext)
     }
 
     /** 清空日志与原始字节缓冲（与界面的清屏保持一致）。 */
@@ -410,6 +538,8 @@ class ServerProcessManager private constructor(private val appContext: Context) 
         emitLog(clean)
         if (currentStatus == STATUS_STARTING && DONE_PATTERN.containsMatchIn(clean)) {
             currentStatus = STATUS_RUNNING
+            KeepAlivePrefs.putWidgetSnapshot(appContext, status = STATUS_RUNNING)
+            WidgetUpdater.requestUpdate(appContext)
             emitState(STATUS_RUNNING, runningInstanceId, runningInstanceName, null)
         }
     }

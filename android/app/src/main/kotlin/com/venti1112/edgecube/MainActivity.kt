@@ -20,7 +20,10 @@ import com.venti1112.edgecube.channels.StorageChannel
 import com.venti1112.edgecube.channels.SystemMonitorChannel
 import com.venti1112.edgecube.channels.TunnelChannel
 import com.venti1112.edgecube.channels.UpdateChannel
+import com.venti1112.edgecube.channels.WidgetChannel
 import com.venti1112.edgecube.keepalive.KeepAliveManager
+import com.venti1112.edgecube.keepalive.KeepAlivePrefs
+import com.venti1112.edgecube.widget.WidgetUpdater
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 
@@ -42,6 +45,12 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ecpkgChannel.handleIntent(intent)
+
+        // 进程冷启动（App 被系统/用户杀死后重开）：快照可能停留在被杀前的
+        // 「运行中」。服务端子进程若已随进程消亡，校正为「已停止」；仍存活
+        // 则保留快照。随后强制刷新一次小组件，保证重新打开即看到真实状态。
+        KeepAlivePrefs.correctSnapshotAfterProcessRestart(this)
+        WidgetUpdater.requestUpdate(this)
     }
 
     /** 引擎是否已恢复（onResume 后为 true，onPause 后为 false）。 */
@@ -113,5 +122,6 @@ class MainActivity : FlutterActivity() {
         TunnelChannel.register(messenger, appContext)
         RuntimeChannel.register(messenger, appContext)
         ProotChannel.register(messenger, appContext)
+        WidgetChannel.register(messenger, appContext)
     }
 }

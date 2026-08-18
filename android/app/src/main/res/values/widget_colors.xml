@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_text_primary">#FFFFFFFF</color>
+    <color name="widget_text_secondary">#CCFFFFFF</color>
+    <color name="widget_button_color">#FFFFFFFF</color>
+    <color name="widget_button_color_active">#FF4CAF50</color>
+    <color name="widget_dot_running">#FF4CAF50</color>
+    <color name="widget_dot_busy">#FFFF9800</color>
+    <color name="widget_dot_stopped">#FF9E9E9E</color>
+</resources>

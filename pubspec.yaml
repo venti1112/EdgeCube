@@ -58,7 +58,7 @@ dependencies:
       url: https://github.com/venti1112/webdav_client
       ref: main
   ftpconnect: ^2.0.10
-  dartssh2: ^2.22.5
+  dartssh2: ^3.0.1
 
 dev_dependencies:
   flutter_test:

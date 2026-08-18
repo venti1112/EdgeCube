@@ -31,6 +31,7 @@ import 'server/ecpkg_handler.dart';
 import 'server/power_service.dart';
 import 'server/server_controller.dart';
 import 'server/server_scope.dart';
+import 'server/widget_service.dart';
 import 'theme/theme_scope.dart';
 import 'widgets/error_dialog.dart';
 import 'widgets/miuix_dialog.dart';
@@ -201,6 +202,13 @@ class _HomeShellState extends State<HomeShell>
           _ensureStoragePermissionGuard();
         });
       }
+      // 回前台强制刷新小组件：后台期间快照可能因各种原因滞后
+      //（进程被杀/状态回调未执行），恢复前台时同步一次最新状态。
+      WidgetService.requestUpdate();
+    } else if (state == AppLifecycleState.paused) {
+      // 切到后台时也强制刷新一次：此刻小组件进入无人驱动的时段，
+      // 先把当前状态固化到快照，避免切走后小组件停留在旧状态。
+      WidgetService.requestUpdate();
     }
   }
 

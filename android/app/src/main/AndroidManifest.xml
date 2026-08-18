@@ -100,6 +100,22 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- 桌面小组件：展示服务端状态 + 启停按钮。 -->
+        <receiver
+            android:name=".widget.ServerWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_default_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.venti1112.edgecube.widget.action.OPEN" />
+                <action android:name="com.venti1112.edgecube.widget.action.START" />
+                <action android:name="com.venti1112.edgecube.widget.action.STOP" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/server_widget_info" />
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

@@ -16,10 +16,12 @@ import 'server_properties.dart';
 import 'server_error_analyzer.dart';
 import 'server_service.dart';
 import 'upnp_service.dart';
+import 'widget_service.dart';
 import '../config/ddns_store.dart';
 import '../config/network_store.dart';
 import '../config/stun_store.dart';
 import '../config/terminal_store.dart';
+import '../net/network_address.dart';
 import '../stun/stun_tunnel_service.dart';
 import '../tunnel/tunnel_service.dart';
 import 'runtime_service.dart';
@@ -1287,11 +1289,13 @@ class ServerController extends ChangeNotifier
     final joinMatch = _reJoin.firstMatch(line);
     if (joinMatch != null) {
       _onlinePlayers.add(joinMatch.group(1)!);
+      _pushPlayerCountToWidget();
       return;
     }
     final leaveMatch = _reLeave.firstMatch(line);
     if (leaveMatch != null) {
       _onlinePlayers.remove(leaveMatch.group(1)!);
+      _pushPlayerCountToWidget();
       return;
     }
     // 解析 list 命令响应：There are X of Y players online: name1, name2
@@ -1307,7 +1311,46 @@ class ServerController extends ChangeNotifier
       } else {
         _onlinePlayers.clear();
       }
+      _pushPlayerCountToWidget();
     }
+  }
+
+  /// 把当前在线玩家数推给桌面小组件（每次玩家增减/list 命令时调用）。
+  /// 非运行状态由原生侧自动清零；此处只在玩家表刚刚变化时调用以同步画面。
+  void _pushPlayerCountToWidget() {
+    WidgetService.setPlayerCount(_onlinePlayers.length);
+  }
+
+  /// 计算「当前对外可访问地址」：优先 STUN 公网直连；其次 UPnP 公网 IP+
+  /// 映射端口；最后回退到 DDNS 域名（已成功更新时）。失败/无映射时返回 null。
+  /// 推送到桌面小组件，无映射则推 null 让小组件不显示「地址」项。
+  String? _currentPublicAddressForWidget() {
+    // STUN 直连优先；运行中且公网地址已就绪时为最佳选择。
+    final stun = _stunPublicAddress;
+    if (stun != null && stun.isNotEmpty) return stun;
+    // UPnP 公网 IP 映射；只有非 CGNAT（公网 IP）才有意义。
+    if (_upnpExternalIp != null &&
+        !_upnpIsCgnat &&
+        _upnp.mappedPort != null &&
+        _upnp.mappedPort! > 0) {
+      return '$_upnpExternalIp:${_upnp.mappedPort}';
+    }
+    // DDNS 域名（DDNS 已成功更新且域名已就绪时）。
+    if (_ddnsSucceeded && _ddnsDomain != null && _ddnsDomain!.isNotEmpty) {
+      return _ddnsDomain;
+    }
+    return null;
+  }
+
+  /// 触发一次小组件地址刷新；仅在状态/地址相关字段变化时调用。
+  ///
+  /// 公网地址（STUN/UPnP/DDNS）推送一次，同时重新检测内网 IPv4 一并上报：
+  /// 无可用公网地址时小组件用内网地址兜底展示。
+  void _pushPublicAddressToWidget() {
+    WidgetService.setPublicAddress(_currentPublicAddressForWidget());
+    NetworkAddress.detectIPv4().then((ip) {
+      WidgetService.setLocalAddress(ip);
+    });
   }
 
   /// PowerNukkitX 首次启动向导自动应答。
@@ -1400,7 +1443,15 @@ class ServerController extends ChangeNotifier
   void _cacheServerInfo() {
     readServerPort().then((port) {
       _serverPort = port;
+      // 把服务端端口同步给桌面小组件（片上「地址」一项可能用映射端口，
+      // 但原生侧按 serverPort 单独存储可让小组件在未来扩展时单独读取）
+      if (port != null && port > 0) WidgetService.setServerPort(port);
       notifyListeners();
+    });
+    // 服务端每次进入运行态都上报一次内网地址：即使未启用任何公网映射
+    //（STUN/UPnP/DDNS 全关或全部失败），小组件也能展示内网连接入口。
+    NetworkAddress.detectIPv4().then((ip) {
+      WidgetService.setLocalAddress(ip);
     });
     readOnlineMode().then((online) {
       _onlineMode = online;
@@ -1471,6 +1522,7 @@ class ServerController extends ChangeNotifier
                   _upnpExternalIp != null && _isPrivateIp(_upnpExternalIp!);
               _upnpSucceeded = true;
               _cancelUpnpTimer();
+              _pushPublicAddressToWidget();
               notifyListeners();
             }
           });
@@ -1502,12 +1554,14 @@ class ServerController extends ChangeNotifier
   void _stopUpnp() {
     if (!_upnpActive) return;
     _upnpActive = false;
+    final hadIp = _upnpExternalIp != null;
     _upnpExternalIp = null;
     _cancelUpnpTimer();
     _upnpIsCgnat = false;
     _upnp.closePort().then((_) {
       // 静默处理，不影响主流程。
     });
+    if (hadIp) _pushPublicAddressToWidget();
   }
 
   /// 触发 DDNS 动态域名解析（服务端进入运行态时调用）。
@@ -1575,6 +1629,8 @@ class ServerController extends ChangeNotifier
                 }),
               );
             }
+            // DDNS 首次或周期更新成功，把域名同步给小组件。
+            _pushPublicAddressToWidget();
           } else {
             _ddnsSucceeded = false;
             _ddnsError = result.error;
@@ -1597,6 +1653,7 @@ class ServerController extends ChangeNotifier
   void _stopDdns({bool maybeDeleteRecords = false}) {
     if (!_ddnsActive) return;
     _ddnsActive = false;
+    final hadDomain = _ddnsDomain != null;
     _ddnsEpoch++;
     _ddnsTimer?.cancel();
     _ddnsTimer = null;
@@ -1604,6 +1661,7 @@ class ServerController extends ChangeNotifier
     _ddnsError = null;
     _ddnsDomain = null;
     _ddns.reset();
+    if (hadDomain) _pushPublicAddressToWidget();
     notifyListeners();
     if (maybeDeleteRecords) _maybeDeleteDdnsRecords();
   }
@@ -1655,11 +1713,13 @@ class ServerController extends ChangeNotifier
   /// 否则关闭开关后失败提示会一直残留。
   void _stopStun() {
     if (!_stunActive && _stunStatus == StunTunnelStatus.stopped) return;
+    final hadAddr = _stunPublicAddress != null;
     _stunActive = false;
     _stunPublicAddress = null;
     _stunError = null;
     _stunStatus = StunTunnelStatus.stopped;
     _stun.stop();
+    if (hadAddr) _pushPublicAddressToWidget();
     notifyListeners();
   }
 
@@ -1687,6 +1747,8 @@ class ServerController extends ChangeNotifier
     } else if (wasRunning && status == StunTunnelStatus.probing) {
       _notice(tr('server.notice.stunRebuilding'));
     }
+    // STUN 公网地址刚就绪 / 失效 → 同步到桌面小组件。
+    _pushPublicAddressToWidget();
     notifyListeners();
   }
 

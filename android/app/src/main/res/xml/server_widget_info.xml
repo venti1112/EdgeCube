@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  EdgeCube 桌面小组件元数据。
+  - 4×1 胶囊：minWidth=250dp / minHeight=40dp，覆盖大多数启动器 4 列 ×1 行单元。
+  - updatePeriodMillis=1800000（30 分钟，Android 上限）；实际状态变化时由 WidgetUpdater.requestUpdate 主动推送。
+  - resizeMode=horizontal：用户可仅横向拉伸，纵向保持 1 行。
+  - previewImage 与 initialLayout 见 res/layout 与 drawable。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="40dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="1800000"
+    android:resizeMode="horizontal"
+    android:widgetCategory="keyguard|home_screen"
+    android:initialLayout="@layout/widget_server"
+    android:previewImage="@mipmap/ic_launcher"
+    android:configure=""
+    android:previewLayout="@layout/widget_server" />

@@ -29,6 +29,7 @@ import 'keep_alive_settings_page.dart';
 import 'language_settings_page.dart';
 import 'network_settings_page.dart';
 import 'storage_management_page.dart';
+import 'widget_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -156,6 +157,12 @@ class _SettingsPageState extends State<SettingsPage> {
             title: context.tr('settings.keepAlive.title'),
             summary: context.tr('settings.keepAlive.subtitle'),
             onClick: () => _push(const KeepAliveSettingsPage()),
+          ),
+          MiuixArrowPreference(
+            startAction: prefIcon(Icons.widgets_outlined),
+            title: context.tr('settings.widget.title'),
+            summary: context.tr('settings.widget.subtitle'),
+            onClick: () => _push(const WidgetSettingsPage()),
           ),
         ],
 
