@@ -1,5 +1,5 @@
 name: edgecube
-description: Run Minecraft server on Android
+description: Minecraft Server Tool
 homepage: https://edgecubemc.com
 repository: https://github.com/venti1112/EdgeCube
 issue_tracker: https://github.com/venti1112/EdgeCube/issues
@@ -11,7 +11,7 @@ platforms:
   linux:
   web:
 
-version: 1.0.0-beta26+26
+version: 2.0.0+200
 
 environment:
   sdk: ">=3.12.2 <4.0.0"
@@ -29,8 +29,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/images/
-    - assets/i18n/
-    - assets/markdown/
-    - assets/rules/
