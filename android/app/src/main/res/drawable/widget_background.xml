@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 小组件背景：圆角矩形（胶囊形）。亮色模式下深色填底，黑夜模式下浅色填底。 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="#E6303030" />
-    <corners android:radius="18dp" />
-</shape>

@@ -7,6 +7,9 @@ documentation: https://edgecubemc.com/#docs
 publish_to: 'none'
 platforms:
   android:
+  windows:
+  linux:
+  web:
 
 version: 1.0.0-beta26+26
 
@@ -18,47 +21,6 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  cupertino_icons: ^1.0.9
-  path_provider: ^2.1.6
-  path: ^1.9.1
-  crypto: ^3.0.7
-  package_info_plus: ^10.2.1
-  url_launcher: ^6.3.2
-  http: ^1.6.0
-  flutter_secure_storage: ^11.0.0
-  battery_optimization_helper: ^0.2.0
-  downloadx: ^0.3.0
-  share_plus: ^13.3.0
-  xterm: ^4.0.0
-  image: ^4.9.1
-  archive: ^4.0.9
-  flutter_markdown_plus: ^1.0.12
-  re_highlight: ^0.0.3
-  flutter_svg: ^2.3.0
-  pinenacl: ^0.6.0
-  logging: ^1.3.0
-  flutter_miuix:
-    git:
-      url: https://github.com/venti1112/flutter_miuix
-      ref: main
-  mcp_dart:
-    git:
-      url: https://github.com/venti1112/mcp_dart
-      ref: main
-  port_forwarder:
-    git:
-      url: https://github.com/venti1112/port_forwarder
-      ref: master
-  re_editor:
-    git:
-      url: https://github.com/venti1112/re-editor
-      ref: main
-  webdav_client_plus:
-    git:
-      url: https://github.com/venti1112/webdav_client
-      ref: main
-  ftpconnect: ^2.0.10
-  dartssh2: ^3.0.1
 
 dev_dependencies:
   flutter_test:
