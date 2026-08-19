@@ -1,0 +1,1937 @@
+openapi: 3.0.3
+info:
+  title: EdgeCube Daemon API
+  description: |
+    EdgeCube v2 守护进程 API(唯一契约)。
+
+    - 契约优先:所有 API 变更先改本文件,再由生成器产出三端代码
+      (Rust daemon / Kotlin daemon / Flutter client),任何一端不得绕过契约私自改协议。
+    - 实现阶段标记:每个 path 的 `x-phase` 标注落地阶段(0/1/2/3),对应
+      docs/PLAN.md §10 分阶段路线。
+    - WS 部分(events / terminal)不在 OpenAPI 能力范围内,见同目录 `ws.md`。
+    - 鉴权:除 /auth/* 与 /health 外全部需要 `Authorization: Bearer <token>`;
+      6 位对码经 `auth/pair` 换取长期 token。
+  version: 0.1.0
+  license:
+    name: GPL-3.0
+    url: https://www.gnu.org/licenses/gpl-3.0.html
+servers:
+  - url: http://{host}:{port}/api/v1
+    variables:
+      host:
+        default: 127.0.0.1
+      port:
+        default: "8760"
+
+tags:
+  - name: auth
+    description: 鉴权与配对
+  - name: instances
+    description: 实例管理(多实例并发,操作按 instanceId 定位)
+  - name: runtimes
+    description: 运行时管理(java/php/frpc,统一目录,官方源下载)
+  - name: files
+    description: 文件管理(以实例 cwd 为根的沙箱)
+  - name: backup
+    description: 备份(本地 zip + FTP/SFTP 目标)
+  - name: ftp
+    description: FTP 服务
+  - name: ssh
+    description: SSH 服务
+  - name: config
+    description: 设置项读写
+  - name: monitor
+    description: 系统监控
+  - name: health
+    description: 健康检查
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ────────────────────────── Health ──────────────────────────
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: 健康检查(未配对可访问)
+      security: []
+      x-phase: 0
+      responses:
+        "200":
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ────────────────────────── Auth ──────────────────────────
+  /auth/pairing-code:
+    get:
+      operationId: getPairingCode
+      tags: [auth]
+      summary: 获取当前配对码
+      description: |
+        返回当前生效的 6 位配对码。配对码用于本地/局域网设备换取 token;
+        未配对设备无需鉴权即可访问本端点(仅局域网可绑定)。
+      security: []
+      x-phase: 0
+      responses:
+        "200":
+          description: 当前配对码
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingCode"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: rotatePairingCode
+      tags: [auth]
+      summary: 轮换配对码
+      description: 使当前配对码失效并生成新码。
+      security: []
+      x-phase: 0
+      responses:
+        "200":
+          description: 新配对码
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingCode"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /auth/pair:
+    post:
+      operationId: pairDevice
+      tags: [auth]
+      summary: 对码配对,换取长期 token
+      security: []
+      x-phase: 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PairRequest"
+      responses:
+        "200":
+          description: 配对成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /auth/tokens:
+    get:
+      operationId: listDevices
+      tags: [auth]
+      summary: 已配对设备列表
+      x-phase: 0
+      responses:
+        "200":
+          description: 设备列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeviceInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /auth/tokens/{deviceId}:
+    delete:
+      operationId: revokeDevice
+      tags: [auth]
+      summary: 吊销指定设备的 token
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      responses:
+        "204":
+          description: 已吊销
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ────────────────────────── Instances ──────────────────────────
+  /instances:
+    get:
+      operationId: listInstances
+      tags: [instances]
+      summary: 实例列表(分页)
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: keyword
+          in: query
+          description: 按名称模糊过滤
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 分页实例列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstancePage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createInstance
+      tags: [instances]
+      summary: 创建实例
+      x-phase: 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstanceConfig"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceConfig"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /instances/overview:
+    get:
+      operationId: getInstancesOverview
+      tags: [instances]
+      summary: 全部实例状态聚合(首页看板)
+      description: |
+        返回所有实例的概要 + 运行中实例数量,供 UI 首页一次性渲染;
+        实时变化经 WS `instance/state` 事件推送。
+      x-phase: 0
+      responses:
+        "200":
+          description: 状态聚合
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceOverview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /instances/{instanceId}:
+    get:
+      operationId: getInstance
+      tags: [instances]
+      summary: 实例详情(配置 + 运行状态)
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+      responses:
+        "200":
+          description: 实例详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      operationId: updateInstance
+      tags: [instances]
+      summary: 更新实例配置
+      description: |
+        运行中实例的以下字段不可变更(需先停止):startCommand、workingDirectory、
+        type、terminal.pty、inputEncoding、outputEncoding。其余字段热更新。
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstanceConfig"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceConfig"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: deleteInstance
+      tags: [instances]
+      summary: 删除实例
+      description: 运行中的实例必须先停止;仅删除配置与进程,不删除工作目录。
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+      responses:
+        "204":
+          description: 已删除
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /instances/{instanceId}/start:
+    post:
+      operationId: startInstance
+      tags: [instances]
+      summary: 启动实例
+      description: |
+        完整多实例并发:任意数量实例可同时运行,互不干扰。
+        含首次启动的目录检查、锁与失败兜底 kill。
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+      responses:
+        "202":
+          description: 已受理启动
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /instances/{instanceId}/stop:
+    post:
+      operationId: stopInstance
+      tags: [instances]
+      summary: 优雅停止(发送 stopCommand,默认 ^C)
+      description: stopCommand 超时(可配,默认 600s)后自动升级为强杀。
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+      responses:
+        "202":
+          description: 已受理停止
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /instances/{instanceId}/restart:
+    post:
+      operationId: restartInstance
+      tags: [instances]
+      summary: 重启(停止完成后自动重新启动)
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+      responses:
+        "202":
+          description: 已受理重启
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /instances/{instanceId}/kill:
+    post:
+      operationId: killInstance
+      tags: [instances]
+      summary: 强制结束进程(进程树)
+      description: 启动后 6 秒内禁止强杀(防误触);跨平台进程树杀死。
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+      responses:
+        "202":
+          description: 已受理强杀
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /instances/{instanceId}/command:
+    post:
+      operationId: sendInstanceCommand
+      tags: [instances]
+      summary: 程序化发送一行命令(命令框通道)
+      description: |
+        结构化命令入口,对应终端协议中的 `input` 帧;
+        按实例配置可被替换为 RCON 等实现(附加层)。
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandRequest"
+      responses:
+        "202":
+          description: 已写入
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /instances/{instanceId}/log:
+    get:
+      operationId: getInstanceLog
+      tags: [instances]
+      summary: 增量日志拉取(重连回放)
+      description: |
+        `since` 为日志行序号(非时间戳),从 0 开始单调递增;
+        订阅 WS 后实时行由 `instance/stdout` 推送,本端点用于断线补拉。
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+        - name: since
+          in: query
+          description: 起始行序号(含)
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          description: 最大行数
+          schema:
+            type: integer
+            maximum: 5000
+            default: 5000
+      responses:
+        "200":
+          description: 日志行
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /instances/{instanceId}/outputlog:
+    get:
+      operationId: getInstanceOutputLog
+      tags: [instances]
+      summary: 持久化日志文件内容(完整回放/导出)
+      description: 返回该实例的日志文件全文(512KB 轮换,最大保留最近两卷)。
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+      responses:
+        "200":
+          description: 日志文本
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /instances/{instanceId}/process-config:
+    get:
+      operationId: getInstanceProcessConfig
+      tags: [instances]
+      summary: 读取实例配置文件(server.properties 等)
+      description: |
+        按文件名自动选择解析器:properties / yml / json / txt。
+        大整数以字符串返回避免精度丢失。
+      x-phase: 1
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+        - name: file
+          in: query
+          required: true
+          description: 配置文件名,如 server.properties(相对实例 cwd)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 解析后的键值
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessConfig"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      operationId: updateInstanceProcessConfig
+      tags: [instances]
+      summary: 写回实例配置文件
+      x-phase: 1
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+        - name: file
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessConfig"
+      responses:
+        "200":
+          description: 已写回
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /instances/{instanceId}/export:
+    post:
+      operationId: exportInstance
+      tags: [instances]
+      summary: 导出实例(打包工作目录为归档)
+      description: 进度经 WS `download/progress` 推送,完成后返回下载地址。
+      x-phase: 2
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportRequest"
+      responses:
+        "202":
+          description: 已开始导出
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  # ────────────────────────── Runtimes ──────────────────────────
+  /runtimes:
+    get:
+      operationId: listRuntimes
+      tags: [runtimes]
+      summary: 已安装运行时列表
+      x-phase: 1
+      responses:
+        "200":
+          description: 运行时列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RuntimeInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /runtimes/catalog:
+    get:
+      operationId: getRuntimeCatalog
+      tags: [runtimes]
+      summary: 可安装版本清单(官方源)
+      description: "拉取对应官方渠道的可用版本(java: Adoptium API;php: 权威预编译源;frpc: GitHub Releases)。"
+      x-phase: 1
+      parameters:
+        - name: type
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/RuntimeType"
+      responses:
+        "200":
+          description: 版本清单
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeCatalog"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /runtimes/install:
+    post:
+      operationId: installRuntime
+      tags: [runtimes]
+      summary: 安装运行时(官方源下载,进度走 WS download/progress)
+      x-phase: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeInstallRequest"
+      responses:
+        "202":
+          description: 已开始安装
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /runtimes/{runtimeId}:
+    delete:
+      operationId: deleteRuntime
+      tags: [runtimes]
+      summary: 卸载运行时
+      x-phase: 1
+      parameters:
+        - name: runtimeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: 已卸载
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ────────────────────────── Files ──────────────────────────
+  /fs/list:
+    get:
+      operationId: listFiles
+      tags: [files]
+      summary: 列出目录(沙箱,以实例 cwd 为根)
+      x-phase: 2
+      parameters:
+        - name: instanceId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: 相对实例 cwd 的路径,空为根
+          schema:
+            type: string
+            default: ""
+      responses:
+        "200":
+          description: 目录内容
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /fs/download:
+    get:
+      operationId: downloadFile
+      tags: [files]
+      summary: 下载文件(二进制流)
+      x-phase: 2
+      parameters:
+        - name: instanceId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 文件流
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /fs/upload-init:
+    post:
+      operationId: initFileUpload
+      tags: [files]
+      summary: 分片上传:初始化
+      description: |
+        分片断点续传三段式(upload-init / upload-piece / upload-complete),
+        对齐 MCSManager /upload-new + /upload-piece 设计。
+        分片大小由客户端自定(建议 1-8 MiB),服务端按 offset 写。
+      x-phase: 2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadInitRequest"
+      responses:
+        "200":
+          description: 上传会话
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /fs/upload-piece:
+    post:
+      operationId: uploadFilePiece
+      tags: [files]
+      summary: 分片上传:写入一片
+      x-phase: 2
+      parameters:
+        - name: uploadId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: offset
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: 已接收
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadProgress"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /fs/upload-complete:
+    post:
+      operationId: completeFileUpload
+      tags: [files]
+      summary: 分片上传:完成(校验 sha256)
+      x-phase: 2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadCompleteRequest"
+      responses:
+        "200":
+          description: 完成,返回落盘路径
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadCompleteResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /fs/mkdir:
+    post:
+      operationId: createDirectory
+      tags: [files]
+      summary: 创建目录
+      x-phase: 2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FsPathRequest"
+      responses:
+        "201":
+          description: 已创建
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /fs/move:
+    post:
+      operationId: moveFile
+      tags: [files]
+      summary: 移动/重命名
+      x-phase: 2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FsMoveRequest"
+      responses:
+        "204":
+          description: 已移动
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /fs/delete:
+    post:
+      operationId: deleteFile
+      tags: [files]
+      summary: 删除文件/目录(目录递归)
+      x-phase: 2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FsPathRequest"
+      responses:
+        "204":
+          description: 已删除
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /fs/compress:
+    post:
+      operationId: compressFile
+      tags: [files]
+      summary: 压缩为 zip
+      x-phase: 2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FsCompressRequest"
+      responses:
+        "202":
+          description: 已开始
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /fs/extract:
+    post:
+      operationId: extractFile
+      tags: [files]
+      summary: 解压归档(zip/tar/tar.gz)
+      x-phase: 2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FsPathRequest"
+      responses:
+        "202":
+          description: 已开始
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  # ────────────────────────── Backup ──────────────────────────
+  /backup/jobs:
+    get:
+      operationId: listBackupJobs
+      tags: [backup]
+      summary: 备份任务列表
+      x-phase: 2
+      responses:
+        "200":
+          description: 任务列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BackupJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createBackupJob
+      tags: [backup]
+      summary: 创建备份任务
+      x-phase: 2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupJob"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /backup/jobs/{jobId}:
+    put:
+      operationId: updateBackupJob
+      tags: [backup]
+      summary: 更新备份任务
+      x-phase: 2
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupJob"
+      responses:
+        "200":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: deleteBackupJob
+      tags: [backup]
+      summary: 删除备份任务
+      x-phase: 2
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "204":
+          description: 已删除
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /backup/jobs/{jobId}/trigger:
+    post:
+      operationId: triggerBackupJob
+      tags: [backup]
+      summary: 立即执行备份(进度走 WS backup/progress)
+      x-phase: 2
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "202":
+          description: 已触发
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /backup/targets:
+    get:
+      operationId: listBackupTargets
+      tags: [backup]
+      summary: 备份目标列表(local/FTP/SFTP)
+      x-phase: 2
+      responses:
+        "200":
+          description: 目标列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BackupTarget"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createBackupTarget
+      tags: [backup]
+      summary: 创建备份目标
+      x-phase: 2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupTarget"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupTarget"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /backup/targets/{targetId}:
+    put:
+      operationId: updateBackupTarget
+      tags: [backup]
+      summary: 更新备份目标
+      x-phase: 2
+      parameters:
+        - $ref: "#/components/parameters/TargetId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupTarget"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupTarget"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: deleteBackupTarget
+      tags: [backup]
+      summary: 删除备份目标
+      x-phase: 2
+      parameters:
+        - $ref: "#/components/parameters/TargetId"
+      responses:
+        "204":
+          description: 已删除
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  # ────────────────────────── FTP / SSH ──────────────────────────
+  /ftp:
+    get:
+      operationId: getFtpStatus
+      tags: [ftp]
+      summary: FTP 服务状态与配置
+      x-phase: 2
+      responses:
+        "200":
+          description: FTP 状态
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FtpStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      operationId: updateFtpConfig
+      tags: [ftp]
+      summary: 更新 FTP 配置(启用/端口/账号/根目录)
+      x-phase: 2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FtpConfig"
+      responses:
+        "200":
+          description: 已更新(服务运行中则自动重启生效)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FtpStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /ssh:
+    get:
+      operationId: getSshStatus
+      tags: [ssh]
+      summary: SSH 服务状态与配置
+      x-phase: 2
+      responses:
+        "200":
+          description: SSH 状态
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SshStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      operationId: updateSshConfig
+      tags: [ssh]
+      summary: 更新 SSH 配置(启用/端口/账号/根目录)
+      x-phase: 2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SshConfig"
+      responses:
+        "200":
+          description: 已更新
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SshStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  # ────────────────────────── Config ──────────────────────────
+  /config/{key}:
+    get:
+      operationId: getConfigEntry
+      tags: [config]
+      summary: 读取设置项
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/ConfigKey"
+      responses:
+        "200":
+          description: 设置值
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigEntry"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      operationId: updateConfigEntry
+      tags: [config]
+      summary: 写入设置项
+      x-phase: 0
+      parameters:
+        - $ref: "#/components/parameters/ConfigKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigEntry"
+      responses:
+        "200":
+          description: 已写入
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  # ────────────────────────── Monitor ──────────────────────────
+  /monitor/snapshot:
+    get:
+      operationId: getMonitorSnapshot
+      tags: [monitor]
+      summary: 系统监控快照(实时曲线走 WS monitor/stats)
+      x-phase: 1
+      responses:
+        "200":
+          description: 监控快照
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitorSnapshot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: auth/pair 换取的长期 token
+
+  parameters:
+    InstanceId:
+      name: instanceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: 实例 id(uuid)
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 配对设备 id
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+    TargetId:
+      name: targetId
+      in: path
+      required: true
+      schema:
+        type: string
+    Page:
+      name: page
+      in: query
+      description: 页码,从 1 开始
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    ConfigKey:
+      name: key
+      in: path
+      required: true
+      schema:
+        type: string
+        example: network
+
+  responses:
+    Unauthorized:
+      description: 未配对/凭证无效
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BadRequest:
+      description: 请求不合法
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: 状态冲突(如运行中重复启动)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: 机器可读错误码,如 not_authenticated / invalid_pair_code / instance_busy / not_found
+        message:
+          type: string
+          description: 人类可读错误信息(daemon 侧为英文,UI 按 code 本地化)
+        details:
+          type: object
+          additionalProperties: true
+
+    HealthResponse:
+      type: object
+      required: [status, version, daemon, platform, uptimeSeconds]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        version:
+          type: string
+          description: daemon 版本
+        daemon:
+          type: string
+          enum: [rust, kotlin]
+        platform:
+          type: string
+          example: linux-x64 / windows-x64 / android-arm64
+        uptimeSeconds:
+          type: integer
+          format: int64
+        instances:
+          type: object
+          properties:
+            running:
+              type: integer
+            total:
+              type: integer
+
+    PairingCode:
+      type: object
+      required: [code, expiresAt]
+      properties:
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+          description: 6 位对码
+        expiresAt:
+          type: string
+          format: date-time
+
+    PairRequest:
+      type: object
+      required: [code, deviceName]
+      properties:
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+        deviceName:
+          type: string
+          maxLength: 64
+          description: 设备显示名(如 "我的手机" / "办公室电脑")
+
+    PairResponse:
+      type: object
+      required: [token, deviceId]
+      properties:
+        token:
+          type: string
+          description: 长期 token(客户端存 secure storage)
+        deviceId:
+          type: string
+
+    DeviceInfo:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        lastSeenAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    # ────────── 实例 ──────────
+    InstanceStatus:
+      type: string
+      enum: [busy, stopped, stopping, starting, running]
+      description: 五态状态机(对齐 MCSManager)
+
+    InstanceType:
+      type: string
+      enum: [minecraft-java, minecraft-bedrock, pocketmine, generic]
+      description: 附加层类型;generic 为纯通用进程
+
+    InstanceConfig:
+      type: object
+      required: [name, startCommand, workingDirectory]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+          description: 服务端生成
+        name:
+          type: string
+          maxLength: 64
+        startCommand:
+          type: string
+          description: 命令行字符串(支持引号/转义,解析为参数数组 spawn,不经 shell)
+        stopCommand:
+          type: string
+          default: "^C"
+          description: 优雅停止命令;^C 表示发送 Ctrl+C
+        stopTimeoutSeconds:
+          type: integer
+          default: 600
+          description: 优雅停止超时,超时升级强杀
+        workingDirectory:
+          type: string
+          description: 工作目录(实例 cwd,文件沙箱根)
+        environment:
+          type: object
+          additionalProperties:
+            type: string
+          description: 额外环境变量
+        inputEncoding:
+          $ref: "#/components/schemas/Encoding"
+        outputEncoding:
+          $ref: "#/components/schemas/Encoding"
+        autoRestart:
+          type: boolean
+          default: false
+          description: 异常/正常退出后自动重启
+        autoRestartMaxTimes:
+          type: integer
+          default: -1
+          description: 重启次数上限;-1 无限
+        autoStartOnBoot:
+          type: boolean
+          default: false
+          description: daemon 启动时自动拉起
+        terminal:
+          type: object
+          properties:
+            pty:
+              type: boolean
+              default: true
+            initialCols:
+              type: integer
+              default: 164
+            initialRows:
+              type: integer
+              default: 40
+            haveColor:
+              type: boolean
+              default: true
+              description: 是否把 Minecraft §x 色码转 ANSI
+        type:
+          $ref: "#/components/schemas/InstanceType"
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+
+    Encoding:
+      type: string
+      enum: [utf-8, gbk, big5, shift_jis, euckr, gb18030, utf-16]
+      default: utf-8
+
+    InstanceSummary:
+      type: object
+      required: [id, name, status, type]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          $ref: "#/components/schemas/InstanceStatus"
+        type:
+          $ref: "#/components/schemas/InstanceType"
+        pid:
+          type: integer
+          nullable: true
+        runningSince:
+          type: string
+          format: date-time
+          nullable: true
+        autoRestart:
+          type: boolean
+        autoStartOnBoot:
+          type: boolean
+        port:
+          type: integer
+          nullable: true
+          description: 附加层解析出的服务端监听端口
+        onlinePlayers:
+          type: integer
+          nullable: true
+          description: 附加层解析出的在线人数
+
+    InstancePage:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstanceSummary"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+
+    InstanceOverview:
+      type: object
+      required: [items, running, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstanceSummary"
+        running:
+          type: integer
+        total:
+          type: integer
+
+    InstanceDetail:
+      type: object
+      required: [config, status]
+      properties:
+        config:
+          $ref: "#/components/schemas/InstanceConfig"
+        status:
+          $ref: "#/components/schemas/RunStatus"
+
+    RunStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/InstanceStatus"
+        pid:
+          type: integer
+          nullable: true
+          description: 真实游戏进程 PID(PTY 握手获得)
+        exitCode:
+          type: integer
+          nullable: true
+          description: 上次退出码
+        serverPort:
+          type: integer
+          nullable: true
+        onlineMode:
+          type: boolean
+          nullable: true
+        onlinePlayers:
+          type: array
+          items:
+            type: string
+          description: 当前在线玩家名
+        logSeq:
+          type: integer
+          format: int64
+          description: 当前日志行序号(供 /log?since= 续拉)
+
+    CommandRequest:
+      type: object
+      required: [command]
+      properties:
+        command:
+          type: string
+          description: 一行命令(自动补换行)
+
+    LogResponse:
+      type: object
+      required: [lines, nextSeq]
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/LogLine"
+        nextSeq:
+          type: integer
+          format: int64
+          description: 下一条起始序号
+
+    LogLine:
+      type: object
+      required: [seq, text]
+      properties:
+        seq:
+          type: integer
+          format: int64
+          description: 单调递增行序号
+        ts:
+          type: string
+          format: date-time
+        text:
+          type: string
+          description: 去 ANSI 的纯文本行
+
+    ProcessConfig:
+      type: object
+      additionalProperties:
+        type: string
+      description: 配置文件键值(值一律字符串,大整数不丢精度)
+
+    ExportRequest:
+      type: object
+      properties:
+        format:
+          type: string
+          enum: [zip, tar.gz]
+          default: zip
+        includeLogs:
+          type: boolean
+          default: false
+
+    JobAccepted:
+      type: object
+      required: [jobId]
+      properties:
+        jobId:
+          type: string
+          description: 异步任务 id(进度经 WS 同名事件推送)
+
+    # ────────── 运行时 ──────────
+    RuntimeType:
+      type: string
+      enum: [java, php, frpc]
+
+    RuntimeInfo:
+      type: object
+      required: [id, type, version, path, installedAt]
+      properties:
+        id:
+          type: string
+        type:
+          $ref: "#/components/schemas/RuntimeType"
+        version:
+          type: string
+        arch:
+          type: string
+          example: x64 / arm64
+        path:
+          type: string
+          description: 统一运行时目录内的绝对路径
+        sizeBytes:
+          type: integer
+          format: int64
+        installedAt:
+          type: string
+          format: date-time
+        default:
+          type: boolean
+          description: 是否默认版本
+
+    RuntimeCatalogEntry:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: string
+        url:
+          type: string
+          description: 官方源下载地址
+        sha256:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+
+    RuntimeCatalog:
+      type: object
+      required: [type, entries]
+      properties:
+        type:
+          $ref: "#/components/schemas/RuntimeType"
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeCatalogEntry"
+
+    RuntimeInstallRequest:
+      type: object
+      required: [type]
+      properties:
+        type:
+          $ref: "#/components/schemas/RuntimeType"
+        version:
+          type: string
+          description: 缺省取 catalog 推荐版本
+        arch:
+          type: string
+          description: 缺省取当前平台架构
+        url:
+          type: string
+          description: 覆盖官方源地址(开发者选项)
+
+    # ────────── 文件 ──────────
+    FileEntry:
+      type: object
+      required: [name, path, isDirectory, sizeBytes, modifiedAt]
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+          description: 相对实例 cwd 的路径
+        isDirectory:
+          type: boolean
+        sizeBytes:
+          type: integer
+          format: int64
+        modifiedAt:
+          type: string
+          format: date-time
+        executable:
+          type: boolean
+          nullable: true
+
+    FileListResponse:
+      type: object
+      required: [path, entries]
+      properties:
+        path:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileEntry"
+
+    UploadInitRequest:
+      type: object
+      required: [instanceId, path, fileName, sizeBytes]
+      properties:
+        instanceId:
+          type: string
+        path:
+          type: string
+          description: 目标目录(相对实例 cwd)
+        fileName:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        sha256:
+          type: string
+          description: 可选,complete 时校验
+        autoExtract:
+          type: boolean
+          default: false
+          description: 完成自动解压(服务端整合包场景)
+
+    UploadSession:
+      type: object
+      required: [uploadId, receivedBytes]
+      properties:
+        uploadId:
+          type: string
+        receivedBytes:
+          type: integer
+          format: int64
+          description: 已接收字节(断点续传:重连后从该偏移继续)
+
+    UploadProgress:
+      type: object
+      required: [uploadId, receivedBytes, totalBytes]
+      properties:
+        uploadId:
+          type: string
+        receivedBytes:
+          type: integer
+          format: int64
+        totalBytes:
+          type: integer
+          format: int64
+
+    UploadCompleteRequest:
+      type: object
+      required: [uploadId]
+      properties:
+        uploadId:
+          type: string
+
+    UploadCompleteResponse:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: 落盘路径(相对实例 cwd)
+
+    FsPathRequest:
+      type: object
+      required: [instanceId, path]
+      properties:
+        instanceId:
+          type: string
+        path:
+          type: string
+
+    FsMoveRequest:
+      type: object
+      required: [instanceId, from, to]
+      properties:
+        instanceId:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+
+    FsCompressRequest:
+      type: object
+      required: [instanceId, path]
+      properties:
+        instanceId:
+          type: string
+        path:
+          type: string
+          description: 待压缩目录/文件
+        destName:
+          type: string
+          description: 归档文件名,缺省取源名
+
+    # ────────── 备份 ──────────
+    BackupTargetType:
+      type: string
+      enum: [local, ftp, sftp]
+
+    BackupTarget:
+      type: object
+      required: [id, name, type, path]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: "#/components/schemas/BackupTargetType"
+        host:
+          type: string
+          nullable: true
+        port:
+          type: integer
+          nullable: true
+        username:
+          type: string
+          nullable: true
+        path:
+          type: string
+          description: 目标目录(local 为绝对路径;ftp/sftp 为远端路径)
+        encryptedPassword:
+          type: string
+          nullable: true
+          writeOnly: true
+          description: 可选;设置后服务端加密存储
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+
+    BackupJob:
+      type: object
+      required: [id, name, instanceId]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        instanceId:
+          type: string
+          description: 备份哪个实例
+        scheduleCron:
+          type: string
+          nullable: true
+          description: 定时表达式(如 "0 4 * * *");null 为仅手动
+        targetIds:
+          type: array
+          items:
+            type: string
+          description: 备份目标;空为仅本地
+        enabled:
+          type: boolean
+          default: true
+        maxKeep:
+          type: integer
+          default: 10
+          description: 保留最近 N 份
+        includeDirs:
+          type: array
+          items:
+            type: string
+          description: 相对 cwd 的附加目录;空为整个工作目录
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+        lastResult:
+          type: string
+          enum: [success, failed, running]
+          nullable: true
+          readOnly: true
+
+    # ────────── FTP / SSH ──────────
+    FtpConfig:
+      type: object
+      required: [enabled, port, username]
+      properties:
+        enabled:
+          type: boolean
+        port:
+          type: integer
+          default: 2121
+        username:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+        rootDir:
+          type: string
+          nullable: true
+          description: 根目录;null 跟随当前选中实例 cwd
+
+    FtpStatus:
+      allOf:
+        - $ref: "#/components/schemas/FtpConfig"
+        - type: object
+          properties:
+            running:
+              type: boolean
+            connections:
+              type: integer
+              default: 0
+
+    SshConfig:
+      type: object
+      required: [enabled, port, username]
+      properties:
+        enabled:
+          type: boolean
+        port:
+          type: integer
+          default: 2222
+        username:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+          description: 密码登录;留空则仅密钥
+        rootDir:
+          type: string
+          nullable: true
+
+    SshStatus:
+      allOf:
+        - $ref: "#/components/schemas/SshConfig"
+        - type: object
+          properties:
+            running:
+              type: boolean
+            connections:
+              type: integer
+              default: 0
+
+    # ────────── 配置 ──────────
+    ConfigEntry:
+      type: object
+      required: [key, value]
+      properties:
+        key:
+          type: string
+          description: 设置项名(locale/theme/network/developer/terminal/download 等)
+        value:
+          type: object
+          additionalProperties: true
+          description: 任意 JSON 值
+
+    # ────────── 监控 ──────────
+    MonitorSnapshot:
+      type: object
+      required: [cpuPercent, memoryTotalBytes, memoryUsedBytes, uptimeSeconds]
+      properties:
+        cpuPercent:
+          type: number
+          format: float
+        memoryTotalBytes:
+          type: integer
+          format: int64
+        memoryUsedBytes:
+          type: integer
+          format: int64
+        disks:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              totalBytes:
+                type: integer
+                format: int64
+              usedBytes:
+                type: integer
+                format: int64
+        networkRxBytesPerSec:
+          type: integer
+          format: int64
+        networkTxBytesPerSec:
+          type: integer
+          format: int64
+        uptimeSeconds:
+          type: integer
+          format: int64

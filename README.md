@@ -1,2 +1,2 @@
 # EdgeCube
-Run Minecraft server on Android
+Minecraft Server Tool

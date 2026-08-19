@@ -1,0 +1,24 @@
+[package]
+name = "edgecube_api"
+version = "0.1.0"
+authors = ["OpenAPI Generator team and contributors"]
+description = "EdgeCube v2 守护进程 API(唯一契约)。  - 契约优先:所有 API 变更先改本文件,再由生成器产出三端代码   (Rust daemon / Kotlin daemon / Flutter client),任何一端不得绕过契约私自改协议。 - 实现阶段标记:每个 path 的 `x-phase` 标注落地阶段(0/1/2/3),对应   docs/PLAN.md §10 分阶段路线。 - WS 部分(events / terminal)不在 OpenAPI 能力范围内,见同目录 `ws.md`。 - 鉴权:除 /auth/_* 与 /health 外全部需要 `Authorization: Bearer <token>`;   6 位对码经 `auth/pair` 换取长期 token。 "
+license = "GPL-3.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "^1.0", features = ["derive"] }
+serde_with = { version = "^3.8", default-features = false, features = ["base64", "std", "macros"] }
+serde_json = "^1.0"
+serde_repr = "^0.1"
+url = "^2.5"
+uuid = { version = "^1.8", features = ["serde", "v4"] }
+chrono = { version = "^0.4",  features = ["serde"] }
+tokio = { version = "^1.46.0", features = ["fs"] }
+tokio-util = { version = "^0.7", features = ["codec"] }
+reqwest = { version = "^0.13", default-features = false, features = ["json", "multipart", "stream", "query", "form"] }
+
+[features]
+default = ["native-tls"]
+native-tls = ["reqwest/native-tls"]
+rustls = ["reqwest/rustls"]
