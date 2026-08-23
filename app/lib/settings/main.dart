@@ -8,7 +8,13 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('设置'),
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+      ),
       body: ListView(
         children: [
           ListTile(

@@ -28,6 +28,8 @@ dependencies:
   flex_color_picker: ^3.8.0
   just_storage: ^1.2.1
   material_ui: ^1.0.1
+  file_picker: ^10.0.0
+  path_provider: ^2.1.0
 
 dev_dependencies:
   flutter_test:
