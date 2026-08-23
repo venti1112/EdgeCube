@@ -68,46 +68,14 @@ paths:
           $ref: "#/components/responses/BadRequest"
 
   # ────────────────────────── Auth ──────────────────────────
-  /auth/pairing-code:
-    get:
-      operationId: getPairingCode
+  /auth/login:
+    post:
+      operationId: login
       tags: [auth]
-      summary: 获取当前配对码
+      summary: 用户名密码登录,换取长期 token
       description: |
-        返回当前生效的 6 位配对码。配对码用于本地/局域网设备换取 token;
-        未配对设备无需鉴权即可访问本端点(仅局域网可绑定)。
-      security: []
-      x-phase: 0
-      responses:
-        "200":
-          description: 当前配对码
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PairingCode"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-    post:
-      operationId: rotatePairingCode
-      tags: [auth]
-      summary: 轮换配对码
-      description: 使当前配对码失效并生成新码。
-      security: []
-      x-phase: 0
-      responses:
-        "200":
-          description: 新配对码
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PairingCode"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-  /auth/pair:
-    post:
-      operationId: pairDevice
-      tags: [auth]
-      summary: 对码配对,换取长期 token
+        使用用户名和密码登录。daemon 首次启动时生成随机凭证并打印到控制台;
+        未登录设备无需鉴权即可访问本端点(仅局域网可绑定)。
       security: []
       x-phase: 0
       requestBody:
@@ -115,21 +83,56 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PairRequest"
+              $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: 配对成功
+          description: 登录成功
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PairResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /auth/change-password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      summary: 修改密码
+      x-phase: 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "204":
+          description: 密码已修改
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /auth/change-username:
+    post:
+      operationId: changeUsername
+      tags: [auth]
+      summary: 修改用户名
+      description: 需提供当前密码进行二次验证。
+      x-phase: 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeUsernameRequest"
+      responses:
+        "204":
+          description: 用户名已修改
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /auth/tokens:
     get:
       operationId: listDevices
       tags: [auth]
-      summary: 已配对设备列表
+      summary: 已登录设备列表
       x-phase: 0
       responses:
         "200":
@@ -1120,7 +1123,7 @@ components:
     BearerAuth:
       type: http
       scheme: bearer
-      description: auth/pair 换取的长期 token
+      description: auth/login 换取的长期 token
 
   parameters:
     InstanceId:
@@ -1207,7 +1210,7 @@ components:
       properties:
         code:
           type: string
-          description: 机器可读错误码,如 not_authenticated / invalid_pair_code / instance_busy / not_found
+          description: 机器可读错误码,如 not_authenticated / invalid_credentials / instance_busy / not_found
         message:
           type: string
           description: 人类可读错误信息(daemon 侧为英文,UI 按 code 本地化)
@@ -1242,33 +1245,23 @@ components:
             total:
               type: integer
 
-    PairingCode:
+    LoginRequest:
       type: object
-      required: [code, expiresAt]
+      required: [username, password]
       properties:
-        code:
+        username:
           type: string
-          minLength: 6
-          maxLength: 6
-          description: 6 位对码
-        expiresAt:
+          maxLength: 64
+        password:
           type: string
-          format: date-time
-
-    PairRequest:
-      type: object
-      required: [code, deviceName]
-      properties:
-        code:
-          type: string
-          minLength: 6
-          maxLength: 6
+          minLength: 8
+          maxLength: 128
         deviceName:
           type: string
           maxLength: 64
           description: 设备显示名(如 "我的手机" / "办公室电脑")
 
-    PairResponse:
+    LoginResponse:
       type: object
       required: [token, deviceId]
       properties:
@@ -1277,6 +1270,28 @@ components:
           description: 长期 token(客户端存 secure storage)
         deviceId:
           type: string
+
+    ChangePasswordRequest:
+      type: object
+      required: [oldPassword, newPassword]
+      properties:
+        oldPassword:
+          type: string
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 128
+
+    ChangeUsernameRequest:
+      type: object
+      required: [password, newUsername]
+      properties:
+        password:
+          type: string
+          description: 当前密码(二次验证)
+        newUsername:
+          type: string
+          maxLength: 64
 
     DeviceInfo:
       type: object

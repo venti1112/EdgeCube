@@ -198,7 +198,7 @@ wss://.../api/v1/ws/events                              # 带 Authorization: Bea
 | MCSManager | EdgeCube v2 | 差异 |
 |---|---|---|
 | socket.io + `IPacket{uuid,status,event,data}` | 原生 WS + `{type,id,event,data}` | 去掉 socket.io 依赖,协议等价 |
-| `stream/auth {password}`(passport) | `auth {token}` | passport 一次性凭证 → 长期 token |
+| `stream/auth {password}`(passport) | `auth {token}` | 一次性凭证 → 长期 token |
 | `stream/detail` | `terminal/detail` | 同 |
 | `stream/write {input}` | `terminal/write`(文本)+ 二进制帧 | 保留原始字节语义 |
 | `stream/input {command}` | `terminal/input` | 同(命令框与按键分离) |
