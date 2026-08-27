@@ -128,6 +128,63 @@ paths:
           description: 用户名已修改
         "401":
           $ref: "#/components/responses/Unauthorized"
+  # 本机免密登录:凭据为 daemon 数据目录内的 local.key。
+  # 仅持有该文件的进程(本机 App)可完成;TCP 端口映射仅转发流量、无法读取文件,
+  # 因此经映射访问的远端无法免密。区分依据是本机秘密而非来源 IP。
+  # 本端点额外严格限制来源必须为回环地址(127.0.0.1/::1):
+  # 映射场景下 peer 地址即本机回环,不受影响;而未使用映射时(如局域网绑定),
+  # 任何远端(即使意外持有凭证)来源均非回环,一律 403。
+  /auth/local-login/challenge:
+    post:
+      operationId: issueLocalLoginChallenge
+      tags: [auth]
+      summary: 发起本机免密登录挑战(一次性,短时效)
+      description: |
+        直连 daemon 的本机客户端免密登录:
+        返回一次性 challenge(5 分钟过期,使用后作废),客户端读取数据目录 `local.key`,
+        计算 `signature = lowercase(hex(HMAC-SHA256(localKey, challenge)))` 后提交
+        `/auth/local-login`。未登录设备无需鉴权(同 /auth/login)。
+      security: []
+      x-phase: 0
+      responses:
+        "200":
+          description: 挑战已签发
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalLoginChallenge"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /auth/local-login:
+    post:
+      operationId: localLogin
+      tags: [auth]
+      summary: 本机免密登录,换取长期 token
+      description: |
+        提交 /auth/local-login/challenge 返回的 challenge 及对应 HMAC 签名。
+        签名验证通过即视为本机进程(持有 local.key),签发与 /auth/login 相同的长期 token。
+        challenge 一次性使用,重放返回 401。
+      security: []
+      x-phase: 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalLoginRequest"
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /auth/tokens:
     get:
       operationId: listDevices
@@ -1202,6 +1259,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: 禁止访问(如本机端点被非回环来源调用)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
     ErrorResponse:
@@ -1290,6 +1353,30 @@ components:
           type: string
           description: 当前密码(二次验证)
         newUsername:
+          type: string
+          maxLength: 64
+
+    LocalLoginChallenge:
+      type: object
+      required: [challenge, expiresAt]
+      properties:
+        challenge:
+          type: string
+          description: 一次性挑战值,5 分钟过期
+        expiresAt:
+          type: string
+          format: date-time
+
+    LocalLoginRequest:
+      type: object
+      required: [challenge, signature]
+      properties:
+        challenge:
+          type: string
+        signature:
+          type: string
+          description: lowercase(hex(HMAC-SHA256(localKey, challenge))),localKey 为 daemon 数据目录内 local.key 内容
+        deviceName:
           type: string
           maxLength: 64
 

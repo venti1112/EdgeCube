@@ -38,6 +38,8 @@ doc/InstanceSummary.md
 doc/InstanceType.md
 doc/InstancesApi.md
 doc/JobAccepted.md
+doc/LocalLoginChallenge.md
+doc/LocalLoginRequest.md
 doc/LogLine.md
 doc/LogResponse.md
 doc/LoginRequest.md
@@ -109,6 +111,8 @@ lib/src/model/instance_status.dart
 lib/src/model/instance_summary.dart
 lib/src/model/instance_type.dart
 lib/src/model/job_accepted.dart
+lib/src/model/local_login_challenge.dart
+lib/src/model/local_login_request.dart
 lib/src/model/log_line.dart
 lib/src/model/log_response.dart
 lib/src/model/login_request.dart
@@ -166,6 +170,8 @@ test/instance_summary_test.dart
 test/instance_type_test.dart
 test/instances_api_test.dart
 test/job_accepted_test.dart
+test/local_login_challenge_test.dart
+test/local_login_request_test.dart
 test/log_line_test.dart
 test/log_response_test.dart
 test/login_request_test.dart

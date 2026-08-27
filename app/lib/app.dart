@@ -28,7 +28,7 @@ class EdgeCubeApp extends ConsumerWidget {
           themeMode: s.themeMode,
           theme: ThemeData(colorScheme: lightScheme),
           darkTheme: ThemeData(colorScheme: darkScheme),
-          routerConfig: router,
+          routerConfig: ref.watch(routerProvider),
         );
       },
     );

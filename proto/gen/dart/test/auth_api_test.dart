@@ -23,10 +23,28 @@ void main() {
       // TODO
     });
 
+    // 发起本机免密登录挑战(一次性,短时效)
+    //
+    // 直连 daemon 的本机客户端免密登录: 返回一次性 challenge(5 分钟过期,使用后作废),客户端读取数据目录 `local.key`, 计算 `signature = lowercase(hex(HMAC-SHA256(localKey, challenge)))` 后提交 `/auth/local-login`。未登录设备无需鉴权(同 /auth/login)。 
+    //
+    //Future<LocalLoginChallenge> issueLocalLoginChallenge() async
+    test('test issueLocalLoginChallenge', () async {
+      // TODO
+    });
+
     // 已登录设备列表
     //
     //Future<BuiltList<DeviceInfo>> listDevices() async
     test('test listDevices', () async {
+      // TODO
+    });
+
+    // 本机免密登录,换取长期 token
+    //
+    // 提交 /auth/local-login/challenge 返回的 challenge 及对应 HMAC 签名。 签名验证通过即视为本机进程(持有 local.key),签发与 /auth/login 相同的长期 token。 challenge 一次性使用,重放返回 401。 
+    //
+    //Future<LoginResponse> localLogin(LocalLoginRequest localLoginRequest) async
+    test('test localLogin', () async {
       // TODO
     });
 

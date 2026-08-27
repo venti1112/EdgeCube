@@ -1,4 +1,4 @@
-name: edgecube
+name: edgecube_app
 description: Minecraft Server Tool
 homepage: https://edgecubemc.com
 repository: https://github.com/venti1112/EdgeCube
@@ -30,6 +30,10 @@ dependencies:
   material_ui: ^1.0.1
   file_picker: ^10.0.0
   path_provider: ^2.1.0
+  dio: ^5.7.0
+  crypto: ^3.0.0
+  edgecube_api_client:
+    path: ../proto/gen/dart
 
 dev_dependencies:
   flutter_test:

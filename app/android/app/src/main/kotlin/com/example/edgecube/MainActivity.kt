@@ -1,4 +1,4 @@
-package com.example.edgecube
+package com.edgecube
 
 import io.flutter.embedding.android.FlutterActivity
 

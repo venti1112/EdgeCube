@@ -18,6 +18,13 @@ class SettingsPage extends StatelessWidget {
       body: ListView(
         children: [
           ListTile(
+            leading: const Icon(Icons.dns_outlined),
+            title: const Text('服务器'),
+            subtitle: const Text('添加 / 删除服务器与连接管理'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/servers'),
+          ),
+          ListTile(
             leading: const Icon(Icons.palette_outlined),
             title: const Text('外观'),
             subtitle: const Text('主题模式与主题色'),

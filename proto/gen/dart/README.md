@@ -75,7 +75,9 @@ Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 [*AuthApi*](doc/AuthApi.md) | [**changePassword**](doc/AuthApi.md#changepassword) | **POST** /auth/change-password | 修改密码
 [*AuthApi*](doc/AuthApi.md) | [**changeUsername**](doc/AuthApi.md#changeusername) | **POST** /auth/change-username | 修改用户名
+[*AuthApi*](doc/AuthApi.md) | [**issueLocalLoginChallenge**](doc/AuthApi.md#issuelocalloginchallenge) | **POST** /auth/local-login/challenge | 发起本机免密登录挑战(一次性,短时效)
 [*AuthApi*](doc/AuthApi.md) | [**listDevices**](doc/AuthApi.md#listdevices) | **GET** /auth/tokens | 已登录设备列表
+[*AuthApi*](doc/AuthApi.md) | [**localLogin**](doc/AuthApi.md#locallogin) | **POST** /auth/local-login | 本机免密登录,换取长期 token
 [*AuthApi*](doc/AuthApi.md) | [**login**](doc/AuthApi.md#login) | **POST** /auth/login | 用户名密码登录,换取长期 token
 [*AuthApi*](doc/AuthApi.md) | [**revokeDevice**](doc/AuthApi.md#revokedevice) | **DELETE** /auth/tokens/{deviceId} | 吊销指定设备的 token
 [*BackupApi*](doc/BackupApi.md) | [**createBackupJob**](doc/BackupApi.md#createbackupjob) | **POST** /backup/jobs | 创建备份任务
@@ -158,6 +160,8 @@ Class | Method | HTTP request | Description
  - [InstanceSummary](doc/InstanceSummary.md)
  - [InstanceType](doc/InstanceType.md)
  - [JobAccepted](doc/JobAccepted.md)
+ - [LocalLoginChallenge](doc/LocalLoginChallenge.md)
+ - [LocalLoginRequest](doc/LocalLoginRequest.md)
  - [LogLine](doc/LogLine.md)
  - [LogResponse](doc/LogResponse.md)
  - [LoginRequest](doc/LoginRequest.md)

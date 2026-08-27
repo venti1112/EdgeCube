@@ -50,6 +50,8 @@ export 'package:edgecube_api_client/src/model/instance_status.dart';
 export 'package:edgecube_api_client/src/model/instance_summary.dart';
 export 'package:edgecube_api_client/src/model/instance_type.dart';
 export 'package:edgecube_api_client/src/model/job_accepted.dart';
+export 'package:edgecube_api_client/src/model/local_login_challenge.dart';
+export 'package:edgecube_api_client/src/model/local_login_request.dart';
 export 'package:edgecube_api_client/src/model/log_line.dart';
 export 'package:edgecube_api_client/src/model/log_response.dart';
 export 'package:edgecube_api_client/src/model/login_request.dart';

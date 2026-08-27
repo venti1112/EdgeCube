@@ -43,6 +43,8 @@ import 'package:edgecube_api_client/src/model/instance_status.dart';
 import 'package:edgecube_api_client/src/model/instance_summary.dart';
 import 'package:edgecube_api_client/src/model/instance_type.dart';
 import 'package:edgecube_api_client/src/model/job_accepted.dart';
+import 'package:edgecube_api_client/src/model/local_login_challenge.dart';
+import 'package:edgecube_api_client/src/model/local_login_request.dart';
 import 'package:edgecube_api_client/src/model/log_line.dart';
 import 'package:edgecube_api_client/src/model/log_response.dart';
 import 'package:edgecube_api_client/src/model/login_request.dart';
@@ -95,6 +97,8 @@ part 'serializers.g.dart';
   InstanceSummary,
   InstanceType,
   JobAccepted,
+  LocalLoginChallenge,
+  LocalLoginRequest,
   LogLine,
   LogResponse,
   LoginRequest,
