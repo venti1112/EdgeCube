@@ -7,11 +7,6 @@ void main() {
   // TODO add properties to the builder and call build()
 
   group(ChangePasswordRequest, () {
-    // String oldPassword
-    test('to test the property `oldPassword`', () async {
-      // TODO
-    });
-
     // String newPassword
     test('to test the property `newPassword`', () async {
       // TODO

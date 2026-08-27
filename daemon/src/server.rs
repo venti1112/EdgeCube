@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::extract::{ConnectInfo, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,8 @@ pub fn router(auth: AuthStore) -> Router {
         .route("/api/v1/auth/login", post(login))
         .route("/api/v1/auth/local-login/challenge", post(local_challenge))
         .route("/api/v1/auth/local-login", post(local_login))
+        .route("/api/v1/auth/change-password", post(change_password))
+        .route("/api/v1/auth/change-username", post(change_username))
         .fallback(not_found)
         .with_state(state)
 }
@@ -63,6 +65,20 @@ pub struct LocalLoginRequest {
     pub signature: String,
     #[serde(default)]
     pub device_name: Option<String>,
+}
+
+/// 修改密码请求(openapi ChangePasswordRequest)。
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangePasswordRequest {
+    pub new_password: String,
+}
+
+/// 修改用户名请求(openapi ChangeUsernameRequest)。
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeUsernameRequest {
+    pub new_username: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -186,6 +202,53 @@ async fn local_login(
     }))
 }
 
+/// POST /api/v1/auth/change-password:修改密码(需 Bearer 鉴权)。
+async fn change_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<ChangePasswordRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorBody>)> {
+    let mut auth = state.auth.lock().await;
+    let token = bearer_token(&headers)
+        .ok_or_else(|| unauthorized("invalid_token", "missing bearer token"))?;
+    if !auth.verify_token(token) {
+        return Err(unauthorized("invalid_token", "invalid bearer token"));
+    }
+    if req.new_password.len() < 8 || req.new_password.len() > 128 {
+        return Err(bad_request(
+            "invalid_password",
+            "new password must be 8-128 characters",
+        ));
+    }
+    auth.change_password(&req.new_password)
+        .map_err(internal_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /api/v1/auth/change-username:修改用户名(需 Bearer 鉴权)。
+async fn change_username(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<ChangeUsernameRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorBody>)> {
+    let mut auth = state.auth.lock().await;
+    let token = bearer_token(&headers)
+        .ok_or_else(|| unauthorized("invalid_token", "missing bearer token"))?;
+    if !auth.verify_token(token) {
+        return Err(unauthorized("invalid_token", "invalid bearer token"));
+    }
+    let new_username = req.new_username.trim();
+    if new_username.is_empty() || new_username.chars().count() > 64 {
+        return Err(bad_request(
+            "invalid_username",
+            "username must be 1-64 characters",
+        ));
+    }
+    auth.change_username(new_username)
+        .map_err(internal_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// 未匹配路由:统一 404(openapi ErrorResponse)。其余 REST 端点后续阶段接入。
 async fn not_found() -> (StatusCode, Json<ErrorBody>) {
     (
@@ -213,6 +276,35 @@ fn ensure_loopback(
             message: "local login endpoint is restricted to loopback source".into(),
         }),
     ))
+}
+
+/// 从 Authorization 头提取 Bearer token(HTTP bearer 鉴权)。
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    let value = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
+    value.strip_prefix("Bearer ")
+}
+
+fn unauthorized(code: &'static str, message: &str) -> (StatusCode, Json<ErrorBody>) {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(ErrorBody {
+            code,
+            message: message.into(),
+        }),
+    )
+}
+
+fn bad_request(code: &'static str, message: &str) -> (StatusCode, Json<ErrorBody>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorBody {
+            code,
+            message: message.into(),
+        }),
+    )
 }
 
 fn internal_error(e: crate::error::DaemonError) -> (StatusCode, Json<ErrorBody>) {

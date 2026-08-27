@@ -16,7 +16,7 @@ void main() {
 
     // 修改用户名
     //
-    // 需提供当前密码进行二次验证。
+    // 已登录设备(Bearer token)可直接修改用户名。
     //
     //Future changeUsername(ChangeUsernameRequest changeUsernameRequest) async
     test('test changeUsername', () async {

@@ -11,13 +11,9 @@ part 'change_password_request.g.dart';
 /// ChangePasswordRequest
 ///
 /// Properties:
-/// * [oldPassword] 
 /// * [newPassword] 
 @BuiltValue()
 abstract class ChangePasswordRequest implements Built<ChangePasswordRequest, ChangePasswordRequestBuilder> {
-  @BuiltValueField(wireName: r'oldPassword')
-  String get oldPassword;
-
   @BuiltValueField(wireName: r'newPassword')
   String get newPassword;
 
@@ -44,11 +40,6 @@ class _$ChangePasswordRequestSerializer implements PrimitiveSerializer<ChangePas
     ChangePasswordRequest object, {
     FullType specifiedType = FullType.unspecified,
   }) sync* {
-    yield r'oldPassword';
-    yield serializers.serialize(
-      object.oldPassword,
-      specifiedType: const FullType(String),
-    );
     yield r'newPassword';
     yield serializers.serialize(
       object.newPassword,
@@ -77,13 +68,6 @@ class _$ChangePasswordRequestSerializer implements PrimitiveSerializer<ChangePas
       final key = serializedList[i] as String;
       final value = serializedList[i + 1];
       switch (key) {
-        case r'oldPassword':
-          final valueDes = serializers.deserialize(
-            value,
-            specifiedType: const FullType(String),
-          ) as String;
-          result.oldPassword = valueDes;
-          break;
         case r'newPassword':
           final valueDes = serializers.deserialize(
             value,

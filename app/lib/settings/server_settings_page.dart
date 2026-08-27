@@ -5,15 +5,70 @@ import 'package:material_ui/material_ui.dart';
 import '../server/server_entry.dart';
 import '../server/server_service.dart';
 
-/// 服务器管理页:添加/删除服务器,查看连接状态,点击条目连接。
-class ServerSettingsPage extends ConsumerWidget {
+/// 服务器管理页:单选列表管理连接。
+/// - 打开时若无连接,默认自动连接上一次最后连接的服务器;
+/// - 单选标记当前连接的服务器,点击其他条目即切换连接(同一时间仅一台);
+/// - 支持添加/删除服务器。
+class ServerSettingsPage extends ConsumerStatefulWidget {
   const ServerSettingsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ServerSettingsPage> createState() =>
+      _ServerSettingsPageState();
+}
+
+class _ServerSettingsPageState extends ConsumerState<ServerSettingsPage> {
+  /// 正在连接的服务器 id(用于行内转圈与防重入)
+  String? _connectingId;
+
+  @override
+  void initState() {
+    super.initState();
+    // 打开页面且未连接时,默认连接上次最后连接的服务器
+    WidgetsBinding.instance.addPostFrameCallback((_) => _autoConnectLast());
+  }
+
+  Future<void> _autoConnectLast() async {
+    if (!mounted) return;
+    final ref = this.ref;
+    if (ref.read(sessionProvider) != null) return;
+    final servers = ref.read(serverListProvider);
+    if (servers.isEmpty) return;
+
+    final lastId = ref.read(currentServerIdProvider);
+    ServerEntry? target;
+    for (final e in servers) {
+      if (e.id == lastId) {
+        target = e;
+        break;
+      }
+    }
+    await _connect(target ?? servers.first);
+  }
+
+  Future<void> _connect(ServerEntry entry) async {
+    if (!mounted || _connectingId != null) return;
+    if (ref.read(sessionProvider)?.serverId == entry.id) return; // 已是当前连接
+
+    setState(() => _connectingId = entry.id);
+    final toast = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(serverServiceProvider).connectTo(entry);
+      if (!mounted) return;
+      toast.showSnackBar(SnackBar(content: Text('已连接 ${entry.name}')));
+    } on ServerException catch (e) {
+      if (!mounted) return;
+      toast.showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _connectingId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final servers = ref.watch(serverListProvider);
-    final currentId = ref.watch(currentServerIdProvider);
     final session = ref.watch(sessionProvider);
+    final connectedId = session?.serverId;
     final hasKey = ref.watch(hasLocalKeyProvider);
 
     return Scaffold(
@@ -37,16 +92,28 @@ class ServerSettingsPage extends ConsumerWidget {
       ),
       body: servers.isEmpty
           ? _EmptyView(hasKey: hasKey)
-          : ListView(
-              children: [
-                for (final entry in servers)
-                  _ServerTile(
-                    entry: entry,
-                    isCurrent: entry.id == currentId,
-                    isConnected: session != null &&
-                        session.serverId == entry.id,
-                  ),
-              ],
+          : RadioGroup<String?>(
+              groupValue: connectedId,
+              onChanged: (value) {
+                if (value == null) return;
+                for (final e in servers) {
+                  if (e.id == value) {
+                    _connect(e);
+                    break;
+                  }
+                }
+              },
+              child: ListView(
+                children: [
+                  for (final entry in servers)
+                    _ServerTile(
+                      entry: entry,
+                      groupValue: connectedId,
+                      connecting: _connectingId == entry.id,
+                      onSelect: () => _connect(entry),
+                    ),
+                ],
+              ),
             ),
     );
   }
@@ -85,54 +152,48 @@ class _EmptyView extends StatelessWidget {
 class _ServerTile extends ConsumerWidget {
   const _ServerTile({
     required this.entry,
-    required this.isCurrent,
-    required this.isConnected,
+    required this.groupValue,
+    required this.connecting,
+    required this.onSelect,
   });
 
   final ServerEntry entry;
-  final bool isCurrent;
-  final bool isConnected;
+  final String? groupValue;
+  final bool connecting;
+  final VoidCallback onSelect;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final local = entry.type == ServerType.local;
+    final connected = groupValue == entry.id;
     final subtitle = local
         ? '${entry.host}:${entry.port} · 本地免密'
         : '${entry.host}:${entry.port} · 远程${entry.username == null ? '' : ' · ${entry.username}'}';
+
     return ListTile(
-      leading: Icon(
-        local ? Icons.computer : Icons.dns_outlined,
-        color: cs.primary,
-      ),
+      leading: Radio<String?>(value: entry.id),
       title: Row(
         children: [
           Flexible(child: Text(entry.name, overflow: TextOverflow.ellipsis)),
-          if (isConnected) ...[
+          if (connected) ...[
             const SizedBox(width: 8),
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.green,
-              ),
-            ),
+            Text('已连接', style: TextStyle(fontSize: 12, color: cs.primary)),
           ],
         ],
       ),
-      subtitle: Text(
-        '$subtitle${isCurrent ? (isConnected ? ' · 已连接' : ' · 当前') : ''}',
-      ),
+      subtitle: Text(subtitle),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (isConnected)
-            IconButton(
-              icon: const Icon(Icons.link_off),
-              tooltip: '断开连接',
-              onPressed: () =>
-                  ref.read(serverServiceProvider).disconnect(),
+          if (connecting)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
             ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
@@ -141,17 +202,8 @@ class _ServerTile extends ConsumerWidget {
           ),
         ],
       ),
-      onTap: () async {
-        final notifier = ref.read(serverServiceProvider);
-        final toast = ScaffoldMessenger.of(context);
-        try {
-          await notifier.connectTo(entry);
-          await ref.read(currentServerIdProvider.notifier).set(entry.id);
-          toast.showSnackBar(const SnackBar(content: Text('已连接服务器')));
-        } on ServerException catch (e) {
-          toast.showSnackBar(SnackBar(content: Text(e.message)));
-        }
-      },
+      enabled: !connecting,
+      onTap: onSelect,
     );
   }
 

@@ -8,16 +8,13 @@ part of 'change_username_request.dart';
 
 class _$ChangeUsernameRequest extends ChangeUsernameRequest {
   @override
-  final String password;
-  @override
   final String newUsername;
 
   factory _$ChangeUsernameRequest(
           [void Function(ChangeUsernameRequestBuilder)? updates]) =>
       (ChangeUsernameRequestBuilder()..update(updates))._build();
 
-  _$ChangeUsernameRequest._({required this.password, required this.newUsername})
-      : super._();
+  _$ChangeUsernameRequest._({required this.newUsername}) : super._();
   @override
   ChangeUsernameRequest rebuild(
           void Function(ChangeUsernameRequestBuilder) updates) =>
@@ -30,15 +27,12 @@ class _$ChangeUsernameRequest extends ChangeUsernameRequest {
   @override
   bool operator ==(Object other) {
     if (identical(other, this)) return true;
-    return other is ChangeUsernameRequest &&
-        password == other.password &&
-        newUsername == other.newUsername;
+    return other is ChangeUsernameRequest && newUsername == other.newUsername;
   }
 
   @override
   int get hashCode {
     var _$hash = 0;
-    _$hash = $jc(_$hash, password.hashCode);
     _$hash = $jc(_$hash, newUsername.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
@@ -47,7 +41,6 @@ class _$ChangeUsernameRequest extends ChangeUsernameRequest {
   @override
   String toString() {
     return (newBuiltValueToStringHelper(r'ChangeUsernameRequest')
-          ..add('password', password)
           ..add('newUsername', newUsername))
         .toString();
   }
@@ -56,10 +49,6 @@ class _$ChangeUsernameRequest extends ChangeUsernameRequest {
 class ChangeUsernameRequestBuilder
     implements Builder<ChangeUsernameRequest, ChangeUsernameRequestBuilder> {
   _$ChangeUsernameRequest? _$v;
-
-  String? _password;
-  String? get password => _$this._password;
-  set password(String? password) => _$this._password = password;
 
   String? _newUsername;
   String? get newUsername => _$this._newUsername;
@@ -72,7 +61,6 @@ class ChangeUsernameRequestBuilder
   ChangeUsernameRequestBuilder get _$this {
     final $v = _$v;
     if ($v != null) {
-      _password = $v.password;
       _newUsername = $v.newUsername;
       _$v = null;
     }
@@ -95,8 +83,6 @@ class ChangeUsernameRequestBuilder
   _$ChangeUsernameRequest _build() {
     final _$result = _$v ??
         _$ChangeUsernameRequest._(
-          password: BuiltValueNullFieldError.checkNotNull(
-              password, r'ChangeUsernameRequest', 'password'),
           newUsername: BuiltValueNullFieldError.checkNotNull(
               newUsername, r'ChangeUsernameRequest', 'newUsername'),
         );

@@ -8,17 +8,13 @@ part of 'change_password_request.dart';
 
 class _$ChangePasswordRequest extends ChangePasswordRequest {
   @override
-  final String oldPassword;
-  @override
   final String newPassword;
 
   factory _$ChangePasswordRequest(
           [void Function(ChangePasswordRequestBuilder)? updates]) =>
       (ChangePasswordRequestBuilder()..update(updates))._build();
 
-  _$ChangePasswordRequest._(
-      {required this.oldPassword, required this.newPassword})
-      : super._();
+  _$ChangePasswordRequest._({required this.newPassword}) : super._();
   @override
   ChangePasswordRequest rebuild(
           void Function(ChangePasswordRequestBuilder) updates) =>
@@ -31,15 +27,12 @@ class _$ChangePasswordRequest extends ChangePasswordRequest {
   @override
   bool operator ==(Object other) {
     if (identical(other, this)) return true;
-    return other is ChangePasswordRequest &&
-        oldPassword == other.oldPassword &&
-        newPassword == other.newPassword;
+    return other is ChangePasswordRequest && newPassword == other.newPassword;
   }
 
   @override
   int get hashCode {
     var _$hash = 0;
-    _$hash = $jc(_$hash, oldPassword.hashCode);
     _$hash = $jc(_$hash, newPassword.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
@@ -48,7 +41,6 @@ class _$ChangePasswordRequest extends ChangePasswordRequest {
   @override
   String toString() {
     return (newBuiltValueToStringHelper(r'ChangePasswordRequest')
-          ..add('oldPassword', oldPassword)
           ..add('newPassword', newPassword))
         .toString();
   }
@@ -57,10 +49,6 @@ class _$ChangePasswordRequest extends ChangePasswordRequest {
 class ChangePasswordRequestBuilder
     implements Builder<ChangePasswordRequest, ChangePasswordRequestBuilder> {
   _$ChangePasswordRequest? _$v;
-
-  String? _oldPassword;
-  String? get oldPassword => _$this._oldPassword;
-  set oldPassword(String? oldPassword) => _$this._oldPassword = oldPassword;
 
   String? _newPassword;
   String? get newPassword => _$this._newPassword;
@@ -73,7 +61,6 @@ class ChangePasswordRequestBuilder
   ChangePasswordRequestBuilder get _$this {
     final $v = _$v;
     if ($v != null) {
-      _oldPassword = $v.oldPassword;
       _newPassword = $v.newPassword;
       _$v = null;
     }
@@ -96,8 +83,6 @@ class ChangePasswordRequestBuilder
   _$ChangePasswordRequest _build() {
     final _$result = _$v ??
         _$ChangePasswordRequest._(
-          oldPassword: BuiltValueNullFieldError.checkNotNull(
-              oldPassword, r'ChangePasswordRequest', 'oldPassword'),
           newPassword: BuiltValueNullFieldError.checkNotNull(
               newPassword, r'ChangePasswordRequest', 'newPassword'),
         );

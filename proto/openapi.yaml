@@ -115,7 +115,7 @@ paths:
       operationId: changeUsername
       tags: [auth]
       summary: 修改用户名
-      description: 需提供当前密码进行二次验证。
+      description: 已登录设备(Bearer token)可直接修改用户名。
       x-phase: 0
       requestBody:
         required: true
@@ -1336,10 +1336,8 @@ components:
 
     ChangePasswordRequest:
       type: object
-      required: [oldPassword, newPassword]
+      required: [newPassword]
       properties:
-        oldPassword:
-          type: string
         newPassword:
           type: string
           minLength: 8
@@ -1347,11 +1345,8 @@ components:
 
     ChangeUsernameRequest:
       type: object
-      required: [password, newUsername]
+      required: [newUsername]
       properties:
-        password:
-          type: string
-          description: 当前密码(二次验证)
         newUsername:
           type: string
           maxLength: 64

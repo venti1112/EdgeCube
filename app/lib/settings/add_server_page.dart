@@ -5,15 +5,11 @@ import 'package:material_ui/material_ui.dart';
 import '../server/server_entry.dart';
 import '../server/server_service.dart';
 
-/// 添加服务器页。
-///
-/// [setupMode] 为 true 时作为首启引导页(`/setup`,无返回按钮,
-/// 没有配置且本机无 local.key 时由 redirect 引导至此):
+/// 添加服务器页:
 /// 新增本地服务器走本机免密登录,新增远程服务器走用户名密码登录。
+/// 先连接成功才保存条目,失败不落库、停留本页。
 class AddServerPage extends ConsumerStatefulWidget {
-  const AddServerPage({super.key, this.setupMode = false});
-
-  final bool setupMode;
+  const AddServerPage({super.key});
 
   @override
   ConsumerState<AddServerPage> createState() => _AddServerPageState();
@@ -75,7 +71,7 @@ class _AddServerPageState extends ConsumerState<AddServerPage> {
       await ref.read(currentServerIdProvider.notifier).set(entry.id);
       if (!mounted) return;
       toast.showSnackBar(const SnackBar(content: Text('已添加并连接服务器')));
-      context.go('/servers');
+      context.go('/settings/servers');
     } on ServerException catch (e) {
       if (!mounted) return;
       toast.showSnackBar(SnackBar(content: Text('连接失败:${e.message}')));
@@ -94,7 +90,7 @@ class _AddServerPageState extends ConsumerState<AddServerPage> {
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
-        automaticallyImplyLeading: !widget.setupMode,
+        automaticallyImplyLeading: true,
       ),
       body: Form(
         key: _formKey,

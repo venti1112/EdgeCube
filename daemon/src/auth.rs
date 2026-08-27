@@ -131,15 +131,62 @@ impl AuthStore {
         let Some(account) = &self.account else {
             return false;
         };
-        if account.username != username {
+        account.username == username && self.password_matches(password)
+    }
+
+    /// 仅校验密码(修改用户名时的二次验证)。
+    fn password_matches(&self, password: &str) -> bool {
+        let Some(account) = &self.account else {
             return false;
-        }
+        };
         let Ok(parsed) = PasswordHash::new(&account.password_hash) else {
             return false;
         };
         Argon2::default()
             .verify_password(password.as_bytes(), &parsed)
             .is_ok()
+    }
+
+    /// Bearer token 是否属于已登录设备(change-password/change-username 鉴权)。
+    pub fn verify_token(&self, token: &str) -> bool {
+        self.devices.iter().any(|d| d.token == token)
+    }
+
+    /// 修改密码:替换哈希并持久化。
+    pub fn change_password(&mut self, new_password: &str) -> Result<bool> {
+        if self.account.is_none() {
+            return Ok(false);
+        }
+        let hash = hash_password(new_password)?;
+        self.account.as_mut().expect("account exists").password_hash = hash;
+        self.persist_account()?;
+        tracing::info!("account password changed");
+        Ok(true)
+    }
+
+    /// 修改用户名:更新并持久化。
+    pub fn change_username(&mut self, new_username: &str) -> Result<bool> {
+        if self.account.is_none() {
+            return Ok(false);
+        }
+        self.account.as_mut().expect("account exists").username = new_username.to_string();
+        self.persist_account()?;
+        tracing::info!("account username changed");
+        Ok(true)
+    }
+
+    fn persist_account(&self) -> Result<()> {
+        let Some(account) = &self.account else {
+            return Ok(());
+        };
+        fs::write(&self.account_path, serde_json::to_string_pretty(account)?)?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&self.account_path, fs::Permissions::from_mode(0o600));
+        }
+        Ok(())
     }
 
     /// 签发一次性本机免密 challenge(5 分钟有效,重启即失效)。

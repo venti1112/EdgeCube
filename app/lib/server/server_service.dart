@@ -126,13 +126,22 @@ class SessionNotifier extends Notifier<ServerSession?> {
   }
 }
 
-/// 启动引导判定:没有任何服务器配置,且本机无 local.key 时,
-/// 必须引导用户手动添加服务器(redirect 到 /setup)。
-final serverNeedSetupProvider = Provider<bool>((ref) {
-  final empty = ref.watch(serverListProvider).isEmpty;
-  final hasKey = ref.watch(hasLocalKeyProvider);
-  return empty && !hasKey;
-});
+/// 启动连接阶段:应用启动时进入 [connecting],连接结束后由 redirect 跳转。
+enum StartupStage { connecting, finished }
+
+/// 启动连接阶段状态
+final startupStageProvider =
+    NotifierProvider<StartupStageNotifier, StartupStage>(
+  StartupStageNotifier.new,
+);
+
+class StartupStageNotifier extends Notifier<StartupStage> {
+  @override
+  StartupStage build() => StartupStage.connecting;
+
+  /// 连接流程结束(无论成败),redirect 据此从连接页跳转。
+  void finish() => state = StartupStage.finished;
+}
 
 /// 当前连接服务器的 API 客户端(登录成功后才可获取,已注入 Bearer token)
 final edgecubeClientProvider = Provider<EdgecubeApiClient?>((ref) {
@@ -205,6 +214,9 @@ class ServerService {
       _ref
           .read(sessionProvider.notifier)
           .set(ServerSession(serverId: entry.id, token: resp.token, deviceId: resp.deviceId));
+      // 同时更新“当前服务器”:单选列表选中、lastServer 持久化、
+      // edgecubeClientProvider 依据 id 与 session 匹配后对外暴露。
+      await _ref.read(currentServerIdProvider.notifier).set(entry.id);
       debugPrint('[EdgeCube] connected to ${entry.type} server ${entry.id}, '
           'device=${resp.deviceId}');
       return resp;

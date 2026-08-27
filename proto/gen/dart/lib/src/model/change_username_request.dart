@@ -11,14 +11,9 @@ part 'change_username_request.g.dart';
 /// ChangeUsernameRequest
 ///
 /// Properties:
-/// * [password] - 当前密码(二次验证)
 /// * [newUsername] 
 @BuiltValue()
 abstract class ChangeUsernameRequest implements Built<ChangeUsernameRequest, ChangeUsernameRequestBuilder> {
-  /// 当前密码(二次验证)
-  @BuiltValueField(wireName: r'password')
-  String get password;
-
   @BuiltValueField(wireName: r'newUsername')
   String get newUsername;
 
@@ -45,11 +40,6 @@ class _$ChangeUsernameRequestSerializer implements PrimitiveSerializer<ChangeUse
     ChangeUsernameRequest object, {
     FullType specifiedType = FullType.unspecified,
   }) sync* {
-    yield r'password';
-    yield serializers.serialize(
-      object.password,
-      specifiedType: const FullType(String),
-    );
     yield r'newUsername';
     yield serializers.serialize(
       object.newUsername,
@@ -78,13 +68,6 @@ class _$ChangeUsernameRequestSerializer implements PrimitiveSerializer<ChangeUse
       final key = serializedList[i] as String;
       final value = serializedList[i + 1];
       switch (key) {
-        case r'password':
-          final valueDes = serializers.deserialize(
-            value,
-            specifiedType: const FullType(String),
-          ) as String;
-          result.password = valueDes;
-          break;
         case r'newUsername':
           final valueDes = serializers.deserialize(
             value,
