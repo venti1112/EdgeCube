@@ -1,0 +1,6 @@
+[submodule "pty"]
+	path = pty
+	url = https://github.com/venti1112/PTY.git
+[submodule "proot"]
+	path = proot
+	url = https://github.com/venti1112/proot.git
