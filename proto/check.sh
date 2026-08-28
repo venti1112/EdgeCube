@@ -8,7 +8,6 @@
 #   ./check.sh                 # 校验全部语言
 #   ./check.sh dart            # 仅校验 Dart
 #   ./check.sh rust
-#   ./check.sh kotlin
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -22,13 +21,12 @@ trap 'rm -rf "$TMP"' EXIT
 declare -A GEN_CONF=(
   [dart]="dart-dio||pubName=edgecube_api_client,useEnumExtension=true,allowUnicodeIdentifiers=true"
   [rust]="rust||packageName=edgecube_api"
-  [kotlin]="kotlin|jvm-ktor|packageName=com.venti1112.edgecube.api"
 )
 
 target="${1:-all}"
 langs=()
 if [[ "$target" == "all" ]]; then
-  langs=(dart rust kotlin)
+  langs=(dart rust)
 else
   langs=("$target")
 fi

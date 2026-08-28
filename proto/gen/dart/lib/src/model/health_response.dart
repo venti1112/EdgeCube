@@ -31,7 +31,7 @@ abstract class HealthResponse implements Built<HealthResponse, HealthResponseBui
 
   @BuiltValueField(wireName: r'daemon')
   HealthResponseDaemonEnum get daemon;
-  // enum daemonEnum {  rust,  kotlin,  };
+  // enum daemonEnum {  rust,  };
 
   @BuiltValueField(wireName: r'platform')
   String get platform;
@@ -211,8 +211,6 @@ class HealthResponseDaemonEnum extends EnumClass {
 
   @BuiltValueEnumConst(wireName: r'rust')
   static const HealthResponseDaemonEnum rust = _$healthResponseDaemonEnum_rust;
-  @BuiltValueEnumConst(wireName: r'kotlin')
-  static const HealthResponseDaemonEnum kotlin = _$healthResponseDaemonEnum_kotlin;
 
   static Serializer<HealthResponseDaemonEnum> get serializer => _$healthResponseDaemonEnumSerializer;
 

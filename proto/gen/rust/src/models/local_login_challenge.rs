@@ -12,28 +12,19 @@ use crate::models;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SshConfig {
-    #[serde(rename = "enabled")]
-    pub enabled: bool,
-    #[serde(rename = "port")]
-    pub port: i32,
-    #[serde(rename = "username")]
-    pub username: String,
-    /// 密码登录;留空则仅密钥
-    #[serde(rename = "password", skip_serializing_if = "Option::is_none")]
-    pub password: Option<String>,
-    #[serde(rename = "rootDir", default, with = "::serde_with::rust::double_option", skip_serializing_if = "Option::is_none")]
-    pub root_dir: Option<Option<String>>,
+pub struct LocalLoginChallenge {
+    /// 一次性挑战值,5 分钟过期
+    #[serde(rename = "challenge")]
+    pub challenge: String,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: chrono::DateTime<chrono::FixedOffset>,
 }
 
-impl SshConfig {
-    pub fn new(enabled: bool, port: i32, username: String) -> SshConfig {
-        SshConfig {
-            enabled,
-            port,
-            username,
-            password: None,
-            root_dir: None,
+impl LocalLoginChallenge {
+    pub fn new(challenge: String, expires_at: chrono::DateTime<chrono::FixedOffset>) -> LocalLoginChallenge {
+        LocalLoginChallenge {
+            challenge,
+            expires_at,
         }
     }
 }

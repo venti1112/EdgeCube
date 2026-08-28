@@ -1,7 +1,7 @@
 # proto/ — 协议规范(唯一契约)
 
-本目录是 EdgeCube v2 前后端分离的**唯一协议契约**,Rust daemon / Kotlin daemon / Flutter UI
-三端都必须以本目录文件为准,任何一端不得绕过契约私自改协议。
+本目录是 EdgeCube v2 前后端分离的**唯一协议契约**,Rust daemon / Flutter UI
+两端都必须以本目录文件为准,任何一端不得绕过契约私自改协议。
 
 ## 文件
 
@@ -15,9 +15,9 @@
 
 ```
 1. 需求变更 → 先改 openapi.yaml / ws.md(含 x-phase 阶段标记)
-2. 更新 conformance 测试用例(双 daemon 同套用例)
-3. 生成客户端/服务端代码 → Rust daemon / Kotlin daemon / Flutter client 各自实现
-4. 双 daemon 通过 conformance 后才允许 UI 侧联调
+2. 更新 conformance 测试用例(daemon 同套用例)
+3. 生成客户端/服务端代码 → Rust daemon / Flutter client 各自实现
+4. daemon 通过 conformance 后才允许 UI 侧联调
 ```
 
 ## 代码生成
@@ -26,13 +26,12 @@
 运行依赖 Java 17+)。
 
 ```bash
-# 生成全部三端代码(推荐)
+# 生成全部两端代码(推荐)
 ./proto/gen.sh
 
 # 单独生成某端;DEST 可覆盖输出目录
 ./proto/gen.sh dart       # Flutter UI 客户端(dart-dio)
 ./proto/gen.sh rust       # Rust daemon 参考
-./proto/gen.sh kotlin     # Kotlin daemon 参考(jvm-ktor)
 
 # 校验生成物与 openapi.yaml 同步(CI 阶段接入)
 ./proto/check.sh
@@ -44,14 +43,13 @@
 |---|---|---|
 | Dart (Flutter) | dart-dio | `proto/gen/dart`(app 建立后拷贝至 `app/lib/api/generated` 或改 `DEST`) |
 | Rust | rust | `proto/gen/rust` |
-| Kotlin | kotlin (jvm-ktor) | `proto/gen/kotlin` |
 
 - **生成物提交仓库**,避免构建时依赖生成器与网络;`proto/gen/dart` 的
   `.dart_tool/`、`pubspec.lock` 为构建产物,已 .gitignore。
 - 修改 openapi.yaml 后必须重新生成(`./gen.sh`)并通过 `./check.sh`,否则 CI 失败。
 - 注意:增量生成到已存在的输出目录可能产生 FILES 与文件系统不一致(删旧重建即可,
   脚本已保证从干净目录生成)。
-- WS 部分(ws.md)无生成器,由三端手写实现,conformance 测试兜底。
+- WS 部分(ws.md)无生成器,由双端手写实现,conformance 测试兜底。
 
 ## 约定
 

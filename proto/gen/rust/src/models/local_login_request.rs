@@ -12,28 +12,22 @@ use crate::models;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SshConfig {
-    #[serde(rename = "enabled")]
-    pub enabled: bool,
-    #[serde(rename = "port")]
-    pub port: i32,
-    #[serde(rename = "username")]
-    pub username: String,
-    /// 密码登录;留空则仅密钥
-    #[serde(rename = "password", skip_serializing_if = "Option::is_none")]
-    pub password: Option<String>,
-    #[serde(rename = "rootDir", default, with = "::serde_with::rust::double_option", skip_serializing_if = "Option::is_none")]
-    pub root_dir: Option<Option<String>>,
+pub struct LocalLoginRequest {
+    #[serde(rename = "challenge")]
+    pub challenge: String,
+    /// lowercase(hex(HMAC-SHA256(localKey, challenge))),localKey 为 daemon 数据目录内 local.key 内容
+    #[serde(rename = "signature")]
+    pub signature: String,
+    #[serde(rename = "deviceName", skip_serializing_if = "Option::is_none")]
+    pub device_name: Option<String>,
 }
 
-impl SshConfig {
-    pub fn new(enabled: bool, port: i32, username: String) -> SshConfig {
-        SshConfig {
-            enabled,
-            port,
-            username,
-            password: None,
-            root_dir: None,
+impl LocalLoginRequest {
+    pub fn new(challenge: String, signature: String) -> LocalLoginRequest {
+        LocalLoginRequest {
+            challenge,
+            signature,
+            device_name: None,
         }
     }
 }

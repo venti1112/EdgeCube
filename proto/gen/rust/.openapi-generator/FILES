@@ -39,6 +39,8 @@ docs/InstanceSummary.md
 docs/InstanceType.md
 docs/InstancesApi.md
 docs/JobAccepted.md
+docs/LocalLoginChallenge.md
+docs/LocalLoginRequest.md
 docs/LogLine.md
 docs/LogResponse.md
 docs/LoginRequest.md
@@ -104,6 +106,8 @@ src/models/instance_status.rs
 src/models/instance_summary.rs
 src/models/instance_type.rs
 src/models/job_accepted.rs
+src/models/local_login_challenge.rs
+src/models/local_login_request.rs
 src/models/log_line.rs
 src/models/log_response.rs
 src/models/login_request.rs

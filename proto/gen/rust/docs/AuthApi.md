@@ -6,7 +6,9 @@ Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**change_password**](AuthApi.md#change_password) | **POST** /auth/change-password | 修改密码
 [**change_username**](AuthApi.md#change_username) | **POST** /auth/change-username | 修改用户名
+[**issue_local_login_challenge**](AuthApi.md#issue_local_login_challenge) | **POST** /auth/local-login/challenge | 发起本机免密登录挑战(一次性,短时效)
 [**list_devices**](AuthApi.md#list_devices) | **GET** /auth/tokens | 已登录设备列表
+[**local_login**](AuthApi.md#local_login) | **POST** /auth/local-login | 本机免密登录,换取长期 token
 [**login**](AuthApi.md#login) | **POST** /auth/login | 用户名密码登录,换取长期 token
 [**revoke_device**](AuthApi.md#revoke_device) | **DELETE** /auth/tokens/{deviceId} | 吊销指定设备的 token
 
@@ -45,7 +47,7 @@ Name | Type | Description  | Required | Notes
 > change_username(change_username_request)
 修改用户名
 
-需提供当前密码进行二次验证。
+已登录设备(Bearer token)可直接修改用户名。
 
 ### Parameters
 
@@ -65,6 +67,33 @@ Name | Type | Description  | Required | Notes
 ### HTTP request headers
 
 - **Content-Type**: application/json
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+
+## issue_local_login_challenge
+
+> models::LocalLoginChallenge issue_local_login_challenge()
+发起本机免密登录挑战(一次性,短时效)
+
+直连 daemon 的本机客户端免密登录: 返回一次性 challenge(5 分钟过期,使用后作废),客户端读取数据目录 `local.key`, 计算 `signature = lowercase(hex(HMAC-SHA256(localKey, challenge)))` 后提交 `/auth/local-login`。未登录设备无需鉴权(同 /auth/login)。 
+
+### Parameters
+
+This endpoint does not need any parameter.
+
+### Return type
+
+[**models::LocalLoginChallenge**](LocalLoginChallenge.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+- **Content-Type**: Not defined
 - **Accept**: application/json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
@@ -90,6 +119,36 @@ This endpoint does not need any parameter.
 ### HTTP request headers
 
 - **Content-Type**: Not defined
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+
+## local_login
+
+> models::LoginResponse local_login(local_login_request)
+本机免密登录,换取长期 token
+
+提交 /auth/local-login/challenge 返回的 challenge 及对应 HMAC 签名。 签名验证通过即视为本机进程(持有 local.key),签发与 /auth/login 相同的长期 token。 challenge 一次性使用,重放返回 401。 
+
+### Parameters
+
+
+Name | Type | Description  | Required | Notes
+------------- | ------------- | ------------- | ------------- | -------------
+**local_login_request** | [**LocalLoginRequest**](LocalLoginRequest.md) |  | [required] |
+
+### Return type
+
+[**models::LoginResponse**](LoginResponse.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+- **Content-Type**: application/json
 - **Accept**: application/json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

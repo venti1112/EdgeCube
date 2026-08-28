@@ -6,7 +6,7 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **status** | **Status** |  (enum: ok, degraded) | 
 **version** | **String** | daemon 版本 | 
-**daemon** | **Daemon** |  (enum: rust, kotlin) | 
+**daemon** | **Daemon** |  (enum: rust) | 
 **platform** | **String** |  | 
 **uptime_seconds** | **i64** |  | 
 **instances** | Option<[**models::HealthResponseInstances**](HealthResponseInstances.md)> |  | [optional]

@@ -30,15 +30,11 @@ final BuiltSet<HealthResponseStatusEnum> _$healthResponseStatusEnumValues =
 
 const HealthResponseDaemonEnum _$healthResponseDaemonEnum_rust =
     const HealthResponseDaemonEnum._('rust');
-const HealthResponseDaemonEnum _$healthResponseDaemonEnum_kotlin =
-    const HealthResponseDaemonEnum._('kotlin');
 
 HealthResponseDaemonEnum _$healthResponseDaemonEnumValueOf(String name) {
   switch (name) {
     case 'rust':
       return _$healthResponseDaemonEnum_rust;
-    case 'kotlin':
-      return _$healthResponseDaemonEnum_kotlin;
     default:
       throw ArgumentError(name);
   }
@@ -47,7 +43,6 @@ HealthResponseDaemonEnum _$healthResponseDaemonEnumValueOf(String name) {
 final BuiltSet<HealthResponseDaemonEnum> _$healthResponseDaemonEnumValues =
     BuiltSet<HealthResponseDaemonEnum>(const <HealthResponseDaemonEnum>[
   _$healthResponseDaemonEnum_rust,
-  _$healthResponseDaemonEnum_kotlin,
 ]);
 
 Serializer<HealthResponseStatusEnum> _$healthResponseStatusEnumSerializer =
@@ -88,11 +83,9 @@ class _$HealthResponseDaemonEnumSerializer
     implements PrimitiveSerializer<HealthResponseDaemonEnum> {
   static const Map<String, Object> _toWire = const <String, Object>{
     'rust': 'rust',
-    'kotlin': 'kotlin',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
     'rust': 'rust',
-    'kotlin': 'kotlin',
   };
 
   @override

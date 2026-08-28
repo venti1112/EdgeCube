@@ -3,12 +3,11 @@
 # Usage:
 #   .\gen.ps1            # Generate all languages
 #   .\gen.ps1 dart       # Dart only (Flutter UI client, dio)
-#   .\gen.ps1 rust       # Rust only (desktop daemon reference)
-#   .\gen.ps1 kotlin     # Kotlin only (Android daemon reference)
+#   .\gen.ps1 rust       # Rust only (daemon reference)
 #
 # Requires: Java 17+, npm/npx
 param(
-    [ValidateSet("all", "dart", "rust", "kotlin")]
+    [ValidateSet("all", "dart", "rust")]
     [string]$Target = "all"
 )
 
@@ -45,19 +44,10 @@ function Gen-Rust {
     Log "Rust done: $dest"
 }
 
-function Gen-Kotlin {
-    $dest = if ($env:DEST) { $env:DEST } else { "gen\kotlin" }
-    if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
-    Log "Generating Kotlin (ktor) -> $dest"
-    npx --yes "@openapitools/openapi-generator-cli@$CLI" generate -i $Spec -g kotlin -o $dest --library=jvm-ktor --additional-properties="packageName=com.venti1112.edgecube.api" --skip-validate-spec
-    Log "Kotlin done: $dest"
-}
-
 switch ($Target) {
-    "all"    { Gen-Dart; Gen-Rust; Gen-Kotlin }
+    "all"    { Gen-Dart; Gen-Rust }
     "dart"   { Gen-Dart }
     "rust"   { Gen-Rust }
-    "kotlin" { Gen-Kotlin }
 }
 
 Log "Done. Run .\check.ps1 to verify sync."

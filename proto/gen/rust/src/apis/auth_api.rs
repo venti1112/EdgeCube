@@ -1,7 +1,7 @@
 /*
  * EdgeCube Daemon API
  *
- * EdgeCube v2 守护进程 API(唯一契约)。  - 契约优先:所有 API 变更先改本文件,再由生成器产出三端代码   (Rust daemon / Kotlin daemon / Flutter client),任何一端不得绕过契约私自改协议。 - 实现阶段标记:每个 path 的 `x-phase` 标注落地阶段(0/1/2/3),对应   docs/PLAN.md §10 分阶段路线。 - WS 部分(events / terminal)不在 OpenAPI 能力范围内,见同目录 `ws.md`。 - 鉴权:除 /auth/_* 与 /health 外全部需要 `Authorization: Bearer <token>`;   6 位对码经 `auth/pair` 换取长期 token。 
+ * EdgeCube v2 守护进程 API(唯一契约)。  - 契约优先:所有 API 变更先改本文件,再由生成器产出双端代码   (Rust daemon / Flutter client),任何一端不得绕过契约私自改协议。 - 实现阶段标记:每个 path 的 `x-phase` 标注落地阶段(0/1/2/3),对应   docs/PLAN.md §10 分阶段路线。 - WS 部分(events / terminal)不在 OpenAPI 能力范围内,见同目录 `ws.md`。 - 鉴权:除 /auth/_* 与 /health 外全部需要 `Authorization: Bearer <token>`;   6 位对码经 `auth/pair` 换取长期 token。 
  *
  * The version of the OpenAPI document: 0.1.0
  * 
@@ -31,10 +31,28 @@ pub enum ChangeUsernameError {
     UnknownValue(serde_json::Value),
 }
 
+/// struct for typed errors of method [`issue_local_login_challenge`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum IssueLocalLoginChallengeError {
+    Status403(models::ErrorResponse),
+    Status400(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
 /// struct for typed errors of method [`list_devices`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ListDevicesError {
+    Status401(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`local_login`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum LocalLoginError {
+    Status403(models::ErrorResponse),
     Status401(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
@@ -86,7 +104,7 @@ pub async fn change_password(configuration: &configuration::Configuration, chang
     }
 }
 
-/// 需提供当前密码进行二次验证。
+/// 已登录设备(Bearer token)可直接修改用户名。
 pub async fn change_username(configuration: &configuration::Configuration, change_username_request: models::ChangeUsernameRequest) -> Result<(), Error<ChangeUsernameError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_body_change_username_request = change_username_request;
@@ -112,6 +130,41 @@ pub async fn change_username(configuration: &configuration::Configuration, chang
     } else {
         let content = resp.text().await?;
         let entity: Option<ChangeUsernameError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(ResponseContent { status, content, entity }))
+    }
+}
+
+/// 直连 daemon 的本机客户端免密登录: 返回一次性 challenge(5 分钟过期,使用后作废),客户端读取数据目录 `local.key`, 计算 `signature = lowercase(hex(HMAC-SHA256(localKey, challenge)))` 后提交 `/auth/local-login`。未登录设备无需鉴权(同 /auth/login)。 
+pub async fn issue_local_login_challenge(configuration: &configuration::Configuration, ) -> Result<models::LocalLoginChallenge, Error<IssueLocalLoginChallengeError>> {
+
+    let uri_str = format!("{}/auth/local-login/challenge", configuration.base_path);
+    let mut req_builder = configuration.client.request(reqwest::Method::POST, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content).map_err(Error::from),
+            ContentType::Text => return Err(Error::from(serde_json::Error::custom("Received `text/plain` content type response that cannot be converted to `models::LocalLoginChallenge`"))),
+            ContentType::Unsupported(unknown_type) => return Err(Error::from(serde_json::Error::custom(format!("Received `{unknown_type}` content type response that cannot be converted to `models::LocalLoginChallenge`")))),
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<IssueLocalLoginChallengeError> = serde_json::from_str(&content).ok();
         Err(Error::ResponseError(ResponseContent { status, content, entity }))
     }
 }
@@ -149,6 +202,44 @@ pub async fn list_devices(configuration: &configuration::Configuration, ) -> Res
     } else {
         let content = resp.text().await?;
         let entity: Option<ListDevicesError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(ResponseContent { status, content, entity }))
+    }
+}
+
+/// 提交 /auth/local-login/challenge 返回的 challenge 及对应 HMAC 签名。 签名验证通过即视为本机进程(持有 local.key),签发与 /auth/login 相同的长期 token。 challenge 一次性使用,重放返回 401。 
+pub async fn local_login(configuration: &configuration::Configuration, local_login_request: models::LocalLoginRequest) -> Result<models::LoginResponse, Error<LocalLoginError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_body_local_login_request = local_login_request;
+
+    let uri_str = format!("{}/auth/local-login", configuration.base_path);
+    let mut req_builder = configuration.client.request(reqwest::Method::POST, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    req_builder = req_builder.json(&p_body_local_login_request);
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content).map_err(Error::from),
+            ContentType::Text => return Err(Error::from(serde_json::Error::custom("Received `text/plain` content type response that cannot be converted to `models::LoginResponse`"))),
+            ContentType::Unsupported(unknown_type) => return Err(Error::from(serde_json::Error::custom(format!("Received `{unknown_type}` content type response that cannot be converted to `models::LoginResponse`")))),
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<LocalLoginError> = serde_json::from_str(&content).ok();
         Err(Error::ResponseError(ResponseContent { status, content, entity }))
     }
 }

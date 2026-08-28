@@ -1,8 +1,8 @@
 # edgecube_api_client (EXPERIMENTAL)
 EdgeCube v2 守护进程 API(唯一契约)。
 
-- 契约优先:所有 API 变更先改本文件,再由生成器产出三端代码
-  (Rust daemon / Kotlin daemon / Flutter client),任何一端不得绕过契约私自改协议。
+- 契约优先:所有 API 变更先改本文件,再由生成器产出双端代码
+  (Rust daemon / Flutter client),任何一端不得绕过契约私自改协议。
 - 实现阶段标记:每个 path 的 `x-phase` 标注落地阶段(0/1/2/3),对应
   docs/PLAN.md §10 分阶段路线。
 - WS 部分(events / terminal)不在 OpenAPI 能力范围内,见同目录 `ws.md`。

@@ -2,8 +2,8 @@
 
 EdgeCube v2 守护进程 API(唯一契约)。
 
-- 契约优先:所有 API 变更先改本文件,再由生成器产出三端代码
-  (Rust daemon / Kotlin daemon / Flutter client),任何一端不得绕过契约私自改协议。
+- 契约优先:所有 API 变更先改本文件,再由生成器产出双端代码
+  (Rust daemon / Flutter client),任何一端不得绕过契约私自改协议。
 - 实现阶段标记:每个 path 的 `x-phase` 标注落地阶段(0/1/2/3),对应
   docs/PLAN.md §10 分阶段路线。
 - WS 部分(events / terminal)不在 OpenAPI 能力范围内,见同目录 `ws.md`。
@@ -37,7 +37,9 @@ Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 *AuthApi* | [**change_password**](docs/AuthApi.md#change_password) | **POST** /auth/change-password | 修改密码
 *AuthApi* | [**change_username**](docs/AuthApi.md#change_username) | **POST** /auth/change-username | 修改用户名
+*AuthApi* | [**issue_local_login_challenge**](docs/AuthApi.md#issue_local_login_challenge) | **POST** /auth/local-login/challenge | 发起本机免密登录挑战(一次性,短时效)
 *AuthApi* | [**list_devices**](docs/AuthApi.md#list_devices) | **GET** /auth/tokens | 已登录设备列表
+*AuthApi* | [**local_login**](docs/AuthApi.md#local_login) | **POST** /auth/local-login | 本机免密登录,换取长期 token
 *AuthApi* | [**login**](docs/AuthApi.md#login) | **POST** /auth/login | 用户名密码登录,换取长期 token
 *AuthApi* | [**revoke_device**](docs/AuthApi.md#revoke_device) | **DELETE** /auth/tokens/{deviceId} | 吊销指定设备的 token
 *BackupApi* | [**create_backup_job**](docs/BackupApi.md#create_backup_job) | **POST** /backup/jobs | 创建备份任务
@@ -120,6 +122,8 @@ Class | Method | HTTP request | Description
  - [InstanceSummary](docs/InstanceSummary.md)
  - [InstanceType](docs/InstanceType.md)
  - [JobAccepted](docs/JobAccepted.md)
+ - [LocalLoginChallenge](docs/LocalLoginChallenge.md)
+ - [LocalLoginRequest](docs/LocalLoginRequest.md)
  - [LogLine](docs/LogLine.md)
  - [LogResponse](docs/LogResponse.md)
  - [LoginRequest](docs/LoginRequest.md)
