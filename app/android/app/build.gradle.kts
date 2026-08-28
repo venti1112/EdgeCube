@@ -36,6 +36,16 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    // EdgeCube 安卓端把 proot 及配套工具(busybox/tar/zstd/依赖库)打包进
+    // jniLibs(见 src/main/jniLibs/arm64-v8a),运行时需要它们作为独立可执行文件
+    // 暴露在 nativeLibraryDir。Android 6+ 默认 extractNativeLibs=false 会把 .so
+    // 压缩在 APK 内、不生成独立文件,此处开启 legacy 打包以保持可执行。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 kotlin {
