@@ -112,7 +112,7 @@ Name | Type | Description  | Notes
 import 'package:edgecube_api_client/api.dart';
 
 final api = EdgecubeApiClient().getBackupApi();
-final String jobId = jobId_example; // String | 
+final String jobId = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 任务 id(即 Task.id,异步操作 202 响应中的 jobId)
 
 try {
     api.deleteBackupJob(jobId);
@@ -125,7 +125,7 @@ try {
 
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
- **jobId** | **String**|  | 
+ **jobId** | **String**| 任务 id(即 Task.id,异步操作 202 响应中的 jobId) | 
 
 ### Return type
 
@@ -266,7 +266,7 @@ This endpoint does not need any parameter.
 import 'package:edgecube_api_client/api.dart';
 
 final api = EdgecubeApiClient().getBackupApi();
-final String jobId = jobId_example; // String | 
+final String jobId = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 任务 id(即 Task.id,异步操作 202 响应中的 jobId)
 
 try {
     final response = api.triggerBackupJob(jobId);
@@ -280,7 +280,7 @@ try {
 
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
- **jobId** | **String**|  | 
+ **jobId** | **String**| 任务 id(即 Task.id,异步操作 202 响应中的 jobId) | 
 
 ### Return type
 
@@ -307,7 +307,7 @@ Name | Type | Description  | Notes
 import 'package:edgecube_api_client/api.dart';
 
 final api = EdgecubeApiClient().getBackupApi();
-final String jobId = jobId_example; // String | 
+final String jobId = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 任务 id(即 Task.id,异步操作 202 响应中的 jobId)
 final BackupJob backupJob = ; // BackupJob | 
 
 try {
@@ -322,7 +322,7 @@ try {
 
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
- **jobId** | **String**|  | 
+ **jobId** | **String**| 任务 id(即 Task.id,异步操作 202 响应中的 jobId) | 
  **backupJob** | [**BackupJob**](BackupJob.md)|  | 
 
 ### Return type

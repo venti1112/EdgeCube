@@ -229,7 +229,7 @@ class BackupApi {
   /// 
   ///
   /// Parameters:
-  /// * [jobId] 
+  /// * [jobId] - 任务 id(即 Task.id,异步操作 202 响应中的 jobId)
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -493,7 +493,7 @@ class BackupApi {
   /// 
   ///
   /// Parameters:
-  /// * [jobId] 
+  /// * [jobId] - 任务 id(即 Task.id,异步操作 202 响应中的 jobId)
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -574,7 +574,7 @@ class BackupApi {
   /// 
   ///
   /// Parameters:
-  /// * [jobId] 
+  /// * [jobId] - 任务 id(即 Task.id,异步操作 202 响应中的 jobId)
   /// * [backupJob] 
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request

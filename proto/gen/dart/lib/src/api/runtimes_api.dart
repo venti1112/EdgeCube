@@ -83,6 +83,7 @@ class RuntimesApi {
   ///
   /// Parameters:
   /// * [type] 
+  /// * [includeAll] - 是否拉取全部版本。默认 false 时 frpc 仅返回最新 release(避免无关旧版本请求);true 时返回全部版本。
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -94,6 +95,7 @@ class RuntimesApi {
   /// Throws [DioException] if API call or serialization fails
   Future<Response<RuntimeCatalog>> getRuntimeCatalog({ 
     required RuntimeType type,
+    bool? includeAll = false,
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
     Map<String, dynamic>? extra,
@@ -122,6 +124,7 @@ class RuntimesApi {
 
     final _queryParameters = <String, dynamic>{
       r'type': encodeQueryParameter(_serializers, type, const FullType(RuntimeType)),
+      if (includeAll != null) r'includeAll': encodeQueryParameter(_serializers, includeAll, const FullType(bool)),
     };
 
     final _response = await _dio.request<Object>(
@@ -164,7 +167,7 @@ class RuntimesApi {
     );
   }
 
-  /// 安装运行时(官方源下载,进度走 WS download/progress)
+  /// 安装运行时(官方源下载,进度走 WS task/progress)
   /// 
   ///
   /// Parameters:

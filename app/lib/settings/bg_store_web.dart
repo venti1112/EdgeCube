@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 
@@ -7,6 +6,6 @@ import 'package:file_picker/file_picker.dart';
 Future<String> persistBackgroundImage(PlatformFile file) async {
   final ext = file.extension?.toLowerCase();
   final mime = (ext == 'jpg' || ext == 'jpeg') ? 'image/jpeg' : 'image/png';
-  final bytes = file.bytes ?? Uint8List(0);
+  final bytes = await file.readAsBytes();
   return 'data:$mime;base64,${base64Encode(bytes)}';
 }

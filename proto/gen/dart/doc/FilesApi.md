@@ -19,6 +19,7 @@ Method | HTTP request | Description
 [**listFiles**](FilesApi.md#listfiles) | **GET** /fs/list | 列出目录(沙箱,以实例 cwd 为根)
 [**moveFile**](FilesApi.md#movefile) | **POST** /fs/move | 移动/重命名
 [**uploadFilePiece**](FilesApi.md#uploadfilepiece) | **POST** /fs/upload-piece | 分片上传:写入一片
+[**writeFile**](FilesApi.md#writefile) | **POST** /fs/write | 覆盖写入文本文件(内置编辑器保存)
 
 
 # **completeFileUpload**
@@ -434,6 +435,48 @@ Name | Type | Description  | Notes
 ### HTTP request headers
 
  - **Content-Type**: application/octet-stream
+ - **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **writeFile**
+> writeFile(fsWriteRequest)
+
+覆盖写入文本文件(内置编辑器保存)
+
+以 UTF-8 文本整体覆盖写入目标文件(父目录须已存在),服务端以临时文件原子替换。
+
+### Example
+```dart
+import 'package:edgecube_api_client/api.dart';
+
+final api = EdgecubeApiClient().getFilesApi();
+final FsWriteRequest fsWriteRequest = ; // FsWriteRequest | 
+
+try {
+    api.writeFile(fsWriteRequest);
+} on DioException catch (e) {
+    print('Exception when calling FilesApi->writeFile: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **fsWriteRequest** | [**FsWriteRequest**](FsWriteRequest.md)|  | 
+
+### Return type
+
+void (empty response body)
+
+### Authorization
+
+[BearerAuth](../README.md#BearerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
  - **Accept**: application/json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

@@ -41,6 +41,7 @@ Class | Method | HTTP request | Description
 *AuthApi* | [**list_devices**](docs/AuthApi.md#list_devices) | **GET** /auth/tokens | 已登录设备列表
 *AuthApi* | [**local_login**](docs/AuthApi.md#local_login) | **POST** /auth/local-login | 本机免密登录,换取长期 token
 *AuthApi* | [**login**](docs/AuthApi.md#login) | **POST** /auth/login | 用户名密码登录,换取长期 token
+*AuthApi* | [**rename_device**](docs/AuthApi.md#rename_device) | **PATCH** /auth/tokens/{deviceId} | 重命名设备
 *AuthApi* | [**revoke_device**](docs/AuthApi.md#revoke_device) | **DELETE** /auth/tokens/{deviceId} | 吊销指定设备的 token
 *BackupApi* | [**create_backup_job**](docs/BackupApi.md#create_backup_job) | **POST** /backup/jobs | 创建备份任务
 *BackupApi* | [**create_backup_target**](docs/BackupApi.md#create_backup_target) | **POST** /backup/targets | 创建备份目标
@@ -51,6 +52,10 @@ Class | Method | HTTP request | Description
 *BackupApi* | [**trigger_backup_job**](docs/BackupApi.md#trigger_backup_job) | **POST** /backup/jobs/{jobId}/trigger | 立即执行备份(进度走 WS backup/progress)
 *BackupApi* | [**update_backup_job**](docs/BackupApi.md#update_backup_job) | **PUT** /backup/jobs/{jobId} | 更新备份任务
 *BackupApi* | [**update_backup_target**](docs/BackupApi.md#update_backup_target) | **PUT** /backup/targets/{targetId} | 更新备份目标
+*CatalogApi* | [**get_catalog_download_info**](docs/CatalogApi.md#get_catalog_download_info) | **GET** /catalog/download-info | 服务端下载信息(直链 + 校验值 + 落盘文件名)
+*CatalogApi* | [**list_catalog_loaders**](docs/CatalogApi.md#list_catalog_loaders) | **GET** /catalog/loaders | 加载器版本列表(hasLoader 类型独有)
+*CatalogApi* | [**list_catalog_versions**](docs/CatalogApi.md#list_catalog_versions) | **GET** /catalog/versions | 版本列表(按服务端类型)
+*CatalogApi* | [**list_server_types**](docs/CatalogApi.md#list_server_types) | **GET** /catalog/server-types | 可用服务端类型列表(分类/是否带加载器/默认文件名)
 *ConfigApi* | [**get_config_entry**](docs/ConfigApi.md#get_config_entry) | **GET** /config/{key} | 读取设置项
 *ConfigApi* | [**update_config_entry**](docs/ConfigApi.md#update_config_entry) | **PUT** /config/{key} | 写入设置项
 *FilesApi* | [**complete_file_upload**](docs/FilesApi.md#complete_file_upload) | **POST** /fs/upload-complete | 分片上传:完成(校验 sha256)
@@ -63,14 +68,28 @@ Class | Method | HTTP request | Description
 *FilesApi* | [**list_files**](docs/FilesApi.md#list_files) | **GET** /fs/list | 列出目录(沙箱,以实例 cwd 为根)
 *FilesApi* | [**move_file**](docs/FilesApi.md#move_file) | **POST** /fs/move | 移动/重命名
 *FilesApi* | [**upload_file_piece**](docs/FilesApi.md#upload_file_piece) | **POST** /fs/upload-piece | 分片上传:写入一片
+*FilesApi* | [**write_file**](docs/FilesApi.md#write_file) | **POST** /fs/write | 覆盖写入文本文件(内置编辑器保存)
+*FrpApi* | [**create_frp_tunnel**](docs/FrpApi.md#create_frp_tunnel) | **POST** /frp/tunnels | 创建隧道
+*FrpApi* | [**delete_frp_tunnel**](docs/FrpApi.md#delete_frp_tunnel) | **DELETE** /frp/tunnels/{tunnelId} | 删除隧道
+*FrpApi* | [**get_frp_logs**](docs/FrpApi.md#get_frp_logs) | **GET** /frp/logs | frpc 日志(最近 tail 行)
+*FrpApi* | [**get_frp_status**](docs/FrpApi.md#get_frp_status) | **GET** /frp/status | frpc 运行状态
+*FrpApi* | [**get_frp_tunnel**](docs/FrpApi.md#get_frp_tunnel) | **GET** /frp/tunnels/{tunnelId} | 隧道详情
+*FrpApi* | [**list_frp_tunnels**](docs/FrpApi.md#list_frp_tunnels) | **GET** /frp/tunnels | 隧道列表
+*FrpApi* | [**start_frpc**](docs/FrpApi.md#start_frpc) | **POST** /frp/start | 启动 frpc(全局唯一)
+*FrpApi* | [**stop_frpc**](docs/FrpApi.md#stop_frpc) | **POST** /frp/stop | 停止 frpc
+*FrpApi* | [**update_frp_tunnel**](docs/FrpApi.md#update_frp_tunnel) | **PUT** /frp/tunnels/{tunnelId} | 更新隧道(全量替换)
 *FtpApi* | [**get_ftp_status**](docs/FtpApi.md#get_ftp_status) | **GET** /ftp | FTP 服务状态与配置
 *FtpApi* | [**update_ftp_config**](docs/FtpApi.md#update_ftp_config) | **PUT** /ftp | 更新 FTP 配置(启用/端口/账号/根目录)
 *HealthApi* | [**get_health**](docs/HealthApi.md#get_health) | **GET** /health | 健康检查(未配对可访问)
+*InstancesApi* | [**analyze_instance_mods**](docs/InstancesApi.md#analyze_instance_mods) | **POST** /instances/{instanceId}/mods/analyze | 提交插件/模组元数据解析任务
+*InstancesApi* | [**clear_finished_mod_downloads**](docs/InstancesApi.md#clear_finished_mod_downloads) | **DELETE** /instances/{instanceId}/mods/downloads | 清除该实例已终结的下载任务
 *InstancesApi* | [**create_instance**](docs/InstancesApi.md#create_instance) | **POST** /instances | 创建实例
 *InstancesApi* | [**delete_instance**](docs/InstancesApi.md#delete_instance) | **DELETE** /instances/{instanceId} | 删除实例
+*InstancesApi* | [**download_instance_mod**](docs/InstancesApi.md#download_instance_mod) | **POST** /instances/{instanceId}/mods/download | 提交单文件下载任务(模组/插件)
 *InstancesApi* | [**export_instance**](docs/InstancesApi.md#export_instance) | **POST** /instances/{instanceId}/export | 导出实例(打包工作目录为归档)
 *InstancesApi* | [**get_instance**](docs/InstancesApi.md#get_instance) | **GET** /instances/{instanceId} | 实例详情(配置 + 运行状态)
 *InstancesApi* | [**get_instance_log**](docs/InstancesApi.md#get_instance_log) | **GET** /instances/{instanceId}/log | 增量日志拉取(重连回放)
+*InstancesApi* | [**get_instance_mods_metadata**](docs/InstancesApi.md#get_instance_mods_metadata) | **GET** /instances/{instanceId}/mods/metadata | 获取插件/模组解析结果列表
 *InstancesApi* | [**get_instance_output_log**](docs/InstancesApi.md#get_instance_output_log) | **GET** /instances/{instanceId}/outputlog | 持久化日志文件内容(完整回放/导出)
 *InstancesApi* | [**get_instance_process_config**](docs/InstancesApi.md#get_instance_process_config) | **GET** /instances/{instanceId}/process-config | 读取实例配置文件(server.properties 等)
 *InstancesApi* | [**get_instances_overview**](docs/InstancesApi.md#get_instances_overview) | **GET** /instances/overview | 全部实例状态聚合(首页看板)
@@ -82,13 +101,23 @@ Class | Method | HTTP request | Description
 *InstancesApi* | [**stop_instance**](docs/InstancesApi.md#stop_instance) | **POST** /instances/{instanceId}/stop | 优雅停止(发送 stopCommand,默认 ^C)
 *InstancesApi* | [**update_instance**](docs/InstancesApi.md#update_instance) | **PUT** /instances/{instanceId} | 更新实例配置
 *InstancesApi* | [**update_instance_process_config**](docs/InstancesApi.md#update_instance_process_config) | **PUT** /instances/{instanceId}/process-config | 写回实例配置文件
+*ModsApi* | [**modrinth_game_versions**](docs/ModsApi.md#modrinth_game_versions) | **GET** /mods/modrinth/game-versions | 游戏版本列表(筛选数据源,代理)
+*ModsApi* | [**modrinth_project_versions**](docs/ModsApi.md#modrinth_project_versions) | **GET** /mods/modrinth/project/{projectId}/versions | 项目版本列表(代理)
+*ModsApi* | [**modrinth_projects**](docs/ModsApi.md#modrinth_projects) | **GET** /mods/modrinth/projects | 批量项目信息(图标/标题,代理)
+*ModsApi* | [**modrinth_search**](docs/ModsApi.md#modrinth_search) | **GET** /mods/modrinth/search | Modrinth 搜索(代理)
+*ModsApi* | [**modrinth_version_files**](docs/ModsApi.md#modrinth_version_files) | **POST** /mods/modrinth/version-files | 按 SHA1 查版本(更新检查,代理)
+*ModsApi* | [**poggit_plugins**](docs/ModsApi.md#poggit_plugins) | **GET** /mods/poggit/plugins | Poggit 全量发布列表(带缓存,代理)
 *MonitorApi* | [**get_monitor_snapshot**](docs/MonitorApi.md#get_monitor_snapshot) | **GET** /monitor/snapshot | 系统监控快照(实时曲线走 WS monitor/stats)
+*PlayersApi* | [**get_instance_players**](docs/PlayersApi.md#get_instance_players) | **GET** /instances/{instanceId}/players | 获取玩家管理聚合快照(在线玩家 + 白名单/封禁/IP封禁/OP 名单)
 *RuntimesApi* | [**delete_runtime**](docs/RuntimesApi.md#delete_runtime) | **DELETE** /runtimes/{runtimeId} | 卸载运行时
 *RuntimesApi* | [**get_runtime_catalog**](docs/RuntimesApi.md#get_runtime_catalog) | **GET** /runtimes/catalog | 可安装版本清单(官方源)
-*RuntimesApi* | [**install_runtime**](docs/RuntimesApi.md#install_runtime) | **POST** /runtimes/install | 安装运行时(官方源下载,进度走 WS download/progress)
+*RuntimesApi* | [**install_runtime**](docs/RuntimesApi.md#install_runtime) | **POST** /runtimes/install | 安装运行时(官方源下载,进度走 WS task/progress)
 *RuntimesApi* | [**list_runtimes**](docs/RuntimesApi.md#list_runtimes) | **GET** /runtimes | 已安装运行时列表
 *SshApi* | [**get_ssh_status**](docs/SshApi.md#get_ssh_status) | **GET** /ssh | SSH 服务状态与配置
 *SshApi* | [**update_ssh_config**](docs/SshApi.md#update_ssh_config) | **PUT** /ssh | 更新 SSH 配置(启用/端口/账号/根目录)
+*TasksApi* | [**cancel_task**](docs/TasksApi.md#cancel_task) | **DELETE** /tasks/{jobId} | 取消任务
+*TasksApi* | [**get_task**](docs/TasksApi.md#get_task) | **GET** /tasks/{jobId} | 查询单个任务
+*TasksApi* | [**list_tasks**](docs/TasksApi.md#list_tasks) | **GET** /tasks | 任务列表(进行中优先 + 最近完成)
 
 
 ## Documentation For Models
@@ -98,17 +127,21 @@ Class | Method | HTTP request | Description
  - [BackupTargetType](docs/BackupTargetType.md)
  - [ChangePasswordRequest](docs/ChangePasswordRequest.md)
  - [ChangeUsernameRequest](docs/ChangeUsernameRequest.md)
+ - [ClearFinishedModDownloads200Response](docs/ClearFinishedModDownloads200Response.md)
  - [CommandRequest](docs/CommandRequest.md)
  - [ConfigEntry](docs/ConfigEntry.md)
  - [DeviceInfo](docs/DeviceInfo.md)
+ - [DeviceType](docs/DeviceType.md)
  - [Encoding](docs/Encoding.md)
  - [ErrorResponse](docs/ErrorResponse.md)
  - [ExportRequest](docs/ExportRequest.md)
  - [FileEntry](docs/FileEntry.md)
  - [FileListResponse](docs/FileListResponse.md)
+ - [FrpStatus](docs/FrpStatus.md)
  - [FsCompressRequest](docs/FsCompressRequest.md)
  - [FsMoveRequest](docs/FsMoveRequest.md)
  - [FsPathRequest](docs/FsPathRequest.md)
+ - [FsWriteRequest](docs/FsWriteRequest.md)
  - [FtpConfig](docs/FtpConfig.md)
  - [FtpStatus](docs/FtpStatus.md)
  - [HealthResponse](docs/HealthResponse.md)
@@ -128,16 +161,50 @@ Class | Method | HTTP request | Description
  - [LogResponse](docs/LogResponse.md)
  - [LoginRequest](docs/LoginRequest.md)
  - [LoginResponse](docs/LoginResponse.md)
+ - [ModDownloadRequest](docs/ModDownloadRequest.md)
+ - [ModLoader](docs/ModLoader.md)
+ - [ModMetadata](docs/ModMetadata.md)
+ - [ModMetadataEntry](docs/ModMetadataEntry.md)
+ - [ModMetadataListResponse](docs/ModMetadataListResponse.md)
+ - [ModrinthDependency](docs/ModrinthDependency.md)
+ - [ModrinthFileHashes](docs/ModrinthFileHashes.md)
+ - [ModrinthProject](docs/ModrinthProject.md)
+ - [ModrinthSearchHit](docs/ModrinthSearchHit.md)
+ - [ModrinthSearchResponse](docs/ModrinthSearchResponse.md)
+ - [ModrinthVersion](docs/ModrinthVersion.md)
+ - [ModrinthVersionFile](docs/ModrinthVersionFile.md)
+ - [ModrinthVersionFilesRequest](docs/ModrinthVersionFilesRequest.md)
+ - [ModsAnalyzeRequest](docs/ModsAnalyzeRequest.md)
  - [MonitorSnapshot](docs/MonitorSnapshot.md)
  - [MonitorSnapshotDisksInner](docs/MonitorSnapshotDisksInner.md)
+ - [PlayerBanEntry](docs/PlayerBanEntry.md)
+ - [PlayerIpBanEntry](docs/PlayerIpBanEntry.md)
+ - [PlayerNamedEntry](docs/PlayerNamedEntry.md)
+ - [PlayerSnapshot](docs/PlayerSnapshot.md)
+ - [PoggitPlugin](docs/PoggitPlugin.md)
+ - [ProxyType](docs/ProxyType.md)
+ - [RenameDeviceRequest](docs/RenameDeviceRequest.md)
  - [RunStatus](docs/RunStatus.md)
  - [RuntimeCatalog](docs/RuntimeCatalog.md)
  - [RuntimeCatalogEntry](docs/RuntimeCatalogEntry.md)
  - [RuntimeInfo](docs/RuntimeInfo.md)
  - [RuntimeInstallRequest](docs/RuntimeInstallRequest.md)
  - [RuntimeType](docs/RuntimeType.md)
+ - [ServerDownloadInfo](docs/ServerDownloadInfo.md)
+ - [ServerTypeInfo](docs/ServerTypeInfo.md)
+ - [ServerVersion](docs/ServerVersion.md)
  - [SshConfig](docs/SshConfig.md)
  - [SshStatus](docs/SshStatus.md)
+ - [StartFrpcRequest](docs/StartFrpcRequest.md)
+ - [Task](docs/Task.md)
+ - [TaskError](docs/TaskError.md)
+ - [TaskKind](docs/TaskKind.md)
+ - [TaskList](docs/TaskList.md)
+ - [TaskProgress](docs/TaskProgress.md)
+ - [TaskStatus](docs/TaskStatus.md)
+ - [TunnelInfo](docs/TunnelInfo.md)
+ - [TunnelInput](docs/TunnelInput.md)
+ - [TunnelProxy](docs/TunnelProxy.md)
  - [UploadCompleteRequest](docs/UploadCompleteRequest.md)
  - [UploadCompleteResponse](docs/UploadCompleteResponse.md)
  - [UploadInitRequest](docs/UploadInitRequest.md)

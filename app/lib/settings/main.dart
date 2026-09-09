@@ -32,6 +32,13 @@ class SettingsPage extends StatelessWidget {
             onTap: () => context.push('/settings/account'),
           ),
           ListTile(
+            leading: const Icon(Icons.devices_outlined),
+            title: const Text('已登录设备'),
+            subtitle: const Text('查看并吊销已登录设备'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/devices'),
+          ),
+          ListTile(
             leading: const Icon(Icons.palette_outlined),
             title: const Text('外观'),
             subtitle: const Text('主题模式与主题色'),

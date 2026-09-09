@@ -2,18 +2,45 @@
 name = "edgecube-daemon"
 version = "1.0.0"
 edition = "2024"
+description = "Minecraft Server Tool"
+authors = ["venti1112 <3788365896@qq.com>"]
 
 [dependencies]
 argon2 = "0.5"
-axum = "0.8"
+aria2-core = "0.3.4"
+axum = { version = "0.8", features = ["ws"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 hmac = "0.12"
 rand = "0.8"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha1 = "0.10"
 sha2 = "0.10"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
+shell-words = "1.0"
+zip = "2"
+tar = "0.4"
+flate2 = "1"
+futures-util = "0.3"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "process", "fs"] }
+tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+sysinfo = "0.39.6"
+
+[build-dependencies]
+winresource = "0.1"
+
+[package.metadata.winresource]
+FileDescription = "EdgeCube-Daemon"
+ProductName = "EdgeCube"
+LegalCopyright = "Copyright (C) 2026 venti1112. All rights reserved."
+OriginalFilename = "edgecube-daemon.exe"
+CompanyName = "venti1112"
+InternalName = "edgecube-daemon"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

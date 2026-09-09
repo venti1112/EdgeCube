@@ -79,5 +79,14 @@ void main() {
       // TODO
     });
 
+    // 覆盖写入文本文件(内置编辑器保存)
+    //
+    // 以 UTF-8 文本整体覆盖写入目标文件(父目录须已存在),服务端以临时文件原子替换。
+    //
+    //Future writeFile(FsWriteRequest fsWriteRequest) async
+    test('test writeFile', () async {
+      // TODO
+    });
+
   });
 }

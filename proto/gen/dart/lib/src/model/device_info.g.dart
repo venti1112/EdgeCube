@@ -12,6 +12,8 @@ class _$DeviceInfo extends DeviceInfo {
   @override
   final String name;
   @override
+  final DeviceType? deviceType;
+  @override
   final DateTime? lastSeenAt;
   @override
   final DateTime createdAt;
@@ -22,6 +24,7 @@ class _$DeviceInfo extends DeviceInfo {
   _$DeviceInfo._(
       {required this.id,
       required this.name,
+      this.deviceType,
       this.lastSeenAt,
       required this.createdAt})
       : super._();
@@ -38,6 +41,7 @@ class _$DeviceInfo extends DeviceInfo {
     return other is DeviceInfo &&
         id == other.id &&
         name == other.name &&
+        deviceType == other.deviceType &&
         lastSeenAt == other.lastSeenAt &&
         createdAt == other.createdAt;
   }
@@ -47,6 +51,7 @@ class _$DeviceInfo extends DeviceInfo {
     var _$hash = 0;
     _$hash = $jc(_$hash, id.hashCode);
     _$hash = $jc(_$hash, name.hashCode);
+    _$hash = $jc(_$hash, deviceType.hashCode);
     _$hash = $jc(_$hash, lastSeenAt.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jf(_$hash);
@@ -58,6 +63,7 @@ class _$DeviceInfo extends DeviceInfo {
     return (newBuiltValueToStringHelper(r'DeviceInfo')
           ..add('id', id)
           ..add('name', name)
+          ..add('deviceType', deviceType)
           ..add('lastSeenAt', lastSeenAt)
           ..add('createdAt', createdAt))
         .toString();
@@ -74,6 +80,10 @@ class DeviceInfoBuilder implements Builder<DeviceInfo, DeviceInfoBuilder> {
   String? _name;
   String? get name => _$this._name;
   set name(String? name) => _$this._name = name;
+
+  DeviceType? _deviceType;
+  DeviceType? get deviceType => _$this._deviceType;
+  set deviceType(DeviceType? deviceType) => _$this._deviceType = deviceType;
 
   DateTime? _lastSeenAt;
   DateTime? get lastSeenAt => _$this._lastSeenAt;
@@ -92,6 +102,7 @@ class DeviceInfoBuilder implements Builder<DeviceInfo, DeviceInfoBuilder> {
     if ($v != null) {
       _id = $v.id;
       _name = $v.name;
+      _deviceType = $v.deviceType;
       _lastSeenAt = $v.lastSeenAt;
       _createdAt = $v.createdAt;
       _$v = null;
@@ -118,6 +129,7 @@ class DeviceInfoBuilder implements Builder<DeviceInfo, DeviceInfoBuilder> {
           id: BuiltValueNullFieldError.checkNotNull(id, r'DeviceInfo', 'id'),
           name: BuiltValueNullFieldError.checkNotNull(
               name, r'DeviceInfo', 'name'),
+          deviceType: deviceType,
           lastSeenAt: lastSeenAt,
           createdAt: BuiltValueNullFieldError.checkNotNull(
               createdAt, r'DeviceInfo', 'createdAt'),

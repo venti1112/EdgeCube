@@ -15,6 +15,7 @@ Method | HTTP request | Description
 [**listDevices**](AuthApi.md#listdevices) | **GET** /auth/tokens | 已登录设备列表
 [**localLogin**](AuthApi.md#locallogin) | **POST** /auth/local-login | 本机免密登录,换取长期 token
 [**login**](AuthApi.md#login) | **POST** /auth/login | 用户名密码登录,换取长期 token
+[**renameDevice**](AuthApi.md#renamedevice) | **PATCH** /auth/tokens/{deviceId} | 重命名设备
 [**revokeDevice**](AuthApi.md#revokedevice) | **DELETE** /auth/tokens/{deviceId} | 吊销指定设备的 token
 
 
@@ -254,6 +255,48 @@ Name | Type | Description  | Notes
 ### Authorization
 
 No authorization required
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **renameDevice**
+> renameDevice(deviceId, renameDeviceRequest)
+
+重命名设备
+
+### Example
+```dart
+import 'package:edgecube_api_client/api.dart';
+
+final api = EdgecubeApiClient().getAuthApi();
+final String deviceId = deviceId_example; // String | 配对设备 id
+final RenameDeviceRequest renameDeviceRequest = ; // RenameDeviceRequest | 
+
+try {
+    api.renameDevice(deviceId, renameDeviceRequest);
+} on DioException catch (e) {
+    print('Exception when calling AuthApi->renameDevice: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **deviceId** | **String**| 配对设备 id | 
+ **renameDeviceRequest** | [**RenameDeviceRequest**](RenameDeviceRequest.md)|  | 
+
+### Return type
+
+void (empty response body)
+
+### Authorization
+
+[BearerAuth](../README.md#BearerAuth)
 
 ### HTTP request headers
 

@@ -57,6 +57,13 @@ void main() {
       // TODO
     });
 
+    // 重命名设备
+    //
+    //Future renameDevice(String deviceId, RenameDeviceRequest renameDeviceRequest) async
+    test('test renameDevice', () async {
+      // TODO
+    });
+
     // 吊销指定设备的 token
     //
     //Future revokeDevice(String deviceId) async

@@ -12,13 +12,21 @@ class _$LoginRequest extends LoginRequest {
   @override
   final String password;
   @override
+  final String? deviceId;
+  @override
   final String? deviceName;
+  @override
+  final DeviceType? deviceType;
 
   factory _$LoginRequest([void Function(LoginRequestBuilder)? updates]) =>
       (LoginRequestBuilder()..update(updates))._build();
 
   _$LoginRequest._(
-      {required this.username, required this.password, this.deviceName})
+      {required this.username,
+      required this.password,
+      this.deviceId,
+      this.deviceName,
+      this.deviceType})
       : super._();
   @override
   LoginRequest rebuild(void Function(LoginRequestBuilder) updates) =>
@@ -33,7 +41,9 @@ class _$LoginRequest extends LoginRequest {
     return other is LoginRequest &&
         username == other.username &&
         password == other.password &&
-        deviceName == other.deviceName;
+        deviceId == other.deviceId &&
+        deviceName == other.deviceName &&
+        deviceType == other.deviceType;
   }
 
   @override
@@ -41,7 +51,9 @@ class _$LoginRequest extends LoginRequest {
     var _$hash = 0;
     _$hash = $jc(_$hash, username.hashCode);
     _$hash = $jc(_$hash, password.hashCode);
+    _$hash = $jc(_$hash, deviceId.hashCode);
     _$hash = $jc(_$hash, deviceName.hashCode);
+    _$hash = $jc(_$hash, deviceType.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -51,7 +63,9 @@ class _$LoginRequest extends LoginRequest {
     return (newBuiltValueToStringHelper(r'LoginRequest')
           ..add('username', username)
           ..add('password', password)
-          ..add('deviceName', deviceName))
+          ..add('deviceId', deviceId)
+          ..add('deviceName', deviceName)
+          ..add('deviceType', deviceType))
         .toString();
   }
 }
@@ -68,9 +82,17 @@ class LoginRequestBuilder
   String? get password => _$this._password;
   set password(String? password) => _$this._password = password;
 
+  String? _deviceId;
+  String? get deviceId => _$this._deviceId;
+  set deviceId(String? deviceId) => _$this._deviceId = deviceId;
+
   String? _deviceName;
   String? get deviceName => _$this._deviceName;
   set deviceName(String? deviceName) => _$this._deviceName = deviceName;
+
+  DeviceType? _deviceType;
+  DeviceType? get deviceType => _$this._deviceType;
+  set deviceType(DeviceType? deviceType) => _$this._deviceType = deviceType;
 
   LoginRequestBuilder() {
     LoginRequest._defaults(this);
@@ -81,7 +103,9 @@ class LoginRequestBuilder
     if ($v != null) {
       _username = $v.username;
       _password = $v.password;
+      _deviceId = $v.deviceId;
       _deviceName = $v.deviceName;
+      _deviceType = $v.deviceType;
       _$v = null;
     }
     return this;
@@ -107,7 +131,9 @@ class LoginRequestBuilder
               username, r'LoginRequest', 'username'),
           password: BuiltValueNullFieldError.checkNotNull(
               password, r'LoginRequest', 'password'),
+          deviceId: deviceId,
           deviceName: deviceName,
+          deviceType: deviceType,
         );
     replace(_$result);
     return _$result;

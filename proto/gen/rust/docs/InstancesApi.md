@@ -4,11 +4,15 @@ All URIs are relative to *http://127.0.0.1:8760/api/v1*
 
 Method | HTTP request | Description
 ------------- | ------------- | -------------
+[**analyze_instance_mods**](InstancesApi.md#analyze_instance_mods) | **POST** /instances/{instanceId}/mods/analyze | 提交插件/模组元数据解析任务
+[**clear_finished_mod_downloads**](InstancesApi.md#clear_finished_mod_downloads) | **DELETE** /instances/{instanceId}/mods/downloads | 清除该实例已终结的下载任务
 [**create_instance**](InstancesApi.md#create_instance) | **POST** /instances | 创建实例
 [**delete_instance**](InstancesApi.md#delete_instance) | **DELETE** /instances/{instanceId} | 删除实例
+[**download_instance_mod**](InstancesApi.md#download_instance_mod) | **POST** /instances/{instanceId}/mods/download | 提交单文件下载任务(模组/插件)
 [**export_instance**](InstancesApi.md#export_instance) | **POST** /instances/{instanceId}/export | 导出实例(打包工作目录为归档)
 [**get_instance**](InstancesApi.md#get_instance) | **GET** /instances/{instanceId} | 实例详情(配置 + 运行状态)
 [**get_instance_log**](InstancesApi.md#get_instance_log) | **GET** /instances/{instanceId}/log | 增量日志拉取(重连回放)
+[**get_instance_mods_metadata**](InstancesApi.md#get_instance_mods_metadata) | **GET** /instances/{instanceId}/mods/metadata | 获取插件/模组解析结果列表
 [**get_instance_output_log**](InstancesApi.md#get_instance_output_log) | **GET** /instances/{instanceId}/outputlog | 持久化日志文件内容(完整回放/导出)
 [**get_instance_process_config**](InstancesApi.md#get_instance_process_config) | **GET** /instances/{instanceId}/process-config | 读取实例配置文件(server.properties 等)
 [**get_instances_overview**](InstancesApi.md#get_instances_overview) | **GET** /instances/overview | 全部实例状态聚合(首页看板)
@@ -23,10 +27,73 @@ Method | HTTP request | Description
 
 
 
+## analyze_instance_mods
+
+> models::JobAccepted analyze_instance_mods(instance_id, mods_analyze_request)
+提交插件/模组元数据解析任务
+
+扫描指定目录(相对实例 cwd,如 plugins / mods)内所有 .jar/.phar 文件, 在服务端解析元数据并缓存。返回 202 受理(JobAccepted),任务状态经 GET /tasks/{jobId} 轮询,完成后用 GET mods/metadata 拉取结果。 
+
+### Parameters
+
+
+Name | Type | Description  | Required | Notes
+------------- | ------------- | ------------- | ------------- | -------------
+**instance_id** | **uuid::Uuid** | 实例 id(uuid) | [required] |
+**mods_analyze_request** | [**ModsAnalyzeRequest**](ModsAnalyzeRequest.md) |  | [required] |
+
+### Return type
+
+[**models::JobAccepted**](JobAccepted.md)
+
+### Authorization
+
+[BearerAuth](../README.md#BearerAuth)
+
+### HTTP request headers
+
+- **Content-Type**: application/json
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+
+## clear_finished_mod_downloads
+
+> models::ClearFinishedModDownloads200Response clear_finished_mod_downloads(instance_id)
+清除该实例已终结的下载任务
+
+移除该实例所有已终结(succeeded/failed/cancelled)的 download_single_file 任务(下载队列「清除已完成」)。 进行中(queued/running)任务不受影响。返回清除数量。 
+
+### Parameters
+
+
+Name | Type | Description  | Required | Notes
+------------- | ------------- | ------------- | ------------- | -------------
+**instance_id** | **uuid::Uuid** | 实例 id(uuid) | [required] |
+
+### Return type
+
+[**models::ClearFinishedModDownloads200Response**](clearFinishedModDownloads_200_response.md)
+
+### Authorization
+
+[BearerAuth](../README.md#BearerAuth)
+
+### HTTP request headers
+
+- **Content-Type**: Not defined
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+
 ## create_instance
 
 > models::InstanceConfig create_instance(instance_config)
 创建实例
+
+仅 name 必填;startCommand 可为空串(空实例),workingDirectory 缺省由 daemon 分配。 重名返回 409。 可选提供 downloadUrl(服务端下载链接) + checksum(校验值):daemon 创建配置后 自动向任务队列提交下载任务并回写 downloadTaskId,此时返回 202(响应体为完整 实例配置,含 downloadTaskId),客户端用 `GET /tasks/{downloadTaskId}` 查询下载 进度;下载完成该任务终结,实例方可启动。 downloadUrl 仅创建时生效;不带 downloadUrl 时同步返回 201 完整配置。 
 
 ### Parameters
 
@@ -81,12 +148,43 @@ Name | Type | Description  | Required | Notes
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 
+## download_instance_mod
+
+> models::JobAccepted download_instance_mod(instance_id, mod_download_request)
+提交单文件下载任务(模组/插件)
+
+通用单文件下载:下载 `url` 到实例 cwd 下 `destPath` 目录(文件名取 `fileName`,缺省取 URL 末段)。已存在的同名文件直接覆盖。可选 `replacePath` 指定更新替换的旧文件,下载成功后将其重命名为 `<replacePath>.disabled`(禁用旧版而非删除)。返回 202 受理 (JobAccepted),任务按 instanceId 分组 FIFO 串行(多个下载排队执行), 进度/状态经 GET /tasks/{jobId} 轮询,可 DELETE /tasks/{jobId} 取消。 
+
+### Parameters
+
+
+Name | Type | Description  | Required | Notes
+------------- | ------------- | ------------- | ------------- | -------------
+**instance_id** | **uuid::Uuid** | 实例 id(uuid) | [required] |
+**mod_download_request** | [**ModDownloadRequest**](ModDownloadRequest.md) |  | [required] |
+
+### Return type
+
+[**models::JobAccepted**](JobAccepted.md)
+
+### Authorization
+
+[BearerAuth](../README.md#BearerAuth)
+
+### HTTP request headers
+
+- **Content-Type**: application/json
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+
 ## export_instance
 
 > models::JobAccepted export_instance(instance_id, export_request)
 导出实例(打包工作目录为归档)
 
-进度经 WS `download/progress` 推送,完成后返回下载地址。
+进度经 WS `task/progress` 推送,完成后返回下载地址。
 
 ### Parameters
 
@@ -159,6 +257,37 @@ Name | Type | Description  | Required | Notes
 ### Return type
 
 [**models::LogResponse**](LogResponse.md)
+
+### Authorization
+
+[BearerAuth](../README.md#BearerAuth)
+
+### HTTP request headers
+
+- **Content-Type**: Not defined
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+
+## get_instance_mods_metadata
+
+> models::ModMetadataListResponse get_instance_mods_metadata(instance_id, path)
+获取插件/模组解析结果列表
+
+列出指定目录(相对实例 cwd)内插件/模组文件的解析结果; 未识别或尚未解析的文件 metadata 为 null。 
+
+### Parameters
+
+
+Name | Type | Description  | Required | Notes
+------------- | ------------- | ------------- | ------------- | -------------
+**instance_id** | **uuid::Uuid** | 实例 id(uuid) | [required] |
+**path** | **String** | 相对实例 cwd 的目录,如 plugins / mods | [required] |
+
+### Return type
+
+[**models::ModMetadataListResponse**](ModMetadataListResponse.md)
 
 ### Authorization
 
@@ -444,7 +573,7 @@ Name | Type | Description  | Required | Notes
 > models::InstanceConfig update_instance(instance_id, instance_config)
 更新实例配置
 
-运行中实例的以下字段不可变更(需先停止):startCommand、workingDirectory、 type、terminal.pty、inputEncoding、outputEncoding。其余字段热更新。 
+运行中实例的以下字段不可变更(需先停止):startCommand、workingDirectory、 type、runtimeId、terminal.pty、inputEncoding、outputEncoding。其余字段热更新。 
 
 ### Parameters
 

@@ -32,6 +32,9 @@ impl Default for NetworkConfig {
 #[serde(default)]
 pub struct DaemonConfig {
     pub network: NetworkConfig,
+    /// 日志等级:trace/debug/info/warn/error(默认 info)。HTTP/WS 等接口调用
+    /// 日志在 debug 及以上等级输出;环境变量 RUST_LOG 优先于本项。
+    pub log_level: String,
     pub locale: String,
     pub theme: serde_json::Value,
     pub developer: serde_json::Value,
@@ -43,6 +46,7 @@ impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
             network: NetworkConfig::default(),
+            log_level: "info".into(),
             locale: "zh-CN".into(),
             theme: serde_json::json!({}),
             developer: serde_json::json!({}),

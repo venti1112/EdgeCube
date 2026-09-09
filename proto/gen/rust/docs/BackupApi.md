@@ -82,7 +82,7 @@ Name | Type | Description  | Required | Notes
 
 Name | Type | Description  | Required | Notes
 ------------- | ------------- | ------------- | ------------- | -------------
-**job_id** | **String** |  | [required] |
+**job_id** | **uuid::Uuid** | 任务 id(即 Task.id,异步操作 202 响应中的 jobId) | [required] |
 
 ### Return type
 
@@ -188,7 +188,7 @@ This endpoint does not need any parameter.
 
 Name | Type | Description  | Required | Notes
 ------------- | ------------- | ------------- | ------------- | -------------
-**job_id** | **String** |  | [required] |
+**job_id** | **uuid::Uuid** | 任务 id(即 Task.id,异步操作 202 响应中的 jobId) | [required] |
 
 ### Return type
 
@@ -216,7 +216,7 @@ Name | Type | Description  | Required | Notes
 
 Name | Type | Description  | Required | Notes
 ------------- | ------------- | ------------- | ------------- | -------------
-**job_id** | **String** |  | [required] |
+**job_id** | **uuid::Uuid** | 任务 id(即 Task.id,异步操作 202 响应中的 jobId) | [required] |
 **backup_job** | [**BackupJob**](BackupJob.md) |  | [required] |
 
 ### Return type

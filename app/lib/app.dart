@@ -1,4 +1,5 @@
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:flutter_localizations/flutter_localizations.dart' as loc;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -28,6 +29,14 @@ class EdgeCubeApp extends ConsumerWidget {
           themeMode: s.themeMode,
           theme: ThemeData(colorScheme: lightScheme),
           darkTheme: ThemeData(colorScheme: darkScheme),
+          // material_ui 自带的是其自身的 MaterialLocalizations 实现;
+          // 编辑器等 flutter/material 组件需要这三份 Global 代理才能取到
+          // flutter 侧的 MaterialLocalizations/WidgetsLocalizations。
+          localizationsDelegates: const [
+            loc.GlobalMaterialLocalizations.delegate,
+            loc.GlobalWidgetsLocalizations.delegate,
+            loc.GlobalCupertinoLocalizations.delegate,
+          ],
           routerConfig: ref.watch(routerProvider),
         );
       },

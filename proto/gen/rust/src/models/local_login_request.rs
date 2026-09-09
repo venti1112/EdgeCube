@@ -18,8 +18,13 @@ pub struct LocalLoginRequest {
     /// lowercase(hex(HMAC-SHA256(localKey, challenge))),localKey 为 daemon 数据目录内 local.key 内容
     #[serde(rename = "signature")]
     pub signature: String,
+    /// 同 LoginRequest.deviceId,复用已有设备记录
+    #[serde(rename = "deviceId", skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<uuid::Uuid>,
     #[serde(rename = "deviceName", skip_serializing_if = "Option::is_none")]
     pub device_name: Option<String>,
+    #[serde(rename = "deviceType", skip_serializing_if = "Option::is_none")]
+    pub device_type: Option<models::DeviceType>,
 }
 
 impl LocalLoginRequest {
@@ -27,7 +32,9 @@ impl LocalLoginRequest {
         LocalLoginRequest {
             challenge,
             signature,
+            device_id: None,
             device_name: None,
+            device_type: None,
         }
     }
 }

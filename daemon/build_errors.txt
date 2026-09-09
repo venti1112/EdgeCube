@@ -1,0 +1,179 @@
+   Compiling edgecube-daemon v1.0.0 (D:\Projects\EdgeCube\daemon)
+warning: unused import: `Arc`
+  --> src\catalog.rs:15:17
+   |
+15 | use std::sync::{Arc, Mutex};
+   |                 ^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `ensure_within`, `rel_path`, and `resolve`
+  --> src\server.rs:28:5
+   |
+28 |     ensure_within, rel_path, resolve, FsManager, MAX_PIECE_BYTES, MAX_WRITE_BYTES,
+   |     ^^^^^^^^^^^^^  ^^^^^^^^  ^^^^^^^
+
+warning: unused import: `TaskFailure`
+  --> src\server.rs:40:42
+   |
+40 | use crate::task::model::{Task, TaskKind, TaskFailure};
+   |                                          ^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src\proc.rs:629:13
+    |
+629 |         let mut stdin = child
+    |             ----^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src\transfer.rs:580:9
+    |
+580 |     let mut original_config: InstanceConfig = match serde_json::from_str(&raw_config) {
+    |         ----^^^^^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: unused import: `std::os::windows::process::CommandExt`
+   --> src\proc.rs:823:13
+    |
+823 |         use std::os::windows::process::CommandExt as _;
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `stdout`
+   --> src\frp.rs:400:17
+    |
+400 |             let stdout = child
+    |                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_stdout`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `stderr`
+   --> src\frp.rs:404:17
+    |
+404 |             let stderr = child
+    |                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_stderr`
+
+warning: value assigned to `code` is never read
+   --> src\proc.rs:730:37
+    |
+730 |                 let mut code: i32 = -1;
+    |                                     ^^ this value is reassigned later and never used
+...
+744 |                             code = st.ok().and_then(|s| s.code()).unwrap_or(-1);
+    |                             --------------------------------------------------- `code` is overwritten here before the previous value is read
+    |
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `status` is never used
+   --> src\frp.rs:177:12
+    |
+161 | impl FrpError {
+    | ------------- method in this implementation
+...
+177 |     pub fn status(&self) -> u16 {
+    |            ^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `poggit_versions` is never used
+   --> src\mod_market.rs:226:18
+    |
+ 31 | impl ModMarket {
+    | -------------- method in this implementation
+...
+226 |     pub async fn poggit_versions(&self, name: &str) -> Result<serde_json::Value, String> {
+    |                  ^^^^^^^^^^^^^^^
+
+warning: method `label` is never used
+  --> src\mod_meta.rs:42:12
+   |
+41 | impl ModLoader {
+   | -------------- method in this implementation
+42 |     pub fn label(self) -> &'static str {
+   |            ^^^^^
+
+warning: methods `store_icon`, `get`, and `remove_instance` are never used
+   --> src\mod_meta.rs:138:18
+    |
+113 | impl ModMetaManager {
+    | ------------------- methods in this implementation
+...
+138 |     pub async fn store_icon(&self, instance_id: Uuid, path: String, icon_url: Option<String>) {
+    |                  ^^^^^^^^^^
+...
+155 |     pub async fn get(&self, instance_id: Uuid, path: &str) -> Option<Option<ModMetadata>> {
+    |                  ^^^
+...
+160 |     pub async fn remove_instance(&self, instance_id: Uuid) {
+    |                  ^^^^^^^^^^^^^^^
+
+warning: associated function `received` is never used
+  --> src\task\model.rs:81:12
+   |
+80 | impl TaskProgress {
+   | ----------------- associated function in this implementation
+81 |     pub fn received(total: u64, received: u64) -> Self {
+   |            ^^^^^^^^
+
+warning: struct `TaskList` is never constructed
+   --> src\task\model.rs:136:12
+    |
+136 | pub struct TaskList {
+    |            ^^^^^^^^
+
+warning: multiple fields are never read
+   --> src\task\model.rs:144:9
+    |
+143 | pub struct TaskEvent {
+    |            --------- fields in this struct
+144 |     pub task_id: Uuid,
+    |         ^^^^^^^
+145 |     pub kind: TaskKind,
+    |         ^^^^
+146 |     pub instance_id: Option<Uuid>,
+    |         ^^^^^^^^^^^
+147 |     pub display_name: Option<String>,
+    |         ^^^^^^^^^^^^
+148 |     pub status: TaskStatus,
+    |         ^^^^^^
+149 |     pub phase: Option<String>,
+    |         ^^^^^
+150 |     pub progress: Option<TaskProgress>,
+    |         ^^^^^^^^
+151 |     pub error: Option<TaskError>,
+    |         ^^^^^
+    |
+    = note: `TaskEvent` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `subscribe` is never used
+   --> src\task\service.rs:113:12
+    |
+ 98 | impl TaskService {
+    | ---------------- method in this implementation
+...
+113 |     pub fn subscribe(&self) -> broadcast::Receiver<TaskEvent> {
+    |            ^^^^^^^^^
+
+warning: method `list` is never used
+   --> src\task\service.rs:216:18
+    |
+214 | impl TaskService {
+    | ---------------- method in this implementation
+215 |     /// 分页列表:进行中(queued/running)优先,其余按创建时间倒序。
+216 |     pub async fn list(
+    |                  ^^^^
+
+warning: structure field `instanceId` should have a snake case name
+   --> src\terminal.rs:363:9
+    |
+363 |         instanceId: String,
+    |         ^^^^^^^^^^ help: convert the identifier to snake case: `instance_id`
+    |
+    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: `edgecube-daemon` (bin "edgecube-daemon") generated 19 warnings (run `cargo fix --bin "edgecube-daemon" -p edgecube-daemon` to apply 7 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 39.61s

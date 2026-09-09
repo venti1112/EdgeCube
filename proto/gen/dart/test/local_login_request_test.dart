@@ -18,8 +18,19 @@ void main() {
       // TODO
     });
 
+    // 同 LoginRequest.deviceId,复用已有设备记录
+    // String deviceId
+    test('to test the property `deviceId`', () async {
+      // TODO
+    });
+
     // String deviceName
     test('to test the property `deviceName`', () async {
+      // TODO
+    });
+
+    // DeviceType deviceType
+    test('to test the property `deviceType`', () async {
       // TODO
     });
 

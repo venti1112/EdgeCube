@@ -19,7 +19,7 @@ Future<String> persistBackgroundImage(PlatformFile file) async {
   if (file.path != null) {
     await File(file.path!).copy(dest.path);
   } else {
-    await dest.writeAsBytes(file.bytes!);
+    await dest.writeAsBytes(await file.readAsBytes());
   }
   return dest.path;
 }

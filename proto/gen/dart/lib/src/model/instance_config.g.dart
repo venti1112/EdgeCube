@@ -12,13 +12,13 @@ class _$InstanceConfig extends InstanceConfig {
   @override
   final String name;
   @override
-  final String startCommand;
+  final String? startCommand;
   @override
   final String? stopCommand;
   @override
   final int? stopTimeoutSeconds;
   @override
-  final String workingDirectory;
+  final String? workingDirectory;
   @override
   final BuiltMap<String, String>? environment;
   @override
@@ -36,6 +36,16 @@ class _$InstanceConfig extends InstanceConfig {
   @override
   final InstanceType? type;
   @override
+  final String? runtimeId;
+  @override
+  final String? downloadUrl;
+  @override
+  final String? fileName;
+  @override
+  final String? checksum;
+  @override
+  final String? downloadTaskId;
+  @override
   final DateTime? createdAt;
   @override
   final DateTime? updatedAt;
@@ -46,10 +56,10 @@ class _$InstanceConfig extends InstanceConfig {
   _$InstanceConfig._(
       {this.id,
       required this.name,
-      required this.startCommand,
+      this.startCommand,
       this.stopCommand,
       this.stopTimeoutSeconds,
-      required this.workingDirectory,
+      this.workingDirectory,
       this.environment,
       this.inputEncoding,
       this.outputEncoding,
@@ -58,6 +68,11 @@ class _$InstanceConfig extends InstanceConfig {
       this.autoStartOnBoot,
       this.terminal,
       this.type,
+      this.runtimeId,
+      this.downloadUrl,
+      this.fileName,
+      this.checksum,
+      this.downloadTaskId,
       this.createdAt,
       this.updatedAt})
       : super._();
@@ -86,6 +101,11 @@ class _$InstanceConfig extends InstanceConfig {
         autoStartOnBoot == other.autoStartOnBoot &&
         terminal == other.terminal &&
         type == other.type &&
+        runtimeId == other.runtimeId &&
+        downloadUrl == other.downloadUrl &&
+        fileName == other.fileName &&
+        checksum == other.checksum &&
+        downloadTaskId == other.downloadTaskId &&
         createdAt == other.createdAt &&
         updatedAt == other.updatedAt;
   }
@@ -107,6 +127,11 @@ class _$InstanceConfig extends InstanceConfig {
     _$hash = $jc(_$hash, autoStartOnBoot.hashCode);
     _$hash = $jc(_$hash, terminal.hashCode);
     _$hash = $jc(_$hash, type.hashCode);
+    _$hash = $jc(_$hash, runtimeId.hashCode);
+    _$hash = $jc(_$hash, downloadUrl.hashCode);
+    _$hash = $jc(_$hash, fileName.hashCode);
+    _$hash = $jc(_$hash, checksum.hashCode);
+    _$hash = $jc(_$hash, downloadTaskId.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jc(_$hash, updatedAt.hashCode);
     _$hash = $jf(_$hash);
@@ -130,6 +155,11 @@ class _$InstanceConfig extends InstanceConfig {
           ..add('autoStartOnBoot', autoStartOnBoot)
           ..add('terminal', terminal)
           ..add('type', type)
+          ..add('runtimeId', runtimeId)
+          ..add('downloadUrl', downloadUrl)
+          ..add('fileName', fileName)
+          ..add('checksum', checksum)
+          ..add('downloadTaskId', downloadTaskId)
           ..add('createdAt', createdAt)
           ..add('updatedAt', updatedAt))
         .toString();
@@ -206,6 +236,27 @@ class InstanceConfigBuilder
   InstanceType? get type => _$this._type;
   set type(InstanceType? type) => _$this._type = type;
 
+  String? _runtimeId;
+  String? get runtimeId => _$this._runtimeId;
+  set runtimeId(String? runtimeId) => _$this._runtimeId = runtimeId;
+
+  String? _downloadUrl;
+  String? get downloadUrl => _$this._downloadUrl;
+  set downloadUrl(String? downloadUrl) => _$this._downloadUrl = downloadUrl;
+
+  String? _fileName;
+  String? get fileName => _$this._fileName;
+  set fileName(String? fileName) => _$this._fileName = fileName;
+
+  String? _checksum;
+  String? get checksum => _$this._checksum;
+  set checksum(String? checksum) => _$this._checksum = checksum;
+
+  String? _downloadTaskId;
+  String? get downloadTaskId => _$this._downloadTaskId;
+  set downloadTaskId(String? downloadTaskId) =>
+      _$this._downloadTaskId = downloadTaskId;
+
   DateTime? _createdAt;
   DateTime? get createdAt => _$this._createdAt;
   set createdAt(DateTime? createdAt) => _$this._createdAt = createdAt;
@@ -235,6 +286,11 @@ class InstanceConfigBuilder
       _autoStartOnBoot = $v.autoStartOnBoot;
       _terminal = $v.terminal?.toBuilder();
       _type = $v.type;
+      _runtimeId = $v.runtimeId;
+      _downloadUrl = $v.downloadUrl;
+      _fileName = $v.fileName;
+      _checksum = $v.checksum;
+      _downloadTaskId = $v.downloadTaskId;
       _createdAt = $v.createdAt;
       _updatedAt = $v.updatedAt;
       _$v = null;
@@ -263,12 +319,10 @@ class InstanceConfigBuilder
             id: id,
             name: BuiltValueNullFieldError.checkNotNull(
                 name, r'InstanceConfig', 'name'),
-            startCommand: BuiltValueNullFieldError.checkNotNull(
-                startCommand, r'InstanceConfig', 'startCommand'),
+            startCommand: startCommand,
             stopCommand: stopCommand,
             stopTimeoutSeconds: stopTimeoutSeconds,
-            workingDirectory: BuiltValueNullFieldError.checkNotNull(
-                workingDirectory, r'InstanceConfig', 'workingDirectory'),
+            workingDirectory: workingDirectory,
             environment: _environment?.build(),
             inputEncoding: inputEncoding,
             outputEncoding: outputEncoding,
@@ -277,6 +331,11 @@ class InstanceConfigBuilder
             autoStartOnBoot: autoStartOnBoot,
             terminal: _terminal?.build(),
             type: type,
+            runtimeId: runtimeId,
+            downloadUrl: downloadUrl,
+            fileName: fileName,
+            checksum: checksum,
+            downloadTaskId: downloadTaskId,
             createdAt: createdAt,
             updatedAt: updatedAt,
           );

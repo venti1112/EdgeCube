@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:edgecube_api_client/edgecube_api_client.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_storage/just_storage.dart';
 
 import '../settings/appearance.dart';
+import '../settings/device_platform.dart';
 import 'local_key.dart';
 import 'server_entry.dart';
 
@@ -162,10 +164,36 @@ class ServerService {
 
   final Ref _ref;
 
-  static const _deviceName = 'EdgeCube App';
-
   /// 各服务器 id -> 已实例化客户端(连接成功后注入 Bearer token)
   final Map<String, EdgecubeApiClient> _clients = {};
+
+  /// 全局唯一的设备标识(2025-09 起单 key):
+  /// 整个客户端只持有一个设备 id,连接任意服务器均复用同一条设备记录,
+  /// 不再按服务器拆分。首次登录生成并持久化,之后每次打开复用。
+  Future<String> _deviceId(String serverId) async {
+    final storage = _ref.read(storageProvider);
+    const key = 'device_id';
+    final existing = await storage.read(key);
+    if (existing != null && existing.isNotEmpty) return existing;
+    // 迁移旧版按服务器存储的设备 id,避免升级后产生重复设备记录。
+    final legacy = await storage.read('deviceId_$serverId');
+    if (legacy != null && legacy.isNotEmpty) {
+      await storage.write(key, legacy);
+      return legacy;
+    }
+    final id = _newDeviceId();
+    await storage.write(key, id);
+    return id;
+  }
+
+  /// 32 字节随机数十六进制(等价 uuid v4 长度,无需额外依赖)。
+  String _newDeviceId() {
+    final rng = Random.secure();
+    return List.generate(
+      32,
+      (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+  }
 
   /// 连接并登录指定服务器:
   /// - 本地:读 local.key 走 /auth/local-login 免密;
@@ -180,6 +208,13 @@ class ServerService {
       ),
     );
     final auth = client.getAuthApi();
+    final deviceId = await _deviceId(entry.id);
+    final deviceName = devicePlatformName();
+    final deviceType = switch (deviceTypeName()) {
+      'mobile' => DeviceType.mobile,
+      'web' => DeviceType.web,
+      _ => DeviceType.desktop,
+    };
     try {
       final LoginResponse resp;
       if (entry.type == ServerType.local) {
@@ -193,7 +228,9 @@ class ServerService {
           localLoginRequest: LocalLoginRequest((b) => b
             ..challenge = challenge.challenge
             ..signature = signature
-            ..deviceName = _deviceName),
+            ..deviceId = deviceId
+            ..deviceName = deviceName
+            ..deviceType = deviceType),
         ))
             .data!;
       } else {
@@ -206,7 +243,9 @@ class ServerService {
           loginRequest: LoginRequest((b) => b
             ..username = user
             ..password = pass
-            ..deviceName = _deviceName),
+            ..deviceId = deviceId
+            ..deviceName = deviceName
+            ..deviceType = deviceType),
         ))
             .data!;
       }

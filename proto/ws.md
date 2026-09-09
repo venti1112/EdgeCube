@@ -128,8 +128,8 @@ wss://.../api/v1/ws/events                              # 带 Authorization: Bea
 | `player/list` | 推送 | `{ players: [name] }` | list 轮询结果刷新 | 1 |
 | `crash/report` | 推送 | `{ kind, exitCode, errorReason?, errorDetail?, errorSuggest?, logLines, logFilePath? }` | 崩溃报告(服务端/隧道) | 1 |
 | `monitor/stats` | 推送 | `{ ...MonitorSnapshot }` | 系统监控周期推送(订阅 `monitor/stats` 类型,间隔 daemon 配置) | 1 |
-| `download/progress` | 推送 | `{ jobId, name, type, receivedBytes, totalBytes, speedBytesPerSec, status, error? }` | 下载/导出/备份异步任务进度 | 1 |
-| `backup/progress` | 推送 | `{ jobId, targetId?, status, phase, receivedBytes?, totalBytes?, error? }` | 备份执行进度 | 2 |
+| `task/progress` | 推送 | `{ taskId, kind, instanceId?, status, phase?, receivedBytes?, totalBytes?, speedBytesPerSec?, error? }` | 通用异步任务进度(实例操作/下载/导出等,字段对齐 openapi `Task`) | 1 |
+| `backup/progress` | 推送 | `{ jobId, targetId?, status, phase, receivedBytes?, totalBytes?, error? }` | 备份执行进度(专用 phase 模型,不走通用任务) | 2 |
 | `notification` | 推送 | `{ level, message }` | 通用提示(本地化 key,UI 侧翻译) | 0 |
 | `ftp/status`、`ssh/status` | 推送 | 对应状态对象 | 服务开关变化 | 2 |
 
@@ -150,7 +150,7 @@ wss://.../api/v1/ws/events                              # 带 Authorization: Bea
 | event | data | 说明 | phase |
 |---|---|---|---|
 | `auth` | `{ token }` | 显式鉴权 | 0 |
-| `open` | `{ instanceId, cols?, rows?, replay? }` | 打开终端会话;`replay: true`(默认)响应含历史回放;首次 open 即启动实例 | 0 |
+| `open` | `{ instanceId, cols?, rows?, replay? }` | 打开终端会话;`replay: true`(默认)响应含历史回放;实例未运行时不自动启动,返回 `status: stopped`(启动需显式发起) | 0 |
 | `detail` | `{}` | 拉取会话详情(状态/pid/watcher 数) | 0 |
 | `write` | `{ input: string }` | UTF-8 文本按键(文本帧);原始字节用二进制帧 | 0 |
 | `input` | `{ command: string }` | 结构化命令(命令框);与 `write` 语义分离,可被 RCON 等替换 | 0 |
@@ -174,8 +174,8 @@ wss://.../api/v1/ws/events                              # 带 Authorization: Bea
 ```
 客户端                      服务端(/ws/terminal)
   │  open {instanceId, cols:164, rows:40, replay:true}  │
-  ├─────────────────────────────────────────────────────►│ 启动实例(PTY 进程)
-  │  response ok {opened: {pid, status: starting}}      │
+  ├─────────────────────────────────────────────────────►│ 已运行:接入 PTY / 未运行:仅回放
+  │  response ok {opened: {pid, status}}                │ (停止实例为 {pid: null, status: stopped})
   │◄─────────────────────────────────────────────────────┤
   │  event replay {lines:[...]}                         │ 历史日志回放
   │◄─────────────────────────────────────────────────────┤
@@ -215,6 +215,9 @@ wss://.../api/v1/ws/events                              # 带 Authorization: Bea
 | `auth_timeout` | 6 秒未完成鉴权 |
 | `instance_not_found` | instanceId 不存在 |
 | `instance_busy` | 实例忙碌(如启动中重复 start) |
+| `task_not_found` | taskId 不存在(任务列表已过期等) |
+| `task_conflict` | 任务冲突(同一实例同 kind 任务重复提交 / 已结束任务不可取消) |
+| `task_cancelled` | 任务已被取消 |
 | `session_closed` | 会话已关闭(实例被删除等) |
 | `unsupported_event` | 未知 event |
 | `rate_limited` | 超出推送/请求频率上限 |

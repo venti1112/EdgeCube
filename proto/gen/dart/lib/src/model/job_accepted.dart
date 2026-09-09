@@ -11,10 +11,10 @@ part 'job_accepted.g.dart';
 /// JobAccepted
 ///
 /// Properties:
-/// * [jobId] - 异步任务 id(进度经 WS 同名事件推送)
+/// * [jobId] - 异步任务 id(= Task.id;状态/进度经 WS `task/progress` 推送,可用 GET /tasks/{jobId} 查询)
 @BuiltValue()
 abstract class JobAccepted implements Built<JobAccepted, JobAcceptedBuilder> {
-  /// 异步任务 id(进度经 WS 同名事件推送)
+  /// 异步任务 id(= Task.id;状态/进度经 WS `task/progress` 推送,可用 GET /tasks/{jobId} 查询)
   @BuiltValueField(wireName: r'jobId')
   String get jobId;
 

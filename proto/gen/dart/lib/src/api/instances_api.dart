@@ -10,6 +10,7 @@ import 'package:dio/dio.dart';
 
 import 'package:built_collection/built_collection.dart';
 import 'package:edgecube_api_client/src/api_util.dart';
+import 'package:edgecube_api_client/src/model/clear_finished_mod_downloads200_response.dart';
 import 'package:edgecube_api_client/src/model/command_request.dart';
 import 'package:edgecube_api_client/src/model/error_response.dart';
 import 'package:edgecube_api_client/src/model/export_request.dart';
@@ -19,6 +20,9 @@ import 'package:edgecube_api_client/src/model/instance_overview.dart';
 import 'package:edgecube_api_client/src/model/instance_page.dart';
 import 'package:edgecube_api_client/src/model/job_accepted.dart';
 import 'package:edgecube_api_client/src/model/log_response.dart';
+import 'package:edgecube_api_client/src/model/mod_download_request.dart';
+import 'package:edgecube_api_client/src/model/mod_metadata_list_response.dart';
+import 'package:edgecube_api_client/src/model/mods_analyze_request.dart';
 
 class InstancesApi {
 
@@ -28,8 +32,192 @@ class InstancesApi {
 
   const InstancesApi(this._dio, this._serializers);
 
+  /// 提交插件/模组元数据解析任务
+  /// 扫描指定目录(相对实例 cwd,如 plugins / mods)内所有 .jar/.phar 文件, 在服务端解析元数据并缓存。返回 202 受理(JobAccepted),任务状态经 GET /tasks/{jobId} 轮询,完成后用 GET mods/metadata 拉取结果。 
+  ///
+  /// Parameters:
+  /// * [instanceId] - 实例 id(uuid)
+  /// * [modsAnalyzeRequest] 
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [JobAccepted] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<JobAccepted>> analyzeInstanceMods({ 
+    required String instanceId,
+    required ModsAnalyzeRequest modsAnalyzeRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/instances/{instanceId}/mods/analyze'.replaceAll('{' r'instanceId' '}', encodeQueryParameter(_serializers, instanceId, const FullType(String)).toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'BearerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(ModsAnalyzeRequest);
+      _bodyData = _serializers.serialize(modsAnalyzeRequest, specifiedType: _type);
+
+    } catch(error, stackTrace) {
+      throw DioException(
+         requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    JobAccepted? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null ? null : _serializers.deserialize(
+        rawResponse,
+        specifiedType: const FullType(JobAccepted),
+      ) as JobAccepted;
+
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<JobAccepted>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// 清除该实例已终结的下载任务
+  /// 移除该实例所有已终结(succeeded/failed/cancelled)的 download_single_file 任务(下载队列「清除已完成」)。 进行中(queued/running)任务不受影响。返回清除数量。 
+  ///
+  /// Parameters:
+  /// * [instanceId] - 实例 id(uuid)
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [ClearFinishedModDownloads200Response] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<ClearFinishedModDownloads200Response>> clearFinishedModDownloads({ 
+    required String instanceId,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/instances/{instanceId}/mods/downloads'.replaceAll('{' r'instanceId' '}', encodeQueryParameter(_serializers, instanceId, const FullType(String)).toString());
+    final _options = Options(
+      method: r'DELETE',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'BearerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    ClearFinishedModDownloads200Response? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null ? null : _serializers.deserialize(
+        rawResponse,
+        specifiedType: const FullType(ClearFinishedModDownloads200Response),
+      ) as ClearFinishedModDownloads200Response;
+
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<ClearFinishedModDownloads200Response>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
   /// 创建实例
-  /// 
+  /// 仅 name 必填;startCommand 可为空串(空实例),workingDirectory 缺省由 daemon 分配。 重名返回 409。 可选提供 downloadUrl(服务端下载链接) + checksum(校验值):daemon 创建配置后 自动向任务队列提交下载任务并回写 downloadTaskId,此时返回 202(响应体为完整 实例配置,含 downloadTaskId),客户端用 &#x60;GET /tasks/{downloadTaskId}&#x60; 查询下载 进度;下载完成该任务终结,实例方可启动。 downloadUrl 仅创建时生效;不带 downloadUrl 时同步返回 201 完整配置。 
   ///
   /// Parameters:
   /// * [instanceConfig] 
@@ -182,8 +370,111 @@ class InstancesApi {
     return _response;
   }
 
+  /// 提交单文件下载任务(模组/插件)
+  /// 通用单文件下载:下载 &#x60;url&#x60; 到实例 cwd 下 &#x60;destPath&#x60; 目录(文件名取 &#x60;fileName&#x60;,缺省取 URL 末段)。已存在的同名文件直接覆盖。可选 &#x60;replacePath&#x60; 指定更新替换的旧文件,下载成功后将其重命名为 &#x60;&lt;replacePath&gt;.disabled&#x60;(禁用旧版而非删除)。返回 202 受理 (JobAccepted),任务按 instanceId 分组 FIFO 串行(多个下载排队执行), 进度/状态经 GET /tasks/{jobId} 轮询,可 DELETE /tasks/{jobId} 取消。 
+  ///
+  /// Parameters:
+  /// * [instanceId] - 实例 id(uuid)
+  /// * [modDownloadRequest] 
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [JobAccepted] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<JobAccepted>> downloadInstanceMod({ 
+    required String instanceId,
+    required ModDownloadRequest modDownloadRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/instances/{instanceId}/mods/download'.replaceAll('{' r'instanceId' '}', encodeQueryParameter(_serializers, instanceId, const FullType(String)).toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'BearerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(ModDownloadRequest);
+      _bodyData = _serializers.serialize(modDownloadRequest, specifiedType: _type);
+
+    } catch(error, stackTrace) {
+      throw DioException(
+         requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    JobAccepted? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null ? null : _serializers.deserialize(
+        rawResponse,
+        specifiedType: const FullType(JobAccepted),
+      ) as JobAccepted;
+
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<JobAccepted>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
   /// 导出实例(打包工作目录为归档)
-  /// 进度经 WS &#x60;download/progress&#x60; 推送,完成后返回下载地址。
+  /// 将实例配置与工作目录打包为归档(zip/tar.gz,可排除 logs 目录),存入 daemon 的 &#x60;exports&#x60; 目录。返回 202 受理(JobAccepted),任务完成 (GET /tasks/{jobId} &#x3D; succeeded)后经 GET /instances/{instanceId}/export/download 下载归档。导出期间实例必须处于 Stopped(运行中返回 409 instance_busy)。 同一实例的导出任务串行,进行中的导出重复提交返回 409 task_conflict。 
   ///
   /// Parameters:
   /// * [instanceId] - 实例 id(uuid)
@@ -446,6 +737,94 @@ class InstancesApi {
     }
 
     return Response<LogResponse>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// 获取插件/模组解析结果列表
+  /// 列出指定目录(相对实例 cwd)内插件/模组文件的解析结果; 未识别或尚未解析的文件 metadata 为 null。 
+  ///
+  /// Parameters:
+  /// * [instanceId] - 实例 id(uuid)
+  /// * [path] - 相对实例 cwd 的目录,如 plugins / mods
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [ModMetadataListResponse] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<ModMetadataListResponse>> getInstanceModsMetadata({ 
+    required String instanceId,
+    required String path,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/instances/{instanceId}/mods/metadata'.replaceAll('{' r'instanceId' '}', encodeQueryParameter(_serializers, instanceId, const FullType(String)).toString());
+    final _options = Options(
+      method: r'GET',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'BearerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _queryParameters = <String, dynamic>{
+      r'path': encodeQueryParameter(_serializers, path, const FullType(String)),
+    };
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      queryParameters: _queryParameters,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    ModMetadataListResponse? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null ? null : _serializers.deserialize(
+        rawResponse,
+        specifiedType: const FullType(ModMetadataListResponse),
+      ) as ModMetadataListResponse;
+
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<ModMetadataListResponse>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,
@@ -1082,7 +1461,7 @@ class InstancesApi {
   }
 
   /// 更新实例配置
-  /// 运行中实例的以下字段不可变更(需先停止):startCommand、workingDirectory、 type、terminal.pty、inputEncoding、outputEncoding。其余字段热更新。 
+  /// 运行中实例的以下字段不可变更(需先停止):startCommand、workingDirectory、 type、runtimeId、terminal.pty、inputEncoding、outputEncoding。其余字段热更新。 
   ///
   /// Parameters:
   /// * [instanceId] - 实例 id(uuid)

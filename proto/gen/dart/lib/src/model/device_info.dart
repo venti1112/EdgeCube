@@ -3,6 +3,7 @@
 //
 
 // ignore_for_file: unused_element
+import 'package:edgecube_api_client/src/model/device_type.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
@@ -13,6 +14,7 @@ part 'device_info.g.dart';
 /// Properties:
 /// * [id] 
 /// * [name] 
+/// * [deviceType] 
 /// * [lastSeenAt] 
 /// * [createdAt] 
 @BuiltValue()
@@ -22,6 +24,10 @@ abstract class DeviceInfo implements Built<DeviceInfo, DeviceInfoBuilder> {
 
   @BuiltValueField(wireName: r'name')
   String get name;
+
+  @BuiltValueField(wireName: r'deviceType')
+  DeviceType? get deviceType;
+  // enum deviceTypeEnum {  desktop,  mobile,  web,  };
 
   @BuiltValueField(wireName: r'lastSeenAt')
   DateTime? get lastSeenAt;
@@ -62,6 +68,13 @@ class _$DeviceInfoSerializer implements PrimitiveSerializer<DeviceInfo> {
       object.name,
       specifiedType: const FullType(String),
     );
+    if (object.deviceType != null) {
+      yield r'deviceType';
+      yield serializers.serialize(
+        object.deviceType,
+        specifiedType: const FullType(DeviceType),
+      );
+    }
     if (object.lastSeenAt != null) {
       yield r'lastSeenAt';
       yield serializers.serialize(
@@ -110,6 +123,14 @@ class _$DeviceInfoSerializer implements PrimitiveSerializer<DeviceInfo> {
             specifiedType: const FullType(String),
           ) as String;
           result.name = valueDes;
+          break;
+        case r'deviceType':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(DeviceType),
+          ) as DeviceType?;
+          if (valueDes == null) continue;
+          result.deviceType = valueDes;
           break;
         case r'lastSeenAt':
           final valueDes = serializers.deserialize(

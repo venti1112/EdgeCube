@@ -12,15 +12,15 @@ import 'package:built_value/serializer.dart';
 
 part 'instance_config.g.dart';
 
-/// InstanceConfig
+/// 实例配置。创建时仅 name 必填:startCommand 可为空串(空实例,创建后再导入服务端配置), workingDirectory 缺省由 daemon 分配 {dataDir}/files/{id}。 
 ///
 /// Properties:
 /// * [id] - 服务端生成
 /// * [name] 
-/// * [startCommand] - 命令行字符串(支持引号/转义,解析为参数数组 spawn,不经 shell)
+/// * [startCommand] - 命令行字符串(支持引号/转义,解析为参数数组 spawn,不经 shell);空串表示尚未配置启动命令
 /// * [stopCommand] - 优雅停止命令;^C 表示发送 Ctrl+C
 /// * [stopTimeoutSeconds] - 优雅停止超时,超时升级强杀
-/// * [workingDirectory] - 工作目录(实例 cwd,文件沙箱根)
+/// * [workingDirectory] - 工作目录(实例 cwd,文件沙箱根);创建/更新时缺省由 daemon 维护为实例专属目录,不随实例删除
 /// * [environment] - 额外环境变量
 /// * [inputEncoding] 
 /// * [outputEncoding] 
@@ -29,6 +29,11 @@ part 'instance_config.g.dart';
 /// * [autoStartOnBoot] - daemon 启动时自动拉起
 /// * [terminal] 
 /// * [type] 
+/// * [runtimeId] - 引用已安装运行时(runtimes 的 RuntimeInfo.id,如 java 指定 JRE 版本)。 为空表示未指定,启动命令中的可执行文件需自行可用。 
+/// * [downloadUrl] - 创建实例时的服务端下载链接(http/https)。仅在创建时生效: daemon 收到后自动发起下载任务(下载到实例工作目录),下载完成前实例暂不可启动。 更新实例时忽略本字段。 
+/// * [fileName] - 下载目标文件名(仅与 downloadUrl 配合,创建时生效)。缺省由 daemon 从 URL 末段推导(如 https://.../paper-1.21.1-198.jar → paper-1.21.1-198.jar); 建议取 /catalog/download-info 返回的 fileName。 
+/// * [checksum] - 下载校验值,格式 \"sha1:<hex>\" 或 \"sha256:<hex>\"(aria2 风格,不填则不做校验)。 仅与 downloadUrl 配合使用,下载完成后按算法强校验,不一致视为失败。 
+/// * [downloadTaskId] - 创建实例触发的下载任务 id(只读)。创建后经 `GET /tasks/{jobId}` 查询下载进度;下载完成后保留,便于追溯。 
 /// * [createdAt] 
 /// * [updatedAt] 
 @BuiltValue()
@@ -40,9 +45,9 @@ abstract class InstanceConfig implements Built<InstanceConfig, InstanceConfigBui
   @BuiltValueField(wireName: r'name')
   String get name;
 
-  /// 命令行字符串(支持引号/转义,解析为参数数组 spawn,不经 shell)
+  /// 命令行字符串(支持引号/转义,解析为参数数组 spawn,不经 shell);空串表示尚未配置启动命令
   @BuiltValueField(wireName: r'startCommand')
-  String get startCommand;
+  String? get startCommand;
 
   /// 优雅停止命令;^C 表示发送 Ctrl+C
   @BuiltValueField(wireName: r'stopCommand')
@@ -52,9 +57,9 @@ abstract class InstanceConfig implements Built<InstanceConfig, InstanceConfigBui
   @BuiltValueField(wireName: r'stopTimeoutSeconds')
   int? get stopTimeoutSeconds;
 
-  /// 工作目录(实例 cwd,文件沙箱根)
+  /// 工作目录(实例 cwd,文件沙箱根);创建/更新时缺省由 daemon 维护为实例专属目录,不随实例删除
   @BuiltValueField(wireName: r'workingDirectory')
-  String get workingDirectory;
+  String? get workingDirectory;
 
   /// 额外环境变量
   @BuiltValueField(wireName: r'environment')
@@ -87,6 +92,26 @@ abstract class InstanceConfig implements Built<InstanceConfig, InstanceConfigBui
   InstanceType? get type;
   // enum typeEnum {  minecraft-java,  minecraft-bedrock,  pocketmine,  generic,  };
 
+  /// 引用已安装运行时(runtimes 的 RuntimeInfo.id,如 java 指定 JRE 版本)。 为空表示未指定,启动命令中的可执行文件需自行可用。 
+  @BuiltValueField(wireName: r'runtimeId')
+  String? get runtimeId;
+
+  /// 创建实例时的服务端下载链接(http/https)。仅在创建时生效: daemon 收到后自动发起下载任务(下载到实例工作目录),下载完成前实例暂不可启动。 更新实例时忽略本字段。 
+  @BuiltValueField(wireName: r'downloadUrl')
+  String? get downloadUrl;
+
+  /// 下载目标文件名(仅与 downloadUrl 配合,创建时生效)。缺省由 daemon 从 URL 末段推导(如 https://.../paper-1.21.1-198.jar → paper-1.21.1-198.jar); 建议取 /catalog/download-info 返回的 fileName。 
+  @BuiltValueField(wireName: r'fileName')
+  String? get fileName;
+
+  /// 下载校验值,格式 \"sha1:<hex>\" 或 \"sha256:<hex>\"(aria2 风格,不填则不做校验)。 仅与 downloadUrl 配合使用,下载完成后按算法强校验,不一致视为失败。 
+  @BuiltValueField(wireName: r'checksum')
+  String? get checksum;
+
+  /// 创建实例触发的下载任务 id(只读)。创建后经 `GET /tasks/{jobId}` 查询下载进度;下载完成后保留,便于追溯。 
+  @BuiltValueField(wireName: r'downloadTaskId')
+  String? get downloadTaskId;
+
   @BuiltValueField(wireName: r'createdAt')
   DateTime? get createdAt;
 
@@ -99,6 +124,7 @@ abstract class InstanceConfig implements Built<InstanceConfig, InstanceConfigBui
 
   @BuiltValueHook(initializeBuilder: true)
   static void _defaults(InstanceConfigBuilder b) => b
+      ..startCommand = ''
       ..stopCommand = '^C'
       ..stopTimeoutSeconds = 600
       ..autoRestart = false
@@ -133,11 +159,13 @@ class _$InstanceConfigSerializer implements PrimitiveSerializer<InstanceConfig> 
       object.name,
       specifiedType: const FullType(String),
     );
-    yield r'startCommand';
-    yield serializers.serialize(
-      object.startCommand,
-      specifiedType: const FullType(String),
-    );
+    if (object.startCommand != null) {
+      yield r'startCommand';
+      yield serializers.serialize(
+        object.startCommand,
+        specifiedType: const FullType(String),
+      );
+    }
     if (object.stopCommand != null) {
       yield r'stopCommand';
       yield serializers.serialize(
@@ -152,11 +180,13 @@ class _$InstanceConfigSerializer implements PrimitiveSerializer<InstanceConfig> 
         specifiedType: const FullType(int),
       );
     }
-    yield r'workingDirectory';
-    yield serializers.serialize(
-      object.workingDirectory,
-      specifiedType: const FullType(String),
-    );
+    if (object.workingDirectory != null) {
+      yield r'workingDirectory';
+      yield serializers.serialize(
+        object.workingDirectory,
+        specifiedType: const FullType(String),
+      );
+    }
     if (object.environment != null) {
       yield r'environment';
       yield serializers.serialize(
@@ -211,6 +241,41 @@ class _$InstanceConfigSerializer implements PrimitiveSerializer<InstanceConfig> 
       yield serializers.serialize(
         object.type,
         specifiedType: const FullType(InstanceType),
+      );
+    }
+    if (object.runtimeId != null) {
+      yield r'runtimeId';
+      yield serializers.serialize(
+        object.runtimeId,
+        specifiedType: const FullType.nullable(String),
+      );
+    }
+    if (object.downloadUrl != null) {
+      yield r'downloadUrl';
+      yield serializers.serialize(
+        object.downloadUrl,
+        specifiedType: const FullType.nullable(String),
+      );
+    }
+    if (object.fileName != null) {
+      yield r'fileName';
+      yield serializers.serialize(
+        object.fileName,
+        specifiedType: const FullType.nullable(String),
+      );
+    }
+    if (object.checksum != null) {
+      yield r'checksum';
+      yield serializers.serialize(
+        object.checksum,
+        specifiedType: const FullType.nullable(String),
+      );
+    }
+    if (object.downloadTaskId != null) {
+      yield r'downloadTaskId';
+      yield serializers.serialize(
+        object.downloadTaskId,
+        specifiedType: const FullType.nullable(String),
       );
     }
     if (object.createdAt != null) {
@@ -268,8 +333,9 @@ class _$InstanceConfigSerializer implements PrimitiveSerializer<InstanceConfig> 
         case r'startCommand':
           final valueDes = serializers.deserialize(
             value,
-            specifiedType: const FullType(String),
-          ) as String;
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
           result.startCommand = valueDes;
           break;
         case r'stopCommand':
@@ -291,8 +357,9 @@ class _$InstanceConfigSerializer implements PrimitiveSerializer<InstanceConfig> 
         case r'workingDirectory':
           final valueDes = serializers.deserialize(
             value,
-            specifiedType: const FullType(String),
-          ) as String;
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
           result.workingDirectory = valueDes;
           break;
         case r'environment':
@@ -358,6 +425,46 @@ class _$InstanceConfigSerializer implements PrimitiveSerializer<InstanceConfig> 
           ) as InstanceType?;
           if (valueDes == null) continue;
           result.type = valueDes;
+          break;
+        case r'runtimeId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.runtimeId = valueDes;
+          break;
+        case r'downloadUrl':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.downloadUrl = valueDes;
+          break;
+        case r'fileName':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.fileName = valueDes;
+          break;
+        case r'checksum':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.checksum = valueDes;
+          break;
+        case r'downloadTaskId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.downloadTaskId = valueDes;
           break;
         case r'createdAt':
           final valueDes = serializers.deserialize(

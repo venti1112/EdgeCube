@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct JobAccepted {
-    /// 异步任务 id(进度经 WS 同名事件推送)
+    /// 异步任务 id(= Task.id;状态/进度经 WS `task/progress` 推送,可用 GET /tasks/{jobId} 查询)
     #[serde(rename = "jobId")]
     pub job_id: String,
 }

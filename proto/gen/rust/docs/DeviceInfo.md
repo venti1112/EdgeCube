@@ -6,6 +6,7 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **id** | **String** |  | 
 **name** | **String** |  | 
+**device_type** | Option<[**models::DeviceType**](DeviceType.md)> |  | [optional]
 **last_seen_at** | Option<**chrono::DateTime<chrono::FixedOffset>**> |  | [optional]
 **created_at** | **chrono::DateTime<chrono::FixedOffset>** |  | 
 

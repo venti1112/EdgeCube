@@ -341,13 +341,12 @@ class AppearancePage extends ConsumerWidget {
   }
 
   Future<void> _pickBackgroundImage(BuildContext context, WidgetRef ref) async {
-    final result = await FilePicker.platform.pickFiles(
+    final files = await FilePicker.pickFiles(
       type: FileType.image,
-      withData: true,
     );
-    if (result == null || result.files.isEmpty) return;
+    if (files.isEmpty) return;
     try {
-      final stored = await persistBackgroundImage(result.files.single);
+      final stored = await persistBackgroundImage(files.single);
       await ref
           .read(appearanceSettingsProvider.notifier)
           .setBackgroundImage(stored);

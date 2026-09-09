@@ -11,16 +11,16 @@ part 'instance_type.g.dart';
 
 class InstanceType extends EnumClass {
 
-  /// 附加层类型;generic 为纯通用进程
+  /// 附加层类型;generic 为纯通用进程,创建时缺省 generic
   @BuiltValueEnumConst(wireName: r'minecraft-java')
   static const InstanceType minecraftJava = _$minecraftJava;
-  /// 附加层类型;generic 为纯通用进程
+  /// 附加层类型;generic 为纯通用进程,创建时缺省 generic
   @BuiltValueEnumConst(wireName: r'minecraft-bedrock')
   static const InstanceType minecraftBedrock = _$minecraftBedrock;
-  /// 附加层类型;generic 为纯通用进程
+  /// 附加层类型;generic 为纯通用进程,创建时缺省 generic
   @BuiltValueEnumConst(wireName: r'pocketmine')
   static const InstanceType pocketmine = _$pocketmine;
-  /// 附加层类型;generic 为纯通用进程
+  /// 附加层类型;generic 为纯通用进程,创建时缺省 generic
   @BuiltValueEnumConst(wireName: r'generic')
   static const InstanceType generic = _$generic;
 

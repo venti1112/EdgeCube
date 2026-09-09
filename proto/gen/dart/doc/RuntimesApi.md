@@ -11,7 +11,7 @@ Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**deleteRuntime**](RuntimesApi.md#deleteruntime) | **DELETE** /runtimes/{runtimeId} | 卸载运行时
 [**getRuntimeCatalog**](RuntimesApi.md#getruntimecatalog) | **GET** /runtimes/catalog | 可安装版本清单(官方源)
-[**installRuntime**](RuntimesApi.md#installruntime) | **POST** /runtimes/install | 安装运行时(官方源下载,进度走 WS download/progress)
+[**installRuntime**](RuntimesApi.md#installruntime) | **POST** /runtimes/install | 安装运行时(官方源下载,进度走 WS task/progress)
 [**listRuntimes**](RuntimesApi.md#listruntimes) | **GET** /runtimes | 已安装运行时列表
 
 
@@ -56,7 +56,7 @@ void (empty response body)
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **getRuntimeCatalog**
-> RuntimeCatalog getRuntimeCatalog(type)
+> RuntimeCatalog getRuntimeCatalog(type, includeAll)
 
 可安装版本清单(官方源)
 
@@ -68,9 +68,10 @@ import 'package:edgecube_api_client/api.dart';
 
 final api = EdgecubeApiClient().getRuntimesApi();
 final RuntimeType type = ; // RuntimeType | 
+final bool includeAll = true; // bool | 是否拉取全部版本。默认 false 时 frpc 仅返回最新 release(避免无关旧版本请求);true 时返回全部版本。
 
 try {
-    final response = api.getRuntimeCatalog(type);
+    final response = api.getRuntimeCatalog(type, includeAll);
     print(response);
 } on DioException catch (e) {
     print('Exception when calling RuntimesApi->getRuntimeCatalog: $e\n');
@@ -82,6 +83,7 @@ try {
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **type** | [**RuntimeType**](.md)|  | 
+ **includeAll** | **bool**| 是否拉取全部版本。默认 false 时 frpc 仅返回最新 release(避免无关旧版本请求);true 时返回全部版本。 | [optional] [default to false]
 
 ### Return type
 
@@ -101,7 +103,7 @@ Name | Type | Description  | Notes
 # **installRuntime**
 > JobAccepted installRuntime(runtimeInstallRequest)
 
-安装运行时(官方源下载,进度走 WS download/progress)
+安装运行时(官方源下载,进度走 WS task/progress)
 
 ### Example
 ```dart

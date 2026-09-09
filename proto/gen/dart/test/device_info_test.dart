@@ -17,6 +17,11 @@ void main() {
       // TODO
     });
 
+    // DeviceType deviceType
+    test('to test the property `deviceType`', () async {
+      // TODO
+    });
+
     // DateTime lastSeenAt
     test('to test the property `lastSeenAt`', () async {
       // TODO

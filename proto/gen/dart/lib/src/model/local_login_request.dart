@@ -3,6 +3,7 @@
 //
 
 // ignore_for_file: unused_element
+import 'package:edgecube_api_client/src/model/device_type.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
@@ -13,7 +14,9 @@ part 'local_login_request.g.dart';
 /// Properties:
 /// * [challenge] 
 /// * [signature] - lowercase(hex(HMAC-SHA256(localKey, challenge))),localKey 为 daemon 数据目录内 local.key 内容
+/// * [deviceId] - 同 LoginRequest.deviceId,复用已有设备记录
 /// * [deviceName] 
+/// * [deviceType] 
 @BuiltValue()
 abstract class LocalLoginRequest implements Built<LocalLoginRequest, LocalLoginRequestBuilder> {
   @BuiltValueField(wireName: r'challenge')
@@ -23,8 +26,16 @@ abstract class LocalLoginRequest implements Built<LocalLoginRequest, LocalLoginR
   @BuiltValueField(wireName: r'signature')
   String get signature;
 
+  /// 同 LoginRequest.deviceId,复用已有设备记录
+  @BuiltValueField(wireName: r'deviceId')
+  String? get deviceId;
+
   @BuiltValueField(wireName: r'deviceName')
   String? get deviceName;
+
+  @BuiltValueField(wireName: r'deviceType')
+  DeviceType? get deviceType;
+  // enum deviceTypeEnum {  desktop,  mobile,  web,  };
 
   LocalLoginRequest._();
 
@@ -59,11 +70,25 @@ class _$LocalLoginRequestSerializer implements PrimitiveSerializer<LocalLoginReq
       object.signature,
       specifiedType: const FullType(String),
     );
+    if (object.deviceId != null) {
+      yield r'deviceId';
+      yield serializers.serialize(
+        object.deviceId,
+        specifiedType: const FullType(String),
+      );
+    }
     if (object.deviceName != null) {
       yield r'deviceName';
       yield serializers.serialize(
         object.deviceName,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.deviceType != null) {
+      yield r'deviceType';
+      yield serializers.serialize(
+        object.deviceType,
+        specifiedType: const FullType(DeviceType),
       );
     }
   }
@@ -103,6 +128,14 @@ class _$LocalLoginRequestSerializer implements PrimitiveSerializer<LocalLoginReq
           ) as String;
           result.signature = valueDes;
           break;
+        case r'deviceId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.deviceId = valueDes;
+          break;
         case r'deviceName':
           final valueDes = serializers.deserialize(
             value,
@@ -110,6 +143,14 @@ class _$LocalLoginRequestSerializer implements PrimitiveSerializer<LocalLoginReq
           ) as String?;
           if (valueDes == null) continue;
           result.deviceName = valueDes;
+          break;
+        case r'deviceType':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(DeviceType),
+          ) as DeviceType?;
+          if (valueDes == null) continue;
+          result.deviceType = valueDes;
           break;
         default:
           unhandled.add(key);

@@ -15,6 +15,7 @@ import 'package:edgecube_api_client/src/model/file_list_response.dart';
 import 'package:edgecube_api_client/src/model/fs_compress_request.dart';
 import 'package:edgecube_api_client/src/model/fs_move_request.dart';
 import 'package:edgecube_api_client/src/model/fs_path_request.dart';
+import 'package:edgecube_api_client/src/model/fs_write_request.dart';
 import 'package:edgecube_api_client/src/model/job_accepted.dart';
 import 'package:edgecube_api_client/src/model/upload_complete_request.dart';
 import 'package:edgecube_api_client/src/model/upload_complete_response.dart';
@@ -938,6 +939,79 @@ class FilesApi {
       statusMessage: _response.statusMessage,
       extra: _response.extra,
     );
+  }
+
+  /// 覆盖写入文本文件(内置编辑器保存)
+  /// 以 UTF-8 文本整体覆盖写入目标文件(父目录须已存在),服务端以临时文件原子替换。
+  ///
+  /// Parameters:
+  /// * [fsWriteRequest] 
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future]
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<void>> writeFile({ 
+    required FsWriteRequest fsWriteRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/fs/write';
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'BearerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(FsWriteRequest);
+      _bodyData = _serializers.serialize(fsWriteRequest, specifiedType: _type);
+
+    } catch(error, stackTrace) {
+      throw DioException(
+         requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    return _response;
   }
 
 }

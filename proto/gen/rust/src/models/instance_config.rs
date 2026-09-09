@@ -11,6 +11,7 @@
 use crate::models;
 use serde::{Deserialize, Serialize};
 
+/// InstanceConfig : 实例配置。创建时仅 name 必填:startCommand 可为空串(空实例,创建后再导入服务端配置), workingDirectory 缺省由 daemon 分配 {dataDir}/files/{id}。 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct InstanceConfig {
     /// 服务端生成
@@ -18,18 +19,18 @@ pub struct InstanceConfig {
     pub id: Option<uuid::Uuid>,
     #[serde(rename = "name")]
     pub name: String,
-    /// 命令行字符串(支持引号/转义,解析为参数数组 spawn,不经 shell)
-    #[serde(rename = "startCommand")]
-    pub start_command: String,
+    /// 命令行字符串(支持引号/转义,解析为参数数组 spawn,不经 shell);空串表示尚未配置启动命令
+    #[serde(rename = "startCommand", skip_serializing_if = "Option::is_none")]
+    pub start_command: Option<String>,
     /// 优雅停止命令;^C 表示发送 Ctrl+C
     #[serde(rename = "stopCommand", skip_serializing_if = "Option::is_none")]
     pub stop_command: Option<String>,
     /// 优雅停止超时,超时升级强杀
     #[serde(rename = "stopTimeoutSeconds", skip_serializing_if = "Option::is_none")]
     pub stop_timeout_seconds: Option<i32>,
-    /// 工作目录(实例 cwd,文件沙箱根)
-    #[serde(rename = "workingDirectory")]
-    pub working_directory: String,
+    /// 工作目录(实例 cwd,文件沙箱根);创建/更新时缺省由 daemon 维护为实例专属目录,不随实例删除
+    #[serde(rename = "workingDirectory", skip_serializing_if = "Option::is_none")]
+    pub working_directory: Option<String>,
     /// 额外环境变量
     #[serde(rename = "environment", skip_serializing_if = "Option::is_none")]
     pub environment: Option<std::collections::HashMap<String, String>>,
@@ -50,6 +51,21 @@ pub struct InstanceConfig {
     pub terminal: Option<Box<models::InstanceConfigTerminal>>,
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub r#type: Option<models::InstanceType>,
+    /// 引用已安装运行时(runtimes 的 RuntimeInfo.id,如 java 指定 JRE 版本)。 为空表示未指定,启动命令中的可执行文件需自行可用。 
+    #[serde(rename = "runtimeId", default, with = "::serde_with::rust::double_option", skip_serializing_if = "Option::is_none")]
+    pub runtime_id: Option<Option<String>>,
+    /// 创建实例时的服务端下载链接(http/https)。仅在创建时生效: daemon 收到后自动发起下载任务(下载到实例工作目录),下载完成前实例暂不可启动。 更新实例时忽略本字段。 
+    #[serde(rename = "downloadUrl", default, with = "::serde_with::rust::double_option", skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<Option<String>>,
+    /// 下载目标文件名(仅与 downloadUrl 配合,创建时生效)。缺省由 daemon 从 URL 末段推导(如 https://.../paper-1.21.1-198.jar → paper-1.21.1-198.jar); 建议取 /catalog/download-info 返回的 fileName。 
+    #[serde(rename = "fileName", default, with = "::serde_with::rust::double_option", skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<Option<String>>,
+    /// 下载校验值,格式 \"sha1:<hex>\" 或 \"sha256:<hex>\"(aria2 风格,不填则不做校验)。 仅与 downloadUrl 配合使用,下载完成后按算法强校验,不一致视为失败。 
+    #[serde(rename = "checksum", default, with = "::serde_with::rust::double_option", skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<Option<String>>,
+    /// 创建实例触发的下载任务 id(只读)。创建后经 `GET /tasks/{jobId}` 查询下载进度;下载完成后保留,便于追溯。 
+    #[serde(rename = "downloadTaskId", default, with = "::serde_with::rust::double_option", skip_serializing_if = "Option::is_none")]
+    pub download_task_id: Option<Option<uuid::Uuid>>,
     #[serde(rename = "createdAt", skip_serializing_if = "Option::is_none")]
     pub created_at: Option<chrono::DateTime<chrono::FixedOffset>>,
     #[serde(rename = "updatedAt", skip_serializing_if = "Option::is_none")]
@@ -57,14 +73,15 @@ pub struct InstanceConfig {
 }
 
 impl InstanceConfig {
-    pub fn new(name: String, start_command: String, working_directory: String) -> InstanceConfig {
+    /// 实例配置。创建时仅 name 必填:startCommand 可为空串(空实例,创建后再导入服务端配置), workingDirectory 缺省由 daemon 分配 {dataDir}/files/{id}。 
+    pub fn new(name: String) -> InstanceConfig {
         InstanceConfig {
             id: None,
             name,
-            start_command,
+            start_command: None,
             stop_command: None,
             stop_timeout_seconds: None,
-            working_directory,
+            working_directory: None,
             environment: None,
             input_encoding: None,
             output_encoding: None,
@@ -73,6 +90,11 @@ impl InstanceConfig {
             auto_start_on_boot: None,
             terminal: None,
             r#type: None,
+            runtime_id: None,
+            download_url: None,
+            file_name: None,
+            checksum: None,
+            download_task_id: None,
             created_at: None,
             updated_at: None,
         }

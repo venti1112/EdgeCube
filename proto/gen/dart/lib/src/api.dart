@@ -11,14 +11,21 @@ import 'package:edgecube_api_client/src/auth/bearer_auth.dart';
 import 'package:edgecube_api_client/src/auth/oauth.dart';
 import 'package:edgecube_api_client/src/api/auth_api.dart';
 import 'package:edgecube_api_client/src/api/backup_api.dart';
+import 'package:edgecube_api_client/src/api/catalog_api.dart';
 import 'package:edgecube_api_client/src/api/config_api.dart';
 import 'package:edgecube_api_client/src/api/files_api.dart';
+import 'package:edgecube_api_client/src/api/frp_api.dart';
 import 'package:edgecube_api_client/src/api/ftp_api.dart';
 import 'package:edgecube_api_client/src/api/health_api.dart';
 import 'package:edgecube_api_client/src/api/instances_api.dart';
+import 'package:edgecube_api_client/src/api/mods_api.dart';
 import 'package:edgecube_api_client/src/api/monitor_api.dart';
+import 'package:edgecube_api_client/src/api/players_api.dart';
 import 'package:edgecube_api_client/src/api/runtimes_api.dart';
+import 'package:edgecube_api_client/src/api/server_core_api.dart';
 import 'package:edgecube_api_client/src/api/ssh_api.dart';
+import 'package:edgecube_api_client/src/api/tasks_api.dart';
+import 'package:edgecube_api_client/src/api/transfer_api.dart';
 
 class EdgecubeApiClient {
   static const String basePath = r'http://127.0.0.1:8760/api/v1';
@@ -126,6 +133,12 @@ class EdgecubeApiClient {
     return BackupApi(dio, serializers);
   }
 
+  /// Get CatalogApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  CatalogApi getCatalogApi() {
+    return CatalogApi(dio, serializers);
+  }
+
   /// Get ConfigApi instance, base route and serializer can be overridden by a given but be careful,
   /// by doing that all interceptors will not be executed
   ConfigApi getConfigApi() {
@@ -136,6 +149,12 @@ class EdgecubeApiClient {
   /// by doing that all interceptors will not be executed
   FilesApi getFilesApi() {
     return FilesApi(dio, serializers);
+  }
+
+  /// Get FrpApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  FrpApi getFrpApi() {
+    return FrpApi(dio, serializers);
   }
 
   /// Get FtpApi instance, base route and serializer can be overridden by a given but be careful,
@@ -156,10 +175,22 @@ class EdgecubeApiClient {
     return InstancesApi(dio, serializers);
   }
 
+  /// Get ModsApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  ModsApi getModsApi() {
+    return ModsApi(dio, serializers);
+  }
+
   /// Get MonitorApi instance, base route and serializer can be overridden by a given but be careful,
   /// by doing that all interceptors will not be executed
   MonitorApi getMonitorApi() {
     return MonitorApi(dio, serializers);
+  }
+
+  /// Get PlayersApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  PlayersApi getPlayersApi() {
+    return PlayersApi(dio, serializers);
   }
 
   /// Get RuntimesApi instance, base route and serializer can be overridden by a given but be careful,
@@ -168,9 +199,27 @@ class EdgecubeApiClient {
     return RuntimesApi(dio, serializers);
   }
 
+  /// Get ServerCoreApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  ServerCoreApi getServerCoreApi() {
+    return ServerCoreApi(dio, serializers);
+  }
+
   /// Get SshApi instance, base route and serializer can be overridden by a given but be careful,
   /// by doing that all interceptors will not be executed
   SshApi getSshApi() {
     return SshApi(dio, serializers);
+  }
+
+  /// Get TasksApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  TasksApi getTasksApi() {
+    return TasksApi(dio, serializers);
+  }
+
+  /// Get TransferApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  TransferApi getTransferApi() {
+    return TransferApi(dio, serializers);
   }
 }

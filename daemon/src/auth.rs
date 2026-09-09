@@ -34,14 +34,54 @@ pub struct Account {
     pub created_at: String,
 }
 
+/// 设备类别(openapi DeviceType):desktop 桌面应用 / mobile 手机 / web 浏览器。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DeviceType {
+    Desktop,
+    Mobile,
+    Web,
+}
+
+impl Default for DeviceType {
+    fn default() -> Self {
+        Self::Desktop
+    }
+}
+
 /// 已登录设备(openapi DeviceInfo 对应)。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Device {
     pub id: String,
     pub name: String,
     pub token: String,
+    #[serde(default)]
+    pub device_type: DeviceType,
     pub created_at: String,
     pub last_seen_at: Option<String>,
+}
+
+/// 设备信息对外响应(openapi DeviceInfo,不含 token 明文)。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub device_type: DeviceType,
+    pub created_at: String,
+    pub last_seen_at: Option<String>,
+}
+
+impl From<&Device> for DeviceInfo {
+    fn from(d: &Device) -> Self {
+        Self {
+            id: d.id.clone(),
+            name: d.name.clone(),
+            device_type: d.device_type,
+            created_at: d.created_at.clone(),
+            last_seen_at: d.last_seen_at.clone(),
+        }
+    }
 }
 
 /// 首次创建初始账户时返回的明文凭证(仅用于控制台打印,不持久化)。
@@ -152,6 +192,23 @@ impl AuthStore {
         self.devices.iter().any(|d| d.token == token)
     }
 
+    /// 已登录设备列表(不含 token 明文)。
+    pub fn list_devices(&self) -> Vec<DeviceInfo> {
+        self.devices.iter().map(DeviceInfo::from).collect()
+    }
+
+    /// 吊销指定设备(删除其长期 token 并持久化)。
+    /// 返回被吊销设备;id 不存在返回 None。
+    pub fn revoke_device(&mut self, id: &str) -> Result<Option<DeviceInfo>> {
+        let Some(idx) = self.devices.iter().position(|d| d.id == id) else {
+            return Ok(None);
+        };
+        let removed = self.devices.remove(idx);
+        self.persist_devices()?;
+        tracing::info!(device_id = %id, "device token revoked");
+        Ok(Some((&removed).into()))
+    }
+
     /// 修改密码:替换哈希并持久化。
     pub fn change_password(&mut self, new_password: &str) -> Result<bool> {
         if self.account.is_none() {
@@ -223,20 +280,59 @@ impl AuthStore {
     }
 
     /// 为设备签发 token(持久化),返回设备信息。
-    pub fn issue_token(&mut self, device_name: Option<&str>) -> Result<Device> {
+    ///
+    /// [device_id] 为客户端持久化的设备标识:若已存在对应设备记录则复用
+    /// (轮换 token、刷新最近在线时间、保留用户自定义名称),不会产生新设备;
+    /// 缺省或记录不存在(如已被吊销)时新建设备记录。
+    pub fn issue_token(
+        &mut self,
+        device_id: Option<&str>,
+        device_name: Option<&str>,
+        device_type: Option<DeviceType>,
+    ) -> Result<Device> {
+        let now = Utc::now().to_rfc3339();
+        if let Some(id) = device_id.filter(|i| !i.trim().is_empty()).map(str::trim) {
+            if let Some(idx) = self.devices.iter().position(|d| d.id == id) {
+                self.devices[idx].token = random_token();
+                self.devices[idx].last_seen_at = Some(now.clone());
+                if let Some(t) = device_type {
+                    self.devices[idx].device_type = t;
+                }
+                self.persist_devices()?;
+                tracing::debug!(device_id = %id, "existing device re-logged, token rotated");
+                return Ok(self.devices[idx].clone());
+            }
+        }
+
         let device = Device {
-            id: Uuid::new_v4().to_string(),
+            id: device_id
+                .filter(|i| !i.trim().is_empty())
+                .map(str::trim)
+                .map(str::to_string)
+                .unwrap_or_else(|| Uuid::new_v4().to_string()),
             name: device_name
                 .filter(|n| !n.trim().is_empty())
                 .map(|n| n.trim().to_string())
                 .unwrap_or_else(|| "unknown".into()),
+            device_type: device_type.unwrap_or_default(),
             token: random_token(),
-            created_at: Utc::now().to_rfc3339(),
-            last_seen_at: Some(Utc::now().to_rfc3339()),
+            created_at: now.clone(),
+            last_seen_at: Some(now),
         };
         self.devices.push(device.clone());
         self.persist_devices()?;
         Ok(device)
+    }
+
+    /// 重命名设备并持久化;id 不存在返回 None。
+    pub fn rename_device(&mut self, id: &str, new_name: &str) -> Result<Option<DeviceInfo>> {
+        let Some(idx) = self.devices.iter().position(|d| d.id == id) else {
+            return Ok(None);
+        };
+        self.devices[idx].name = new_name.to_string();
+        self.persist_devices()?;
+        tracing::info!(device_id = %id, "device renamed");
+        Ok(Some((&self.devices[idx]).into()))
     }
 
     fn persist_devices(&self) -> Result<()> {

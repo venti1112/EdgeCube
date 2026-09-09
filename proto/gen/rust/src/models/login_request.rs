@@ -17,9 +17,14 @@ pub struct LoginRequest {
     pub username: String,
     #[serde(rename = "password")]
     pub password: String,
+    /// 客户端持久化的设备标识(uuid)。存在该设备记录时复用并轮换 token, 不会产生新设备;缺省时新建设备记录。 
+    #[serde(rename = "deviceId", skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<uuid::Uuid>,
     /// 设备显示名(如 \"我的手机\" / \"办公室电脑\")
     #[serde(rename = "deviceName", skip_serializing_if = "Option::is_none")]
     pub device_name: Option<String>,
+    #[serde(rename = "deviceType", skip_serializing_if = "Option::is_none")]
+    pub device_type: Option<models::DeviceType>,
 }
 
 impl LoginRequest {
@@ -27,7 +32,9 @@ impl LoginRequest {
         LoginRequest {
             username,
             password,
+            device_id: None,
             device_name: None,
+            device_type: None,
         }
     }
 }

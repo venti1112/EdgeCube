@@ -14,6 +14,7 @@ Method | HTTP request | Description
 [**list_files**](FilesApi.md#list_files) | **GET** /fs/list | 列出目录(沙箱,以实例 cwd 为根)
 [**move_file**](FilesApi.md#move_file) | **POST** /fs/move | 移动/重命名
 [**upload_file_piece**](FilesApi.md#upload_file_piece) | **POST** /fs/upload-piece | 分片上传:写入一片
+[**write_file**](FilesApi.md#write_file) | **POST** /fs/write | 覆盖写入文本文件(内置编辑器保存)
 
 
 
@@ -298,6 +299,36 @@ Name | Type | Description  | Required | Notes
 ### HTTP request headers
 
 - **Content-Type**: application/octet-stream
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+
+## write_file
+
+> write_file(fs_write_request)
+覆盖写入文本文件(内置编辑器保存)
+
+以 UTF-8 文本整体覆盖写入目标文件(父目录须已存在),服务端以临时文件原子替换。
+
+### Parameters
+
+
+Name | Type | Description  | Required | Notes
+------------- | ------------- | ------------- | ------------- | -------------
+**fs_write_request** | [**FsWriteRequest**](FsWriteRequest.md) |  | [required] |
+
+### Return type
+
+ (empty response body)
+
+### Authorization
+
+[BearerAuth](../README.md#BearerAuth)
+
+### HTTP request headers
+
+- **Content-Type**: application/json
 - **Accept**: application/json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

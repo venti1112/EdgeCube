@@ -10,6 +10,7 @@ Method | HTTP request | Description
 [**list_devices**](AuthApi.md#list_devices) | **GET** /auth/tokens | 已登录设备列表
 [**local_login**](AuthApi.md#local_login) | **POST** /auth/local-login | 本机免密登录,换取长期 token
 [**login**](AuthApi.md#login) | **POST** /auth/login | 用户名密码登录,换取长期 token
+[**rename_device**](AuthApi.md#rename_device) | **PATCH** /auth/tokens/{deviceId} | 重命名设备
 [**revoke_device**](AuthApi.md#revoke_device) | **DELETE** /auth/tokens/{deviceId} | 吊销指定设备的 token
 
 
@@ -175,6 +176,35 @@ Name | Type | Description  | Required | Notes
 ### Authorization
 
 No authorization required
+
+### HTTP request headers
+
+- **Content-Type**: application/json
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+
+## rename_device
+
+> rename_device(device_id, rename_device_request)
+重命名设备
+
+### Parameters
+
+
+Name | Type | Description  | Required | Notes
+------------- | ------------- | ------------- | ------------- | -------------
+**device_id** | **String** | 配对设备 id | [required] |
+**rename_device_request** | [**RenameDeviceRequest**](RenameDeviceRequest.md) |  | [required] |
+
+### Return type
+
+ (empty response body)
+
+### Authorization
+
+[BearerAuth](../README.md#BearerAuth)
 
 ### HTTP request headers
 

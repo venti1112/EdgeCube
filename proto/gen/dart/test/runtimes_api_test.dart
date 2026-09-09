@@ -18,12 +18,12 @@ void main() {
     //
     // 拉取对应官方渠道的可用版本(java: Adoptium API;php: 权威预编译源;frpc: GitHub Releases)。
     //
-    //Future<RuntimeCatalog> getRuntimeCatalog(RuntimeType type) async
+    //Future<RuntimeCatalog> getRuntimeCatalog(RuntimeType type, { bool includeAll }) async
     test('test getRuntimeCatalog', () async {
       // TODO
     });
 
-    // 安装运行时(官方源下载,进度走 WS download/progress)
+    // 安装运行时(官方源下载,进度走 WS task/progress)
     //
     //Future<JobAccepted> installRuntime(RuntimeInstallRequest runtimeInstallRequest) async
     test('test installRuntime', () async {

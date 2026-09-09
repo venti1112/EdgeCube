@@ -15,10 +15,30 @@ use crate::{apis::ResponseContent, models};
 use super::{Error, configuration, ContentType};
 
 
+/// struct for typed errors of method [`analyze_instance_mods`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AnalyzeInstanceModsError {
+    Status404(models::ErrorResponse),
+    Status400(models::ErrorResponse),
+    Status401(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`clear_finished_mod_downloads`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ClearFinishedModDownloadsError {
+    Status404(models::ErrorResponse),
+    Status401(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
 /// struct for typed errors of method [`create_instance`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum CreateInstanceError {
+    Status409(models::ErrorResponse),
     Status401(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
@@ -28,6 +48,16 @@ pub enum CreateInstanceError {
 #[serde(untagged)]
 pub enum DeleteInstanceError {
     Status409(models::ErrorResponse),
+    Status401(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`download_instance_mod`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DownloadInstanceModError {
+    Status400(models::ErrorResponse),
+    Status404(models::ErrorResponse),
     Status401(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
@@ -53,6 +83,15 @@ pub enum GetInstanceError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum GetInstanceLogError {
+    Status401(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`get_instance_mods_metadata`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetInstanceModsMetadataError {
+    Status404(models::ErrorResponse),
     Status401(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
@@ -154,6 +193,89 @@ pub enum UpdateInstanceProcessConfigError {
 }
 
 
+/// 扫描指定目录(相对实例 cwd,如 plugins / mods)内所有 .jar/.phar 文件, 在服务端解析元数据并缓存。返回 202 受理(JobAccepted),任务状态经 GET /tasks/{jobId} 轮询,完成后用 GET mods/metadata 拉取结果。 
+pub async fn analyze_instance_mods(configuration: &configuration::Configuration, instance_id: &str, mods_analyze_request: models::ModsAnalyzeRequest) -> Result<models::JobAccepted, Error<AnalyzeInstanceModsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_instance_id = instance_id;
+    let p_body_mods_analyze_request = mods_analyze_request;
+
+    let uri_str = format!("{}/instances/{instanceId}/mods/analyze", configuration.base_path, instanceId=crate::apis::urlencode(p_path_instance_id));
+    let mut req_builder = configuration.client.request(reqwest::Method::POST, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+    req_builder = req_builder.json(&p_body_mods_analyze_request);
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content).map_err(Error::from),
+            ContentType::Text => return Err(Error::from(serde_json::Error::custom("Received `text/plain` content type response that cannot be converted to `models::JobAccepted`"))),
+            ContentType::Unsupported(unknown_type) => return Err(Error::from(serde_json::Error::custom(format!("Received `{unknown_type}` content type response that cannot be converted to `models::JobAccepted`")))),
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<AnalyzeInstanceModsError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(ResponseContent { status, content, entity }))
+    }
+}
+
+/// 移除该实例所有已终结(succeeded/failed/cancelled)的 download_single_file 任务(下载队列「清除已完成」)。 进行中(queued/running)任务不受影响。返回清除数量。 
+pub async fn clear_finished_mod_downloads(configuration: &configuration::Configuration, instance_id: &str) -> Result<models::ClearFinishedModDownloads200Response, Error<ClearFinishedModDownloadsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_instance_id = instance_id;
+
+    let uri_str = format!("{}/instances/{instanceId}/mods/downloads", configuration.base_path, instanceId=crate::apis::urlencode(p_path_instance_id));
+    let mut req_builder = configuration.client.request(reqwest::Method::DELETE, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content).map_err(Error::from),
+            ContentType::Text => return Err(Error::from(serde_json::Error::custom("Received `text/plain` content type response that cannot be converted to `models::ClearFinishedModDownloads200Response`"))),
+            ContentType::Unsupported(unknown_type) => return Err(Error::from(serde_json::Error::custom(format!("Received `{unknown_type}` content type response that cannot be converted to `models::ClearFinishedModDownloads200Response`")))),
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<ClearFinishedModDownloadsError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(ResponseContent { status, content, entity }))
+    }
+}
+
+/// 仅 name 必填;startCommand 可为空串(空实例),workingDirectory 缺省由 daemon 分配。 重名返回 409。 可选提供 downloadUrl(服务端下载链接) + checksum(校验值):daemon 创建配置后 自动向任务队列提交下载任务并回写 downloadTaskId,此时返回 202(响应体为完整 实例配置,含 downloadTaskId),客户端用 `GET /tasks/{downloadTaskId}` 查询下载 进度;下载完成该任务终结,实例方可启动。 downloadUrl 仅创建时生效;不带 downloadUrl 时同步返回 201 完整配置。 
 pub async fn create_instance(configuration: &configuration::Configuration, instance_config: models::InstanceConfig) -> Result<models::InstanceConfig, Error<CreateInstanceError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_body_instance_config = instance_config;
@@ -223,7 +345,49 @@ pub async fn delete_instance(configuration: &configuration::Configuration, insta
     }
 }
 
-/// 进度经 WS `download/progress` 推送,完成后返回下载地址。
+/// 通用单文件下载:下载 `url` 到实例 cwd 下 `destPath` 目录(文件名取 `fileName`,缺省取 URL 末段)。已存在的同名文件直接覆盖。可选 `replacePath` 指定更新替换的旧文件,下载成功后将其重命名为 `<replacePath>.disabled`(禁用旧版而非删除)。返回 202 受理 (JobAccepted),任务按 instanceId 分组 FIFO 串行(多个下载排队执行), 进度/状态经 GET /tasks/{jobId} 轮询,可 DELETE /tasks/{jobId} 取消。 
+pub async fn download_instance_mod(configuration: &configuration::Configuration, instance_id: &str, mod_download_request: models::ModDownloadRequest) -> Result<models::JobAccepted, Error<DownloadInstanceModError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_instance_id = instance_id;
+    let p_body_mod_download_request = mod_download_request;
+
+    let uri_str = format!("{}/instances/{instanceId}/mods/download", configuration.base_path, instanceId=crate::apis::urlencode(p_path_instance_id));
+    let mut req_builder = configuration.client.request(reqwest::Method::POST, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+    req_builder = req_builder.json(&p_body_mod_download_request);
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content).map_err(Error::from),
+            ContentType::Text => return Err(Error::from(serde_json::Error::custom("Received `text/plain` content type response that cannot be converted to `models::JobAccepted`"))),
+            ContentType::Unsupported(unknown_type) => return Err(Error::from(serde_json::Error::custom(format!("Received `{unknown_type}` content type response that cannot be converted to `models::JobAccepted`")))),
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<DownloadInstanceModError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(ResponseContent { status, content, entity }))
+    }
+}
+
+/// 进度经 WS `task/progress` 推送,完成后返回下载地址。
 pub async fn export_instance(configuration: &configuration::Configuration, instance_id: &str, export_request: Option<models::ExportRequest>) -> Result<models::JobAccepted, Error<ExportInstanceError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_instance_id = instance_id;
@@ -348,6 +512,48 @@ pub async fn get_instance_log(configuration: &configuration::Configuration, inst
     } else {
         let content = resp.text().await?;
         let entity: Option<GetInstanceLogError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(ResponseContent { status, content, entity }))
+    }
+}
+
+/// 列出指定目录(相对实例 cwd)内插件/模组文件的解析结果; 未识别或尚未解析的文件 metadata 为 null。 
+pub async fn get_instance_mods_metadata(configuration: &configuration::Configuration, instance_id: &str, path: &str) -> Result<models::ModMetadataListResponse, Error<GetInstanceModsMetadataError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_instance_id = instance_id;
+    let p_query_path = path;
+
+    let uri_str = format!("{}/instances/{instanceId}/mods/metadata", configuration.base_path, instanceId=crate::apis::urlencode(p_path_instance_id));
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    req_builder = req_builder.query(&[("path", &p_query_path.to_string())]);
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content).map_err(Error::from),
+            ContentType::Text => return Err(Error::from(serde_json::Error::custom("Received `text/plain` content type response that cannot be converted to `models::ModMetadataListResponse`"))),
+            ContentType::Unsupported(unknown_type) => return Err(Error::from(serde_json::Error::custom(format!("Received `{unknown_type}` content type response that cannot be converted to `models::ModMetadataListResponse`")))),
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetInstanceModsMetadataError> = serde_json::from_str(&content).ok();
         Err(Error::ResponseError(ResponseContent { status, content, entity }))
     }
 }
@@ -668,7 +874,7 @@ pub async fn stop_instance(configuration: &configuration::Configuration, instanc
     }
 }
 
-/// 运行中实例的以下字段不可变更(需先停止):startCommand、workingDirectory、 type、terminal.pty、inputEncoding、outputEncoding。其余字段热更新。 
+/// 运行中实例的以下字段不可变更(需先停止):startCommand、workingDirectory、 type、runtimeId、terminal.pty、inputEncoding、outputEncoding。其余字段热更新。 
 pub async fn update_instance(configuration: &configuration::Configuration, instance_id: &str, instance_config: models::InstanceConfig) -> Result<models::InstanceConfig, Error<UpdateInstanceError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_instance_id = instance_id;

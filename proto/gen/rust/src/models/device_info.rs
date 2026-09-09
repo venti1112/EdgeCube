@@ -17,6 +17,8 @@ pub struct DeviceInfo {
     pub id: String,
     #[serde(rename = "name")]
     pub name: String,
+    #[serde(rename = "deviceType", skip_serializing_if = "Option::is_none")]
+    pub device_type: Option<models::DeviceType>,
     #[serde(rename = "lastSeenAt", default, with = "::serde_with::rust::double_option", skip_serializing_if = "Option::is_none")]
     pub last_seen_at: Option<Option<chrono::DateTime<chrono::FixedOffset>>>,
     #[serde(rename = "createdAt")]
@@ -28,6 +30,7 @@ impl DeviceInfo {
         DeviceInfo {
             id,
             name,
+            device_type: None,
             last_seen_at: None,
             created_at,
         }

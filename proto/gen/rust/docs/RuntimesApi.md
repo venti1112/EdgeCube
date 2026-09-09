@@ -6,7 +6,7 @@ Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**delete_runtime**](RuntimesApi.md#delete_runtime) | **DELETE** /runtimes/{runtimeId} | 卸载运行时
 [**get_runtime_catalog**](RuntimesApi.md#get_runtime_catalog) | **GET** /runtimes/catalog | 可安装版本清单(官方源)
-[**install_runtime**](RuntimesApi.md#install_runtime) | **POST** /runtimes/install | 安装运行时(官方源下载,进度走 WS download/progress)
+[**install_runtime**](RuntimesApi.md#install_runtime) | **POST** /runtimes/install | 安装运行时(官方源下载,进度走 WS task/progress)
 [**list_runtimes**](RuntimesApi.md#list_runtimes) | **GET** /runtimes | 已安装运行时列表
 
 
@@ -72,7 +72,7 @@ Name | Type | Description  | Required | Notes
 ## install_runtime
 
 > models::JobAccepted install_runtime(runtime_install_request)
-安装运行时(官方源下载,进度走 WS download/progress)
+安装运行时(官方源下载,进度走 WS task/progress)
 
 ### Parameters
 

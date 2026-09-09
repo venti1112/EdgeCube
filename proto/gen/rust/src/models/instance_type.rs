@@ -11,8 +11,8 @@
 use crate::models;
 use serde::{Deserialize, Serialize};
 
-/// InstanceType : 附加层类型;generic 为纯通用进程
-/// 附加层类型;generic 为纯通用进程
+/// InstanceType : 附加层类型;generic 为纯通用进程,创建时缺省 generic
+/// 附加层类型;generic 为纯通用进程,创建时缺省 generic
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum InstanceType {
     #[serde(rename = "minecraft-java")]
