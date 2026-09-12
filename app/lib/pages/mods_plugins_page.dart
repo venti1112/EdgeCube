@@ -58,15 +58,6 @@ class _ModsPluginsPageState extends ConsumerState<ModsPluginsPage>
   EdgecubeApiClient? get _client => ref.read(edgecubeClientProvider);
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 当前实例变化时(重新)检测目录
-    ref.listen(currentInstanceProvider, (previous, next) {
-      if (previous?.id != next?.id) _detect();
-    });
-  }
-
-  @override
   void initState() {
     super.initState();
     _detect();
@@ -138,6 +129,9 @@ class _ModsPluginsPageState extends ConsumerState<ModsPluginsPage>
   @override
   Widget build(BuildContext context) {
     final instance = ref.watch(currentInstanceProvider);
+    ref.listen(currentInstanceProvider, (previous, next) {
+      if (previous?.id != next?.id) _detect();
+    });
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(

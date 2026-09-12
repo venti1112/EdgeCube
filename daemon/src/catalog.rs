@@ -211,7 +211,7 @@ impl Catalog {
             .captures_iter(&body)
             .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
             .collect();
-        versions.sort_by(|a, b| version_cmp(a, b));
+        versions.sort_by(|a, b| version_cmp(b, a));
         Ok(versions.into_iter().map(|v| ServerVersion { version: v, meta: None }).collect())
     }
 

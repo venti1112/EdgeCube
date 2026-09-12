@@ -30,16 +30,30 @@ class ConsolePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final instance = ref.watch(currentInstanceProvider);
     if (instance == null) {
-      return Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          title: const Text('控制台'),
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          scrolledUnderElevation: 0,
+      // 同 _InstanceTerminal:material_ui 主题与 flutter Theme.of 不互通,
+      // 需按外层 material_ui 主题亮度派生 flutter ThemeData 包裹整页,
+      // 否则深色模式下 AppBar 标题会回落浅色默认主题显示黑字。
+      final muiTheme = mui.Theme.of(context);
+      final isDark = muiTheme.brightness == Brightness.dark;
+      final flutterData = ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: muiTheme.colorScheme.primary,
+          brightness: isDark ? Brightness.dark : Brightness.light,
         ),
-        body: const Center(
-          child: Text('请先在「服务器」页选择实例'),
+      );
+      return Theme(
+        data: flutterData,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            title: const Text('控制台'),
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            scrolledUnderElevation: 0,
+          ),
+          body: const Center(
+            child: Text('请先在「服务器」页选择实例'),
+          ),
         ),
       );
     }
