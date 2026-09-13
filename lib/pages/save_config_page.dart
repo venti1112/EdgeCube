@@ -18,7 +18,6 @@ import '../server/server_service.dart';
 import '../server/world_service.dart';
 import '../widgets/ec_preference.dart';
 import '../widgets/error_dialog.dart';
-import '../widgets/instance_picker_page.dart';
 import '../widgets/loading_dialog.dart';
 import '../widgets/miuix_dialog.dart';
 import '../widgets/miuix_snackbar.dart';
@@ -449,11 +448,6 @@ class _SaveConfigPageState extends State<SaveConfigPage> {
     return StoragePermission.isGranted();
   }
 
-  Future<void> _switchInstance() async {
-    await pickInstance(context, title: context.tr('instancePicker.title'));
-    if (mounted) await _load();
-  }
-
   /// 文件名中非法字符替换为下划线，并确保非空。
   String _sanitizeName(String name) {
     final cleaned = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
@@ -565,13 +559,6 @@ class _SaveConfigPageState extends State<SaveConfigPage> {
           leading: const Icon(Icons.dns_outlined, size: 36),
           title: instance.name,
           summary: context.tr('saveConfig.currentLevel', {'name': _levelName}),
-          trailing: [
-            MiuixTextButton(
-              context.tr('saveConfig.switchInstance'),
-              onPressed: _switchInstance,
-            ),
-          ],
-          onTap: _switchInstance,
         ),
         EcCardTile(
           leading: const Icon(Icons.file_download_outlined, size: 36),
