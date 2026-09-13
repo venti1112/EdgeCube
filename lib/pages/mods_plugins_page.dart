@@ -9,6 +9,7 @@ import '../files/file_service.dart';
 import '../files/storage_permission.dart';
 import '../files/system_picker.dart';
 import '../i18n/locale_scope.dart';
+import '../widgets/client_mods_cleanup_dialog.dart';
 import '../widgets/error_dialog.dart';
 import '../instance/instance_scope.dart';
 import '../mods/download_queue.dart';
@@ -231,6 +232,9 @@ class _ContentTabState extends State<_ContentTab>
   bool _checkingUpdates = false;
   final Set<String> _updatingPaths = {};
 
+  /// 客户端模组清理中（扫描+解析元数据期间显示转圈）。
+  bool _cleaningMods = false;
+
   @override
   void initState() {
     super.initState();
@@ -368,6 +372,24 @@ class _ContentTabState extends State<_ContentTab>
       });
     } catch (_) {
       // 图标获取失败不影响使
+    }
+  }
+
+  // ── 客户端模组清理 ────────────────────────────────────────────
+
+  /// 调起客户端模组清理对话框，清理完成后刷新列表。
+  Future<void> _showClientModsCleanup() async {
+    setState(() => _cleaningMods = true);
+    final result = await showClientModsCleanupDialog(
+      context,
+      widget.folder.parent,
+    );
+    if (!mounted) return;
+    setState(() => _cleaningMods = false);
+    if (result == null) {
+      showMiuixSnackbar(context.tr('clientModsCleanup.noneFound'));
+    } else if (result) {
+      await _load();
     }
   }
 
@@ -991,6 +1013,20 @@ class _ContentTabState extends State<_ContentTab>
               MiuixIconButton(
                 onPressed: _checkUpdates,
                 child: MiuixIcon(icon: Icons.system_update, size: 20),
+              ),
+            if (_cleaningMods)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4),
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: MiuixInfiniteProgressIndicator(size: 20),
+                ),
+              )
+            else
+              MiuixIconButton(
+                onPressed: _showClientModsCleanup,
+                child: MiuixIcon(icon: Icons.cleaning_services_outlined, size: 20),
               ),
           ],
           MiuixIconButton(

@@ -17,6 +17,19 @@ enum ModLoader {
   unknown,
 }
 
+/// 模组运行环境：由 fabric.mod.json 的 `environment` / mods.toml 的 `side` 等字段
+/// 归一化而来，用于判断模组能否在服务端运行。
+enum ModEnvironment {
+  /// 仅客户端（fabric `environment="client"` / forge `side="CLIENT"`）。
+  client,
+  /// 仅服务端（fabric `environment="server"` / forge `side="SERVER"`）。
+  server,
+  /// 两端皆可（fabric `environment="*"` / forge `side="BOTH"`，或未声明）。
+  both,
+  /// 未知：元数据中未提供 side 信息，无法判断。
+  unknown,
+}
+
 /// 从 .jar 文件中解析出的模组元数据。
 ///
 /// 参考自 PCL-CE 的 ModLocalComp.LookupMetadata，依次尝试
@@ -31,6 +44,7 @@ class ModMetadata {
     this.authors,
     this.url,
     this.loader = ModLoader.unknown,
+    this.environment = ModEnvironment.unknown,
   });
 
   final String name;
@@ -40,6 +54,12 @@ class ModMetadata {
   final String? authors;
   final String? url;
   final ModLoader loader;
+
+  /// 模组运行环境，用于识别客户端专属模组（不能在服务端运行）。
+  final ModEnvironment environment;
+
+  /// 是否为客户端专属模组（`environment == ModEnvironment.client`）。
+  bool get isClientOnly => environment == ModEnvironment.client;
 
   String get loaderLabel => switch (loader) {
     ModLoader.fabric => 'Fabric',
@@ -247,7 +267,14 @@ class ModMetadataParser {
       if (meta != null) return meta;
     }
 
-    // 3. META-INF/mods.toml (Forge 1.13+ / NeoForge)
+    // 3a. META-INF/neoforge.mods.toml (NeoForge，优先于 mods.toml)
+    final neoforgeToml = _readEntry(archive, 'META-INF/neoforge.mods.toml');
+    if (neoforgeToml != null) {
+      final meta = _parseModsToml(neoforgeToml);
+      if (meta != null) return meta;
+    }
+
+    // 3b. META-INF/mods.toml (Forge 1.13+)
     final modsToml = _readEntry(archive, 'META-INF/mods.toml');
     if (modsToml != null) {
       final meta = _parseModsToml(modsToml);
@@ -331,10 +358,24 @@ class ModMetadataParser {
         authors: authors,
         url: url,
         loader: ModLoader.fabric,
+        environment: _fabricEnv(data['environment']),
       );
     } catch (_) {
       return null;
     }
+  }
+
+  /// 解析 fabric.mod.json 的 `environment` 字段。
+  ///
+  /// 值为 `"client"` / `"server"` / `"*"`（两端皆可），缺失视为两端皆可
+  /// （Fabric 规范默认 `*`）。少数模组用 `"client,server"` 表达两端，按 `*` 处理。
+  static ModEnvironment _fabricEnv(dynamic env) {
+    if (env is! String) return ModEnvironment.both;
+    return switch (env) {
+      'client' => ModEnvironment.client,
+      'server' => ModEnvironment.server,
+      _ => ModEnvironment.both,
+    };
   }
 
   // ── quilt.mod.json ───────────────────────────────────────────
@@ -359,15 +400,36 @@ class ModMetadataParser {
         description: description,
         modId: id,
         loader: ModLoader.quilt,
+        environment: metadata is Map<String, dynamic>
+            ? _quiltEnv(metadata['environment'])
+            : ModEnvironment.both,
       );
     } catch (_) {
       return null;
     }
   }
 
-  // ── META-INF/mods.toml ───────────────────────────────────────
-  /// 简易 TOML 解析，仅提取 [[mods]] 段的 modId / displayName /
-  /// description / version 和全局段的 displayURL / authors。
+  /// 解析 quilt.mod.json 的 `environment` 字段。
+  ///
+  /// Quilt RFC 规范的合法值为 `"*"`（两端，默认）/ `"client"`（仅客户端）/
+  /// `"dedicated_server"`（仅服务端）。注意与 Fabric 的 `"server"` 不同，
+  /// Quilt 用 `"dedicated_server"` 表示服务端。
+  static ModEnvironment _quiltEnv(dynamic env) {
+    if (env is! String) return ModEnvironment.both;
+    return switch (env) {
+      'client' => ModEnvironment.client,
+      'dedicated_server' => ModEnvironment.server,
+      _ => ModEnvironment.both,
+    };
+  }
+
+  // ── META-INF/mods.toml / neoforge.mods.toml ─────────────────
+  /// 简易 TOML 解析，提取 [[mods]] 段的 modId / displayName /
+  /// description / version，全局段的 displayURL / authors / clientSideOnly。
+  ///
+  /// **侧别识别**：用顶层 `clientSideOnly` 布尔字段判断是否仅客户端。
+  /// `[[dependencies.<modId>]]` 块里的 `side` 描述的是依赖项的侧别要求，
+  /// **不是**模组本身的运行环境，不能用来判断模组类型。
   static ModMetadata? _parseModsToml(String toml) {
     try {
       final lines = toml.split('\n');
@@ -427,10 +489,25 @@ class ModMetadataParser {
         authors: global['authors'],
         url: global['displayURL'],
         loader: isNeoForge ? ModLoader.neoforge : ModLoader.forge,
+        environment: _forgeEnvironment(global['clientSideOnly']),
       );
     } catch (_) {
       return null;
     }
+  }
+
+  /// 解析 Forge mods.toml 的顶层 `clientSideOnly` 布尔字段。
+  ///
+  /// Forge 用 `clientSideOnly = true` 声明该 JAR 为仅客户端模组（默认 false）。
+  /// 注意：`[[dependencies.<modId>]]` 块里的 `side` 字段描述的是**依赖项**的
+  /// 侧别要求，而非模组本身的运行环境，不能用来判断模组类型。
+  ///
+  /// 缺失视为未知（无法判断），避免误删服务端模组。
+  static ModEnvironment _forgeEnvironment(String? clientSideOnly) {
+    if (clientSideOnly == null) return ModEnvironment.unknown;
+    return clientSideOnly.toLowerCase() == 'true'
+        ? ModEnvironment.client
+        : ModEnvironment.both;
   }
 
   // ── mcmod.info ───────────────────────────────────────────────

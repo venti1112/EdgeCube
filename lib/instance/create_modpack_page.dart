@@ -8,6 +8,7 @@ import '../i18n/locale_scope.dart';
 import '../mods/modpack_service.dart';
 import '../widgets/ec_preference.dart';
 import '../widgets/miuix_dialog.dart';
+import '../widgets/client_mods_cleanup_dialog.dart';
 import '../widgets/modpack_install_ui.dart';
 import 'create_download_install_loader_page.dart';
 import 'create_instance_page.dart';
@@ -150,6 +151,11 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
         _modpackError = null;
       });
       await ModpackService.extractOverrides(sourcePath, modpack, dir);
+
+      // 整合包 overrides 会把客户端模组一并放进 mods/，服务端运行会崩溃，
+      // 扫描并提示用户一键移除。
+      if (!mounted) return;
+      await showClientModsCleanupDialog(context, dir);
 
       // 下载服务端 jar。
       if (!mounted) return;

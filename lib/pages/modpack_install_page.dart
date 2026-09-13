@@ -15,6 +15,7 @@ import '../widgets/ec_preference.dart';
 import '../widgets/error_dialog.dart';
 import '../widgets/miuix_dialog.dart';
 import '../widgets/miuix_snackbar.dart';
+import '../widgets/client_mods_cleanup_dialog.dart';
 import '../widgets/modpack_install_ui.dart';
 import '../widgets/placeholder_page.dart';
 
@@ -156,6 +157,11 @@ class _InstallModpackPageState extends State<InstallModpackPage> {
       }
       setState(() => _phase = 'extracting');
       await ModpackService.extractOverrides(sourcePath, modpack, dir);
+
+      if (!mounted) return;
+      // 整合包 overrides 会把客户端模组一并放进 mods/，服务端运行会崩溃，
+      // 扫描并提示用户一键移除。
+      await showClientModsCleanupDialog(context, dir);
 
       if (!mounted) return;
       setState(() => _busy = false);
