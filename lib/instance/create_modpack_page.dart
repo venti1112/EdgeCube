@@ -8,6 +8,7 @@ import '../i18n/locale_scope.dart';
 import '../mods/modpack_service.dart';
 import '../widgets/ec_preference.dart';
 import '../widgets/miuix_dialog.dart';
+import '../widgets/modpack_install_ui.dart';
 import 'create_download_install_loader_page.dart';
 import 'create_instance_page.dart';
 import 'download_info.dart';
@@ -318,33 +319,7 @@ class _ModpackImportPageState extends State<ModpackImportPage> {
   }
 
   Future<bool?> _showModpackConfirm(ParsedModpack modpack) {
-    final mc = modpack.dependencies['minecraft'] ?? '-';
-    final loader = _modpackLoaderLabel(modpack);
-    final modCount = modpack.serverFiles.length;
-    return showMiuixConfirm(
-      context,
-      title: context.tr('instance.modpackConfirmTitle'),
-      message: context.tr('instance.modpackSummary', {
-        'name': modpack.name ?? '-',
-        'mc': mc,
-        'loader': loader,
-        'count': '$modCount',
-      }),
-      cancelLabel: context.tr('common.cancel'),
-      confirmLabel: context.tr('common.ok'),
-    );
-  }
-
-  String _modpackLoaderLabel(ParsedModpack modpack) {
-    final deps = modpack.dependencies;
-    if (deps['fabric-loader'] != null) return 'Fabric';
-    if (deps['quilt-loader'] != null) return 'Quilt';
-    if (deps['forge'] != null) return 'Forge';
-    if (deps['neo-forge'] != null || deps['neoforge'] != null) {
-      return 'NeoForge';
-    }
-    if (deps['minecraft'] != null) return context.tr('instance.modpackVanilla');
-    return '-';
+    return showModpackConfirmDialog(context, modpack);
   }
 
   Future<bool?> _showImportPermissionDialog() {
