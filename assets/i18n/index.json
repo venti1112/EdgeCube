@@ -1,4 +1,5 @@
 [
   { "locale": "zh_CN", "name": "简体中文" },
-  { "locale": "en_US", "name": "English" }
+  { "locale": "en_US", "name": "English" },
+  { "locale": "zh_CT", "name": "猫猫语" }
 ]
