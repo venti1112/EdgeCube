@@ -18,6 +18,7 @@ import '../widgets/miuix_dialog.dart';
 import '../widgets/miuix_snackbar.dart';
 import 'allay_properties_page.dart';
 import 'instance_export_page.dart';
+import 'modpack_install_page.dart';
 import 'mods_plugins_page.dart';
 import 'players_page.dart';
 import 'port_mapping_page.dart';
@@ -25,6 +26,7 @@ import 'ftp_page.dart';
 import 'mcp_page.dart';
 import 'pnx_properties_page.dart';
 import 'runtime_page.dart';
+import 'save_config_page.dart';
 import 'server_properties_page.dart';
 import 'shell_page.dart';
 import 'ssh_page.dart';
@@ -59,11 +61,29 @@ class ManagePage extends StatelessWidget {
               _ServerConfigTile(),
               const SizedBox(height: 12),
               _ManageEntryTile(
+                icon: Icons.map_outlined,
+                title: context.tr('manage.saveConfig.title'),
+                subtitle: context.tr('manage.saveConfig.subtitle'),
+                onTap: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const SaveConfigPage())),
+              ),
+              const SizedBox(height: 12),
+              _ManageEntryTile(
                 icon: Icons.extension_outlined,
                 title: context.tr('manage.modsPlugins.title'),
                 subtitle: context.tr('manage.modsPlugins.subtitle'),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const ModsPluginsPage()),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _ManageEntryTile(
+                icon: Icons.unarchive_outlined,
+                title: context.tr('manage.modpackInstall.title'),
+                subtitle: context.tr('manage.modpackInstall.subtitle'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const InstallModpackPage()),
                 ),
               ),
               const SizedBox(height: 12),

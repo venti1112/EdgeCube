@@ -8,7 +8,7 @@ publish_to: 'none'
 platforms:
   android:
 
-version: 1.0.2+28
+version: 1.0.3+29
 
 environment:
   sdk: ">=3.12.2 <4.0.0"
