@@ -67,7 +67,7 @@ class _SaveConfigPageState extends State<SaveConfigPage> {
   double? _busyProgress;
 
   InstanceController? _controller;
-  String? _loadedInstanceId;
+  String? _loadedInstanceId = '\u0000';
 
   bool get _busy => _busyMessage != null;
 
