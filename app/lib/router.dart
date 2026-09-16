@@ -65,8 +65,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (stage == StartupStage.finished && loc == '/connecting') {
         return connected ? '/servers' : '/settings/servers';
       }
-      // 未连接:只允许停留在服务器管理/添加页
-      if (!connected) {
+      // 未连接且启动已完成:只允许停留在服务器管理/添加页
+      if (stage == StartupStage.finished && !connected) {
         const allowed = {'/settings/servers', '/settings/servers/add'};
         if (!allowed.contains(loc)) return '/settings/servers';
       }

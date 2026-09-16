@@ -54,7 +54,7 @@ impl DownloadManager {
     /// 启动常驻下载引擎(RequestGroupMan + DownloadEngine 事件循环)。
     pub fn new() -> Self {
         let man = Arc::new(RequestGroupMan::new());
-        let mut engine = DownloadEngine::new();
+        let mut engine = DownloadEngine::new(TICK_INTERVAL_MS);
         engine.set_request_group_man(Arc::clone(&man));
         // 空闲时保持事件循环,等待后续下载任务
         engine.set_keep_alive(true);
