@@ -1,0 +1,91 @@
+# EdgeCube Daemon 配置示例
+#
+# 用法：复制成 edgecube.toml（或 $XDG_CONFIG_HOME/edgecube/daemon.toml），
+# 也可以直接 `edgecube-daemon --init-config` 生成一份。
+#
+# 优先级（低 → 高）：
+#   代码内置默认值  <  本文件  <  环境变量 EDGECUBE_*  <  命令行参数
+
+[server]
+# 监听地址。默认只听回环；要对外提供服务请同时设置 token。
+host = "127.0.0.1"
+# HTTP 与 WebSocket 共用同一个端口。写 0 表示由系统分配（测试用）。
+port = 8787
+# WebSocket 升级路径，必须以 / 开头且不以 / 结尾。
+ws_path = "/ws"
+# 访问令牌。留空或注释掉 = 不鉴权（仅推荐回环场景）。
+# 客户端可通过三种方式携带：
+#   1. Authorization: Bearer <token>
+#   2. X-EdgeCube-Token: <token>
+#   3. ws://host:port/ws?token=<token>       ← 浏览器 WebSocket 只能这么传
+token = "change-me"
+
+# CORS 白名单。["*"] = 放开；Web 端从别的源访问时必须配。
+cors_origins = ["*"]
+
+# 最大同时在线连接数，超出直接拒绝升级。
+max_connections = 128
+# 单连接最大并发在途调用数，超出立即回 busy（不排队）。
+max_inflight_calls = 32
+# 单次 WS 调用超时（秒）。
+request_timeout_secs = 30
+# 服务端主动发 WS Ping 帧的间隔（秒）。
+heartbeat_interval_secs = 15
+# 空闲多久断开（秒）。0 = 不因空闲断开；必须 >= heartbeat_interval_secs。
+idle_timeout_secs = 60
+# 关闭时等待连接退出的宽限期（秒）。
+shutdown_grace_secs = 5
+# 事件广播缓冲条数；慢消费者超出后丢自己的事件，不拖累别人。
+event_buffer = 1024
+# 单连接订阅主题个数上限。
+max_subscriptions = 64
+
+[log]
+# tracing 过滤串。示例："info"、"debug"、"edgecube_daemon=debug,tower_http=warn"
+level = "info"
+# pretty | json
+format = "pretty"
+# 是否输出 ANSI 颜色。重定向到文件/管道时应设为 false。
+# 日志只写 stdout，落盘交给 systemd/journald 或容器运行时。
+ansi = true
+
+[modules]
+# "*" = 启用全部已注册模块；也可以写成列表，例如 ["core", "ticker"]。
+enabled = "*"
+# 在 enabled 基础上排除某些模块。标记为 always_on 的模块（core）排除不掉。
+disabled = []
+
+# ---------------------------------------------------------------------------
+# 各模块的私有配置节
+#
+# 框架不解析这些内容，原样交给模块自己反序列化；模块禁用后这一节会被忽略。
+# 写错模块名或字段名都会在启动时报错，而不是被静默忽略。
+# ---------------------------------------------------------------------------
+
+[modules.config.ticker]
+# 触发间隔（毫秒），会被 clamp 到 [50, 86400000]。
+interval_ms = 1000
+# 服务启动后是否自动开跑。
+autostart = false
+
+# ---------------------------------------------------------------------------
+# 实例管理
+#
+# 数据目录布局（与 V1 一致：索引 / 元数据 / 工作目录三分离）：
+#   <dir>/config/instances.json       索引 {selected, instances:[{id,name,path?}]}
+#   <dir>/config/instances/<id>.json  单个实例的完整元数据
+#   <dir>/instances/<id>/             实例工作目录（服务端文件、世界存档……）
+# ---------------------------------------------------------------------------
+
+[modules.config.instance]
+# 数据根目录。留空 = $EDGECUBE_DATA_DIR → $XDG_DATA_HOME/edgecube
+#                  → $HOME/.local/share/edgecube
+dir = ""
+# 启动时扫描一次磁盘：补齐索引、清理"目录已消失"的实例。
+scan_on_start = true
+# 扫描时是否把「元数据还在、目录没了」的实例移出索引（元数据一并删掉）。
+# 设为 false 更保守：列表会留下指向空目录的实例，状态里给出 warning。
+prune_missing = true
+# 目录体积统计的上限，防止扫几十 GB 的世界存档时卡住。
+scan_max_entries = 20000
+scan_max_depth = 12

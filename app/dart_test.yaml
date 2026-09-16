@@ -1,0 +1,9 @@
+# 测试标签说明。
+#
+# 默认 `flutter test` 会跑全部用例;只是声明标签,避免 "tag 未声明" 警告。
+#
+# e2e:需要真实的 daemon 二进制,先 `cd daemon && cargo build`。
+#      没编译后端时该用例会自动 skip。
+#      只跑前端用例:`flutter test --exclude-tags e2e`
+tags:
+  e2e:
