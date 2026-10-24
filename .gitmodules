@@ -1,0 +1,9 @@
+[submodule "third_party/termux-packages"]
+	path = third_party/termux-packages
+	url = https://github.com/venti1112/termux-packages-tiny-computer.git
+[submodule "third_party/php-build-scripts"]
+	path = third_party/php-build-scripts
+	url = https://github.com/venti1112/EdgeCube-PHP-Build.git
+[submodule "third_party/musl-cross-make"]
+	path = third_party/musl-cross-make
+	url = https://github.com/venti1112/musl-cross-make-pmmp.git

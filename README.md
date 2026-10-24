@@ -94,6 +94,7 @@ EdgeCube 是一款开源 Android 应用，用于在手机上创建、配置、�
 ```bash
 git clone https://github.com/venti1112/EdgeCube.git
 cd EdgeCube
+git submodule update --init --recursive   # 仅在修改原生依赖时需要
 flutter pub get
 flutter run
 ```
@@ -101,8 +102,8 @@ flutter run
 ### 打包发布
 
 ```bash
-# Rust 会由 Gradle 的 cargoBuild 任务自动编译（已挂接到 preBuild），
-# 因此直接执行 Flutter 构建即可：
+# Rust 由 Gradle 的 cargoBuild 任务自动编译；proot/PHP 原生依赖由
+# fetchNativeDeps 任务从 Release 下载并校验（见下节），均已挂接到 preBuild：
 flutter build apk --release
 
 # CurseForge 为可选项，不注入 key 时该平台会在 UI 中隐藏
@@ -110,6 +111,21 @@ flutter build apk --release --dart-define=CURSEFORGE_API_KEY=<your-key>
 ```
 
 > Release 签名读取 `android/key.properties`（`storeFile`、`storePassword`、`keyAlias`、`keyPassword`）；debug 构建同样使用该签名。
+
+### 原生依赖（proot 工具链 / PHP CLI）
+
+仓库不保存构建好的二进制，以下组件均由 GitHub Actions 从源码构建：
+
+| 组件 | 构建源码 | 方式 |
+| --- | --- | --- |
+| proot / busybox / tar / zstd 及依赖 | `third_party/termux-packages` | Termux package-builder 镜像（由子模块 Dockerfile 构建） |
+| PHP CLI 8.2（musl 静态链接） | `third_party/php-build-scripts` + `third_party/musl-cross-make` | `compile.sh` 交叉编译 |
+
+「构建原生依赖」工作流把产物组装为 `edgecube-native-deps-arm64-v8a.zip` 并发布到 `native-deps-v1` Release；`android/native-deps.properties` 锁定资产名与 sha256，Gradle 的 `fetchNativeDeps` 任务在 `preBuild` 前下载、校验并解压到 `build/native-deps/jniLibs/`。
+
+升级组件时：更新子模块指针 → 运行「构建原生依赖」（可同时提升 Release tag）→ 把新 sha256 填入 `android/native-deps.properties`。
+
+APK 构建工作流从 Actions Secrets 读取签名材料：`ANDROID_KEYSTORE_B64`（base64 编码的 `.jks`）与 `ANDROID_KEY_PROPERTIES`（完整 `key.properties` 内容，`storeFile` 由 CI 覆盖为临时路径）。
 
 ### 测试与静态检查
 
@@ -154,11 +170,12 @@ EdgeCube/
 │   ├── ftp/ ssh/ shell/ mcp/ frp/ stun/ tunnel/ backup/
 │   ├── config/           # JSON 配置 Store
 │   ├── i18n/  theme/  logging/  pages/  widgets/
-├── android/              # Kotlin + C（CMake）+ 预置二进制
+├── android/              # Kotlin + C（CMake）；原生依赖在构建时拉取
 ├── rust/                 # workspace：edgecube-pty、edgecube-tools
+├── third_party/          # 原生依赖构建源码（Git 子模块）
 ├── assets/               # 图片、i18n JSON、markdown、崩溃规则
 ├── test/                 # Flutter 测试
-└── tools/                # sign_package.py
+└── tools/                # sign_package.py、assemble_native_deps.py
 ```
 
 ## 参与贡献

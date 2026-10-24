@@ -1,3 +1,5 @@
+import java.net.URI
+import java.security.MessageDigest
 import java.util.Properties
 import org.gradle.api.GradleException
 
@@ -85,6 +87,93 @@ val cargoBuild = tasks.register<Exec>("cargoBuild") {
     }
 }
 
+// ─── 原生依赖：proot 工具链 + PHP CLI（由「构建原生依赖」工作流从源码构建）───
+// android/native-deps.properties 锁定 Release 资产与 sha256；下载后解压到
+// build/native-deps/jniLibs/<abi>/，作为额外的 jniLibs 源目录参与打包。
+val nativeDepsPropertiesFile = rootProject.file("native-deps.properties")
+val nativeDepsJniDir = rootProject.layout.buildDirectory.dir("native-deps/jniLibs").get().asFile
+
+val fetchNativeDeps = tasks.register("fetchNativeDeps") {
+    group = "build"
+    description = "下载并校验原生依赖包（proot/PHP）"
+
+    val props = Properties()
+    if (nativeDepsPropertiesFile.isFile) {
+        nativeDepsPropertiesFile.inputStream().use { props.load(it) }
+    }
+    val repo = props.getProperty("repo").orEmpty()
+    val tag = props.getProperty("tag").orEmpty()
+    val asset = props.getProperty("asset").orEmpty()
+    val sha256 = props.getProperty("sha256").orEmpty()
+
+    inputs.property("repo", repo)
+    inputs.property("tag", tag)
+    inputs.property("asset", asset)
+    inputs.property("sha256", sha256)
+    outputs.dir(nativeDepsJniDir)
+
+    doLast {
+        if (repo.isBlank() || tag.isBlank() || asset.isBlank() || sha256.isBlank()) {
+            throw GradleException(
+                """
+                android/native-deps.properties 缺少 repo/tag/asset/sha256。
+                请先运行 GitHub Actions 的「构建原生依赖」工作流，
+                再把 Release 资产的 sha256 填入该文件。
+                """.trimIndent(),
+            )
+        }
+
+        val marker = File(nativeDepsJniDir, ".sha256")
+        if (marker.isFile && marker.readText().trim() == sha256) return@doLast
+
+        nativeDepsJniDir.deleteRecursively()
+        nativeDepsJniDir.mkdirs()
+        val zipFile = rootProject.layout.buildDirectory
+            .dir("tmp/native-deps/$asset").get().asFile
+        zipFile.parentFile.mkdirs()
+
+        val url = "https://github.com/$repo/releases/download/$tag/$asset"
+        logger.lifecycle("下载原生依赖：$url")
+        URI(url).toURL().openStream().use { input ->
+            zipFile.outputStream().use { input.copyTo(it) }
+        }
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        zipFile.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        if (!actual.equals(sha256, ignoreCase = true)) {
+            zipFile.delete()
+            throw GradleException("原生依赖 SHA256 不匹配：期望 $sha256，实际 $actual")
+        }
+
+        copy {
+            from(zipTree(zipFile))
+            into(nativeDepsJniDir)
+        }
+        zipFile.delete()
+
+        val required = listOf(
+            "libphp-cli.so",
+            "lib__bin__proot-classic__.so",
+            "lib__bin__busybox__.so",
+            "libproot-loader-aarch64-5.1.107-68.so",
+        )
+        val missing = required.filterNot { File(nativeDepsJniDir, "arm64-v8a/$it").isFile }
+        if (missing.isNotEmpty()) {
+            nativeDepsJniDir.deleteRecursively()
+            throw GradleException("原生依赖包缺少文件：${missing.joinToString()}")
+        }
+        marker.writeText(sha256)
+    }
+}
+
 android {
     namespace = "com.venti1112.edgecube"
     compileSdk {
@@ -160,6 +249,7 @@ android {
     sourceSets {
         getByName("main") {
             jniLibs.srcDir(rustJniLibs)
+            jniLibs.srcDir(nativeDepsJniDir)
         }
     }
 }
@@ -177,7 +267,7 @@ flutter {
 // AGP 在 afterEvaluate 之后才把 preBuild 之类的任务登记进来，
 // 用 matching+configureEach 而不是 named：后者在登记前调用会直接抛。
 tasks.matching { it.name == "preBuild" }.configureEach {
-    dependsOn(cargoBuild)
+    dependsOn(cargoBuild, fetchNativeDeps)
 }
 
 dependencies {

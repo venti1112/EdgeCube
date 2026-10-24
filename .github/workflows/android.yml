@@ -1,0 +1,109 @@
+name: 构建 APK
+
+# 依赖 native-deps.yml 发布的原生依赖 Release 资产。
+# 签名密钥放在 Actions Secrets：
+#   ANDROID_KEYSTORE_B64   base64 编码的 .jks
+#   ANDROID_KEY_PROPERTIES 完整 key.properties 内容（storeFile 会被 CI 覆盖）
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: 3.47.7
+
+jobs:
+  apk:
+    name: 构建并签名 APK
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 安装 Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 安装 Android SDK 组件
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$sdkmanager" \
+            "platform-tools" \
+            "platforms;android-37.2" \
+            "build-tools;37.0.0" \
+            "ndk;30.0.16248370" \
+            "cmake;4.1.2"
+
+      - name: 安装 Flutter ${{ env.FLUTTER_VERSION }}
+        run: |
+          tarball="flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
+          curl -fsSL -o "$RUNNER_TEMP/$tarball" \
+            "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/$tarball"
+          tar -xJf "$RUNNER_TEMP/$tarball" -C "$HOME"
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+          "$HOME/flutter/bin/flutter" config --no-analytics
+
+      - name: 安装 Rust Android 目标与 cargo-ndk
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          cargo install cargo-ndk --version 4.1.2 --locked
+
+      - name: 写入签名配置
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_B64" ] || [ -z "$ANDROID_KEY_PROPERTIES" ]; then
+            echo "::error::缺少 ANDROID_KEYSTORE_B64 或 ANDROID_KEY_PROPERTIES 机密"
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_B64" | base64 -d > android/release.jks
+          echo "$ANDROID_KEY_PROPERTIES" |
+            sed "s|^storeFile=.*|storeFile=$GITHUB_WORKSPACE/android/release.jks|" \
+            > android/key.properties
+
+      - name: 缓存 Gradle 与 Pub
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.pub-cache
+          key: gradle-pub-${{ runner.os }}-${{ hashFiles('pubspec.lock', 'android/gradle/wrapper/gradle-wrapper.properties', 'android/app/build.gradle.kts') }}
+          restore-keys: gradle-pub-${{ runner.os }}-
+
+      - name: 拉取依赖
+        run: |
+          flutter pub get
+
+      - name: 构建 APK
+        run: |
+          flutter build apk --release
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: edgecube-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      - name: 发布 Tag Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$apk" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$apk" \
+              --title "$GITHUB_REF_NAME" \
+              --notes "EdgeCube $GITHUB_REF_NAME"
+          fi

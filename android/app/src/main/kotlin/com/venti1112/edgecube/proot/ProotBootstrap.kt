@@ -19,7 +19,7 @@ import java.io.File
  *  - bootstrap 目录（`filesDir/bootstrap/{bin,lib}`）通过 symlink 暴露这些 .so，
  *    使 proot 在构造子进程 PATH、解释器路径时拿到「正常的 Linux 路径」。
  *
- * 必须随 APK 打包的原生库（来自 tiny_container releases 的 jniLibs.zip）：
+ * 必须随 APK 打包的原生库（由「构建原生依赖」工作流从源码构建）：
  *  - lib__bin__proot-classic__.so       proot 可执行文件（带 tiny_computer 补丁）
  *  - lib__bin__busybox__.so             busybox（提供 sh/tar/sed/cat/…）
  *  - lib__bin__tar__.so                 GNU tar（支持 --preserve-permissions）
@@ -63,8 +63,8 @@ object ProotBootstrap {
         val prootSo = File(nativeDir, "lib__bin__${PROOT_VARIANT}__.so")
         if (!prootSo.exists()) {
             throw IllegalStateException(
-                "未找到 proot 二进制（${prootSo.name}）。请从 tiny_container releases 下载 " +
-                    "jniLibs.zip 解压到 android/app/src/main/jniLibs/arm64-v8a/。详见 README「proot 集成」一节。"
+                "未找到 proot 二进制（${prootSo.name}）。请运行「构建原生依赖」工作流生成依赖包，" +
+                    "并把新的 sha256 填入 android/native-deps.properties。详见 README「原生依赖」一节。"
             )
         }
 

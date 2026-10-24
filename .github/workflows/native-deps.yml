@@ -1,0 +1,189 @@
+name: 构建原生依赖
+
+# 从源码构建 proot 工具链（proot/busybox/tar/zstd 及依赖）和 PMMP PHP CLI，
+# 组装为 arm64-v8a 的 jniLibs 包并发布到 GitHub Release。
+# APK 构建（android.yml）从该 Release 下载并校验 sha256。
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "发布到 GitHub Release（关闭时仅保留 Actions 产物，便于验证）"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  RELEASE_TAG: native-deps-v1
+  ASSET_NAME: edgecube-native-deps-arm64-v8a.zip
+
+jobs:
+  termux-toolchain:
+    name: Termux 工具链（aarch64）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 释放磁盘空间
+        run: |
+          # 构建器镜像约 10 GB，先移除 runner 上不用的预装组件，避免磁盘耗尽。
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          df -h /
+
+      - name: 初始化 Termux 构建源码
+        run: git submodule update --init third_party/termux-packages
+
+      - name: 准备 Termux 构建器镜像（GHCR 缓存）
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          scripts=third_party/termux-packages/scripts
+          tag="t$(sha256sum "$scripts/Dockerfile" "$scripts/setup-ubuntu.sh" \
+            "$scripts/setup-android-sdk.sh" "$scripts/properties.sh" | sha256sum | cut -c1-16)"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/edgecube-termux-builder:$tag"
+          echo "BUILDER_IMAGE=$image" >> "$GITHUB_ENV"
+
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin || true
+          if ! docker pull "$image"; then
+            docker build -t "$image" "$scripts"
+            docker push "$image" || echo "::warning::构建器镜像推送失败，本次仍使用本地镜像"
+          fi
+
+      - name: 从源码构建 proot/busybox/tar/zstd
+        run: |
+          export TERMUX_BUILDER_IMAGE_NAME="$BUILDER_IMAGE"
+          export CONTAINER_NAME=edgecube-termux-builder
+          # run-docker.sh 以 root 创建容器，HOME 会变成 /root；而镜像把 SDK/NDK
+          # 装在 /home/builder/lib，properties.sh 按 $HOME 推导路径，须覆盖 HOME。
+          export TERMUX_DOCKER_EXEC_EXTRA_ARGS="--env HOME=/home/builder"
+          cd third_party/termux-packages
+          ./scripts/run-docker.sh ./build-package.sh -a aarch64 proot busybox tar zstd
+
+      - name: 上传 .deb 与 loader
+        uses: actions/upload-artifact@v5
+        with:
+          name: termux-toolchain
+          path: |
+            third_party/termux-packages/output/*.deb
+            third_party/termux-packages/output/libproot-loader-*.so
+          if-no-files-found: error
+
+  php-cli:
+    name: PHP CLI（aarch64，musl 静态链接）
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 初始化 PHP 构建源码
+        run: git submodule update --init third_party/php-build-scripts third_party/musl-cross-make
+
+      - name: 安装构建依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make autoconf automake libtool libtool-bin m4 wget \
+            libc-bin gzip bzip2 bison g++ git re2c cmake pkg-config ca-certificates
+
+      - name: 读取 musl-cross-make 固定版本
+        id: musl-rev
+        run: echo "sha=$(git -C third_party/musl-cross-make rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: 缓存 musl 交叉工具链
+        id: musl-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/compiler
+          key: musl-cross-make-${{ steps.musl-rev.outputs.sha }}
+
+      - name: 构建 musl 交叉工具链
+        if: steps.musl-cache.outputs.cache-hit != 'true'
+        working-directory: third_party/musl-cross-make
+        run: |
+          echo "TARGET = aarch64-linux-musl" > config.mak
+          make -j"$(nproc)"
+          make install
+          mv ./output "$GITHUB_WORKSPACE/compiler"
+
+      - name: 缓存 PHP 源码包
+        uses: actions/cache@v4
+        with:
+          path: third_party/php-build-scripts/download_cache
+          key: php-download-cache-${{ hashFiles('third_party/php-build-scripts/compile.sh') }}
+
+      - name: 编译 PHP 8.2
+        working-directory: third_party/php-build-scripts
+        run: |
+          export PATH="$GITHUB_WORKSPACE/compiler/bin:$PATH"
+          set -ex
+          trap "exit 1" ERR
+          ./compile.sh -t android-aarch64 -x -j 4 -g -P 5 -c ./download_cache -D -z 8.2
+
+      - name: 上传 PHP CLI
+        uses: actions/upload-artifact@v5
+        with:
+          name: php-cli
+          path: third_party/php-build-scripts/bin/php7/bin/php
+          if-no-files-found: error
+
+  bundle:
+    name: 组装并发布
+    needs: [termux-toolchain, php-cli]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: termux-toolchain
+          path: termux-output
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: php-cli
+          path: php-cli
+
+      - name: 组装 jniLibs
+        run: |
+          python3 tools/assemble_native_deps.py \
+            --termux-output termux-output \
+            --php-bin php-cli/php \
+            --out dist/native-deps/arm64-v8a
+
+      - name: 打包与校验和
+        run: |
+          cd dist/native-deps
+          zip -9 -r "$ASSET_NAME" arm64-v8a
+          cd ..
+          sha256sum "native-deps/$ASSET_NAME" | sed 's|native-deps/||' | tee native-deps/SHA256SUMS
+          {
+            echo "### 原生依赖已生成"
+            echo
+            echo "- 标签：\`$RELEASE_TAG\`"
+            echo "- 文件：\`$ASSET_NAME\`"
+            echo "- SHA256：\`$(cut -d' ' -f1 native-deps/SHA256SUMS)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传 Release 资产为 Actions 产物
+        uses: actions/upload-artifact@v5
+        with:
+          name: native-deps-release
+          path: |
+            dist/native-deps/${{ env.ASSET_NAME }}
+            dist/native-deps/SHA256SUMS
+          if-no-files-found: error
+
+      - name: 发布到 GitHub Release
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 ||
+            gh release create "$RELEASE_TAG" \
+              --title "原生依赖 $RELEASE_TAG" \
+              --notes "由 native-deps.yml 从源码构建的 proot 工具链与 PHP CLI（arm64-v8a）。"
+          gh release upload "$RELEASE_TAG" \
+            "dist/native-deps/$ASSET_NAME" \
+            "dist/native-deps/SHA256SUMS" \
+            --clobber
