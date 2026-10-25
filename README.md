@@ -121,7 +121,7 @@ flutter build apk --release --dart-define=CURSEFORGE_API_KEY=<your-key>
 | proot / busybox / tar / zstd 及依赖 | `third_party/termux-packages` | Termux package-builder 镜像（由子模块 Dockerfile 构建） |
 | PHP CLI 8.2（musl 静态链接） | `third_party/php-build-scripts` + `third_party/musl-cross-make` | `compile.sh` 交叉编译 |
 
-「构建原生依赖」工作流把产物组装为 `edgecube-native-deps-arm64-v8a.zip` 并发布到 `native-deps-v1` Release；`android/native-deps.properties` 锁定资产名与 sha256，Gradle 的 `fetchNativeDeps` 任务在 `preBuild` 前下载、校验并解压到 `build/native-deps/jniLibs/`。
+「构建原生依赖」工作流把产物组装为 `edgecube-native-deps-arm64-v8a.zip` 并发布到 `native-deps-v1` Release（标记为预发布，不影响 Latest）；`android/native-deps.properties` 锁定资产名与 sha256，Gradle 的 `fetchNativeDeps` 任务在 `preBuild` 前下载、校验并解压到 `build/native-deps/jniLibs/`。
 
 升级组件时：更新子模块指针 → 运行「构建原生依赖」（可同时提升 Release tag）→ 把新 sha256 填入 `android/native-deps.properties`。
 

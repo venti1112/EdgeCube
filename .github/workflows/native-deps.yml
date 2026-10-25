@@ -174,15 +174,19 @@ jobs:
             dist/native-deps/SHA256SUMS
           if-no-files-found: error
 
-      - name: 发布到 GitHub Release
+      - name: 发布到 GitHub Release（预发布）
         if: inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$RELEASE_TAG" >/dev/null 2>&1 ||
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --prerelease
+          else
             gh release create "$RELEASE_TAG" \
               --title "原生依赖 $RELEASE_TAG" \
-              --notes "由 native-deps.yml 从源码构建的 proot 工具链与 PHP CLI（arm64-v8a）。"
+              --notes "由 native-deps.yml 从源码构建的 proot 工具链与 PHP CLI（arm64-v8a）。" \
+              --prerelease
+          fi
           gh release upload "$RELEASE_TAG" \
             "dist/native-deps/$ASSET_NAME" \
             "dist/native-deps/SHA256SUMS" \
