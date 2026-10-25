@@ -7,6 +7,11 @@ name: 构建 APK
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "发布到 GitHub Release（关闭时仅保留 Actions 产物，便于验证）"
+        type: boolean
+        default: true
   push:
     tags:
       - "v*"
@@ -20,7 +25,7 @@ env:
 jobs:
   apk:
     name: 构建并签名 APK
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
 
@@ -94,16 +99,30 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
 
-      - name: 发布 Tag Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      # inputs.publish 未显式传入时（CLI 触发常见）按默认 true 处理；
+      # 只有显式关闭才跳过。直接用 inputs.publish 会被 null 当成 false。
+      - name: 发布到 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || toJSON(inputs.publish) != 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           apk=build/app/outputs/flutter-apk/app-release.apk
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "$apk" --clobber
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
           else
-            gh release create "$GITHUB_REF_NAME" "$apk" \
-              --title "$GITHUB_REF_NAME" \
-              --notes "EdgeCube $GITHUB_REF_NAME"
+            # 手动触发没有标签，沿用推送标签的命名规则：v<pubspec 版本号>。
+            version=$(sed -n 's/^version: *\([0-9][^+]*\).*/\1/p' pubspec.yaml)
+            if [[ -z "$version" ]]; then
+              echo "::error::无法从 pubspec.yaml 读取版本号"
+              exit 1
+            fi
+            tag="v$version"
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$apk" --clobber
+          else
+            gh release create "$tag" "$apk" \
+              --title "$tag" \
+              --notes "EdgeCube $tag" \
+              --target "$GITHUB_SHA"
           fi

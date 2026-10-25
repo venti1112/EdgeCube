@@ -127,6 +127,8 @@ flutter build apk --release --dart-define=CURSEFORGE_API_KEY=<your-key>
 
 APK 构建工作流从 Actions Secrets 读取签名材料：`ANDROID_KEYSTORE_B64`（base64 编码的 `.jks`）与 `ANDROID_KEY_PROPERTIES`（完整 `key.properties` 内容，`storeFile` 由 CI 覆盖为临时路径）。
 
+手动触发「构建 APK」时可关闭 `publish` 输入，只保留 Actions 产物；保持开启（默认）时按 `v<pubspec 版本号>` 创建或更新 Release，推送 `v*` 标签则始终发布到对应标签。
+
 ### 测试与静态检查
 
 ```bash
