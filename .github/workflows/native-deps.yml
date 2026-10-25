@@ -68,7 +68,7 @@ jobs:
           name: termux-toolchain
           path: |
             third_party/termux-packages/output/*.deb
-            third_party/termux-packages/output/libproot-loader-*.so
+            third_party/termux-packages/output/libproot-loader*.so
           if-no-files-found: error
 
   php-cli:
