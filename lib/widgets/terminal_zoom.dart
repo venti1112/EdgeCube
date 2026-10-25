@@ -130,6 +130,11 @@ class _ZoomableTerminalState extends State<ZoomableTerminal> {
               textStyle: TerminalStyle(fontSize: widget.fontSize),
               padding: widget.padding,
               keyboardType: TextInputType.multiline,
+              // 国产 ROM 会把 enableSuggestions:false 映射出的
+              // TYPE_TEXT_VARIATION_VISIBLE_PASSWORD（外加隐私输入标志）当作密码框
+              // 并强制安全键盘；这两个开关打开后输入法按普通多行文本框处理。
+              enableSuggestions: true,
+              enableIMEPersonalizedLearning: true,
               // 不自动抢焦点（页面常驻 IndexedStack）；点击终端再唤起键盘。
               autofocus: false,
             ),
