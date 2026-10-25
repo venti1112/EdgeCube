@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: 安装 Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -75,7 +75,7 @@ jobs:
             > android/key.properties
 
       - name: 缓存 Gradle 与 Pub
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.gradle/caches
@@ -93,7 +93,7 @@ jobs:
           flutter build apk --release
 
       - name: 上传 APK
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: edgecube-apk
           path: build/app/outputs/flutter-apk/app-release.apk

@@ -83,7 +83,10 @@ val cargoBuild = tasks.register<Exec>("cargoBuild") {
         if (!ndk.isDirectory) {
             throw GradleException("Android NDK 未就位：${ndk}（安装 NDK ${android.ndkVersion} 后重试）")
         }
+        // 镜像预置的 ANDROID_NDK_ROOT 指向默认 NDK，与 ndkVersion 不一致时
+        // cargo-ndk 会告警；这里显式统一为构建使用的 NDK。
         environment("ANDROID_NDK_HOME", ndk.absolutePath)
+        environment("ANDROID_NDK_ROOT", ndk.absolutePath)
     }
 }
 

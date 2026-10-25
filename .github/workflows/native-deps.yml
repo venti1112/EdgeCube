@@ -63,7 +63,7 @@ jobs:
           ./scripts/run-docker.sh ./build-package.sh -a aarch64 proot busybox tar zstd
 
       - name: 上传 .deb 与 loader
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: termux-toolchain
           path: |
@@ -92,7 +92,7 @@ jobs:
 
       - name: 缓存 musl 交叉工具链
         id: musl-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/compiler
           key: musl-cross-make-${{ steps.musl-rev.outputs.sha }}
@@ -107,7 +107,7 @@ jobs:
           mv ./output "$GITHUB_WORKSPACE/compiler"
 
       - name: 缓存 PHP 源码包
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: third_party/php-build-scripts/download_cache
           key: php-download-cache-${{ hashFiles('third_party/php-build-scripts/compile.sh') }}
@@ -121,7 +121,7 @@ jobs:
           ./compile.sh -t android-aarch64 -x -j 4 -g -P 5 -c ./download_cache -D -z 8.2
 
       - name: 上传 PHP CLI
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: php-cli
           path: third_party/php-build-scripts/bin/php7/bin/php
@@ -134,12 +134,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v7
         with:
           name: termux-toolchain
           path: termux-output
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v7
         with:
           name: php-cli
           path: php-cli
@@ -166,7 +166,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 上传 Release 资产为 Actions 产物
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: native-deps-release
           path: |
