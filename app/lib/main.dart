@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
 import 'connection/settings.dart';
 import 'connection/state.dart';
+import 'local_service/settings.dart';
 import 'settings/appearance.dart';
 import 'storage.dart';
 
@@ -16,6 +17,8 @@ Future<void> main() async {
   final appearance = await loadAppearanceSettings(storage);
   // null = 从未成功连接过 → 路由守卫会先显示连接页
   final connection = loadPersistedConnection(storage);
+  // 本地服务是独立开关:127.0.0.1 只说明 daemon 在本机,不代表由 App 拉起
+  final localServiceEnabled = loadLocalServiceEnabled(storage);
 
   runApp(
     ProviderScope(
@@ -26,6 +29,9 @@ Future<void> main() async {
         // 编辑中的工作副本:有历史就回填,方便「连接设置」里改一个字段就重连
         initialConnectionSettingsProvider.overrideWithValue(
           connection ?? ConnectionSettings.empty,
+        ),
+        initialLocalServiceEnabledProvider.overrideWithValue(
+          localServiceEnabled,
         ),
       ],
       child: const EdgeCubeApp(),

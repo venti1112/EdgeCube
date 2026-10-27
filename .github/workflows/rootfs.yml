@@ -1,0 +1,253 @@
+name: 构建 rootfs
+
+# 构建内置本地环境（Debian arm64 minbase），打包成 APK 资产用的 tar.zst。
+# 产物发布到 GitHub Release；app/android/rootfs.properties 锁定 tag / sha256 / version。
+#
+# 构建策略（参考 EdgeCubePackage-rootfs 的两阶段 debootstrap 做法）：
+#   - `--foreign` 第一阶段只下载并展开基础系统，第二阶段在 chroot 里跑 postinst；
+#     chroot 前 bind /proc、/sys 并注入 qemu-aarch64-static，避免 adduser 等
+#     维护脚本因缺少伪文件系统而失败。
+#   - 不在安装后删任何包内文件：debootstrap 第一阶段会用 dpkg-deb + tar 直接展开
+#     required 包，绕过 dpkg 的文件过滤；此时再用 rm 裁掉文档/语言包只会留下
+#     「磁盘有文件、dpkg 不登记」的孤儿文件，后续 apt 操作会让 rootfs 越来越乱。
+#     因此镜像保持 dpkg 记录与磁盘完全一致，只通过 apt-get clean / autoremove
+#     清理包管理器自己的缓存与无用依赖。
+#   - apt 索引缓存 bind 到 runner 临时目录，rootfs 内不落任何列表文件，
+#     无需事后清理。
+#   - 安装后 full-upgrade 取齐安全更新，并要求 dpkg --audit 无输出。
+#
+# rootfs 默认不在 APK 里解压：首次启动本地服务时由 Kotlin 侧解压到 filesDir，
+# 因此这里只求「能跑 daemon + 有 CA 证书」；不为体积牺牲包状态一致性。
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release 标签"
+        type: string
+        default: rootfs-v2-r1
+        required: true
+      version:
+        description: "rootfs 版本号（写入 rootfs-info.json，与 app 侧对应）"
+        type: string
+        default: bookworm-minbase-r1
+        required: true
+      suite:
+        description: "Debian 版本（不能比 android.yml 的 daemon 构建镜像更旧）"
+        type: string
+        default: bookworm
+        required: true
+      publish:
+        description: "发布到 GitHub Release（关闭时仅保留 Actions 产物，便于验证）"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  ASSET_NAME: edgecube-rootfs-arm64-v8a.tar.zst
+
+jobs:
+  rootfs:
+    name: 构建 Debian 本地环境
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      ROOTFS_VERSION: ${{ inputs.version }}
+      DEBIAN_SUITE: ${{ inputs.suite }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 安装 debootstrap 与打包工具
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap qemu-user-static zstd
+
+      - name: 启用 arm64 binfmt
+        run: |
+          # github runner 是 x86_64；第二阶段以及 chroot 校验都要能执行 arm64。
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+          ls /proc/sys/fs/binfmt_misc/qemu-aarch64
+
+      - name: debootstrap 第一阶段（--foreign）
+        run: |
+          set -euo pipefail
+          rootfs="$RUNNER_TEMP/rootfs"
+          sudo mkdir -p "$rootfs"
+          sudo debootstrap \
+            --arch=arm64 \
+            --variant=minbase \
+            --components=main \
+            --foreign \
+            "$DEBIAN_SUITE" "$rootfs" http://deb.debian.org/debian
+          echo "ROOTFS_DIR=$rootfs" >> "$GITHUB_ENV"
+
+          # 第二阶段 chroot 执行 arm64 程序用；打包时排除，不进产物。
+          sudo cp /usr/bin/qemu-aarch64-static "$rootfs/usr/bin/"
+          sudo du -sh "$rootfs"
+
+      - name: debootstrap 第二阶段（chroot 内配置）
+        run: |
+          set -euo pipefail
+          # postinst 里的 adduser/base-passwd 等依赖 /proc；resolv.conf 供后续 apt 用。
+          sudo cp /etc/resolv.conf "$ROOTFS_DIR/etc/resolv.conf"
+          sudo mkdir -p "$ROOTFS_DIR/proc" "$ROOTFS_DIR/sys"
+          sudo mount --bind /proc "$ROOTFS_DIR/proc"
+          sudo mount --bind /sys "$ROOTFS_DIR/sys"
+          trap 'sudo umount "$ROOTFS_DIR/proc" "$ROOTFS_DIR/sys" 2>/dev/null || true' EXIT
+          sudo chroot "$ROOTFS_DIR" /debootstrap/debootstrap --second-stage
+
+      - name: 安装基础组件并升级
+        run: |
+          set -euo pipefail
+          sudo cp /etc/resolv.conf "$ROOTFS_DIR/etc/resolv.conf"
+          sudo mkdir -p "$ROOTFS_DIR/proc" "$ROOTFS_DIR/sys" "$ROOTFS_DIR/var/lib/apt/lists"
+
+          # apt 索引写到 runner 临时目录，rootfs 内不落列表文件，省掉事后清理。
+          lists="$RUNNER_TEMP/apt-lists"
+          mkdir -p "$lists"
+
+          sudo mount --bind /proc "$ROOTFS_DIR/proc"
+          sudo mount --bind /sys "$ROOTFS_DIR/sys"
+          sudo mount --bind "$lists" "$ROOTFS_DIR/var/lib/apt/lists"
+          trap 'sudo umount "$ROOTFS_DIR/var/lib/apt/lists" "$ROOTFS_DIR/sys" "$ROOTFS_DIR/proc" 2>/dev/null || true' EXIT
+
+          apt_run() {
+            sudo chroot "$ROOTFS_DIR" env DEBIAN_FRONTEND=noninteractive apt-get "$@"
+          }
+          install_pkgs() {
+            apt_run install -y --no-install-recommends "$@" || {
+              echo "--- 首次安装失败，先 dpkg --configure -a 再重试 ---"
+              sudo chroot "$ROOTFS_DIR" env DEBIAN_FRONTEND=noninteractive dpkg --configure -a
+              apt_run install -y --no-install-recommends "$@"
+            }
+          }
+
+          apt_run update
+          # debootstrap 默认是 HTTP 源；先装 ca-certificates，才能切到 HTTPS 源。
+          install_pkgs ca-certificates
+
+          # 补齐 updates / security 源（与 debootstrap 默认源保持一致，只用 main）。
+          sudo tee "$ROOTFS_DIR/etc/apt/sources.list" >/dev/null <<EOF
+          deb https://deb.debian.org/debian $DEBIAN_SUITE main
+          deb https://deb.debian.org/debian $DEBIAN_SUITE-updates main
+          deb https://security.debian.org/debian-security $DEBIAN_SUITE-security main
+          EOF
+          sudo chown root:root "$ROOTFS_DIR/etc/apt/sources.list"
+
+          apt_run update
+          apt_run full-upgrade -y --no-install-recommends
+          # daemon 运行所需的基础库与 CA 证书；其余为 minbase 已含的常用运行库。
+          install_pkgs libssl3 zlib1g libstdc++6 libgcc-s1 liblzma5 libbz2-1.0 tzdata
+          apt_run autoremove --purge -y
+
+      - name: 校验 rootfs 完整性
+        run: |
+          set -euo pipefail
+          sudo cp /etc/resolv.conf "$ROOTFS_DIR/etc/resolv.conf"
+          sudo mkdir -p "$ROOTFS_DIR/proc" "$ROOTFS_DIR/sys"
+          sudo mount --bind /proc "$ROOTFS_DIR/proc"
+          sudo mount --bind /sys "$ROOTFS_DIR/sys"
+          trap 'sudo umount "$ROOTFS_DIR/proc" "$ROOTFS_DIR/sys" 2>/dev/null || true' EXIT
+
+          # 不允许存在半安装、半配置的包
+          audit=$(sudo chroot "$ROOTFS_DIR" dpkg --audit)
+          if [[ -n "$audit" ]]; then
+            echo "::error::dpkg --audit 报告异常：$audit"
+            exit 1
+          fi
+
+          # 与 BundledRootfs.kt 的 sentinel 列表保持一致，改动时两处同步。
+          for path in \
+            usr/bin/env \
+            usr/bin/dash \
+            etc/os-release \
+            usr/lib/aarch64-linux-gnu/libc.so.6 \
+            etc/ssl/certs/ca-certificates.crt
+          do
+            if ! sudo test -e "$ROOTFS_DIR/$path"; then
+              echo "::error::rootfs 缺少必需路径：$path"
+              exit 1
+            fi
+          done
+          if ! sudo grep -q '^ID=debian' "$ROOTFS_DIR/etc/os-release"; then
+            echo "::error::rootfs 的 os-release 不是 Debian"
+            exit 1
+          fi
+
+          sudo chroot "$ROOTFS_DIR" /usr/bin/env /bin/dash -c 'echo "rootfs shell OK"'
+          echo "=== glibc 版本（不能高于 android.yml 的 daemon 构建镜像）==="
+          # sed 读完整个输出，避免 head 提前退出在 pipefail 下触发 SIGPIPE。
+          sudo chroot "$ROOTFS_DIR" /usr/lib/aarch64-linux-gnu/libc.so.6 | sed -n '1p'
+          sudo du -sh "$ROOTFS_DIR"
+
+      - name: 打包 tar.zst 与校验和
+        run: |
+          set -euo pipefail
+          # 归档缓存是包管理器数据，用 apt 自己的命令清理
+          sudo chroot "$ROOTFS_DIR" apt-get clean
+
+          mkdir -p dist
+          # 以下排除项都不是包内文件：
+          #   dev/proc/sys 由 proot 运行时 bind；qemu 仅供本次 chroot；
+          #   resolv.conf 由 App 安装时写入；tmp/apt 缓存无需随镜像分发。
+          sudo tar --numeric-owner -cpf - \
+            --exclude=./dev \
+            --exclude=./proc \
+            --exclude=./sys \
+            --exclude=./usr/bin/qemu-aarch64-static \
+            --exclude=./etc/resolv.conf \
+            --exclude='./tmp/*' \
+            --exclude='./var/tmp/*' \
+            --exclude='./var/cache/apt/archives/*' \
+            -C "$ROOTFS_DIR" . |
+            zstd -19 -T0 -o "dist/$ASSET_NAME"
+
+          cd dist
+          sha256sum "$ASSET_NAME" | tee SHA256SUMS
+          cat > rootfs-info.json <<EOF
+          {
+            "version": "$ROOTFS_VERSION",
+            "suite": "$DEBIAN_SUITE",
+            "architecture": "arm64",
+            "asset": "$ASSET_NAME",
+            "sha256": "$(cut -d' ' -f1 SHA256SUMS)"
+          }
+          EOF
+          ls -lh "$ASSET_NAME"
+          {
+            echo "### rootfs 已生成"
+            echo
+            echo "- 标签：\`$RELEASE_TAG\`"
+            echo "- 版本：\`$ROOTFS_VERSION\`（Debian $DEBIAN_SUITE arm64 minbase）"
+            echo "- 文件：\`$ASSET_NAME\`"
+            echo "- SHA256：\`$(cut -d' ' -f1 SHA256SUMS)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传 Actions 产物
+        uses: actions/upload-artifact@v6
+        with:
+          name: rootfs-release
+          path: dist/*
+          if-no-files-found: error
+
+      - name: 发布到 GitHub Release（预发布）
+        if: toJSON(inputs.publish) != 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$RELEASE_TAG"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --prerelease
+          else
+            gh release create "$tag" \
+              --title "本地环境 $tag" \
+              --notes "Debian $DEBIAN_SUITE arm64 minbase，供 Android 本地服务（proot）使用。" \
+              --prerelease
+          fi
+          gh release upload "$tag" \
+            "dist/$ASSET_NAME" \
+            "dist/SHA256SUMS" \
+            "dist/rootfs-info.json" \
+            --clobber

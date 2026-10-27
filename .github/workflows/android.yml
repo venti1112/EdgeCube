@@ -1,0 +1,203 @@
+name: 构建 APK
+
+# 依赖两个预构建资产（都发布在本仓库的 GitHub Release）：
+#   native-deps.yml -> native-deps-v2（proot 工具链）
+#   rootfs.yml      -> rootfs-v2-r1（Debian arm64 本地环境）
+# daemon 在本工作流里用 Debian bookworm 容器交叉编译（glibc 2.36），
+# 与内置 rootfs 的 glibc 对齐。
+#
+# 签名密钥放在 Actions Secrets：
+#   ANDROID_KEYSTORE_B64   base64 编码的 .jks
+#   ANDROID_KEY_PROPERTIES 完整 key.properties 内容（storeFile 会被 CI 覆盖）
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release 标签（同时用于产物命名，如 v2.0.0）"
+        type: string
+        required: true
+      title:
+        description: "Release 标题（留空则与标签相同）"
+        type: string
+        required: false
+      notes:
+        description: 'Release 简介，支持 \n 换行、\t 制表等转义；留空时新建 Release 使用默认文案，已有 Release 不覆盖简介'
+        type: string
+        required: false
+      publish:
+        description: "发布到 GitHub Release（关闭时仅保留 Actions 产物，便于验证）"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: 3.47.7
+
+jobs:
+  apk:
+    name: 构建并签名 APK
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 检查资产锁定信息
+        run: |
+          set -euo pipefail
+          for file in app/android/native-deps.properties app/android/rootfs.properties; do
+            if ! grep -Eq '^sha256=[0-9a-f]{64}$' "$file"; then
+              echo "::error::$file 尚未锁定 sha256，请先运行对应的构建工作流"
+              exit 1
+            fi
+          done
+          grep -Eq '^version=.+$' app/android/rootfs.properties || {
+            echo "::error::app/android/rootfs.properties 缺少 version"
+            exit 1
+          }
+
+      - name: 安装 Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 安装 Android SDK 组件
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$sdkmanager" \
+            "platform-tools" \
+            "platforms;android-37.2" \
+            "build-tools;37.0.0" \
+            "ndk;30.0.16248370" \
+            "cmake;4.1.2"
+
+      - name: 安装 Flutter ${{ env.FLUTTER_VERSION }}
+        run: |
+          tarball="flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
+          curl -fsSL -o "$RUNNER_TEMP/$tarball" \
+            "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/$tarball"
+          tar -xJf "$RUNNER_TEMP/$tarball" -C "$HOME"
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+          "$HOME/flutter/bin/flutter" config --no-analytics
+
+      - name: 构建 daemon（Debian bookworm，aarch64）
+        run: |
+          set -euo pipefail
+          # 必须在 Debian 12 里编译：宿主的 glibc（约 2.44）比 rootfs 的 2.36 新，
+          # 直接交叉编译出的二进制在 proot 里会因为找不到 GLIBC_2.xx 起不来。
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE":/work \
+            -w /work \
+            rust:bookworm \
+            bash -c '
+              set -euo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                gcc-aarch64-linux-gnu libc6-dev-arm64-cross pkg-config
+              rustup target add aarch64-unknown-linux-gnu
+              cargo build --manifest-path daemon/Cargo.toml \
+                --release --target aarch64-unknown-linux-gnu
+            '
+          file daemon/target/aarch64-unknown-linux-gnu/release/edgecube-daemon
+          # 记录实际需要的 glibc 版本，方便和 rootfs 对账
+          if command -v readelf >/dev/null; then
+            readelf --version-info \
+              daemon/target/aarch64-unknown-linux-gnu/release/edgecube-daemon |
+              grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1 || true
+          fi
+
+      - name: 写入签名配置
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_B64" ] || [ -z "$ANDROID_KEY_PROPERTIES" ]; then
+            echo "::error::缺少 ANDROID_KEYSTORE_B64 或 ANDROID_KEY_PROPERTIES 机密"
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_B64" | base64 -d > app/android/release.jks
+          echo "$ANDROID_KEY_PROPERTIES" |
+            sed "s|^storeFile=.*|storeFile=$GITHUB_WORKSPACE/app/android/release.jks|" \
+            > app/android/key.properties
+
+      - name: 缓存 Gradle 与 Pub
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.pub-cache
+            daemon/target
+          key: gradle-pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock', 'app/android/gradle/wrapper/gradle-wrapper.properties', 'app/android/app/build.gradle.kts', 'daemon/Cargo.lock') }}
+          restore-keys: gradle-pub-${{ runner.os }}-
+
+      - name: 拉取依赖
+        working-directory: app
+        run: flutter pub get
+
+      - name: 构建 APK
+        working-directory: app
+        env:
+          EDGECUBE_DAEMON_BINARY: ${{ github.workspace }}/daemon/target/aarch64-unknown-linux-gnu/release/edgecube-daemon
+        run: flutter build apk --release
+
+      - name: 按现有规则命名 APK
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          tag="$RELEASE_TAG"
+          if [[ ! "$tag" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]; then
+            echo "::error::标签 \"$tag\" 不合法：仅允许字母、数字、点、下划线、加号和连字符，且需以字母或数字开头"
+            exit 1
+          fi
+          mv app/build/app/outputs/flutter-apk/app-release.apk \
+            "app/build/app/outputs/flutter-apk/EdgeCube-$tag.apk"
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: edgecube-apk
+          path: app/build/app/outputs/flutter-apk/EdgeCube-${{ inputs.tag }}.apk
+          if-no-files-found: error
+
+      # inputs.publish 未显式传入时（CLI 触发常见）按默认 true 处理；
+      # 只有显式关闭才跳过。直接用 inputs.publish 会被 null 当成 false。
+      - name: 发布到 GitHub Release
+        if: toJSON(inputs.publish) != 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_TITLE: ${{ inputs.title }}
+          RELEASE_NOTES: ${{ inputs.notes }}
+        run: |
+          tag="$RELEASE_TAG"
+          title="${RELEASE_TITLE:-$tag}"
+          apk="app/build/app/outputs/flutter-apk/EdgeCube-$tag.apk"
+
+          # dispatch 输入是单行，字面量 \n、\t 等在这里还原成真实控制字符。
+          printf '%b' "$RELEASE_NOTES" > "$RUNNER_TEMP/release-notes.md"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            edit_args=()
+            if [[ -n "$RELEASE_TITLE" ]]; then
+              edit_args+=(--title "$RELEASE_TITLE")
+            fi
+            if [[ -n "$RELEASE_NOTES" ]]; then
+              edit_args+=(--notes-file "$RUNNER_TEMP/release-notes.md")
+            fi
+            if (( ${#edit_args[@]} )); then
+              gh release edit "$tag" "${edit_args[@]}"
+            fi
+            gh release upload "$tag" "$apk" --clobber
+          else
+            if [[ -z "$RELEASE_NOTES" ]]; then
+              printf '%s\n' "EdgeCube $tag" > "$RUNNER_TEMP/release-notes.md"
+            fi
+            gh release create "$tag" "$apk" \
+              --title "$title" \
+              --notes-file "$RUNNER_TEMP/release-notes.md" \
+              --target "$GITHUB_SHA"
+          fi

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use edgecube_daemon::cli::{Action, Cli, HELP, ParseOutcome};
-use edgecube_daemon::config::{Config, default_config_path};
+use edgecube_daemon::config::{Config, default_config_path, write_default_config};
 use edgecube_daemon::error::{Error, Result};
 use edgecube_daemon::logging;
 use edgecube_daemon::module::registry::{ModuleRegistry, builtin_modules};
@@ -69,6 +69,12 @@ async fn run(cli: Cli) -> Result<()> {
     let config = loaded.config;
     logging::init(&config.log)?;
 
+    if let Some(released) = &loaded.released {
+        tracing::info!(
+            path = %released.display(),
+            "未找到配置文件，已释放一份带注释的默认配置并加载它"
+        );
+    }
     if let Some(notice) = &loaded.notice {
         tracing::warn!("{notice}");
     }
@@ -112,12 +118,20 @@ async fn run(cli: Cli) -> Result<()> {
     let cancel = CancellationToken::new();
     let app = AppState::new(config, loaded.path.clone(), registry, cancel.clone());
     install_signal_handlers(cancel.clone());
+    if let Some(parent) = cli.exit_with_parent {
+        edgecube_daemon::lifecycle::spawn_parent_watchdog(parent, cancel.clone());
+    }
 
     // ---- 起服务 ----
-    server::run(app).await
+    server::run(app, cli.ready_file.clone()).await
 }
 
-/// 生成默认配置文件。已存在则不覆盖——配置文件是用户的东西。
+/// 生成默认配置文件到指定路径后退出。
+///
+/// 首次运行已经会**自动**释放一份（见 `Config::load_with`），所以这条命令现在的
+/// 用途是「写到自定义路径」与「不启动服务只把文件拿出来」。已存在则不覆盖 ——
+/// 自动释放只在「哪儿都没找到」时发生，而这里用户是明确点了名要写这个路径的，
+/// 覆盖掉他的配置更不可接受。
 fn init_config(cli: &Cli) -> Result<()> {
     let path = cli.config.clone().unwrap_or_else(default_config_path);
     if path.exists() {
@@ -126,12 +140,7 @@ fn init_config(cli: &Cli) -> Result<()> {
             path.display()
         )));
     }
-    if let Some(parent) = path.parent()
-        && !parent.as_os_str().is_empty()
-    {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&path, Config::template())?;
+    write_default_config(&path)?;
     println!("已生成配置文件: {}", path.display());
     Ok(())
 }

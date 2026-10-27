@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 use serde_json::json;
+use sysinfo::{CpuRefreshKind, System};
 
 use crate::error::Result;
 use crate::module::{Module, ModuleDescriptor, Registration, Scope, ok};
@@ -90,6 +91,15 @@ impl Module for CoreModule {
             }))
         });
 
+        // 「关于」页的**后端设备**框：机器视角（主机名 / 系统 / CPU / 内存）。
+        // 与 `core.info` 的分工：info 是服务视角（连接数、订阅数、监听地址），
+        // host 是「这台机器是什么」。两边的字段都只读，调用成本是几个系统调用。
+        reg.method(
+            "core.host",
+            "守护进程所在机器的软硬件信息",
+            |_| async move { ok(host_info()) },
+        );
+
         reg.method("core.modules", "已装载模块清单", |ctx| async move {
             ok(ctx.app.registry.summary())
         });
@@ -129,4 +139,37 @@ impl Module for CoreModule {
 
         Ok(())
     }
+}
+
+/// 采集守护进程所在机器的静态信息。
+///
+/// 和 `core.info` 的分工：那边是服务视角（连接数、订阅数、监听地址），
+/// 这里是「这台机器是什么」。成本是几个系统调用，所以不做缓存。
+///
+/// 读不到的字段是 `null`（主机名/系统版本在个别平台可能拿不到），
+/// 数字字段为 0 表示平台不支持，前端统一按「未知」处理。
+fn host_info() -> serde_json::Value {
+    let mut sys = System::new();
+    // `System::new()` 只建空表；CPU 型号与核心数要显式刷一次列表。
+    sys.refresh_cpu_list(CpuRefreshKind::nothing());
+    sys.refresh_memory();
+
+    let cpu_brand = sys
+        .cpus()
+        .first()
+        .map(|cpu| cpu.brand().trim())
+        .filter(|brand| !brand.is_empty());
+
+    json!({
+        "hostname": System::host_name(),
+        "os_name": System::name(),
+        "os_version": System::os_version(),
+        "kernel_version": System::kernel_version(),
+        "arch": System::cpu_arch(),
+        "cpu_brand": cpu_brand,
+        "cpu_cores": std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0),
+        "cpu_physical_cores": System::physical_core_count(),
+        "memory_total_mb": sys.total_memory() / 1024 / 1024,
+        "uptime_secs": System::uptime(),
+    })
 }

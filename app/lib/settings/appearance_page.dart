@@ -7,7 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'appearance.dart';
 import 'bg_store.dart';
 
-/// 外观设置页:主题模式/主题色/背景/毛玻璃。
+/// 外观设置页:主题模式/主题色/字体/控制台/背景/毛玻璃。
 ///
 /// 每个设置项都直接 watch / read 它自己的全局 Provider
 /// (见 appearance.dart 的「单项设置全局 Provider」一节),
@@ -99,6 +99,24 @@ class AppearancePage extends ConsumerWidget {
     }
   }
 
+  /// 改字体族:确定写值、留空 = 恢复默认、取消什么也不做。
+  ///
+  /// 没有「列出已装字体」这一步 —— Flutter 不提供跨平台的枚举接口，
+  /// 所以让用户填字体族名（桌面端可先用 `fc-list` 查）。
+  Future<void> _editFont(
+    BuildContext context,
+    String title,
+    String? current,
+    Future<void> Function(String?) apply,
+  ) async {
+    final result = await showDialog<String>(
+      context: context,
+      builder: (_) => _FontFamilyDialog(title: title, initial: current),
+    );
+    if (result == null) return;
+    await apply(result.isEmpty ? null : result);
+  }
+
   String _colorHex(Color c) =>
       '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
 
@@ -113,6 +131,9 @@ class AppearancePage extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
     final followSystemColor = ref.watch(followSystemColorProvider);
     final seedColor = ref.watch(seedColorProvider);
+    final globalFontFamily = ref.watch(globalFontFamilyProvider);
+    final consoleFontFamily = ref.watch(consoleFontFamilyProvider);
+    final showConsoleKeys = ref.watch(showConsoleKeysProvider);
     final backgroundType = ref.watch(backgroundTypeProvider);
     final backgroundColor = ref.watch(backgroundColorProvider);
     final backgroundImage = ref.watch(backgroundImageProvider);
@@ -174,6 +195,45 @@ class AppearancePage extends ConsumerWidget {
             onTap: followSystemColor
                 ? null
                 : () => _pickSeedColor(context, ref),
+          ),
+          const Divider(height: 1),
+          _sectionLabel(context, '字体'),
+          ListTile(
+            key: const Key('appearance_global_font'),
+            leading: const Icon(Icons.text_fields),
+            // 标题用当前字体渲染:填错了（系统里没这个字体）一眼就能看出来
+            title: Text('全局字体', style: TextStyle(fontFamily: globalFontFamily)),
+            subtitle: Text(globalFontFamily ?? '跟随系统默认'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _editFont(
+              context,
+              '全局字体',
+              globalFontFamily,
+              (v) => ref.read(globalFontFamilyProvider.notifier).set(v),
+            ),
+          ),
+          ListTile(
+            key: const Key('appearance_console_font'),
+            leading: const Icon(Icons.terminal_outlined),
+            title: const Text('控制台字体'),
+            subtitle: Text(consoleFontFamily ?? '默认等宽字体（monospace）'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _editFont(
+              context,
+              '控制台字体',
+              consoleFontFamily,
+              (v) => ref.read(consoleFontFamilyProvider.notifier).set(v),
+            ),
+          ),
+          const Divider(height: 1),
+          _sectionLabel(context, '控制台'),
+          SwitchListTile(
+            key: const Key('appearance_console_keys'),
+            title: const Text('显示扩展按键栏'),
+            subtitle: const Text('控制台底部的 ESC / TAB / 方向键等按键'),
+            value: showConsoleKeys,
+            onChanged: (v) =>
+                ref.read(showConsoleKeysProvider.notifier).set(v),
           ),
           const Divider(height: 1),
           _sectionLabel(context, '背景'),
@@ -334,6 +394,70 @@ class AppearancePage extends ConsumerWidget {
             .titleSmall
             ?.copyWith(color: Theme.of(context).colorScheme.primary),
       ),
+    );
+  }
+}
+
+/// 字体族名输入框。
+///
+/// 返回值:`null` = 取消,空串 = 恢复默认,非空 = 新字体族名。
+/// 用「空串 vs null」区分「清空」和「取消」——这个区别只有调用方在意,
+/// 所以不额外搞个结果类型。
+class _FontFamilyDialog extends StatefulWidget {
+  const _FontFamilyDialog({required this.title, required this.initial});
+
+  final String title;
+  final String? initial;
+
+  @override
+  State<_FontFamilyDialog> createState() => _FontFamilyDialogState();
+}
+
+class _FontFamilyDialogState extends State<_FontFamilyDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initial ?? '',
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit(String raw) => Navigator.of(context).pop(raw.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    // 预览:输入框本身就用这个字体渲染，边打边看
+    final preview = _controller.text.trim();
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        style: TextStyle(fontFamily: preview.isEmpty ? null : preview),
+        decoration: const InputDecoration(
+          labelText: '字体族名',
+          hintText: '如 Noto Sans CJK SC、JetBrains Mono',
+          helperText: '填系统里已装的字体；留空 = 默认字体',
+        ),
+        onChanged: (_) => setState(() {}),
+        onSubmitted: _submit,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _submit(''),
+          child: const Text('恢复默认'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () => _submit(_controller.text),
+          child: const Text('确定'),
+        ),
+      ],
     );
   }
 }

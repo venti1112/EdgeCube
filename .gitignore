@@ -1,3 +1,9 @@
+# IDE
+.vscode
+
+# build
+build
+
 # Agents
 .trae
 .claude
@@ -6,3 +12,5 @@
 .deepseek
 .mimocode
 .workbuddy
+
+scripts/gen-config-sections.py

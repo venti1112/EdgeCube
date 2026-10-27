@@ -19,11 +19,44 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
+// Sets the window icon on both X11 and Wayland.
+//
+// Wayland has no protocol for a client to push a window icon, so the
+// compositor resolves it through the XDG application ID. Setting the icon
+// explicitly still matters:
+//   * X11 / XWayland uses it directly.
+//   * The GTK header bar and window list pick it up under both backends.
+//   * It guarantees a sane icon when the app runs without an installed
+//     .desktop file, instead of the compositor's fallback icon.
+static void my_application_set_window_icon(GtkWindow* window) {
+#ifdef APP_ICON_EMBED
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GdkPixbuf) icon =
+      gdk_pixbuf_new_from_file(APP_ICON_EMBED, &error);
+  if (icon == nullptr) {
+    g_warning("Failed to load application icon %s: %s", APP_ICON_EMBED,
+              error->message);
+  } else {
+    gtk_window_set_icon(window, icon);
+  }
+#endif
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+
+  // Keep the window role in sync with the .desktop file / installed icon name.
+  // On Wayland the compositor matches a window to its launcher entry via the
+  // XDG application ID (set in my_application_new()), which is what makes the
+  // correct icon show up in the dock and task switcher. The X11 WM class is
+  // handled by GTK from the same application ID; the generic
+  // gtk_window_set_wmclass() is deprecated and rejected by -Werror.
+  gtk_window_set_role(window, APPLICATION_ID);
+
+  my_application_set_window_icon(window);
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu

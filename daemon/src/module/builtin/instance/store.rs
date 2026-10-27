@@ -1,6 +1,6 @@
 //! 实例元数据的存储层（同步 IO，调用方负责丢进 `spawn_blocking`）。
 //!
-//! # 目录布局（对齐 V1 的「索引 / 元数据 / 工作目录」三分离）
+//! # 目录布局（「索引 / 元数据 / 工作目录」三分离）
 //!
 //! ```text
 //! <data_dir>/
@@ -30,11 +30,11 @@ use serde::{Deserialize, Serialize};
 use super::model::{DirStats, InstanceConfig, InstanceSummary};
 use crate::error::{Error, Result};
 
-/// 索引文件名（与 V1 一致）。
+/// 索引文件名。
 pub const INDEX_FILE_NAME: &str = "instances.json";
-/// 元数据子目录名（与 V1 一致）。
+/// 元数据子目录名。
 pub const CONFIG_SUB_DIR: &str = "instances";
-/// 工作目录子目录名（与 V1 一致）。
+/// 工作目录子目录名。
 pub const DATA_SUB_DIR: &str = "instances";
 
 /// id 的最大长度。id 是随机 hex 串，正常不会超过 16。
@@ -60,7 +60,7 @@ impl InstanceIndex {
         self.position(id).is_some()
     }
 
-    /// 名称是否已被占用（忽略首尾空白，与 V1 的 `_isNameTaken` 一致）。
+    /// 名称是否已被占用（忽略首尾空白）。
     pub fn name_taken(&self, name: &str, except_id: Option<&str>) -> bool {
         let wanted = name.trim();
         self.instances
@@ -118,8 +118,7 @@ impl InstanceStore {
         Ok(())
     }
 
-    /// 原子写 JSON：先写临时文件再 `rename`（与 V1 的
-    /// `ConfigStore.writeJsonFile` 同一套做法）。
+    /// 原子写 JSON：先写临时文件再 `rename`。
     ///
     /// 中途崩溃只会留下一个 `.tmp`，不会把原文件写成半个 JSON。
     /// 用 pretty 输出：元数据是给人也能看的，出问题时肉眼可查。
@@ -156,7 +155,7 @@ impl InstanceStore {
     // ── 索引 ───────────────────────────────────────────────────────────────
 
     /// 读索引。文件缺失、损坏、或个别条目坏掉都不算错 —— 能用多少用多少，
-    /// 读不出来的条目记一条日志跳过（V1 的 `readJsonFile` 同样是"读失败当空"）。
+    /// 读不出来的条目记一条日志跳过（读失败当空）。
     pub fn read_index(&self) -> InstanceIndex {
         let path = self.index_path();
         let raw = match std::fs::read_to_string(&path) {
@@ -434,7 +433,7 @@ pub fn validate_instance_dir(path: &Path) -> std::result::Result<(), String> {
     Ok(())
 }
 
-/// 生成一个 16 位十六进制实例 id（与 V1 的 `_generateId` 格式一致）。
+/// 生成一个 16 位十六进制实例 id。
 ///
 /// 熵来自 `RandomState`（由操作系统给随机种子）+ 时间戳 + 进程内自增序号，
 /// 不需要为此引入 uuid / rand 依赖。
@@ -454,7 +453,6 @@ pub fn generate_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::module::builtin::instance::model::RUNTIME_JAVA;
 
     /// 建一个临时数据目录；测试结束自动清掉。
     struct TempRoot(PathBuf);
@@ -625,13 +623,15 @@ mod tests {
         assert!(store.read_config("nope").unwrap().is_none());
 
         let mut config = InstanceConfig::new("a1", "生存服");
-        config.runtime = RUNTIME_JAVA.into();
-        config.max_memory = Some(4096);
+        config.startup_command = Some("java -jar server.jar nogui".into());
         store.write_config(&config).expect("应能写元数据");
 
         let loaded = store.read_config("a1").unwrap().expect("应能读回");
         assert_eq!(loaded.name, "生存服");
-        assert_eq!(loaded.max_memory, Some(4096));
+        assert_eq!(
+            loaded.startup_command.as_deref(),
+            Some("java -jar server.jar nogui")
+        );
         assert!(
             loaded.updated_at_ms.is_some(),
             "写元数据应刷新 updated_at_ms"

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../connection/state.dart';
+import '../files/providers.dart';
 import '../settings/appearance.dart';
 import 'background.dart';
 import 'connection_banner.dart';
@@ -33,7 +34,18 @@ class HomeShell extends ConsumerWidget {
     (icon: Icons.settings_outlined, selectedIcon: Icons.settings, label: '设置'),
   ];
 
-  void _onDestinationSelected(int index) {
+  /// 文件页签在 `_destinations` 里的下标（写死为 `index == 3`）。
+  static const int _filesBranchIndex = 3;
+
+  void _onDestinationSelected(WidgetRef ref, int index) {
+    // 切到「文件」页签时先让文件浏览器
+    // **静默比对一次当前目录**（一样就什么都不做，所以不会闪、也不丢滚动位置）。
+    //
+    // 放在 `goBranch` **之前**也是有意的：比对在页面还没露出来时就开始，
+    // 等它出现时内容已经对了 —— 否则会先闪一下旧内容。
+    if (index == _filesBranchIndex) {
+      ref.read(filesRefreshProvider.notifier).bump();
+    }
     navigationShell.goBranch(
       index,
       // 再次点击当前页签时回到该分支初始页
@@ -132,7 +144,7 @@ class HomeShell extends ConsumerWidget {
     final blur = glass && enabled && sigma > 0;
     final bar = NavigationBar(
       selectedIndex: navigationShell.currentIndex,
-      onDestinationSelected: _onDestinationSelected,
+      onDestinationSelected: (index) => _onDestinationSelected(ref, index),
       backgroundColor: glass ? cs.surface.withValues(alpha: opacity) : null,
       destinations: [
         for (final d in _destinations)
@@ -164,7 +176,7 @@ class HomeShell extends ConsumerWidget {
     final blur = glass && enabled && sigma > 0;
     final rail = NavigationRail(
       selectedIndex: navigationShell.currentIndex,
-      onDestinationSelected: _onDestinationSelected,
+      onDestinationSelected: (index) => _onDestinationSelected(ref, index),
       labelType: NavigationRailLabelType.all,
       backgroundColor: glass ? cs.surface.withValues(alpha: opacity) : null,
       destinations: [

@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <!-- 使用网络。 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 读取当前网络的 DNS，写入本地环境（proot rootfs）的 resolv.conf。 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Android 17+ 访问本地网络（LAN）的运行时权限； UPnP 网关发现需要。 -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <!-- 前台 Service 保活：让后台运行的服务端进程不被系统轻易回收。 -->
@@ -55,6 +57,15 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- 本地服务（proot 中的 daemon）的前台保活 Service。 -->
+        <service
+            android:name=".localservice.LocalServiceService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="running the local EdgeCube daemon inside a proot container" />
+        </service>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

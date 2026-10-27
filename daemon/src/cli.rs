@@ -18,6 +18,10 @@ pub struct Cli {
     pub log_format: Option<String>,
     /// 关掉 ANSI 颜色。
     pub no_color: bool,
+    /// 绑定端口后把实际监听信息写到这个文件；退出时删除。
+    pub ready_file: Option<PathBuf>,
+    /// 指定进程退出后随之关闭。本地服务模式下由 App 传入自己的 PID。
+    pub exit_with_parent: Option<u32>,
     pub action: Action,
 }
 
@@ -42,8 +46,10 @@ edgecube-daemon —— EdgeCube 后端守护进程
 
 选项:
     -c, --config <PATH>      指定配置文件（默认查找 ./edgecube.toml，
-                             再找 $XDG_CONFIG_HOME/edgecube/daemon.toml）
-        --init-config        生成带注释的默认配置文件到 -c 指定路径后退出
+                             再找 $XDG_CONFIG_HOME/edgecube/daemon.toml；
+                             哪儿都没有就在后者释放一份默认配置并加载）
+        --init-config        把带注释的默认配置写到 -c 指定路径后退出
+                             （首次运行会自动释放默认配置，无需先手动跑这条）
         --print-config       打印合并后的最终配置后退出
         --check              仅校验配置与模块注册情况后退出
         --host <HOST>        覆盖监听地址
@@ -52,6 +58,10 @@ edgecube-daemon —— EdgeCube 后端守护进程
         --log-level <FILTER> 覆盖日志级别，如 debug 或 edgecube_daemon=trace
         --log-format <FMT>   覆盖日志格式: pretty | json
         --no-color           关闭日志颜色
+        --ready-file <PATH>  绑定端口后把实际监听地址写入该 JSON 文件
+                             （启动失败不写、退出时删除；供 App 拉起时握手）
+        --exit-with-parent <PID>
+                             指定进程退出后随之关闭（App 拉起子进程时用）
     -h, --help               显示帮助
     -V, --version            显示版本
 
@@ -115,6 +125,13 @@ impl Cli {
                 "--log-level" => cli.log_level = Some(take("--log-level")?),
                 "--log-format" => cli.log_format = Some(take("--log-format")?),
                 "--no-color" => cli.no_color = true,
+                "--ready-file" => {
+                    cli.ready_file = Some(PathBuf::from(take("--ready-file")?));
+                }
+                "--exit-with-parent" => {
+                    let raw = take("--exit-with-parent")?;
+                    cli.exit_with_parent = Some(crate::lifecycle::parse_parent_pid(&raw)?);
+                }
                 other => {
                     return Err(Error::other(format!(
                         "未知参数 `{other}`（用 --help 查看用法）"
@@ -165,6 +182,27 @@ mod tests {
     fn supports_inline_value() {
         let c = run(&["--log-level=debug"]);
         assert_eq!(c.log_level.as_deref(), Some("debug"));
+    }
+
+    #[test]
+    fn parses_lifecycle_flags() {
+        let c = run(&[
+            "--ready-file",
+            "/run/edgecube/ready.json",
+            "--exit-with-parent",
+            "4321",
+        ]);
+        assert_eq!(
+            c.ready_file,
+            Some(PathBuf::from("/run/edgecube/ready.json"))
+        );
+        assert_eq!(c.exit_with_parent, Some(4321));
+    }
+
+    #[test]
+    fn bad_parent_pid_is_error() {
+        assert!(Cli::parse(["--exit-with-parent".to_string(), "self".to_string()]).is_err());
+        assert!(Cli::parse(["--exit-with-parent".to_string(), "0".to_string()]).is_err());
     }
 
     #[test]

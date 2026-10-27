@@ -1,9 +1,9 @@
 [package]
-name = "edgecube_daemon"
+name = "edgecube-daemon"
 version = "2.0.0"
 edition = "2024"
 description = "EdgeCube 后端 Daemon"
-license = "GPL-3.0-or-later"
+license = "AGPL-3.0-or-later"
 repository = "https://github.com/venti1112/EdgeCube"
 default-run = "edgecube-daemon"
 
@@ -16,31 +16,69 @@ name = "edgecube-daemon"
 path = "src/main.rs"
 
 [dependencies]
-async-trait = "0.1"
-axum = { version = "0.8", features = ["ws", "http1", "json", "tokio"] }
-futures-util = "0.3"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "2"
-tokio = { version = "1", features = [
-    "rt-multi-thread",
-    "macros",
-    "signal",
-    "sync",
-    "time",
-    "net",
-    "fs",
-] }
-tokio-util = "0.7"
+uuid = "1"
 toml = "1"
+regex = "1"
+tar = "0.4"
+szal = "1.2"
+flate2 = "1"
+rand = "0.10"
 tower = "0.5"
-tower-http = { version = "0.7", features = ["cors", "trace", "timeout"] }
+sha1 = "0.11"
+base64 = "0.23"
 tracing = "0.1"
+thiserror = "2"
+serde_json = "1"
+tokio-util = "0.7"
+async-trait = "0.1"
+futures-util = "0.3"
+portable-pty = "0.9"
+serde = { version = "1", features = ["derive"] }
+axum = { version = "0.8", features = ["ws", "http1", "json", "tokio"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "timeout"] }
+gosh-dl = { version = "0.6", default-features = false, features = ["http"] }
+igd-next = { version = "0.17", default-features = false }
+# 上游 0.2.0 的 `Mapper` 容器枚举按 `all(tcp, udp)` 门控、但它的 impl 块没门控，
+# 只开 tcp 编译不过；两个 feature 都是空的，索性都开（udp 代码只是编出来不用）。
+nyat-core = { version = "0.2", default-features = false, features = ["tcp", "udp"] }
+socket2 = "0.6"
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json", "ansi"] }
+# 归档解压要认的格式比 zip 多（tar 家族、7z、rar、单流压缩），
+# 原生依赖都在 `instance/archive` 里；这份清单与 V1 的 edgecube-tools 对齐。
+bzip2 = "0.6"
+xz2 = "0.1"
+lz4_flex = "0.14"
+zstd = "0.13"
+sevenz-rust2 = "0.23"
+unrar = "0.5"
+# `deflate-flate2-zlib-rs` 之外再开这些：别人打的 zip 里可能是 lzma / ppmd /
+# deflate64 条目，只认 deflate 的话「能打开压缩包但解不出来」，比直接报错更难懂。
+zip = { version = "8.6", default-features = false, features = [
+    "deflate-flate2-zlib-rs",
+    "deflate64",
+    "bzip2",
+    "zstd",
+    "lzma",
+    "xz",
+    "ppmd",
+] }
+crypto_box = { version = "0.9", default-features = false, features = ["alloc", "salsa20", "std",] }
+reqwest = { version = "0.13", default-features = false, features = [ "charset", "form", "json", "query", "rustls",] }
+tokio = { version = "1", features = [ "rt-multi-thread", "macros", "signal", "sync", "time", "net", "fs", "io-util",] }
 
 [dev-dependencies]
-tokio-tungstenite = "0.28"
+tokio-tungstenite = "0.30"
+sha2 = "0.10"
+
+[target."cfg(unix)".dependencies]
+libc = "0.2.189"
 
 [profile.release]
-lto = "thin"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false
 strip = true
+overflow-checks = false
+debug-assertions = false

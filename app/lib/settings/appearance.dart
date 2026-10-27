@@ -13,12 +13,22 @@ enum BackgroundType { none, color, image }
 /// copyWith 未传参哨兵(区分“未传”与“显式传 null”)
 const _unset = Object();
 
+/// 字体族名归一化:去掉首尾空白,**空白串一律当作「没设」(null)** ——
+/// 界面上「清空输入框」和「恢复默认」是同一个意思,不该存成空字符串。
+String? _normalizeFontFamily(String? value) {
+  final text = value?.trim();
+  return (text == null || text.isEmpty) ? null : text;
+}
+
 /// 外观设置(不可变状态)
 class AppearanceSettings {
   const AppearanceSettings({
     this.themeMode = ThemeMode.system,
     this.followSystemColor = true,
     this.seedColor = defaultSeedColor,
+    this.globalFontFamily,
+    this.consoleFontFamily,
+    this.showConsoleKeys = true,
     this.backgroundType = BackgroundType.none,
     this.backgroundColor = defaultBackgroundColor,
     this.backgroundImage,
@@ -60,6 +70,19 @@ class AppearanceSettings {
   /// 自定义主题色(种子色),跟随系统关闭时生效
   final Color seedColor;
 
+  /// 全局字体族;null = 跟随系统默认。
+  ///
+  /// 存的是**字体族名**(如 `Noto Sans CJK SC`),要求系统里装了这个字体 ——
+  /// Flutter 没有跨平台的「列出已装字体」接口,所以只能让用户手填。
+  final String? globalFontFamily;
+
+  /// 控制台字体族;null = xterm2 默认的 monospace(自带 CJK/Emoji 回退名单)。
+  /// 只在控制台生效,不影响 App 其它部分。
+  final String? consoleFontFamily;
+
+  /// 控制台底部是否显示扩展按键栏(ESC / TAB / 方向键……),默认显示。
+  final bool showConsoleKeys;
+
   /// 背景类型
   final BackgroundType backgroundType;
 
@@ -91,6 +114,9 @@ class AppearanceSettings {
     ThemeMode? themeMode,
     bool? followSystemColor,
     Color? seedColor,
+    Object? globalFontFamily = _unset,
+    Object? consoleFontFamily = _unset,
+    bool? showConsoleKeys,
     BackgroundType? backgroundType,
     Color? backgroundColor,
     Object? backgroundImage = _unset,
@@ -105,7 +131,13 @@ class AppearanceSettings {
         themeMode: themeMode ?? this.themeMode,
         followSystemColor: followSystemColor ?? this.followSystemColor,
         seedColor: seedColor ?? this.seedColor,
-        backgroundType: backgroundType ?? this.backgroundType,
+        globalFontFamily: globalFontFamily == _unset
+            ? this.globalFontFamily
+            : globalFontFamily as String?,
+        consoleFontFamily: consoleFontFamily == _unset
+            ? this.consoleFontFamily
+            : consoleFontFamily as String?,
+        showConsoleKeys: showConsoleKeys ?? this.showConsoleKeys,        backgroundType: backgroundType ?? this.backgroundType,
         backgroundColor: backgroundColor ?? this.backgroundColor,
         backgroundImage: backgroundImage == _unset
             ? this.backgroundImage
@@ -122,6 +154,9 @@ class AppearanceSettings {
         'themeMode': themeMode.name,
         'followSystemColor': followSystemColor,
         'seedColor': seedColor.toARGB32(),
+        'globalFontFamily': globalFontFamily,
+        'consoleFontFamily': consoleFontFamily,
+        'showConsoleKeys': showConsoleKeys,
         'backgroundType': backgroundType.name,
         'backgroundColor': backgroundColor.toARGB32(),
         'backgroundImage': backgroundImage,
@@ -142,6 +177,9 @@ class AppearanceSettings {
         seedColor: Color(
           json['seedColor'] as int? ?? defaultSeedColor.toARGB32(),
         ),
+        globalFontFamily: json['globalFontFamily'] as String?,
+        consoleFontFamily: json['consoleFontFamily'] as String?,
+        showConsoleKeys: json['showConsoleKeys'] as bool? ?? true,
         backgroundType:
             BackgroundType.values.asNameMap()[json['backgroundType'] as String?] ??
                 BackgroundType.none,
@@ -207,6 +245,26 @@ class AppearanceSettingsNotifier extends Notifier<AppearanceSettings> {
   Future<void> setSeedColor(Color value) async {
     if (state.seedColor == value) return;
     state = state.copyWith(seedColor: value);
+    await _persist();
+  }
+
+  Future<void> setGlobalFontFamily(String? value) async {
+    final v = _normalizeFontFamily(value);
+    if (state.globalFontFamily == v) return;
+    state = state.copyWith(globalFontFamily: v);
+    await _persist();
+  }
+
+  Future<void> setConsoleFontFamily(String? value) async {
+    final v = _normalizeFontFamily(value);
+    if (state.consoleFontFamily == v) return;
+    state = state.copyWith(consoleFontFamily: v);
+    await _persist();
+  }
+
+  Future<void> setShowConsoleKeys(bool value) async {
+    if (state.showConsoleKeys == value) return;
+    state = state.copyWith(showConsoleKeys: value);
     await _persist();
   }
 
@@ -318,6 +376,8 @@ Future<AppearanceSettings> loadAppearanceSettings(
 //
 // 可用清单:
 //   themeModeProvider          followSystemColorProvider   seedColorProvider
+//   globalFontFamilyProvider   consoleFontFamilyProvider
+//   showConsoleKeysProvider
 //   backgroundTypeProvider     backgroundColorProvider     backgroundImageProvider
 //   navBlurEnabledProvider     navBlurSigmaProvider        navOpacityProvider
 //   contentBlurEnabledProvider contentBlurSigmaProvider    contentOpacityProvider
@@ -381,6 +441,53 @@ class _SeedColorSetting extends SettingNotifier<Color> {
 
 final seedColorProvider =
     NotifierProvider<_SeedColorSetting, Color>(_SeedColorSetting.new);
+
+// ── 字体 ──────────────────────────────────────────────────────────────────
+
+/// 全局字体族(null = 跟随系统默认)
+class _GlobalFontFamilySetting extends SettingNotifier<String?> {
+  @override
+  String? selectValue(AppearanceSettings s) => s.globalFontFamily;
+
+  @override
+  Future<void> applyValue(AppearanceSettingsNotifier n, String? value) =>
+      n.setGlobalFontFamily(value);
+}
+
+final globalFontFamilyProvider =
+    NotifierProvider<_GlobalFontFamilySetting, String?>(
+  _GlobalFontFamilySetting.new,
+);
+
+/// 控制台字体族(null = xterm2 默认的 monospace)
+class _ConsoleFontFamilySetting extends SettingNotifier<String?> {
+  @override
+  String? selectValue(AppearanceSettings s) => s.consoleFontFamily;
+
+  @override
+  Future<void> applyValue(AppearanceSettingsNotifier n, String? value) =>
+      n.setConsoleFontFamily(value);
+}
+
+final consoleFontFamilyProvider =
+    NotifierProvider<_ConsoleFontFamilySetting, String?>(
+  _ConsoleFontFamilySetting.new,
+);
+
+/// 控制台底部是否显示扩展按键栏
+class _ShowConsoleKeysSetting extends SettingNotifier<bool> {
+  @override
+  bool selectValue(AppearanceSettings s) => s.showConsoleKeys;
+
+  @override
+  Future<void> applyValue(AppearanceSettingsNotifier n, bool value) =>
+      n.setShowConsoleKeys(value);
+}
+
+final showConsoleKeysProvider =
+    NotifierProvider<_ShowConsoleKeysSetting, bool>(
+  _ShowConsoleKeysSetting.new,
+);
 
 // ── 背景 ──────────────────────────────────────────────────────────────────
 

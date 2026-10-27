@@ -4,6 +4,7 @@ import 'package:edgecube_app/app.dart';
 import 'package:edgecube_app/connection/settings.dart';
 import 'package:edgecube_app/settings/appearance.dart';
 import 'package:edgecube_app/settings/appearance_page.dart';
+import 'package:edgecube_app/shell/glass.dart';
 import 'package:edgecube_app/storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -53,7 +54,7 @@ Future<ProviderContainer> _pumpApp(
 }
 
 /// 主界面已渲染的标志(第一个分支是「服务器」页)
-final _shellMarker = find.byKey(const Key('servers_target'));
+final _shellMarker = find.byKey(const Key('servers_instance_selector'));
 
 void main() {
   testWidgets('背景=无 时不磨砂,但内容照常渲染', (tester) async {
@@ -106,6 +107,57 @@ void main() {
     expect(find.byType(BackdropFilter), findsOneWidget);
     expect(container.read(appearanceSettingsProvider).contentBlurSigma, 0);
     expect(_shellMarker, findsOneWidget);
+  });
+
+  testWidgets('毛玻璃模式:卡片主题换成半透明填充 + 细描边,画布色不动', (tester) async {
+    await _pumpApp(tester, {
+      AppearanceSettings.storageKey: _saved(
+        const AppearanceSettings(backgroundType: BackgroundType.color),
+      ),
+    });
+    final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    for (final theme in [app.theme!, app.darkTheme!]) {
+      expect(theme.cardTheme.color?.a, lessThan(1));
+      expect(theme.cardTheme.elevation, 0);
+      final shape = theme.cardTheme.shape as RoundedRectangleBorder;
+      expect(shape.borderRadius, BorderRadius.circular(12));
+      expect(shape.side.color.a, lessThan(1));
+      // canvasColor 不能全局改透(下拉菜单等弹层也吃这个值)
+      expect(theme.canvasColor, theme.colorScheme.surface);
+    }
+  });
+
+  testWidgets('不磨砂时卡片主题保持默认(实心卡片)', (tester) async {
+    await _pumpApp(tester, {});
+    final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(app.theme!.cardTheme.color, isNull);
+    expect(app.darkTheme!.cardTheme.color, isNull);
+  });
+
+  testWidgets('glassCanvas 只把子树的画布色换成玻璃填充,外层不受影响', (tester) async {
+    late Color inner;
+    late Color outer;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(colorScheme: const ColorScheme.light()),
+        home: Builder(
+          builder: (context) {
+            outer = Theme.of(context).canvasColor;
+            return glassCanvas(
+              context,
+              Builder(
+                builder: (innerContext) {
+                  inner = Theme.of(innerContext).canvasColor;
+                  return const SizedBox.shrink();
+                },
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    expect(inner.a, lessThan(1));
+    expect(outer.a, 1);
   });
 
   testWidgets('外观页渲染出毛玻璃分区,拖动滑块写回 Provider', (tester) async {
@@ -191,6 +243,9 @@ void main() {
           themeMode: ThemeMode.dark,
           followSystemColor: false,
           seedColor: Color(0xFF00FF00),
+          globalFontFamily: 'Noto Sans CJK SC',
+          consoleFontFamily: 'JetBrains Mono',
+          showConsoleKeys: false,
           backgroundType: BackgroundType.image,
           backgroundColor: Color(0xFF010203),
           backgroundImage: '/tmp/x.png',
@@ -208,6 +263,9 @@ void main() {
     expect(container.read(themeModeProvider), s.themeMode);
     expect(container.read(followSystemColorProvider), s.followSystemColor);
     expect(container.read(seedColorProvider), s.seedColor);
+    expect(container.read(globalFontFamilyProvider), s.globalFontFamily);
+    expect(container.read(consoleFontFamilyProvider), s.consoleFontFamily);
+    expect(container.read(showConsoleKeysProvider), s.showConsoleKeys);
     expect(container.read(backgroundTypeProvider), s.backgroundType);
     expect(container.read(backgroundColorProvider), s.backgroundColor);
     expect(container.read(backgroundImageProvider), s.backgroundImage);
@@ -234,6 +292,13 @@ void main() {
     await container.read(navOpacityProvider.notifier).set(0.42);
     await container.read(contentBlurEnabledProvider.notifier).set(false);
     await container.read(navBlurEnabledProvider.notifier).set(false);
+    await container
+        .read(globalFontFamilyProvider.notifier)
+        .set('Noto Sans CJK SC');
+    await container
+        .read(consoleFontFamilyProvider.notifier)
+        .set('JetBrains Mono');
+    await container.read(showConsoleKeysProvider.notifier).set(false);
 
     final restored = await loadAppearanceSettings(
       await SharedPreferences.getInstance(),
@@ -244,6 +309,32 @@ void main() {
     expect(restored.navOpacity, 0.42);
     expect(restored.contentBlurEnabled, isFalse);
     expect(restored.navBlurEnabled, isFalse);
+    expect(restored.globalFontFamily, 'Noto Sans CJK SC');
+    expect(restored.consoleFontFamily, 'JetBrains Mono');
+    expect(restored.showConsoleKeys, isFalse);
+  });
+
+  test('没存过的老数据里没有小键盘开关时按默认(显示)', () async {
+    final container = await _containerWith({
+      AppearanceSettings.storageKey: jsonEncode(
+        const AppearanceSettings().toJson()..remove('showConsoleKeys'),
+      ),
+    });
+    expect(container.read(showConsoleKeysProvider), isTrue);
+  });
+
+  test('字体名归一化:去空白,空白串 = 恢复默认', () async {
+    final container = await _containerWith({});
+
+    await container
+        .read(globalFontFamilyProvider.notifier)
+        .set('  Noto Sans CJK SC  ');
+    expect(container.read(globalFontFamilyProvider), 'Noto Sans CJK SC');
+
+    // 界面上「清空输入框」和「恢复默认」是同一个动作
+    await container.read(globalFontFamilyProvider.notifier).set('   ');
+    expect(container.read(globalFontFamilyProvider), isNull);
+    expect(container.read(appearanceSettingsProvider).globalFontFamily, isNull);
   });
 
   test('存储内容损坏时回退默认值', () async {

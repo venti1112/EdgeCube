@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=EdgeCube
+GenericName=Minecraft Server Manager
+Comment=Manage Minecraft server instances
+Icon=com.venti1112.edgecube
+Exec=edgecube_app %u
+Terminal=false
+Categories=Game;Utility;
+Keywords=Minecraft;Server;Manager;
+StartupNotify=true
+StartupWMClass=com.venti1112.edgecube

@@ -202,13 +202,39 @@ impl ModulesConfig {
 // 加载 / 合并 / 校验
 // ---------------------------------------------------------------------------
 
+/// 配置文件的查找位置。
+///
+/// 抽成结构体是为了能测：测试给一组临时目录，就不会往真实的
+/// `~/.config/edgecube/` 里写东西，也不受仓库里有没有 `./edgecube.toml` 影响。
+#[derive(Debug, Clone)]
+pub struct Locations {
+    /// 先看当前工作目录下的这个文件（常规取值是 `./edgecube.toml`）。
+    pub cwd: PathBuf,
+    /// 用户配置目录下的文件；哪儿都没找到时，默认配置就释放到这里。
+    pub default: PathBuf,
+}
+
+impl Default for Locations {
+    fn default() -> Self {
+        Self {
+            cwd: PathBuf::from(CWD_CONFIG_FILE),
+            default: default_config_path(),
+        }
+    }
+}
+
 /// 配置文件查找结果。
 #[derive(Debug, Clone)]
 pub struct Loaded {
     pub config: Config,
     /// 实际使用的配置文件；不存在时为 `None`（全用默认值）。
     pub path: Option<PathBuf>,
-    /// 配置文件不存在（非显式指定）时的提示语，交给日志层打印。
+    /// **本次由我们释放**的配置文件（原来是空的，现在写了一份默认的）。
+    ///
+    /// 与 [`Self::path`] 是两件事：`path` 是「读了哪个文件」（`None` = 全用内置默认值），
+    /// `released` 是「顺手创建了哪个文件」。首次运行两个都指向同一份。
+    pub released: Option<PathBuf>,
+    /// 需要提醒用户的提示语（读不到、写不出……），交给日志层按 warning 打印。
     pub notice: Option<String>,
 }
 
@@ -216,6 +242,10 @@ pub struct Loaded {
 const CWD_CONFIG_FILE: &str = "edgecube.toml";
 
 /// 平台配置目录下的文件名。
+///
+/// 注意：`XDG_CONFIG_HOME` 与 `HOME` 都没有时会返回**相对路径**
+/// （`./edgecube/daemon.toml`）—— 调用方要区分「能写」与「往哪写都行」，
+/// 见 [`Config::load_with`] 里的判断。
 pub fn default_config_path() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -225,14 +255,48 @@ pub fn default_config_path() -> PathBuf {
     base.join("edgecube").join("daemon.toml")
 }
 
+/// 把带注释的默认配置释放到 `path`（父目录不存在就建）。
+///
+/// **不检查是否已存在** —— 调用方负责确认（`Config::load_with` 只在「哪儿都没找到」
+/// 时才走到这里，`--init-config` 则自己先查一遍并报错，因为覆盖用户的配置更不可接受）。
+///
+/// 先写同目录的临时文件再 `rename`：中途被杀不会留下半截 TOML。半截文件的后果是
+/// 下次启动解析失败、用户得自己删掉，比「这次没写出来」麻烦得多。
+pub fn write_default_config(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("toml.tmp");
+    std::fs::write(&tmp, Config::template())?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
 impl Config {
     /// 按四层优先级解析出最终配置。
     pub fn load(cli: &Cli) -> Result<Loaded> {
+        Self::load_in(cli, &Locations::default())
+    }
+
+    /// [`Config::load`] 的本体：配置文件该去哪儿找由调用方给。
+    ///
+    /// # 查找顺序
+    ///
+    /// 1. 显式指定（`-c` 或 `EDGECUBE_CONFIG`）—— **不存在就报错**，绝不代写；
+    /// 2. [`Locations::cwd`]；
+    /// 3. [`Locations::default`]；
+    /// 4. 都没有 → **就地把默认配置释放到 3 再加载它**（写不出来就退回内置默认值）。
+    ///
+    /// 第 4 步是刻意的：`--init-config` 因此不再是必经步骤，第一次跑就是可用状态。
+    /// 但它是「兜底」而不是「初始化命令」，所以显式指定的路径写错时仍然报错 ——
+    /// 帮用户在他给错的路径上生成一份配置，只会把「路径写错了」这件事盖住。
+    pub fn load_in(cli: &Cli, locations: &Locations) -> Result<Loaded> {
         let explicit = cli
             .config
             .clone()
             .or_else(|| std::env::var_os("EDGECUBE_CONFIG").map(PathBuf::from));
 
+        let mut released = None;
         let (path, notice) = match explicit {
             Some(p) => {
                 if !p.exists() {
@@ -241,21 +305,39 @@ impl Config {
                 (Some(p), None)
             }
             None => {
-                let cwd = PathBuf::from(CWD_CONFIG_FILE);
-                if cwd.exists() {
-                    (Some(cwd), None)
+                let default_path = &locations.default;
+                if locations.cwd.exists() {
+                    (Some(locations.cwd.clone()), None)
+                } else if default_path.exists() {
+                    (Some(default_path.to_path_buf()), None)
+                } else if !default_path.is_absolute() {
+                    // HOME / XDG_CONFIG_HOME 都没设 → 定位不到用户配置目录
+                    // （`default_config_path` 会退化成相对路径）。这时往相对路径写等于
+                    // 随手丢在进程的 CWD 里（systemd 下可能是 /），不如老实退回内置默认值。
+                    (
+                        None,
+                        Some(
+                            "未找到配置文件，且无法确定用户配置目录（HOME / XDG_CONFIG_HOME 均未设置），\
+                             本次使用内置默认值"
+                                .to_string(),
+                        ),
+                    )
                 } else {
-                    let xdg = default_config_path();
-                    if xdg.exists() {
-                        (Some(xdg), None)
-                    } else {
-                        (
+                    // 哪儿都没有 → 释放一份默认配置，再按正常路径把它读回来。
+                    // 「再读回来」这一步不只是省代码：它保证「写下去的东西一定能加载」，
+                    // 模板哪天写坏了会当场炸在这里，而不是等到下次启动。
+                    match write_default_config(default_path) {
+                        Ok(()) => {
+                            released = Some(default_path.to_path_buf());
+                            (Some(default_path.to_path_buf()), None)
+                        }
+                        Err(e) => (
                             None,
                             Some(format!(
-                                "未找到配置文件，使用内置默认值（可用 --init-config 生成一份到 {}）",
-                                xdg.display()
+                                "未找到配置文件，且无法在 {} 释放默认配置（{e}），本次使用内置默认值",
+                                default_path.display()
                             )),
-                        )
+                        ),
                     }
                 }
             }
@@ -283,6 +365,7 @@ impl Config {
         Ok(Loaded {
             config,
             path,
+            released,
             notice,
         })
     }
@@ -480,6 +563,84 @@ disabled = []
 [modules.config.ticker]
 interval_ms = 1000
 autostart = false
+
+[modules.config.monitor]
+# 采样间隔（毫秒），也是 monitor.stats 的推送间隔。会被 clamp 到 [250, 60000]。
+# 采样器常驻，没有开关：CPU 使用率靠两次采样的差值，按需采样会让第一次永远是 null。
+interval_ms = 2000
+# 是否周期性推送 monitor.stats；关掉就是「只拉（monitor.snapshot）不推」。
+publish = true
+
+[modules.config.download]
+# 全局 HTTP 下载队列（底层 gosh-dl）。任务落在实例目录里，所以本模块**没有自己的
+# dir**：数据根跟着 [modules.config.instance] 的 dir 走。队列只在内存里，
+# daemon 重启即清空。
+# 同时下载的任务数上限（clamp 到 [1, 64]）。
+max_concurrent = 3
+# 单个任务的最大连接数（clamp 到 [1, 64]）。
+connections_per_download = 8
+# 全局限速（字节/秒），0 = 不限。
+max_download_speed = 0
+# 建连 / 读空闲超时（秒），至少 1。
+connect_timeout_secs = 30
+read_timeout_secs = 60
+# 单个分段的重试次数。
+max_retries = 5
+# User-Agent，留空 = EdgeCube-daemon/<版本>。
+user_agent = ""
+# download.progress 的推送间隔（毫秒），clamp 到 [200, 5000]。
+progress_interval_ms = 500
+
+[modules.config.mcserver]
+# 服务端目录（原版 / Paper / Purpur / Leaf / Leaves / Fabric / Velocity / BungeeCord）：
+# 版本列表与下载地址都在 daemon 这边取，前端只发 RPC。
+# 本模块自己不下载、不建实例 —— 只回答「下什么」。
+# 版本列表缓存时长（秒），0 = 不缓存。
+cache_ttl_secs = 300
+# 单次上游请求的超时（秒）。
+request_timeout_secs = 20
+
+[modules.config.mods]
+# 模组与插件（Modrinth）：搜索、版本列表、下载计划都在 daemon 这边取，前端只发 RPC；
+# 实例里已装文件的列表 / 更新检查 / 启停 / 删除也归这一节管。
+# 本模块自己不下载 —— 落盘交给 download 队列，编排交给 mods-install 工作流。
+# 搜索与版本列表的缓存时长（秒），0 = 不缓存。
+cache_ttl_secs = 300
+# 游戏版本清单的缓存时长（秒）。它变得很慢，所以给得比上面长。
+tags_cache_ttl_secs = 3600
+# 单次上游请求的超时（秒）。
+request_timeout_secs = 20
+# 搜索不传 limit 时给多少条，以及 limit 的上限（上游最多 100）。
+search_default_limit = 20
+search_max_limit = 50
+# 每个目录（mods / plugins）最多列多少个文件。
+scan_max_files = 2000
+# 读 jar 元数据时单个 zip 条目的字节上限。
+meta_max_entry_bytes = 262144
+# .phar（PocketMine 插件）的整文件上限 —— 它要整读进内存才能定位 tar 段。
+phar_max_bytes = 67108864
+# 更新检查一次提交给上游多少个 sha1（分片），以及一次最多算多少个文件的哈希。
+hash_batch = 100
+update_max_files = 200
+
+[modules.config.runtime]
+# 运行环境（Zulu JDK、frp）：下载 + 解压 + 列表 + 删除。
+# **没有 dir**：环境与实例共用同一个数据根（上面 instance 的 dir），
+# 布局是 <root>/config/runtimes/ 与 <root>/runtimes/<id>/。
+# 单次上游请求的超时（秒）。
+request_timeout_secs = 20
+# 版本清单的缓存时长（秒），0 = 不缓存。frp 的清单走 GitHub API，
+# 未认证配额只有 60 次/小时，所以别调到 0。
+cache_ttl_secs = 300
+
+[modules.config.task]
+# 任务系统（工作流引擎 szal）：把多步操作（创建→下载、下载→解压）编成任务。
+# 模块只管执行与可观测性，工作流定义由各业务模块在 start() 里注册进来；
+# 生产 daemon 启动时 task.flows 是空列表，等业务模块挂载。
+# 同时执行的任务上限，超出排队（queued）。
+max_concurrent_tasks = 4
+# 已结束任务的保留条数（在跑的不受影响），超过就删最老的。
+history_limit = 100
 "#;
 
 #[cfg(test)]
@@ -576,5 +737,188 @@ mod tests {
         let c: Config = toml::from_str(&Config::template()).expect("模板必须可解析");
         c.validate().expect("模板必须自洽");
         assert_eq!(c.server.port, DEFAULT_PORT);
+    }
+
+    #[test]
+    fn task_config_section_round_trips() {
+        // --check 不解析各模块 section（要等 start），所以这里手验一遍：
+        // 模板里写的 [modules.config.task] 能被 TaskConfig::deserialize 吃下去，
+        // 字段名写错（如写成 max_concurrency）会因 deny_unknown_fields 炸。
+        let c: Config = toml::from_str(&Config::template()).expect("模板必须可解析");
+        let section = c
+            .modules
+            .section("task")
+            .expect("模板里应有 [modules.config.task]");
+        let tc: crate::module::builtin::task::model::TaskConfig =
+            crate::module::builtin::task::model::TaskConfig::deserialize(section.clone())
+                .expect("task 配置节应能反序列化");
+        assert_eq!(tc.max_concurrent_tasks, 4);
+        assert_eq!(tc.history_limit, 100);
+        assert_eq!(tc.clamped_max_concurrent(), 4);
+    }
+
+    // ── 配置文件查找与「首次运行自动释放」 ────────────────────────────────
+    //
+    // 这些用例一律用临时目录当查找位置：既不会往真实的 ~/.config/edgecube/ 里写东西，
+    // 也不受「仓库里恰好有个 ./edgecube.toml」影响。
+
+    /// 一个临时目录；析构时清盘。
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(tag: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "edgecube-config-test-{tag}-{}-{}",
+                std::process::id(),
+                crate::util::now_ms()
+            ));
+            std::fs::create_dir_all(&dir).expect("应能建临时目录");
+            Self(dir)
+        }
+
+        fn join(&self, name: &str) -> PathBuf {
+            self.0.join(name)
+        }
+
+        /// 一组「cwd 里没有、用户配置目录里也没有」的查找位置。
+        fn empty_locations(&self) -> Locations {
+            Locations {
+                cwd: self.join("edgecube.toml"),
+                default: self.join("config/edgecube/daemon.toml"),
+            }
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn first_run_releases_the_default_config_and_loads_it() {
+        let tmp = TempDir::new("release");
+        let locations = tmp.empty_locations();
+
+        let loaded = Config::load_in(&Cli::default(), &locations).expect("应当能加载");
+
+        let path = locations.default.clone();
+        assert!(
+            path.is_file(),
+            "首次运行应当释放默认配置: {}",
+            path.display()
+        );
+        assert_eq!(
+            loaded.path.as_deref(),
+            Some(path.as_path()),
+            "释放的那份就是要加载的那份"
+        );
+        assert_eq!(loaded.released.as_deref(), Some(path.as_path()));
+        assert!(
+            loaded.notice.is_none(),
+            "释放成功不该再有提示语: {:?}",
+            loaded.notice
+        );
+
+        // 释放的内容就是带注释的模板
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("# EdgeCube Daemon 配置文件"), "{text}");
+        toml::from_str::<Config>(&text)
+            .expect("释放的文件必须可解析")
+            .validate()
+            .expect("释放的文件必须自洽");
+        // 临时文件不该留下
+        assert!(!path.with_extension("toml.tmp").exists());
+
+        // **确实读了文件**：内置默认值的模块配置节是空的，模板里 monitor / ticker 都有
+        assert!(loaded.config.modules.section("monitor").is_some());
+        assert!(loaded.config.modules.section("ticker").is_some());
+    }
+
+    #[test]
+    fn an_existing_config_is_loaded_and_never_rewritten() {
+        let tmp = TempDir::new("existing");
+        let locations = tmp.empty_locations();
+        std::fs::create_dir_all(locations.default.parent().unwrap()).unwrap();
+        let mine = "[server]\nmax_connections = 77\n";
+        std::fs::write(&locations.default, mine).unwrap();
+
+        let loaded = Config::load_in(&Cli::default(), &locations).unwrap();
+        assert_eq!(loaded.config.server.max_connections, 77);
+        assert!(loaded.released.is_none(), "已有配置就不该再释放");
+        assert!(loaded.notice.is_none());
+        // 用户写的文件一个字节都不该被动
+        assert_eq!(std::fs::read_to_string(&locations.default).unwrap(), mine);
+    }
+
+    #[test]
+    fn cwd_file_wins_over_the_user_config_dir() {
+        let tmp = TempDir::new("cwd");
+        let locations = tmp.empty_locations();
+        std::fs::write(&locations.cwd, "[server]\nmax_connections = 31\n").unwrap();
+
+        let loaded = Config::load_in(&Cli::default(), &locations).unwrap();
+        assert_eq!(loaded.path.as_deref(), Some(locations.cwd.as_path()));
+        assert_eq!(loaded.config.server.max_connections, 31);
+        assert!(
+            !locations.default.exists(),
+            "找到了配置就不该再往用户配置目录释放一份"
+        );
+    }
+
+    #[test]
+    fn an_explicitly_given_path_must_exist() {
+        let tmp = TempDir::new("explicit");
+        let missing = tmp.join("nope.toml");
+        let cli = Cli {
+            config: Some(missing.clone()),
+            ..Cli::default()
+        };
+
+        let err = Config::load_in(&cli, &tmp.empty_locations()).unwrap_err();
+        assert!(matches!(err, Error::ConfigNotFound(_)), "{err}");
+        assert!(
+            !missing.exists(),
+            "显式路径写错时不该替他生成一份 —— 那会把「路径错了」盖住"
+        );
+    }
+
+    #[test]
+    fn a_failed_release_falls_back_to_builtin_defaults() {
+        let tmp = TempDir::new("unwritable");
+        // 让默认位置的父目录被一个**普通文件**占着 → create_dir_all 必然失败
+        let blocker = tmp.join("blocked");
+        std::fs::write(&blocker, b"not a directory").unwrap();
+        let locations = Locations {
+            cwd: tmp.join("edgecube.toml"),
+            default: blocker.join("edgecube/daemon.toml"),
+        };
+
+        let loaded = Config::load_in(&Cli::default(), &locations).expect("写不出来也必须能启动");
+        assert!(loaded.path.is_none(), "没读成文件");
+        assert!(loaded.released.is_none());
+        let notice = loaded.notice.expect("应当有提示语");
+        assert!(notice.contains("无法在"), "{notice}");
+        // 退回内置默认值：模板里的模块配置节一个都没有
+        assert!(loaded.config.modules.section("monitor").is_none());
+        loaded.config.validate().expect("退回的默认值必须自洽");
+    }
+
+    #[test]
+    fn a_relative_default_path_is_left_alone() {
+        let tmp = TempDir::new("relative");
+        // HOME / XDG_CONFIG_HOME 都没设时 default_config_path() 就长这样
+        let relative = PathBuf::from("edgecube/daemon.toml");
+        let locations = Locations {
+            cwd: tmp.join("edgecube.toml"),
+            default: relative.clone(),
+        };
+
+        let loaded = Config::load_in(&Cli::default(), &locations).unwrap();
+        assert!(loaded.path.is_none());
+        assert!(loaded.released.is_none());
+        let notice = loaded.notice.expect("应当有提示语");
+        assert!(notice.contains("XDG_CONFIG_HOME"), "{notice}");
+        assert!(!relative.exists(), "不该在相对路径上写出任何东西");
     }
 }

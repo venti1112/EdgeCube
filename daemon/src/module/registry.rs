@@ -23,7 +23,21 @@ pub fn builtin_modules() -> Vec<Arc<dyn Module>> {
     vec![
         Arc::new(builtin::core::CoreModule::new()),
         Arc::new(builtin::ticker::TickerModule::new()),
+        Arc::new(builtin::monitor::MonitorModule::new()),
+        // 主机终端与实例无关，放在业务模块之前；关闭时最后停（逆序），
+        // 让它活着的时间比业务模块略长。
+        Arc::new(builtin::shell::ShellModule::new()),
         Arc::new(builtin::instance::InstanceModule::new()),
+        Arc::new(builtin::frp::FrpModule::new()),
+        Arc::new(builtin::download::DownloadModule::new()),
+        Arc::new(builtin::mcserver::McserverModule::new()),
+        Arc::new(builtin::mods::ModsModule::new()),
+        Arc::new(builtin::runtime::RuntimeModule::new()),
+        Arc::new(builtin::task::TaskModule::new()),
+        // stun / upnp 放最后：关闭时最先停（逆序）—— 都要在实例被停掉之前收掉
+        // 自己：upnp 撤映射、stun 拆隧道（否则实例退出后监听还在）
+        Arc::new(builtin::stun::StunModule::new()),
+        Arc::new(builtin::upnp::UpnpModule::new()),
     ]
 }
 

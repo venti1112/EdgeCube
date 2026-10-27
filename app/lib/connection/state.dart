@@ -216,7 +216,13 @@ class ConnectionNotifier extends Notifier<ConnectionStatus> {
   // ── 连接 ────────────────────────────────────────────────────────────────
 
   /// 用给定配置建立连接。成功则落盘并返回 `true`。
-  Future<bool> connect(ConnectionSettings settings) async {
+  ///
+  /// [persist] 为 false 时不写存储、也不更新「已保存的服务器」——
+  /// 本地服务每次启动的端口与令牌都是临时的,不能覆盖用户保存的远程配置。
+  Future<bool> connect(
+    ConnectionSettings settings, {
+    bool persist = true,
+  }) async {
     _retryTimer?.cancel();
     _retryTimer = null;
 
@@ -271,7 +277,9 @@ class ConnectionNotifier extends Notifier<ConnectionStatus> {
         client: client,
       );
       // 连上了才落盘:半途输入或连不上的地址不该被记住
-      await ref.read(persistedConnectionProvider.notifier).save(settings);
+      if (persist) {
+        await ref.read(persistedConnectionProvider.notifier).save(settings);
+      }
       // 掉线重连后恢复此前的订阅
       for (final topic in _desiredTopics) {
         unawaited(_subscribeNow(client, topic));
@@ -436,9 +444,7 @@ class ConnectionNotifier extends Notifier<ConnectionStatus> {
       // 放弃自动恢复:订阅意图留着只会误导 UI
       _autoRetryEnabled = false;
       if (_desiredTopics.isNotEmpty) {
-        debugPrint(
-          '[connection] 自动重连次数用尽,清空 ${_desiredTopics.length} 条订阅意图',
-        );
+        debugPrint('[connection] 自动重连次数用尽,清空 ${_desiredTopics.length} 条订阅意图');
         _forgetSubscriptionIntent();
       }
       state = state.copyWith(

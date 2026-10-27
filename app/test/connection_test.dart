@@ -177,7 +177,7 @@ void main() {
     expect(find.text('连接到 EdgeCube 守护进程'), findsOneWidget);
 
     // 还没连上,主界面不该出现
-    expect(find.byKey(const Key('servers_target')), findsNothing);
+    expect(find.byKey(const Key('servers_instance_selector')), findsNothing);
     // 端口预填默认值
     expect(_fieldText(tester, 'connect_port'), '${ConnectionSettings.defaultPort}');
   });
@@ -207,10 +207,12 @@ void main() {
 
     // 1) 已经进主界面(连接页消失)
     expect(find.byKey(const Key('connect_host')), findsNothing);
-    expect(find.byKey(const Key('servers_target')), findsOneWidget);
-    expect(find.text('192.168.1.10:9000'), findsOneWidget);
-    // 主界面显示的是真的从 WS 拿回来的 core.info
-    expect(find.text('edgecube-daemon 2.0.0'), findsOneWidget);
+    expect(find.byKey(const Key('servers_instance_selector')), findsOneWidget);
+    // 连接目标与 daemon 自述(hello)都是真的从 WS 拿回来的
+    final status = app.container.read(connectionProvider);
+    expect(status.target, '192.168.1.10:9000');
+    expect(status.hello?.product, 'edgecube-daemon');
+    expect(status.hello?.version, '2.0.0');
 
     // 2) WS 地址正确(令牌走查询串)
     expect(
@@ -279,11 +281,15 @@ void main() {
   testWidgets('已有连接配置时跳过连接页,并自动连上', (tester) async {
     const saved = ConnectionSettings(host: '10.0.0.2', port: 8787, token: 'tk');
     final transports = FakeTransportFactory();
-    await _pumpApp(tester, persisted: saved, transports: transports);
+    final app = await _pumpApp(
+      tester,
+      persisted: saved,
+      transports: transports,
+    );
 
     expect(find.byKey(const Key('connect_host')), findsNothing);
-    expect(find.byKey(const Key('servers_target')), findsOneWidget);
-    expect(find.text('10.0.0.2:8787'), findsOneWidget);
+    expect(find.byKey(const Key('servers_instance_selector')), findsOneWidget);
+    expect(app.container.read(connectionProvider).target, '10.0.0.2:8787');
     expect(transports.latest.uri.toString(), 'ws://10.0.0.2:8787/ws?token=tk');
     // 连上了就没有横幅
     expect(find.byKey(const Key('connection_banner')), findsNothing);
@@ -292,7 +298,11 @@ void main() {
   testWidgets('自动连接失败时留在主界面,用顶部横幅提示并可重试', (tester) async {
     const saved = ConnectionSettings(host: '10.0.0.3');
     final transports = FakeTransportFactory(accept: false);
-    await _pumpApp(tester, persisted: saved, transports: transports);
+    final app = await _pumpApp(
+      tester,
+      persisted: saved,
+      transports: transports,
+    );
 
     expect(
       find.byKey(const Key('connect_host')),
@@ -313,7 +323,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('connection_banner')), findsNothing);
-    expect(find.text('10.0.0.3:8787'), findsWidgets);
+    expect(app.container.read(isConnectedProvider), isTrue);
+    expect(app.container.read(connectionProvider).target, '10.0.0.3:8787');
   });
 
   testWidgets('掉线后显示横幅并自动重连', (tester) async {
@@ -416,8 +427,8 @@ void main() {
   //   生效订阅 subscriptionsProvider —— 这条连接上真的订了什么,断了就空
   //   期望订阅 notifier.desiredTopics —— 重连后要不要补订的意图
   //
-  // 注意:「服务器」页自己会订阅 core.conn_opened/closed,所以断言一律按
-  // "包含/不包含"来写,不假设集合里只有测试加的那一条。
+  // 注意:各页面会按需订阅自己的主题(如 instance.* / runtime.state),
+  // 所以断言一律按"包含/不包含"来写,不假设集合里只有测试加的那一条。
 
   testWidgets('掉线后生效订阅清空;重连成功后自动补订', (tester) async {
     final transports = FakeTransportFactory();
@@ -438,9 +449,8 @@ void main() {
 
     // 连接没了 → 生效订阅清空(服务端那侧同样已经没了)
     expect(app.container.read(subscriptionsProvider), isEmpty);
-    // 但意图还在,并且 UI 明确告诉用户「重连后会恢复」
+    // 但意图还在,重连后会自动补订
     expect(notifier.desiredTopics, contains('ticker.*'));
-    expect(find.byKey(const Key('servers_pending_subscriptions')), findsOneWidget);
 
     // 退避 1s 后自动重连 → 自动补订
     await tester.pump(const Duration(seconds: 2));
@@ -569,32 +579,6 @@ void main() {
     expect(notifier.desiredTopics, isEmpty);
   });
 
-  testWidgets('主界面把当前订阅显示出来,并可一键取消', (tester) async {
-    final transports = FakeTransportFactory();
-    final app = await _pumpApp(
-      tester,
-      persisted: const ConnectionSettings(host: '10.0.0.15'),
-      transports: transports,
-    );
-    await app.container.read(connectionProvider.notifier).subscribe('ticker.*');
-    await tester.pumpAndSettle();
-
-    final label = tester
-        .widget<Text>(find.byKey(const Key('servers_subscriptions')))
-        .data!;
-    expect(label, contains('ticker.*'));
-    // 「服务器」页自己也订了连接事件
-    expect(label, contains('core.conn_opened'));
-
-    await tester.tap(find.text('取消全部订阅'));
-    await tester.pumpAndSettle();
-    expect(app.container.read(subscriptionsProvider), isEmpty);
-    expect(
-      tester.widget<Text>(find.byKey(const Key('servers_subscriptions'))).data,
-      '已订阅：无',
-    );
-  });
-
   // ══════════════════════════════════════════════════════════════════════
   // 设置页:改地址 / 断开 / 忘记
   // ══════════════════════════════════════════════════════════════════════
@@ -624,6 +608,9 @@ void main() {
     expect(find.byKey(const Key('settings_disconnect')), findsNothing);
 
     // 忘记服务器 → 清空 → 守卫把人送回连接页
+    // (设置页现在还有本地服务卡片,先滚到底)
+    await tester.ensureVisible(find.text('忘记这台服务器'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('忘记这台服务器'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('忘记'));

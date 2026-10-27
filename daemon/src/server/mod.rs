@@ -7,6 +7,7 @@ pub mod http;
 pub mod ws;
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use axum::Router;
@@ -88,8 +89,11 @@ impl Bound {
     }
 }
 
-/// 一条龙：启动模块 → 绑定 → 服务 → 关闭。
-pub async fn run(app: AppState) -> Result<()> {
+/// 一条龙：启动模块 → 绑定 → 写就绪文件 → 服务 → 关闭。
+///
+/// `ready_file` 仅供「被 App 拉起」的本地服务模式使用：绑定成功后写入
+/// 实际地址，前端据此连接；任何一步失败都不留就绪文件，免得前端空等。
+pub async fn run(app: AppState, ready_file: Option<PathBuf>) -> Result<()> {
     // 1) 模块后台任务先起，这样它们推的第一条事件不会因为「服务还没监听」而丢。
     app.registry.start_all(&app).await?;
 
@@ -103,10 +107,21 @@ pub async fn run(app: AppState) -> Result<()> {
     };
     let local_addr = bound.local_addr;
 
-    // 3) 服务
+    // 3) 就绪文件：写不出来说明前端拿不到端口，当作启动失败
+    if let Some(path) = ready_file.as_deref()
+        && let Err(e) = crate::lifecycle::write_ready_file(path, &app, local_addr)
+    {
+        app.registry.stop_all().await;
+        return Err(Error::other(format!(
+            "写入就绪文件 {} 失败: {e}",
+            path.display()
+        )));
+    }
+
+    // 4) 服务
     let serve_result = bound.serve(&app).await;
 
-    // 4) 关闭
+    // 5) 关闭
     tracing::info!("开始优雅关闭");
     app.bus.publish_from(
         Some("core"),
@@ -124,6 +139,10 @@ pub async fn run(app: AppState) -> Result<()> {
     let failures = app.registry.stop_all().await;
     if !failures.is_empty() {
         tracing::warn!(?failures, "部分模块关闭异常");
+    }
+
+    if let Some(path) = ready_file.as_deref() {
+        crate::lifecycle::remove_ready_file(path);
     }
 
     tracing::info!(addr = %local_addr, uptime = crate::util::humanize_secs(app.uptime_secs()), "已停止");

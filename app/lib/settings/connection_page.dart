@@ -3,6 +3,9 @@ import 'package:material_ui/material_ui.dart';
 
 import '../connection/settings.dart';
 import '../connection/state.dart';
+import '../local_service/panel.dart';
+import '../local_service/settings.dart';
+import '../local_service/state.dart';
 
 /// 连接设置:改地址/端口/令牌后重连,或断开、忘记这台服务器。
 ///
@@ -89,6 +92,12 @@ class _ConnectionSettingsPageState
       ),
     );
     if (confirmed != true) return;
+    // 本地服务不属于「这台服务器」,但忘了服务器还让它跑着只会留下一个
+    // 连不上的后台进程 —— 一并停掉,回到真正的首次启动状态。
+    if (ref.read(localServiceEnabledProvider) ||
+        ref.read(localServiceProvider).status.isActive) {
+      await ref.read(localServiceProvider.notifier).stop();
+    }
     // 清空后 persistedConnection 变 null → 路由守卫把人送回连接页
     await ref.read(connectionProvider.notifier).forget();
   }
@@ -202,11 +211,18 @@ class _ConnectionSettingsPageState
           if (status.isConnected)
             OutlinedButton.icon(
               key: const Key('settings_disconnect'),
-              onPressed: () => ref.read(connectionProvider.notifier).disconnect(),
+              onPressed: () =>
+                  ref.read(connectionProvider.notifier).disconnect(),
               icon: const Icon(Icons.link_off),
               label: const Text('断开连接'),
             ),
           const Divider(height: 32),
+
+          // 本地服务:独立于地址栏的另一个配置项。
+          // 即使地址是 127.0.0.1,只要这里没开,就只是普通远程连接。
+          const LocalServicePanel(showSwitch: true),
+          const Divider(height: 32),
+
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.delete_outline, color: scheme.error),

@@ -55,6 +55,48 @@ class ConnectionSettings {
     queryParameters: token.isEmpty ? null : {'token': token},
   );
 
+  /// 某个实例的**控制台流**地址（`/pty/{id}`）。
+  ///
+  /// 和主连接一样，令牌只能挂查询串。协议见 daemon 的 `instance::serve_pty`。
+  Uri ptyUri(String instanceId) => Uri(
+    scheme: 'ws',
+    host: host,
+    port: port,
+    path: '/pty/$instanceId',
+    queryParameters: token.isEmpty ? null : {'token': token},
+  );
+
+  /// **主机终端**地址（`/shell`）。
+  ///
+  /// 跑的是 daemon 所在机器上的系统 shell（不是某个实例的控制台），
+  /// 协议与 [`ptyUri`] 完全一样，见 daemon 的 `shell::serve_shell`。
+  Uri get shellUri => Uri(
+    scheme: 'ws',
+    host: host,
+    port: port,
+    path: '/shell',
+    queryParameters: token.isEmpty ? null : {'token': token},
+  );
+
+  /// 某个实例的**文件传输**地址（`/api/instances/{id}/files/{action}`）。
+  ///
+  /// [action] 是 `download` 或 `upload`；其余参数按 URL 查询串拼。
+  /// 令牌同样只能挂查询串 —— 下载时这个 URL 会被直接交给浏览器/下载器。
+  Uri filesUri(
+    String instanceId,
+    String action, {
+    Map<String, String>? query,
+  }) => Uri(
+    scheme: 'http',
+    host: host,
+    port: port,
+    path: '/api/instances/$instanceId/files/$action',
+    queryParameters: {
+      ...?query,
+      if (token.isNotEmpty) 'token': token,
+    },
+  );
+
   ConnectionSettings copyWith({String? host, int? port, String? token}) =>
       ConnectionSettings(
         host: host ?? this.host,

@@ -28,9 +28,16 @@ dependencies:
   shared_preferences: ^2.5.5
   dynamic_color: ^2.1.0
   file_picker: ^13.1.0
+  http: ^1.6.0
   path_provider: ^2.1.6
   flex_color_picker: ^4.0.0
   web_socket_channel: ^3.0.3
+  xterm2: ^5.2.0
+  re_editor: ^0.10.0
+  re_highlight: ^0.0.3
+  url_launcher: ^6.3.2
+  device_info_plus: ^13.3.0
+  package_info_plus: ^10.2.2
 
 dev_dependencies:
   flutter_test:

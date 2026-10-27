@@ -2,16 +2,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'api.dart';
+import 'download/category_page.dart';
+import 'download/wizard.dart';
 import 'providers.dart';
 
 /// 新建实例向导：输入名称 → 选择创建方式。
 ///
-/// 排版照 V1 的 `NameEntryStep`：名称输入框 → 24 间距 → 一列卡片磁贴
+/// 排版：名称输入框 → 24 间距 → 一列卡片磁贴
 /// （图标 + 标题 + 说明）。
 ///
-/// **当前只实现了「创建空实例」**：下载/导入那几种方式各自依赖还没落地的模块
-/// （下载引擎、文件模块、整合包解析）。为了让人一眼看到整体规划，这里把它们
-/// 按 V1 的顺序摆出来但置灰，而不是藏起来。
+/// **已实现**：「创建空实例」与「下载服务端」。后者的实例是在**下载向导的最后一步**
+/// 才建的（先选类型 / 版本，再建实例并下载，中途反悔不会留下空实例；
+/// 下载失败也会把刚建的那个删掉，见 `download/progress_page.dart`）。
+/// 导入那三种还依赖没落地的能力（本机文件上传、整合包解析），摆出来但置灰。
 class CreateInstancePage extends ConsumerStatefulWidget {
   const CreateInstancePage({super.key});
 
@@ -73,10 +76,44 @@ class _CreateInstancePageState extends ConsumerState<CreateInstancePage> {
     ),
   );
 
+  /// 「下载服务端」：进向导（分类 → 服务端 → 版本 → 下载）。
+  ///
+  /// 这一页只做两件事：**校验名字**（要一路带到向导最后一步）与**接结果**。
+  /// 实例由向导的最后一步创建 —— 中途反悔就什么都不会留下。
+  Future<void> _downloadServer() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      await _error('实例名称不能为空');
+      return;
+    }
+
+    final finished = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        // 流程根要有个名字：最后一步靠它一次弹回这里
+        settings: const RouteSettings(name: kDownloadFlowRootRouteName),
+        builder: (_) => DownloadCategoryPage(wizard: DownloadWizard(name: name)),
+      ),
+    );
+    if (!mounted || finished != true) return;
+
+    ref.invalidate(instanceListProvider);
+    ref.invalidate(selectedInstanceDetailProvider);
+    Navigator.of(context).pop();
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text('已创建「$name」，服务端已下载完成')));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('新建实例')),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('新建实例'),
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+      ),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
@@ -99,10 +136,12 @@ class _CreateInstancePageState extends ConsumerState<CreateInstancePage> {
             onTap: _creating ? null : _createEmpty,
           ),
           const SizedBox(height: 12),
-          const _ServerTypeTile(
+          _ServerTypeTile(
+            key: const Key('create_instance_download'),
             icon: Icons.cloud_download_outlined,
             title: '下载服务端',
-            subtitle: '从官方源下载原版 / 各类服务端与加载器',
+            subtitle: '从官方源下载原版 / 各类服务端，建好实例并自动写好启动命令',
+            onTap: _creating ? null : _downloadServer,
           ),
           const SizedBox(height: 12),
           const _ServerTypeTile(
@@ -128,7 +167,7 @@ class _CreateInstancePageState extends ConsumerState<CreateInstancePage> {
   }
 }
 
-/// 创建方式磁贴（对应 V1 的 `ServerTypeTile`：图标 + 标题 + 说明的卡片）。
+/// 创建方式磁贴（图标 + 标题 + 说明的卡片）。
 ///
 /// [onTap] 为 `null` 时置灰并标注「即将支持」。
 class _ServerTypeTile extends StatelessWidget {

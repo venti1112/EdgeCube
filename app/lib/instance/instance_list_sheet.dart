@@ -2,14 +2,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../connection/state.dart';
 import 'api.dart';
 import 'models.dart';
 import 'providers.dart';
 
 /// 实例列表底部弹窗：全部实例 + 新建入口。
 ///
-/// 排版照 V1 的 `_InstanceListSheet`：标题 → 空态提示 / 列表（单选图标 +
-/// 名称 + id + 删除按钮）→ 分隔线 → 「新建实例」。
+/// 排版：标题 → 空态提示 / 列表（单选图标 +
+/// 名称 + id + 删除按钮）→ 分隔线 → 「新建实例」。由顶栏右上角的实例选择器
+/// （`servers_page.dart` 的 `_InstanceSelectorButton`）打开，切换与删除都在这里。
 class InstanceListSheet extends ConsumerWidget {
   const InstanceListSheet({super.key});
 
@@ -24,8 +26,9 @@ class InstanceListSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final list = ref.watch(instanceListProvider).value;
-    final instances = list?.instances ?? const <InstanceSummary>[];
+    final connected = ref.watch(isConnectedProvider);
+    final asyncList = ref.watch(instanceListProvider);
+    final instances = asyncList.value?.instances ?? const <InstanceSummary>[];
 
     return SafeArea(
       child: Column(
@@ -36,13 +39,18 @@ class InstanceListSheet extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: Text('选择实例', style: theme.textTheme.titleMedium),
           ),
-          if (instances.isEmpty)
+          if (asyncList.value == null && asyncList.isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: LinearProgressIndicator(),
+            )
+          else if (instances.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Text(
-                '还没有实例，先在下面新建一个',
+                connected ? '还没有实例，先在下面新建一个' : '未连接到守护进程，读不到实例列表',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
+                  color: connected ? scheme.onSurfaceVariant : scheme.error,
                 ),
               ),
             )
@@ -88,7 +96,7 @@ class InstanceListSheet extends ConsumerWidget {
             title: const Text('新建实例'),
             onTap: () async {
               final navigator = Navigator.of(context);
-              await context.push('/instance/create');
+              await context.push('/servers/create');
               // 新建页回来（无论成没成）都刷一次列表
               ref.invalidate(instanceListProvider);
               if (navigator.canPop()) navigator.pop();
@@ -122,7 +130,7 @@ class InstanceListSheet extends ConsumerWidget {
   }
 }
 
-/// 两步确认后删除实例（V1 的做法：先普通确认，再强调不可恢复）。
+/// 两步确认后删除实例：先普通确认，再强调不可恢复。
 Future<void> confirmDeleteInstance(
   BuildContext context,
   WidgetRef ref,

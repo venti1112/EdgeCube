@@ -19,9 +19,12 @@ pub mod config;
 pub mod conn;
 pub mod error;
 pub mod event;
+pub mod lifecycle;
 pub mod logging;
 pub mod module;
+pub mod pty;
 pub mod server;
+pub mod services;
 pub mod state;
 pub mod util;
 

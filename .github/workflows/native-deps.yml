@@ -1,0 +1,158 @@
+name: 构建原生依赖
+
+# 从源码构建 proot 工具链（proot/busybox/tar/zstd 及依赖），
+# 组装为 arm64-v8a 的 jniLibs 包并发布到 GitHub Release。
+# APK 构建（android.yml）从该 Release 下载并校验 sha256。
+#
+# V2 的 daemon 跑在内置 rootfs 里（Debian glibc），不再需要 V1 的 PHP CLI。
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "发布到 GitHub Release（关闭时仅保留 Actions 产物，便于验证）"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  RELEASE_TAG: native-deps-v2
+  ASSET_NAME: edgecube-native-deps-arm64-v8a.zip
+
+jobs:
+  termux-toolchain:
+    name: Termux 工具链（aarch64）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 释放磁盘空间
+        run: |
+          # 构建器镜像约 10 GB，先移除 runner 上不用的预装组件，避免磁盘耗尽。
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          df -h /
+
+      - name: 初始化 Termux 构建源码
+        run: git submodule update --init third_party/termux-packages
+
+      - name: 准备 Termux 构建器镜像（GHCR 缓存）
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          scripts=third_party/termux-packages/scripts
+          tag="t$(sha256sum "$scripts/Dockerfile" "$scripts/setup-ubuntu.sh" \
+            "$scripts/setup-android-sdk.sh" "$scripts/properties.sh" | sha256sum | cut -c1-16)"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/edgecube-termux-builder:$tag"
+          echo "BUILDER_IMAGE=$image" >> "$GITHUB_ENV"
+
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin || true
+          if ! docker pull "$image"; then
+            docker build -t "$image" "$scripts"
+            docker push "$image" || echo "::warning::构建器镜像推送失败，本次仍使用本地镜像"
+          fi
+
+      - name: 从源码构建 proot/busybox/tar/zstd
+        run: |
+          export TERMUX_BUILDER_IMAGE_NAME="$BUILDER_IMAGE"
+          export CONTAINER_NAME=edgecube-termux-builder
+          # run-docker.sh 以 root 创建容器，HOME 会变成 /root；而镜像把 SDK/NDK
+          # 装在 /home/builder/lib，properties.sh 按 $HOME 推导路径，须覆盖 HOME。
+          export TERMUX_DOCKER_EXEC_EXTRA_ARGS="--env HOME=/home/builder"
+          cd third_party/termux-packages
+          ./scripts/run-docker.sh ./build-package.sh -a aarch64 proot busybox tar zstd
+
+      - name: 上传 .deb 与 loader
+        uses: actions/upload-artifact@v6
+        with:
+          name: termux-toolchain
+          path: |
+            third_party/termux-packages/output/*.deb
+            third_party/termux-packages/output/libproot-loader*.so
+          if-no-files-found: error
+
+  bundle:
+    name: 组装并发布
+    needs: [termux-toolchain]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: termux-toolchain
+          path: termux-output
+
+      - name: 组装 jniLibs
+        run: |
+          python3 tools/assemble_native_deps.py \
+            --termux-output termux-output \
+            --out dist/native-deps/arm64-v8a
+
+      - name: 校验 ProotBootstrap.kt 与产物的对应关系
+        run: |
+          # Kotlin 里按文件名加载；两边对不上会在设备上才报错，这里提前拦下。
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          kotlin = Path("app/android/app/src/main/kotlin/com/venti1112/edgecube/localservice/ProotBootstrap.kt").read_text()
+          raw = set(re.findall(r'"((?:lib__bin__|lib__lib__|libproot-loader)[^"]+)"', kotlin))
+          names = {
+              name.replace("${PROOT_VARIANT}", "proot-classic")
+              for name in raw
+              if "${" not in name.replace("${PROOT_VARIANT}", "")
+          }
+          # daemon 由 android.yml 交叉编译后注入 jniLibs，不属于原生依赖包。
+          names.discard("lib__bin__edgecube-daemon__.so")
+          produced = {p.name for p in Path("dist/native-deps/arm64-v8a").iterdir() if p.is_file()}
+          missing = sorted(names - produced)
+          if missing:
+              raise SystemExit(f"ProotBootstrap.kt 需要的文件未产出：{missing}")
+          unused = sorted(produced - names)
+          print(f"ProotBootstrap.kt 引用的 {len(names)} 个文件均已产出")
+          if unused:
+              print(f"产出中未被 ProotBootstrap.kt 引用：{unused}")
+          PY
+
+      - name: 打包与校验和
+        run: |
+          cd dist/native-deps
+          zip -9 -r "$ASSET_NAME" arm64-v8a
+          cd ..
+          sha256sum "native-deps/$ASSET_NAME" | sed 's|native-deps/||' | tee native-deps/SHA256SUMS
+          {
+            echo "### 原生依赖已生成"
+            echo
+            echo "- 标签：\`$RELEASE_TAG\`"
+            echo "- 文件：\`$ASSET_NAME\`"
+            echo "- SHA256：\`$(cut -d' ' -f1 native-deps/SHA256SUMS)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传 Release 资产为 Actions 产物
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-deps-release
+          path: |
+            dist/native-deps/${{ env.ASSET_NAME }}
+            dist/native-deps/SHA256SUMS
+          if-no-files-found: error
+
+      - name: 发布到 GitHub Release（预发布）
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --prerelease
+          else
+            gh release create "$RELEASE_TAG" \
+              --title "原生依赖 $RELEASE_TAG" \
+              --notes "由 native-deps.yml 从源码构建的 proot 工具链（busybox/tar/zstd）。" \
+              --prerelease
+          fi
+          gh release upload "$RELEASE_TAG" \
+            "dist/native-deps/$ASSET_NAME" \
+            "dist/native-deps/SHA256SUMS" \
+            --clobber

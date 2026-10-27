@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../connection/client.dart';
 import '../connection/state.dart';
+import '../players/providers.dart' show kPlayersTopic;
 import 'api.dart';
 import 'models.dart';
 
@@ -53,6 +54,9 @@ final selectedInstanceDetailProvider = FutureProvider<InstanceDetail?>((
 ///
 /// 自己的改动也会触发一次（顶多多取一次列表，列表本身很小），
 /// 换来的是「不用区分事件来源」这点简单。页面 `watch` 它即可。
+///
+/// `instance.players` 例外：在线玩家一变就重取列表与详情纯属浪费
+/// （名单每秒都可能动），那条主题有自己的 Provider。
 final instanceEventsProvider = Provider<void>((ref) {
   // 未连接时只是登记订阅意图，连上/重连后由连接层自动补订
   unawaited(ref.read(connectionProvider.notifier).subscribe('instance.*'));
@@ -63,6 +67,7 @@ final instanceEventsProvider = Provider<void>((ref) {
   final subscription = client.events.listen((event) {
     final topic = event['topic'];
     if (topic is! String || !topic.startsWith('instance.')) return;
+    if (topic == kPlayersTopic) return;
     ref.invalidate(instanceListProvider);
     ref.invalidate(selectedInstanceDetailProvider);
   });

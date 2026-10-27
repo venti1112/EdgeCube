@@ -69,9 +69,24 @@ interval_ms = 1000
 autostart = false
 
 # ---------------------------------------------------------------------------
+# 系统监控
+#
+# 设备内存与整机 CPU 使用率，采集交给 sysinfo（跨平台，Linux / Windows / macOS 通用）。
+# 采样器**常驻**、没有开关：CPU 使用率靠两次采样的差值算，按需采样会让每次冷启动
+# 之后的第一份数据都是 null。用 interval_ms 调节成本即可。
+# ---------------------------------------------------------------------------
+
+[modules.config.monitor]
+# 采样间隔（毫秒），也是 monitor.stats 的推送间隔。会被 clamp 到 [250, 60000]。
+# 下限 250 是因为 sysinfo 的最小 CPU 更新间隔是 200ms，比它还密只会读到旧值。
+interval_ms = 2000
+# 是否周期性推送 monitor.stats。关掉就是「只拉（monitor.snapshot）不推」——采样照旧。
+publish = true
+
+# ---------------------------------------------------------------------------
 # 实例管理
 #
-# 数据目录布局（与 V1 一致：索引 / 元数据 / 工作目录三分离）：
+# 数据目录布局（索引 / 元数据 / 工作目录三分离）：
 #   <dir>/config/instances.json       索引 {selected, instances:[{id,name,path?}]}
 #   <dir>/config/instances/<id>.json  单个实例的完整元数据
 #   <dir>/instances/<id>/             实例工作目录（服务端文件、世界存档……）
@@ -89,3 +104,179 @@ prune_missing = true
 # 目录体积统计的上限，防止扫几十 GB 的世界存档时卡住。
 scan_max_entries = 20000
 scan_max_depth = 12
+
+# ── 文件管理 ──
+# 文本编辑器的单文件上限（字节）。超过就拒绝打开，而不是把内存吃满。
+# 客户端读到 file_too_large 时会提示「文件太大」。
+text_max_bytes = 4194304
+
+# 上传接口的单文件上限（字节）。请求体是流式收的，超了立即中断并删掉半成品。
+# 2 GiB —— 够装任何整合包，又能挡住把磁盘写满的意外。
+upload_max_bytes = 2147483648
+
+# 名称搜索结果条数上限，超出时结果里带 truncated = true。
+search_max_results = 2000
+
+# 单个压缩包/解压任务的条目数上限，防止 zip 炸弹把磁盘写满。
+archive_max_entries = 200000
+
+# ---------------------------------------------------------------------------
+# 映射隧道（FRP）
+#
+# 平台登录（授权请求、轮询、令牌落盘都在 daemon）、frpc 配置的生成 / 保存，
+# 以及**隧道的运行**：一条 toml 配置就是一个可独立运行的 FRP 实例，
+# 各自一个 frpc 进程（`frp.run.*`），与游戏实例无关（游戏实例只能「连带启动」它）。
+#
+# 数据目录布局：
+#   <dir>/config/frp/auth.json               各平台令牌 + 账号缓存（0600）
+#   <dir>/config/frp/settings.json           跑隧道用哪个 frpc 运行环境
+#   <dir>/config/frp/config/<localId>.json   一条已保存隧道的元数据（camelCase）
+#   <dir>/config/frp/toml/<localId>.toml     生成的 frpc 配置 ← 一个 toml = 一个 FRP 实例
+# ---------------------------------------------------------------------------
+
+[modules.config.frp]
+# 数据根目录。留空 = **跟实例模块同一个根**（$EDGECUBE_DATA_DIR →
+# $XDG_DATA_HOME/edgecube → $HOME/.local/share/edgecube）—— 不各自回退到平台
+# 默认，否则「数据根搬家」之后 frp 会去一个空目录找 frpc。
+dir = ""
+
+# ---------------------------------------------------------------------------
+# 下载队列
+#
+# 全局一份的 HTTP 下载队列（底层是 gosh-dl）。任务落到**实例目录**里，所以本模块
+# 刻意**没有自己的 dir**：数据根跟着上面 [modules.config.instance] 的 dir 走 ——
+# 两处各配一个根目录，迟早会配出「下载不知道实例在哪」的错位。
+#
+# 队列**只在内存里**：daemon 重启后队列与历史全部清空，进行中的任务要重新提交。
+#
+# 任务落盘位置 = 实例根目录 + 提交参数里的 path（目录）+ filename（文件名）。
+# ---------------------------------------------------------------------------
+
+[modules.config.download]
+# 同时下载的任务数上限，超出的停在 queued 排队。会被 clamp 到 [1, 64]。
+max_concurrent = 3
+# 单个任务的最大连接数（分段下载；服务端不支持 Range 时自动退回单连接）。clamp 到 [1, 64]。
+connections_per_download = 8
+# 全局限速（字节/秒）。0 = 不限速。
+max_download_speed = 0
+# 建连超时（秒），至少 1。
+connect_timeout_secs = 30
+# 读空闲超时（秒），至少 1。是「多久没收到新数据」而不是总时长，
+# 大文件只要一直有数据就不会被它掐断。
+read_timeout_secs = 60
+# 单个分段的重试次数。0 = 不重试。
+max_retries = 5
+# User-Agent。留空 = "EdgeCube-daemon/<版本>"。
+user_agent = ""
+# download.progress 事件的推送间隔（毫秒），也是「多久扫一次引擎状态」的间隔。
+# 会被 clamp 到 [200, 5000]。事件是扫出来的、不是引擎直接推的 —— 引擎那边每读一块
+# 推一条，一个 60 MB 的 jar 能推上千条。
+progress_interval_ms = 500
+
+# ---------------------------------------------------------------------------
+# 服务端目录
+#
+# 各个服务端源的版本列表与下载地址（原版 / Paper / Purpur / Leaf / Leaves /
+# Fabric / Velocity / BungeeCord）。**网络请求都在 daemon 这边出**，前端只发 RPC。
+#
+# 本模块自己不下载、不建实例：它只回答「下什么、地址在哪、校验值是什么、
+# 启动命令写什么」，下文件交给 download、建实例交给 instance，
+# 前端把三件事串起来（versions → plan → instance.create → download.add）。
+#
+# Forge / NeoForge 暂不支持：它们要多一步「跑安装器」。
+# ---------------------------------------------------------------------------
+
+[modules.config.mcserver]
+# 版本列表的缓存时长（秒）。0 = 不缓存。
+# 版本列表是只读且变得很慢的数据，而前端在列表页来回点会重复打上游（有些上游
+# 还有速率限制），所以默认缓存 5 分钟。
+cache_ttl_secs = 300
+# 单次上游请求的超时（秒），至少 1。
+request_timeout_secs = 20
+
+# ---------------------------------------------------------------------------
+# 模组与插件（mods）
+#
+# Modrinth 上的搜索、版本列表与下载计划，以及实例里已装文件的列表 / 更新检查 /
+# 启停 / 删除。**网络请求都在 daemon 这边出**，前端只发 RPC：
+# 每个客户端各打一遍上游既慢又各自撞 300 次/分钟的限流，而客户端所在网络
+# 还不一定通（Modrinth 在国内经常连不上）。
+#
+# 本模块自己不下载：落盘交给 download 队列，编排交给 mods-install 工作流
+# （mods.plan → mods.download），前端只发一次 task.submit。
+#
+# 装到哪个目录**按项目类型自动定**（mod → mods/、plugin → plugins/），
+# 不让用户选：选错了服务端只会静默不加载，是最难查的一类问题。
+#
+# 「启用 / 禁用」是改名（X.jar ↔ X.jar.disabled），不搬家 —— 服务端只认 *.jar，
+# 而用户自己用文件管理器也看得懂。
+#
+# 更新检查按已装文件的 sha1 批量反查上游最新版本，**只查启用中的文件**。
+# 不筛游戏版本（除非调用方显式传 game_version）：实例元数据里没记它跑的是哪个
+# MC 版本，硬猜不如让用户按需筛。
+#
+# 本轮只有 Modrinth 一个源。加源只改 daemon（前端从 mods.sources 读，零硬编码）。
+# ---------------------------------------------------------------------------
+
+[modules.config.mods]
+# 搜索与版本列表的缓存时长（秒），0 = 不缓存。
+cache_ttl_secs = 300
+# 游戏版本清单的缓存时长（秒）。它变得很慢（上游 900 多条，我们只留 100 来条正式版），
+# 所以给得比上面长。
+tags_cache_ttl_secs = 3600
+# 单次上游请求的超时（秒），至少 1。
+request_timeout_secs = 20
+# 搜索不传 limit 时给多少条，以及 limit 的上限，都会被 clamp 到 [1, 100]。
+search_default_limit = 20
+search_max_limit = 50
+# 每个目录（mods / plugins）最多列多少个文件，clamp 到 [1, 100000]。
+scan_max_files = 2000
+# 读 jar 元数据时单个 zip 条目的字节上限，clamp 到 [1024, 16777216]。
+# fabric.mod.json / plugin.yml 都是几 KB 的量级，设上限是防「有人把一个大文件
+# 伪装成元数据」把内存吃光。
+meta_max_entry_bytes = 262144
+# .phar（PocketMine 插件）的整文件上限，clamp 到 [1048576, 1073741824]。
+# .phar 是「PHP stub + 归档 + 签名」，要整读进内存才能定位 `__HALT_COMPILER`
+# 之后那段 tar，所以单独设一个上限。
+phar_max_bytes = 67108864
+# 更新检查一次提交给上游多少个 sha1（上游单次能接受 1000，我们压到 100：
+# 请求体更小、失败重试代价更低），clamp 到 [1, 1000]。
+hash_batch = 100
+# 一次更新检查最多算多少个文件的 sha1，clamp 到 [1, 5000]。
+# 算哈希要整读一遍文件，是这条路上最贵的一步；超出的文件不查，并在响应里
+# 标 truncated，让前端如实告诉用户。
+update_max_files = 200
+
+# ---------------------------------------------------------------------------
+# 运行环境（runtime）
+#
+# 下载与管理 Java 运行环境，目前是 Zulu 的 JDK（Azul Metadata API）。
+# 一个环境的完整生命周期：提交下载 → 落到 <root>/runtimes/.staging/<id>/ →
+# 解压到 <root>/runtimes/<id>/ → 记元数据 → 列表里可见。装完压缩包就删掉。
+#
+# 元数据在 <root>/config/runtimes/<id>.json，环境 id 是 zulu-jdk-21-linux-x64
+# 这种可读标识 —— 同一个「厂商 + 包类型 + 大版本 + 平台」只有一个环境，
+# 再装就是覆盖重装。
+#
+# 下载走全局下载队列（download 模块），所以并发与限速由那边的配置说了算。
+# ---------------------------------------------------------------------------
+
+[modules.config.runtime]
+# 运行环境：JDK（Zulu，走 Azul API）与 frp（走 GitHub Releases）。
+# 装哪个都只有一条路 —— `task.submit("runtime-install", {provider, version})`。
+# 单次上游请求的超时（秒），至少 1。
+# 注意这只是「问清单」的超时；真正的包下载由下载队列负责，超时另算。
+request_timeout_secs = 20
+# 版本清单的缓存时长（秒），0 = 不缓存。
+# **frp 别设成 0**：它的清单走 GitHub API，未认证时只有 60 次/小时，
+# 「历史版本」按钮点几次就把配额用光了。
+cache_ttl_secs = 300
+
+[modules.config.task]
+# 任务系统：工作流引擎（szal）把多步操作编成任务。
+# 模块只管执行与可观测性，工作流定义由各业务模块在 start() 里注册进来，
+# 生产 daemon 启动时 task.flows 是空列表。
+# 同时执行的任务上限，超出排队（queued）。clamp 到 [1, 64]。
+max_concurrent_tasks = 4
+# 已结束任务的保留条数（在跑的不受影响），超过删最老的。clamp 到 [10, 1000]。
+history_limit = 100

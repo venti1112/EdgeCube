@@ -16,6 +16,7 @@ use crate::config::Config;
 use crate::conn::ConnRegistry;
 use crate::event::EventBus;
 use crate::module::registry::ModuleRegistry;
+use crate::services::Services;
 use crate::util::now_ms;
 
 pub struct AppStateInner {
@@ -33,6 +34,11 @@ pub struct AppStateInner {
     /// 真正绑定到的地址。`server.port = 0`（让系统分配）时，配置里的
     /// `host:port` 并不是实际地址，对外汇报必须用这个。
     bound_addr: std::sync::RwLock<Option<SocketAddr>>,
+    /// 跨模块共享句柄的槽，**每个 `AppState` 一份**（见 [`crate::services`]）。
+    ///
+    /// 模块之间没有对象查找，共享能力只能靠「谁把句柄放进来」。放在这里
+    /// 而不是进程级 `static` 的理由见 [`crate::services`] 的模块注释。
+    pub services: Arc<Services>,
 }
 
 #[derive(Clone)]
@@ -62,6 +68,7 @@ impl AppState {
             started_at: Instant::now(),
             started_at_ms: now_ms(),
             bound_addr: std::sync::RwLock::new(None),
+            services: Arc::new(Services::new()),
         }))
     }
 

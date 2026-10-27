@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../connection/settings.dart';
 import '../connection/state.dart';
+import '../local_service/panel.dart';
 
 /// 首次启动的连接页:填地址 / 端口 / 令牌,连上即进入主界面。
 ///
@@ -86,11 +87,7 @@ class _ConnectPageState extends ConsumerState<ConnectPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(
-                      Icons.hub_outlined,
-                      size: 56,
-                      color: scheme.primary,
-                    ),
+                    Icon(Icons.hub_outlined, size: 56, color: scheme.primary),
                     const SizedBox(height: 12),
                     Text(
                       'EdgeCube',
@@ -115,7 +112,8 @@ class _ConnectPageState extends ConsumerState<ConnectPage> {
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
                         labelText: '服务器地址',
-                        hintText: '${ConnectionSettings.hostExample} 或 ws://host:${ConnectionSettings.defaultPort}',
+                        hintText:
+                            '${ConnectionSettings.hostExample} 或 ws://host:${ConnectionSettings.defaultPort}',
                         prefixIcon: Icon(Icons.dns_outlined),
                         border: OutlineInputBorder(),
                       ),
@@ -188,6 +186,11 @@ class _ConnectPageState extends ConsumerState<ConnectPage> {
 
                     // 实时预览最终请求地址,排查连通性问题时很省事
                     _TargetPreview(host: _host, port: _port),
+
+                    // 不想另找一台服务器时,直接在这台设备上跑 daemon。
+                    // 准备过程、进度与日志都在卡片里。
+                    const SizedBox(height: 28),
+                    const LocalServicePanel(),
                   ],
                 ),
               ),
@@ -247,9 +250,8 @@ class _TargetPreview extends StatelessWidget {
       builder: (context, _) {
         final parsed = ConnectionSettings.parseHostInput(host.text);
         final hostText = parsed.host.isEmpty ? '未填写' : parsed.host;
-        final portText = (parsed.port ?? int.tryParse(port.text.trim()))
-            ?.toString() ??
-            '?';
+        final portText =
+            (parsed.port ?? int.tryParse(port.text.trim()))?.toString() ?? '?';
         return Text(
           'ws://$hostText:$portText${ConnectionSettings.wsPath}',
           key: const Key('connect_target_preview'),
