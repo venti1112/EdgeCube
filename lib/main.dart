@@ -43,6 +43,7 @@ import 'net/download_engine.dart';
 import 'widgets/miuix_snackbar.dart';
 import 'theme/theme_scope.dart';
 import 'theme/theme_store.dart';
+import 'theme/system_color.dart';
 import 'theme/precipitation_effect_mode.dart';
 import 'widgets/precipitation_overlay.dart';
 
@@ -101,6 +102,15 @@ Future<void> _bootstrap() async {
   final initialThemeMode = await ThemeStore.load();
   final initialSeedColor = await ThemeStore.loadSeedColor();
   final initialUseDynamicColor = await ThemeStore.loadUseDynamicColor();
+  // 跟随系统主题色：开关已开启时先读一次系统种子色，让首帧就用正确配色，
+  // 否则会先按用户自选色渲染再跳变。读不到（Android 12 以下）时保持 null，
+  // 由 UI 层回退到自选种子色。
+  final initialSystemSeedColor = initialUseDynamicColor
+      ? await loadSystemSeedColor()
+      : null;
+  if (initialUseDynamicColor && initialSystemSeedColor == null) {
+    Logger('Boot').warning('系统主题色不可用（Android 12 以下或读取失败），回退到自选种子色');
+  }
   final initialSnowfallEnabled = await ThemeStore.loadSnowfallEnabled();
   final initialPrecipitationMode = await ThemeStore.loadPrecipitationMode();
   final initialFloatingNavBarEnabled =
@@ -173,6 +183,7 @@ Future<void> _bootstrap() async {
       initialThemeMode: initialThemeMode,
       initialSeedColor: initialSeedColor,
       initialUseDynamicColor: initialUseDynamicColor,
+      initialSystemSeedColor: initialSystemSeedColor,
       initialSnowfallEnabled: initialSnowfallEnabled,
       initialPrecipitationMode: initialPrecipitationMode,
       initialFloatingNavBarEnabled: initialFloatingNavBarEnabled,
@@ -194,10 +205,7 @@ Future<void> _bootstrap() async {
 ///
 /// 启动阶段任何一步抛异常而未被捕获，都会让 [_bootstrap] 中断、[runApp]
 /// 永远执行不到——设备上只有一片白屏。所有组件初始化统一走这里兜底。
-Future<void> _bootSafe(
-  String component,
-  Future<void> Function() action,
-) async {
+Future<void> _bootSafe(String component, Future<void> Function() action) async {
   try {
     await action();
   } catch (e, s) {
@@ -241,6 +249,7 @@ class EdgeCubeApp extends StatefulWidget {
     this.initialThemeMode = ThemeMode.system,
     this.initialSeedColor = ThemeStore.defaultSeedColor,
     this.initialUseDynamicColor = false,
+    this.initialSystemSeedColor,
     this.initialSnowfallEnabled = false,
     this.initialPrecipitationMode = PrecipitationEffectMode.snow,
     this.initialFloatingNavBarEnabled = false,
@@ -259,6 +268,9 @@ class EdgeCubeApp extends StatefulWidget {
   final ThemeMode initialThemeMode;
   final Color initialSeedColor;
   final bool initialUseDynamicColor;
+
+  /// 启动时读到的系统主题色种子；开启「跟随系统主题色」但读不到时为 null。
+  final Color? initialSystemSeedColor;
   final bool initialSnowfallEnabled;
   final PrecipitationEffectMode initialPrecipitationMode;
   final bool initialFloatingNavBarEnabled;
@@ -281,6 +293,13 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
   late ThemeMode _themeMode = widget.initialThemeMode;
   late Color _seedColor = widget.initialSeedColor;
   late bool _useDynamicColor = widget.initialUseDynamicColor;
+
+  /// 当前生效的系统主题色种子（开启跟随时使用）。
+  late Color? _systemSeedColor = widget.initialSystemSeedColor;
+
+  /// 生命周期监听：换壁纸后系统主色板会变，回前台时补读一次。
+  late final AppLifecycleListener _lifecycleListener;
+
   late bool _snowfallEnabled = widget.initialSnowfallEnabled;
   late PrecipitationEffectMode _precipitationMode =
       widget.initialPrecipitationMode;
@@ -291,10 +310,17 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
     super.initState();
     // 语言切换时重建整棵树，使 MaterialApp.locale 与全部文案随之更新。
     widget.localeController.addListener(_onLocaleChanged);
+    _lifecycleListener = AppLifecycleListener(
+      onResume: () {
+        // 只在跟随系统主题色时补读：换壁纸后系统主色板才会变。
+        if (_useDynamicColor) _refreshSystemSeedColor();
+      },
+    );
   }
 
   @override
   void dispose() {
+    _lifecycleListener.dispose();
     widget.localeController.removeListener(_onLocaleChanged);
     super.dispose();
   }
@@ -319,6 +345,15 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
     if (value == _useDynamicColor) return;
     setState(() => _useDynamicColor = value);
     ThemeStore.saveUseDynamicColor(value);
+    // 启动阶段只在开关已开启时预读过，首次打开开关时补读。
+    if (value) _refreshSystemSeedColor();
+  }
+
+  /// 补读系统主题色种子；仅在结果发生变化时重建，避免无谓刷新。
+  Future<void> _refreshSystemSeedColor() async {
+    final seed = await loadSystemSeedColor();
+    if (!mounted || seed == null || seed == _systemSeedColor) return;
+    setState(() => _systemSeedColor = seed);
   }
 
   void _setSnowfallEnabled(bool value) {
@@ -361,103 +396,80 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
           child: BackupScope(
             controller: widget.backupController,
             child: FtpScope(
-            controller: widget.ftpController,
-            child: ServerScope(
-              controller: widget.serverController,
-              child: SystemMonitorScope(
-                controller: widget.systemMonitorController,
-                child: McpScope(
-                  controller: widget.mcpController,
-                  child: ShellScope(
-                    controller: widget.shellController,
-                    child: SshScope(
-                      controller: widget.sshController,
-                      child: FrpScope(
-                        controller: widget.frpController,
-                        child: MiuixThemeController(
-                          // 配色统一交给 Miuix 的 Monet 动态取色：
-                          // - 关闭「跟随系统主题色」→ keyColor 为用户选定的种子色，
-                          //   由 miuixColorsFromSeed 同步按 HCT 生成整套配色；
-                          // - 开启 → keyColor 置空，Miuix 内部异步读取 Android
-                          //   壁纸取色，就绪前用固定种子占位以避免闪烁。
-                          colorSchemeMode: MiuixColorSchemeMode.monetSystem,
-                          keyColor: _useDynamicColor ? null : _seedColor,
-                          // null 表示跟随系统亮度，对应 ThemeMode.system。
-                          isDark: switch (_themeMode) {
-                            ThemeMode.system => null,
-                            ThemeMode.light => false,
-                            ThemeMode.dark => true,
-                          },
-                          child: Builder(
-                            builder: (context) {
-                              // 明暗由 MiuixThemeController 统一裁决，故这里只给
-                              // MaterialApp 单一 theme（不给 darkTheme/themeMode），
-                              // 避免两套亮度解析打架。
-                              final miuix = MiuixTheme.of(context);
-                              return MaterialApp(
-                                title: 'EdgeCube',
-                                localizationsDelegates: [
-                                  GlobalMaterialLocalizations.delegate,
-                                  GlobalWidgetsLocalizations.delegate,
-                                  GlobalCupertinoLocalizations.delegate,
-                                ],
-                                supportedLocales:
-                                    widget.localeController.supportedLocales,
-                                locale: widget.localeController.locale,
-                                // 无法 Miuix 化的第三方 Material 组件
-                                // （xterm / re_editor / markdown 等）由 Miuix
-                                // 主色派生配色，避免与整体视觉割裂。
-                                theme: ThemeData(
-                                  useMaterial3: true,
-                                  brightness: miuix.brightness,
-                                  colorScheme: ColorScheme.fromSeed(
-                                    seedColor: miuix.colors.primary,
-                                    brightness: miuix.brightness,
-                                  ),
-                                ),
-                                navigatorObservers: [appRouteObserver],
-                                builder: (context, child) {
-                                  Widget content =
-                                      child ?? const SizedBox.shrink();
-                                  // MiuixScaffold 的根是 MiuixSurface 而非
-                                  // Material。换掉 Scaffold 后页面内文本失去
-                                  // Material 祖先，DefaultTextStyle 会退化成
-                                  // WidgetsApp 的错误样式（黄色双下划线）。
-                                  // 补一层透明 Material 统一兜住，顺带满足
-                                  // MiuixTextField 对 Material 祖先的依赖。
-                                  content = Material(
-                                    type: MaterialType.transparency,
-                                    child: content,
-                                  );
-                                  // MiuixText 的取色链是
-                                  // color ?? style.color ?? MiuixContentColor，
-                                  // 而 textStyles 预设不带颜色、MiuixContentColor
-                                  // 缺失时**硬编码回退纯黑**（深色模式下即黑底黑字）。
-                                  // MiuixSurface 之外的位置（对话框内容等）没有这
-                                  // 层，故在应用根部给一个语义正确的兜底值。
-                                  content = MiuixContentColor(
-                                    color: miuix.colors.onBackground,
-                                    child: content,
-                                  );
-                                  if (_snowfallEnabled) {
-                                    content = Stack(
-                                      children: [
-                                        content,
-                                        Positioned.fill(
-                                          child: PrecipitationOverlay(
-                                            mode: _precipitationMode,
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  }
-                                  // Snackbar 宿主必须高于 Navigator，否则压入
-                                  // 子路由后消息会被盖住（见 MiuixSnackbarOverlay）。
-                                  return MiuixSnackbarOverlay(child: content);
-                                },
-                                home: const HomeShell(),
-                              );
+              controller: widget.ftpController,
+              child: ServerScope(
+                controller: widget.serverController,
+                child: SystemMonitorScope(
+                  controller: widget.systemMonitorController,
+                  child: McpScope(
+                    controller: widget.mcpController,
+                    child: ShellScope(
+                      controller: widget.shellController,
+                      child: SshScope(
+                        controller: widget.sshController,
+                        child: FrpScope(
+                          controller: widget.frpController,
+                          child: MiuixThemeController(
+                            colorSchemeMode: MiuixColorSchemeMode.monetSystem,
+                            keyColor: _useDynamicColor
+                                ? (_systemSeedColor ?? _seedColor)
+                                : _seedColor,
+                            isDark: switch (_themeMode) {
+                              ThemeMode.system => null,
+                              ThemeMode.light => false,
+                              ThemeMode.dark => true,
                             },
+                            child: Builder(
+                              builder: (context) {
+                                final miuix = MiuixTheme.of(context);
+                                return MaterialApp(
+                                  title: 'EdgeCube',
+                                  localizationsDelegates: [
+                                    GlobalMaterialLocalizations.delegate,
+                                    GlobalWidgetsLocalizations.delegate,
+                                    GlobalCupertinoLocalizations.delegate,
+                                  ],
+                                  supportedLocales:
+                                      widget.localeController.supportedLocales,
+                                  locale: widget.localeController.locale,
+                                  theme: ThemeData(
+                                    useMaterial3: true,
+                                    brightness: miuix.brightness,
+                                    colorScheme: ColorScheme.fromSeed(
+                                      seedColor: miuix.colors.primary,
+                                      brightness: miuix.brightness,
+                                    ),
+                                  ),
+                                  navigatorObservers: [appRouteObserver],
+                                  builder: (context, child) {
+                                    Widget content =
+                                        child ?? const SizedBox.shrink();
+                                    content = Material(
+                                      type: MaterialType.transparency,
+                                      child: content,
+                                    );
+                                    content = MiuixContentColor(
+                                      color: miuix.colors.onBackground,
+                                      child: content,
+                                    );
+                                    if (_snowfallEnabled) {
+                                      content = Stack(
+                                        children: [
+                                          content,
+                                          Positioned.fill(
+                                            child: PrecipitationOverlay(
+                                              mode: _precipitationMode,
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    }
+                                    return MiuixSnackbarOverlay(child: content);
+                                  },
+                                  home: const HomeShell(),
+                                );
+                              },
+                            ),
                           ),
                         ),
                       ),
@@ -466,7 +478,6 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                 ),
               ),
             ),
-          ),
           ),
         ),
       ),
