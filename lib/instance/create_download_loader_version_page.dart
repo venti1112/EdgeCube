@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_miuix/miuix.dart';
 
 import '../config/java_env_pref_store.dart';

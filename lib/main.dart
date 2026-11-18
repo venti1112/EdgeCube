@@ -2,8 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_miuix/miuix.dart';
 import 'package:logging/logging.dart';
 
@@ -424,11 +423,8 @@ class _EdgeCubeAppState extends State<EdgeCubeApp> {
                                 final miuix = MiuixTheme.of(context);
                                 return MaterialApp(
                                   title: 'EdgeCube',
-                                  localizationsDelegates: [
-                                    GlobalMaterialLocalizations.delegate,
-                                    GlobalWidgetsLocalizations.delegate,
-                                    GlobalCupertinoLocalizations.delegate,
-                                  ],
+                                  localizationsDelegates:
+                                      GlobalMaterialLocalizations.delegates,
                                   supportedLocales:
                                       widget.localeController.supportedLocales,
                                   locale: widget.localeController.locale,

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:battery_optimization_helper/battery_optimization_helper.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_miuix/miuix.dart';
 
 import '../config/sleep_screen_store.dart';

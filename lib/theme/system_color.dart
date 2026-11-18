@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:dynamic_color/dynamic_color.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 Future<Color?> loadSystemSeedColor() async {
   if (!Platform.isAndroid) return null;

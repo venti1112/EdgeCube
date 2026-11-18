@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../i18n/locale_scope.dart';
 import 'server_type_tile.dart';
 

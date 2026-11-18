@@ -1,7 +1,6 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/widgets.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../config/locale_store.dart';
 import 'app_language.dart';

@@ -17,7 +17,7 @@ pub fn extract_zip(archive: &Path, dest: &Path, progress: Progress) -> Result<i3
     let mut current = 0i32;
     for index in 0..zip.len() {
         let mut entry = zip.by_index(index).map_err(ArchError::io)?;
-        let name = entry.name().to_string();
+        let name = entry.name().map_err(ArchError::io)?.into_owned();
         if entry.is_dir() {
             if let Some(target) = resolve_safe(&base, &name) {
                 let _ = std::fs::create_dir_all(&target);
@@ -62,7 +62,7 @@ pub fn has_dir_prefix(archive: &Path, dir: &str) -> Result<bool, ArchError> {
     let zip = zip::ZipArchive::new(file).map_err(ArchError::io)?;
     let prefix = format!("{dir}/");
     for index in 0..zip.len() {
-        if let Some(name) = zip.name_for_index(index)
+        if let Some(Ok(name)) = zip.name_for_index(index)
             && name.starts_with(&prefix)
         {
             return Ok(true);
@@ -83,7 +83,7 @@ pub fn extract_prefixes(
     let file = File::open(archive).map_err(ArchError::io)?;
     let mut zip = zip::ZipArchive::new(file).map_err(ArchError::io)?;
     let names: Vec<String> = (0..zip.len())
-        .filter_map(|index| zip.name_for_index(index).map(str::to_string))
+        .filter_map(|index| zip.name_for_index(index)?.ok().map(|n| n.into_owned()))
         .collect();
     let dest_canon = canonicalize_like_java(dest);
     let total = names.len() as i32;

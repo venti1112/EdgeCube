@@ -1,6 +1,6 @@
-use jni::JNIEnv;
 use jni::objects::{JObject, JString};
 use jni::sys::{JNI_FALSE, JNI_TRUE, jboolean};
+use jni::{EnvUnowned, errors::{Error, Result, ThrowRuntimeExAndDefault}};
 
 use crate::jni_util::{jstr, throw_java};
 
@@ -11,27 +11,33 @@ use crate::jni_util::{jstr, throw_java};
 /// `IllegalStateException`。
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_venti1112_edgecube_ssh_SshBridge_nativeSshStart<'local>(
-    mut env: JNIEnv<'local>,
+    mut unowned: EnvUnowned<'local>,
     _thiz: JObject<'local>,
     config_json: JString<'local>,
 ) {
-    let Some(json) = jstr(&mut env, &config_json) else {
-        throw_java(
-            &mut env,
-            "java/lang/IllegalArgumentException",
-            "缺少 configJson",
-        );
-        return;
-    };
-    if let Err(message) = super::start(&json) {
-        throw_java(&mut env, "java/lang/IllegalStateException", &message);
-    }
+    unowned
+        .with_env(|env| -> Result<()> {
+            let Some(json) = jstr(env, &config_json) else {
+                throw_java(
+                    env,
+                    "java/lang/IllegalArgumentException",
+                    "缺少 configJson",
+                );
+                return Err(Error::JavaException);
+            };
+            if let Err(message) = super::start(&json) {
+                throw_java(env, "java/lang/IllegalStateException", &message);
+                return Err(Error::JavaException);
+            }
+            Ok(())
+        })
+        .resolve::<ThrowRuntimeExAndDefault>();
 }
 
 /// `SshServerManager.stop()`
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_venti1112_edgecube_ssh_SshBridge_nativeSshStop<'local>(
-    _env: JNIEnv<'local>,
+    _unowned: EnvUnowned<'local>,
     _thiz: JObject<'local>,
 ) {
     super::stop();
@@ -40,7 +46,7 @@ pub extern "system" fn Java_com_venti1112_edgecube_ssh_SshBridge_nativeSshStop<'
 /// `SshServerManager.isRunning: Boolean`
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_venti1112_edgecube_ssh_SshBridge_nativeSshIsRunning<'local>(
-    _env: JNIEnv<'local>,
+    _unowned: EnvUnowned<'local>,
     _thiz: JObject<'local>,
 ) -> jboolean {
     if super::is_running() {
@@ -57,17 +63,19 @@ pub extern "system" fn Java_com_venti1112_edgecube_ssh_SshBridge_nativeSshIsRunn
 pub extern "system" fn Java_com_venti1112_edgecube_ssh_SshBridge_nativeSshHostKeyFingerprint<
     'local,
 >(
-    mut env: JNIEnv<'local>,
+    mut unowned: EnvUnowned<'local>,
     _thiz: JObject<'local>,
     host_key_path: JString<'local>,
 ) -> JString<'local> {
-    let Some(path) = jstr(&mut env, &host_key_path) else {
-        return JObject::null().into();
-    };
-    match super::keys::fingerprint(std::path::Path::new(&path)) {
-        Ok(fp) => env
-            .new_string(fp)
-            .unwrap_or_else(|_| JObject::null().into()),
-        Err(_) => JObject::null().into(),
-    }
+    unowned
+        .with_env(|env| -> Result<JString<'local>> {
+            let Some(path) = jstr(env, &host_key_path) else {
+                return Ok(JString::null());
+            };
+            match super::keys::fingerprint(std::path::Path::new(&path)) {
+                Ok(fp) => JString::from_str(env, fp),
+                Err(_) => Ok(JString::null()),
+            }
+        })
+        .resolve::<jni::errors::LogErrorAndDefault>()
 }
